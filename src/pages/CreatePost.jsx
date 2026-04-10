@@ -181,6 +181,7 @@ export default function CreatePost() {
       // Fire n8n webhook
       const n8nRes = await fetch(`${N8N_BASE}/webhook/social-publish`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           postId: post.id,
           clientId,
