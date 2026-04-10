@@ -99,7 +99,7 @@ export default function CreatePost() {
     const reader = new FileReader()
     reader.onload = ev => setImagePreview(ev.target.result)
     reader.readAsDataURL(file)
-    setErrorMsg(''); alert('');
+    setErrorMsg('');
   }
 
   function removeImage() {
@@ -117,7 +117,6 @@ export default function CreatePost() {
     const filename = `${clientId}/${Date.now()}.${ext}`
     const res = await fetch(`${N8N_BASE}/webhook/r2-presigned-url`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filename, contentType: file.type, clientId }),
     })
     if (!res.ok) throw new Error('Failed to get upload URL from server.')
@@ -132,7 +131,7 @@ export default function CreatePost() {
   }
 
   async function handleSubmit() {
-    setErrorMsg(''); alert('');
+    setErrorMsg('');
 
     if (!content.trim()) {
       setErrorMsg('Please write some content for your post.'); alert('Please write some content for your post.');
@@ -184,7 +183,6 @@ export default function CreatePost() {
       // Fire n8n webhook
       const n8nRes = await fetch(`${N8N_BASE}/webhook/social-publish`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           postId: post.id,
           clientId,
@@ -285,7 +283,7 @@ export default function CreatePost() {
             </label>
             <textarea
               value={content}
-              onChange={e => { setContent(e.target.value); setErrorMsg(''); alert(''); }}
+              onChange={e => { setContent(e.target.value); setErrorMsg(''); }}
               placeholder="What would you like to share with your audience?"
               rows={7}
               disabled={isSubmitting}
@@ -545,4 +543,5 @@ export default function CreatePost() {
     </div>
   )
 }
+
 
