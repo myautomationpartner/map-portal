@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useOutletContext } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { MessageSquare, Instagram, Facebook, ExternalLink, Smartphone, ArrowUpRight } from 'lucide-react'
+import { MessageSquare, Camera, Users2, ExternalLink, Smartphone, ArrowUpRight } from 'lucide-react'
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
@@ -188,7 +188,7 @@ export default function Inbox() {
     },
     {
       id: 'instagram',
-      icon: Instagram,
+      icon: Camera,
       iconGradient: 'from-pink-600 to-purple-500',
       glowColor: 'bg-pink-500/20',
       title: 'Instagram DMs',
@@ -203,7 +203,7 @@ export default function Inbox() {
     },
     {
       id: 'facebook',
-      icon: Facebook,
+      icon: Users2,
       iconGradient: 'from-blue-600 to-blue-400',
       glowColor: 'bg-blue-500/20',
       title: 'Facebook Messages',
