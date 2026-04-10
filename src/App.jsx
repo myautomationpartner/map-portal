@@ -6,6 +6,8 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import Inbox from './pages/Inbox'
+import CreatePost from './pages/CreatePost'
+import PostHistory from './pages/PostHistory'
 import Sidebar from './components/Sidebar'
 import BottomNav from './components/BottomNav'
 import { Loader2 } from 'lucide-react'
@@ -80,6 +82,8 @@ export default function App() {
               <Route element={<ProtectedLayout session={session} />}>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/inbox" element={<Inbox />} />
+                <Route path="/post" element={<CreatePost />} />
+                <Route path="/post/history" element={<PostHistory />} />
                 <Route path="/settings" element={<Settings />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
