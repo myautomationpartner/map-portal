@@ -92,14 +92,14 @@ export default function CreatePost() {
     const file = e.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('image/')) {
-      setErrorMsg('Only image files are supported.')
+      setErrorMsg('Only image files are supported.'); alert('Only image files are supported.');
       return
     }
     setImageFile(file)
     const reader = new FileReader()
     reader.onload = ev => setImagePreview(ev.target.result)
     reader.readAsDataURL(file)
-    setErrorMsg('')
+    setErrorMsg(''); alert('');
   }
 
   function removeImage() {
@@ -132,26 +132,26 @@ export default function CreatePost() {
   }
 
   async function handleSubmit() {
-    setErrorMsg('')
+    setErrorMsg(''); alert('');
 
     if (!content.trim()) {
-      setErrorMsg('Please write some content for your post.')
+      setErrorMsg('Please write some content for your post.'); alert('Please write some content for your post.');
       return
     }
     if (activePlatforms.length === 0) {
-      setErrorMsg('Please select at least one platform.')
+      setErrorMsg('Please select at least one platform.'); alert('Please select at least one platform.');
       return
     }
     if (mode === 'schedule' && !scheduledFor) {
-      setErrorMsg('Please select a date and time to schedule.')
+      setErrorMsg('Please select a date and time to schedule.'); alert('Please select a date and time to schedule.');
       return
     }
     if (charOver) {
-      setErrorMsg(`Your post exceeds the ${charLimit}-character limit.`)
+      setErrorMsg(`Your post exceeds the ${charLimit}-character limit.`); alert(`Your post exceeds the ${charLimit}-character limit.`);
       return
     }
     if (!clientId) {
-      setErrorMsg('Unable to identify your client profile. Please refresh.')
+      setErrorMsg('Unable to identify your client profile. Please refresh.'); alert('Unable to identify your client profile. Please refresh.');
       return
     }
 
@@ -226,7 +226,7 @@ export default function CreatePost() {
       }, 3000)
     } catch (err) {
       console.error('[CreatePost]', err)
-      setErrorMsg(err.message || 'Something went wrong. Please try again.')
+      setErrorMsg(err.message || 'Something went wrong. Please try again.'); alert(err.message || 'Something went wrong. Please try again.');
       setSubmitState('error')
       setTimeout(() => setSubmitState('idle'), 4000)
     }
@@ -285,7 +285,7 @@ export default function CreatePost() {
             </label>
             <textarea
               value={content}
-              onChange={e => { setContent(e.target.value); setErrorMsg('') }}
+              onChange={e => { setContent(e.target.value); setErrorMsg(''); alert(''); }}
               placeholder="What would you like to share with your audience?"
               rows={7}
               disabled={isSubmitting}
@@ -545,3 +545,4 @@ export default function CreatePost() {
     </div>
   )
 }
+
