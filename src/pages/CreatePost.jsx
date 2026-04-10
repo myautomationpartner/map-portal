@@ -115,18 +115,16 @@ export default function CreatePost() {
   async function uploadToR2(file) {
     const ext = file.name.split('.').pop()
     const filename = `${clientId}/${Date.now()}.${ext}`
-    const res = await fetch(`${N8N_BASE}/webhook/r2-presigned-url`, {
+    const formData = new FormData()
+    formData.append('file', file, filename)
+    formData.append('filename', filename)
+    formData.append('clientId', clientId)
+    const res = await fetch(`${N8N_BASE}/webhook/r2-upload`, {
       method: 'POST',
-      body: JSON.stringify({ filename, contentType: file.type, clientId }),
+      body: formData,
     })
-    if (!res.ok) throw new Error('Failed to get upload URL from server.')
-    const { uploadUrl, publicUrl } = await res.json()
-    const putRes = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': file.type },
-      body: file,
-    })
-    if (!putRes.ok) throw new Error('Image upload failed.')
+    if (!res.ok) throw new Error('Image upload failed.')
+    const { publicUrl } = await res.json()
     return publicUrl
   }
 
