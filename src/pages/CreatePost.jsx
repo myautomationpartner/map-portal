@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import {
   Send, X, Clock, Calendar, CheckCircle2,
   AlertCircle, Loader2, Globe, Music2, Eye,
-  UploadCloud, History, ChevronRight, Facebook, Instagram,
+  UploadCloud, History, ChevronRight, Share2, Camera,
 } from 'lucide-react'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
@@ -14,7 +14,7 @@ const PLATFORMS = [
   {
     id: 'facebook',
     label: 'Facebook',
-    Icon: Facebook,
+    Icon: Share2,
     gradient: 'from-blue-600 to-blue-400',
     border: 'border-blue-500/40',
     bg: 'bg-blue-500/10',
@@ -23,7 +23,7 @@ const PLATFORMS = [
   {
     id: 'instagram',
     label: 'Instagram',
-    Icon: Instagram,
+    Icon: Camera,
     gradient: 'from-pink-600 to-purple-500',
     border: 'border-pink-500/40',
     bg: 'bg-pink-500/10',

@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { 
-  ArrowLeft, RefreshCw, Facebook, Instagram, Search, 
+import { ArrowLeft, RefreshCw, Share2, Camera, Search, 
   MapPin, Video, ImageIcon, FileText, ChevronDown, ChevronUp
 } from 'lucide-react'
 
@@ -39,8 +38,8 @@ const STATUS_CONFIG = {
 }
 
 const PLATFORMS = [
-  { id: 'facebook', label: 'Facebook', icon: Facebook },
-  { id: 'instagram', label: 'Instagram', icon: Instagram },
+  { id: 'facebook', label: 'Facebook', icon: Share2 },
+  { id: 'instagram', label: 'Instagram', icon: Camera },
   { id: 'google', label: 'Google', icon: MapPin },
   { id: 'tiktok', label: 'TikTok', icon: Video },
 ]
