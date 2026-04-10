@@ -127,7 +127,7 @@ export default function PostHistory() {
     queryFn: fetchClientProfile,
   })
 
-  const clientId = profile?.clients?.id
+  const clientId = profile?.client_id
 
   const { data: posts, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['posts', clientId],
