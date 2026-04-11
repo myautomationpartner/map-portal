@@ -119,7 +119,7 @@ export default function CreatePost() {
     formData.append('file', file, filename)
     formData.append('filename', filename)
     formData.append('clientId', clientId)
-    const res = await fetch(`${N8N_BASE}/webhook/r2-upload`, {
+    const res = await fetch(`${N8N_BASE}/webhook/r2-presigned-url`, {
       method: 'POST',
       body: formData,
     })
