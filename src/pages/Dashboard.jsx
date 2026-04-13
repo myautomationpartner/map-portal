@@ -23,10 +23,11 @@ async function fetchUserProfile() {
 
 async function fetchLatestMetrics(clientId) {
   const { data, error } = await supabase
-    .from('metrics')
+    .from('daily_metrics')
     .select('*')
     .eq('client_id', clientId)
-    .order('recorded_date', { ascending: false })
+    .order('metric_date', { ascending: false })
+    .limit(90)
   if (error) throw error
   return data ?? []
 }
@@ -44,22 +45,22 @@ async function fetchWebsiteAnalytics(clientId) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function getLatestValue(metrics, platform, metricType) {
-  const match = metrics.find(
-    m => m.platform === platform && m.metric_type === metricType
-  )
-  return match ? Number(match.value).toLocaleString() : '—'
+function getLatestValue(metrics, platform, metricKey) {
+  // Get the most recent metric for this platform
+  const match = metrics.find(m => m.platform === platform)
+  if (!match) return '—'
+  const val = match[metricKey]
+  return val ? Number(val).toLocaleString() : '—'
 }
 
 function buildChartData(metrics) {
-  // Group follower metrics by date across all platforms
+  // Group metrics by date across all platforms (daily_metrics has one row per day per platform)
   const byDate = {}
-  metrics
-    .filter(m => m.metric_type === 'followers')
-    .forEach(m => {
-      if (!byDate[m.recorded_date]) byDate[m.recorded_date] = { date: m.recorded_date }
-      byDate[m.recorded_date][m.platform] = Number(m.value)
-    })
+  metrics.forEach(m => {
+    const key = m.metric_date
+    if (!byDate[key]) byDate[key] = { date: key }
+    byDate[key][m.platform] = Number(m.followers || 0)
+  })
   return Object.values(byDate)
     .sort((a, b) => new Date(a.date) - new Date(b.date))
     .slice(-30)
@@ -221,8 +222,8 @@ export default function Dashboard() {
           </div>
           <div className="space-y-3">
             {[
-              { label: 'Total Followers', value: metricsLoading ? '…' : metrics.filter(m => m.metric_type === 'followers').reduce((s, m) => s + Number(m.value), 0).toLocaleString(), icon: Users },
-              { label: 'Avg Engagement', value: metricsLoading ? '…' : getLatestValue(metrics, 'instagram', 'engagement'), icon: MousePointerClick },
+              { label: 'Total Followers', value: metricsLoading ? '…' : metrics.filter(m => m.platform).reduce((s, m) => s + Number(m.followers || 0), 0).toLocaleString(), icon: Users },
+              { label: 'Avg Engagement', value: metricsLoading ? '…' : getLatestValue(metrics, 'instagram', 'engagement_rate'), icon: MousePointerClick },
               { label: 'Total Reach', value: metricsLoading ? '…' : getLatestValue(metrics, 'instagram', 'reach'), icon: Eye },
             ].map(({ label, value, icon: Icon }) => (
               <div key={label} className="flex items-center justify-between">
