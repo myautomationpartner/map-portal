@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useOutletContext } from 'react-router-dom'
+import { useOutletContext, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import {
   User, Lock, Building2, CheckCircle2, Loader2, AlertCircle,
@@ -97,11 +97,19 @@ function StatusBadge({ status, message }) {
   )
 }
 
-function SocialConnectionsSection({ clientId }) {
+function SocialConnectionsSection({ clientId, returnedPlatform }) {
   const queryClient = useQueryClient()
   const [connectingPlatform, setConnectingPlatform] = useState(null)
   const [syncing, setSyncing] = useState(false)
   const [syncStatus, setSyncStatus] = useState(null)
+
+  // Auto-sync when returning from Zernio OAuth
+  useEffect(() => {
+    if (!returnedPlatform || !clientId) return
+    setSyncStatus({ type: 'info', message: `${returnedPlatform.charAt(0).toUpperCase() + returnedPlatform.slice(1)} connected! Syncing your accounts…` })
+    handleSync()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnedPlatform, clientId])
 
   const { data: connections = [], isLoading: connectionsLoading } = useQuery({
     queryKey: ['social_connections', clientId],
@@ -270,6 +278,15 @@ function SocialConnectionsSection({ clientId }) {
 
 export default function Settings() {
   const { session } = useOutletContext()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const returnedPlatform = searchParams.get('connected') || null
+
+  // Clear query params from URL after reading them (clean up after OAuth return)
+  useEffect(() => {
+    if (returnedPlatform) {
+      setSearchParams({}, { replace: true })
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['profile'],
@@ -365,7 +382,7 @@ export default function Settings() {
 
         {/* Social connections */}
         {profile?.client_id && (
-          <SocialConnectionsSection clientId={profile.client_id} />
+          <SocialConnectionsSection clientId={profile.client_id} returnedPlatform={returnedPlatform} />
         )}
 
         {/* Change password */}
