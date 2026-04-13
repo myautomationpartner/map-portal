@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useOutletContext } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { MessageSquare, Camera, Users2, ExternalLink, Smartphone, ArrowUpRight } from 'lucide-react'
+import { MessageSquare, Smartphone, ArrowUpRight, Combine, Zap, ShieldCheck } from 'lucide-react'
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
@@ -46,79 +46,6 @@ function openTidio(tidioUrl) {
   window.location.href = deepLink
 }
 
-function openInstagram(tidioUrl, igConnected) {
-  if (igConnected) {
-    openTidio(tidioUrl)
-  } else {
-    window.open('https://www.instagram.com/direct/inbox/', '_blank', 'noopener,noreferrer')
-  }
-}
-
-function openFacebook(tidioUrl, fbConnected) {
-  if (fbConnected) {
-    openTidio(tidioUrl)
-  } else {
-    window.open('https://www.messenger.com', '_blank', 'noopener,noreferrer')
-  }
-}
-
-// ── Channel Card ─────────────────────────────────────────────────────────────
-
-function ChannelCard({ icon: Icon, iconGradient, glowColor, title, description, badge, badgeColor, ctaLabel, onOpen, connected }) {
-  return (
-    <div
-      className={`
-        relative bg-zinc-900/70 border rounded-2xl p-6 overflow-hidden
-        transition-all duration-300 group
-        hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/40
-        ${connected
-          ? 'border-zinc-800/60 hover:border-zinc-700/60'
-          : 'border-zinc-800/40 hover:border-zinc-700/40'
-        }
-      `}
-    >
-      {/* Ambient glow */}
-      <div
-        className={`absolute -top-10 -right-10 w-40 h-40 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${glowColor}`}
-      />
-
-      {/* Icon + Badge row */}
-      <div className="flex items-start justify-between mb-5">
-        <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${iconGradient} flex items-center justify-center shadow-lg`}>
-          <Icon className="w-6 h-6 text-white" strokeWidth={1.75} />
-        </div>
-        {badge && (
-          <span className={`text-[10px] font-semibold uppercase tracking-widest px-2.5 py-1 rounded-full ${badgeColor}`}>
-            {badge}
-          </span>
-        )}
-      </div>
-
-      {/* Text */}
-      <h3 className="text-base font-bold text-white mb-1.5">{title}</h3>
-      <p className="text-sm text-zinc-500 leading-relaxed mb-6">{description}</p>
-
-      {/* CTA */}
-      <button
-        onClick={onOpen}
-        className={`
-          w-full flex items-center justify-center gap-2
-          font-semibold text-sm rounded-xl px-5 py-3
-          transition-all duration-200
-          active:scale-[0.98]
-          ${connected
-            ? 'bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 text-white shadow-md shadow-violet-500/20 hover:-translate-y-px'
-            : 'bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 border border-zinc-700/40'
-          }
-        `}
-      >
-        {isMobile() ? <Smartphone className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />}
-        {ctaLabel}
-      </button>
-    </div>
-  )
-}
-
 // ── Status Banner ─────────────────────────────────────────────────────────────
 
 function MobileAppBanner() {
@@ -137,7 +64,6 @@ function MobileAppBanner() {
         <p className="text-sm font-semibold text-white mb-0.5">Tidio Mobile App</p>
         <p className="text-xs text-zinc-500 leading-relaxed">
           For the best experience, reply to messages directly from the Tidio app.
-          Tap any channel button below to open it.
         </p>
       </div>
       <a
@@ -165,108 +91,85 @@ export default function Inbox() {
 
   const client = profile?.clients
   const tidioUrl = client?.tidio_project_url || 'https://www.tidio.com/panel/'
-
-  // We assume channels are connected once the client has a tidio_project_url.
-  // In a future phase this can be per-channel flags stored in the clients table.
   const tidioConnected = !!client?.tidio_project_url
-
-  const channels = [
-    {
-      id: 'website',
-      icon: MessageSquare,
-      iconGradient: 'from-violet-600 to-violet-400',
-      glowColor: 'bg-violet-500/20',
-      title: 'Website Messages',
-      description: 'View and reply to live chat messages from your website visitors in real time.',
-      badge: tidioConnected ? 'Live' : 'Setup needed',
-      badgeColor: tidioConnected
-        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-        : 'bg-amber-500/15 text-amber-400 border border-amber-500/20',
-      ctaLabel: 'Open Inbox',
-      onOpen: () => openTidio(tidioUrl),
-      connected: tidioConnected,
-    },
-    {
-      id: 'instagram',
-      icon: Camera,
-      iconGradient: 'from-pink-600 to-purple-500',
-      glowColor: 'bg-pink-500/20',
-      title: 'Instagram DMs',
-      description: 'Respond to Instagram direct messages alongside all your other channels in one place.',
-      badge: tidioConnected ? 'Connected' : 'Opens Instagram',
-      badgeColor: tidioConnected
-        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-        : 'bg-zinc-700/60 text-zinc-400 border border-zinc-700/40',
-      ctaLabel: tidioConnected ? 'Open Inbox' : 'Open Instagram',
-      onOpen: () => openInstagram(tidioUrl, tidioConnected),
-      connected: tidioConnected,
-    },
-    {
-      id: 'facebook',
-      icon: Users2,
-      iconGradient: 'from-blue-600 to-blue-400',
-      glowColor: 'bg-blue-500/20',
-      title: 'Facebook Messages',
-      description: 'Handle Facebook Page messages and Messenger conversations without leaving the portal.',
-      badge: tidioConnected ? 'Connected' : 'Opens Messenger',
-      badgeColor: tidioConnected
-        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-        : 'bg-zinc-700/60 text-zinc-400 border border-zinc-700/40',
-      ctaLabel: tidioConnected ? 'Open Inbox' : 'Open Messenger',
-      onOpen: () => openFacebook(tidioUrl, tidioConnected),
-      connected: tidioConnected,
-    },
-  ]
 
   return (
     <div className="p-6 md:p-8 max-w-4xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <p className="text-xs text-zinc-500 uppercase tracking-widest mb-1">Messaging</p>
-        <h1 className="text-2xl md:text-3xl font-bold text-white">Communications Hub</h1>
-        <p className="text-zinc-500 text-sm mt-1">
-          All your customer conversations — website chat, Instagram, and Facebook — in one place.
+        <p className="text-xs text-violet-400 uppercase tracking-widest mb-2 font-semibold">Messaging</p>
+        <h1 className="text-3xl md:text-4xl font-bold font-display text-white mb-3">Unified Inbox</h1>
+        <p className="text-zinc-400 text-sm md:text-base max-w-2xl leading-relaxed">
+          All your customer conversations from website chat, Instagram, and Facebook — seamlessly merged into one powerful stream.
         </p>
       </div>
 
       {/* Mobile app nudge */}
       <MobileAppBanner />
 
-      {/* Channel cards */}
+      {/* Main Unified Box */}
       {isLoading ? (
-        <div className="grid gap-4 md:grid-cols-3">
-          {[0, 1, 2].map(i => (
-            <div key={i} className="bg-zinc-900/70 border border-zinc-800/60 rounded-2xl p-6 animate-pulse">
-              <div className="w-12 h-12 rounded-2xl bg-zinc-800 mb-5" />
-              <div className="h-4 bg-zinc-800 rounded-lg mb-2 w-3/4" />
-              <div className="h-3 bg-zinc-800 rounded-lg mb-1 w-full" />
-              <div className="h-3 bg-zinc-800 rounded-lg mb-6 w-2/3" />
-              <div className="h-10 bg-zinc-800 rounded-xl" />
-            </div>
-          ))}
-        </div>
+        <div className="bg-zinc-900/70 border border-zinc-800/60 rounded-3xl p-8 animate-pulse h-80" />
       ) : (
-        <div className="grid gap-4 md:grid-cols-3">
-          {channels.map(channel => (
-            <ChannelCard key={channel.id} {...channel} />
-          ))}
-        </div>
-      )}
+        <div className="relative bg-zinc-900/70 border border-zinc-800/60 rounded-3xl p-1 overflow-hidden group">
+          {/* Ambient Glow */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] bg-violet-600/20 blur-[120px] pointer-events-none opacity-40 group-hover:opacity-70 transition-opacity duration-700" />
+          
+          <div className="relative bg-zinc-900/90 rounded-[22px] p-8 md:p-12 flex flex-col md:flex-row items-center gap-10">
+            {/* Visual Side */}
+            <div className="flex-1 flex justify-center w-full">
+              <div className="relative w-48 h-48 flex items-center justify-center">
+                <div className="absolute inset-0 bg-gradient-to-tr from-violet-600 to-fuchsia-600 rounded-full blur-2xl opacity-20 animate-pulse" />
+                <div className="relative w-32 h-32 bg-gradient-to-tr from-violet-600 to-violet-500 rounded-3xl flex items-center justify-center shadow-xl shadow-violet-900/50 -rotate-3 hover:rotate-0 transition-transform duration-500 border border-white/10">
+                  <MessageSquare className="w-16 h-16 text-white" strokeWidth={1.5} />
+                </div>
+                {/* Floating elements */}
+                <div className="absolute -top-4 -right-4 w-12 h-12 bg-zinc-800 rounded-2xl border border-zinc-700/50 flex items-center justify-center shadow-lg shadow-black/50 rotate-12">
+                   <Combine className="w-6 h-6 text-fuchsia-400" />
+                </div>
+                <div className="absolute -bottom-4 -left-4 w-12 h-12 bg-zinc-800 rounded-2xl border border-zinc-700/50 flex items-center justify-center shadow-lg shadow-black/50 -rotate-6">
+                   <Zap className="w-6 h-6 text-amber-400" />
+                </div>
+              </div>
+            </div>
 
-      {/* Info footer */}
-      <div className="mt-8 bg-zinc-900/50 border border-zinc-800/40 rounded-2xl px-6 py-5">
-        <div className="flex items-start gap-3">
-          <MessageSquare className="w-4 h-4 text-zinc-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-xs font-semibold text-zinc-400 mb-1">How this works</p>
-            <p className="text-xs text-zinc-600 leading-relaxed">
-              Your unified inbox is powered by Tidio. Website visitors, Instagram followers, and Facebook fans
-              all land in the same conversation stream. Your team can reply from the Tidio web panel on desktop
-              or the Tidio mobile app on the go.
-            </p>
+            {/* Content Side */}
+            <div className="flex-[1.5] flex flex-col items-center md:items-start text-center md:text-left w-full">
+              <div className="mb-8 w-full">
+                <h2 className="text-2xl font-bold text-white mb-4">All Channels, One View</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+                  {['Website Visitors', 'Facebook Messenger', 'Instagram Direct'].map((label, i) => (
+                    <div key={i} className="flex items-center gap-3 text-sm text-zinc-300 bg-zinc-800/40 border border-zinc-700/40 rounded-xl py-2 px-3">
+                      <div className="w-6 h-6 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 shrink-0">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      </div>
+                      <span className="truncate">{label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={() => openTidio(tidioUrl)}
+                className="group relative inline-flex items-center justify-center gap-3 px-8 py-4 bg-white text-zinc-950 font-bold text-sm md:text-base rounded-2xl hover:scale-105 active:scale-95 transition-all duration-300 overflow-hidden shadow-[0_0_40px_rgba(255,255,255,0.1)] hover:shadow-[0_0_40px_rgba(139,92,246,0.3)] w-full sm:w-auto"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-violet-100 to-fuchsia-100 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                <span className="relative flex items-center gap-2">
+                  Launch Inbox Workstation
+                  <ArrowUpRight className="w-5 h-5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                </span>
+              </button>
+              
+              {!tidioConnected && (
+                <p className="mt-4 text-xs text-amber-400 bg-amber-400/10 px-3 py-1.5 rounded-full border border-amber-400/20 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  Tidio Configuration Needed
+                </p>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

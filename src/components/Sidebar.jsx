@@ -42,18 +42,30 @@ export default function Sidebar({ session }) {
               }`
             }
           >
-            {({ isActive }) => (
-              <>
-                <Icon
-                  className={`w-4.5 h-4.5 transition-colors ${isActive ? 'text-violet-400' : 'text-zinc-500 group-hover:text-zinc-300'}`}
-                  strokeWidth={2}
-                />
-                {label}
-                {isActive && (
-                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-violet-400" />
-                )}
-              </>
-            )}
+            {({ isActive }) => {
+              const isInbox = to === '/inbox';
+              const unreadCount = 3; // Mocked new message count
+
+              return (
+                <>
+                  <div className="relative flex items-center justify-center">
+                    <Icon
+                      className={`w-4.5 h-4.5 transition-colors ${isActive ? 'text-violet-400' : 'text-zinc-500 group-hover:text-zinc-300'}`}
+                      strokeWidth={2}
+                    />
+                    {isInbox && (
+                      <span className="absolute -top-2 -right-2.5 flex items-center justify-center min-w-[16px] h-[16px] bg-rose-500 text-white text-[9px] font-bold px-1 rounded-full border border-zinc-900 shadow-sm shadow-rose-500/20 z-10">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </div>
+                  {label}
+                  {isActive && (
+                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-violet-400" />
+                  )}
+                </>
+              )
+            }}
           </NavLink>
         ))}
       </nav>

@@ -23,17 +23,27 @@ export default function BottomNav() {
               }`
             }
           >
-            {({ isActive }) => (
-              <>
-                <div className={`relative p-1.5 rounded-xl transition-all duration-150 ${isActive ? 'bg-violet-600/20' : ''}`}>
-                  <Icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
-                  {isActive && (
-                    <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-violet-400" />
-                  )}
-                </div>
-                <span className="text-[10px] font-medium">{label}</span>
-              </>
-            )}
+            {({ isActive }) => {
+              const isInbox = to === '/inbox';
+              const unreadCount = 3; // Mocked new message count
+
+              return (
+                <>
+                  <div className={`relative p-1.5 rounded-xl transition-all duration-150 ${isActive ? 'bg-violet-600/20' : ''}`}>
+                    <Icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
+                    {isInbox && (
+                      <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-[16px] bg-rose-500 text-white text-[9px] font-bold px-1 rounded-full border border-zinc-900 shadow-sm shadow-rose-500/20 z-10">
+                        {unreadCount}
+                      </span>
+                    )}
+                    {isActive && (
+                      <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-violet-400" />
+                    )}
+                  </div>
+                  <span className="text-[10px] font-medium">{label}</span>
+                </>
+              )
+            }}
           </NavLink>
         ))}
       </div>
