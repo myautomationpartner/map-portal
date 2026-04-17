@@ -8,6 +8,7 @@ import Settings from './pages/Settings'
 import Inbox from './pages/Inbox'
 import CreatePost from './pages/CreatePost'
 import PostHistory from './pages/PostHistory'
+import PlatformStats from './pages/PlatformStats'
 import Sidebar from './components/Sidebar'
 import BottomNav from './components/BottomNav'
 import { Loader2 } from 'lucide-react'
@@ -38,8 +39,8 @@ function AuthProvider({ children }) {
 
   if (session === undefined) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-violet-500 animate-spin" />
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-brand-gold animate-spin" />
       </div>
     )
   }
@@ -51,7 +52,7 @@ function ProtectedLayout({ session }) {
   if (!session) return <Navigate to="/login" replace />
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] flex">
+    <div className="min-h-screen bg-black flex">
       {/* Desktop sidebar */}
       <Sidebar session={session} />
 
@@ -84,6 +85,7 @@ export default function App() {
                 <Route path="/inbox" element={<Inbox />} />
                 <Route path="/post" element={<CreatePost />} />
                 <Route path="/post/history" element={<PostHistory />} />
+                <Route path="/stats/:platform" element={<PlatformStats />} />
                 <Route path="/settings" element={<Settings />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />

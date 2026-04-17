@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+@theme {
+  --color-brand-gold: #c2a053;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -8,7 +12,7 @@ body {
   margin: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #0a0a0f;
+  background: #000;
 }
 
 #root {

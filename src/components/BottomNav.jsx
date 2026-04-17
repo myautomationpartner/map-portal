@@ -2,15 +2,15 @@ import { NavLink } from 'react-router-dom'
 import { LayoutDashboard, Send, MessageSquare, Settings } from 'lucide-react'
 
 const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/post', icon: Send, label: 'Post' },
-  { to: '/inbox', icon: MessageSquare, label: 'Inbox' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
+  { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/post',     icon: Send,            label: 'Post'       },
+  { to: '/inbox',    icon: MessageSquare,   label: 'Inbox'      },
+  { to: '/settings', icon: Settings,        label: 'Settings'   },
 ]
 
 export default function BottomNav() {
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900/90 border-t border-zinc-800/60 backdrop-blur-xl">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-black border-t border-zinc-900 shadow-2xl">
       <div className="flex items-center">
         {navItems.map(({ to, icon: Icon, label }) => (
           <NavLink
@@ -18,37 +18,32 @@ export default function BottomNav() {
             to={to}
             end={to === '/'}
             className={({ isActive }) =>
-              `flex-1 flex flex-col items-center gap-1 py-3 transition-all duration-150 ${
-                isActive ? 'text-violet-400' : 'text-zinc-500'
+              `flex-1 flex flex-col items-center gap-1 py-3 transition-all duration-200 ${
+                isActive ? 'text-brand-gold' : 'text-zinc-600'
               }`
             }
           >
-            {({ isActive }) => {
-              const isInbox = to === '/inbox';
-              const unreadCount = 3; // Mocked new message count
-
-              return (
-                <>
-                  <div className={`relative p-1.5 rounded-xl transition-all duration-150 ${isActive ? 'bg-violet-600/20' : ''}`}>
-                    <Icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
-                    {isInbox && (
-                      <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-[16px] bg-rose-500 text-white text-[9px] font-bold px-1 rounded-full border border-zinc-900 shadow-sm shadow-rose-500/20 z-10">
-                        {unreadCount}
-                      </span>
-                    )}
-                    {isActive && (
-                      <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-violet-400" />
-                    )}
-                  </div>
-                  <span className="text-[10px] font-medium">{label}</span>
-                </>
-              )
-            }}
+            {({ isActive }) => (
+              <>
+                <div className={`relative p-2 rounded-2xl transition-all duration-200 ${isActive ? 'bg-brand-gold/10' : ''}`}>
+                  <Icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
+                  {to === '/inbox' && (
+                    <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-[17px] h-[17px] bg-rose-600 text-white text-[9px] font-black px-1 rounded-full border-2 border-black z-10 shadow-lg">
+                      3
+                    </span>
+                  )}
+                  {isActive && (
+                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-0.5 rounded-full bg-brand-gold shadow-[0_0_8px_rgba(194,160,83,0.5)]" />
+                  )}
+                </div>
+                <span className="text-[9px] font-black uppercase tracking-widest">
+                  {label === 'Post' ? 'Publisher' : label}
+                </span>
+              </>
+            )}
           </NavLink>
         ))}
       </div>
-      {/* iOS safe area */}
-      <div className="h-safe-bottom" />
     </nav>
   )
 }

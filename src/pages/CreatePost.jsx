@@ -2,11 +2,12 @@ import { useState, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useOutletContext, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { openDropboxChooser } from '../lib/dropboxApi'
 import {
   Send, X, Clock, Calendar, CheckCircle2,
   AlertCircle, Loader2, Globe, Music2, Eye,
   UploadCloud, History, ChevronRight, Share2, Camera,
-  ArrowUpRight, ImagePlus
+  ArrowUpRight, Paperclip,
 } from 'lucide-react'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
@@ -56,6 +57,15 @@ async function fetchProfile() {
   return data
 }
 
+/** Human-readable file size (e.g. "2.4 MB") */
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
+}
+
 export default function CreatePost() {
   useOutletContext()
   const fileInputRef = useRef(null)
@@ -63,6 +73,11 @@ export default function CreatePost() {
   const [content, setContent] = useState('')
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
+
+  // Dropbox link-based attachments — never uploaded to the server
+  const [dropboxAttachments, setDropboxAttachments] = useState([])
+  const [dropboxLoading, setDropboxLoading] = useState(false)
+
   const [selectedPlatforms, setSelectedPlatforms] = useState({
     facebook: true,
     instagram: true,
@@ -89,18 +104,20 @@ export default function CreatePost() {
   const charWarning = content.length > charLimit * 0.9
   const charPercent = Math.min((content.length / charLimit) * 100, 100)
 
+  // ─── Local file handlers ─────────────────────────────────────────────────
+
   function handleFileChange(e) {
     const file = e.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('image/')) {
-      setErrorMsg('Only image files are supported.'); alert('Only image files are supported.');
+      setErrorMsg('Only image files are supported.'); alert('Only image files are supported.')
       return
     }
     setImageFile(file)
     const reader = new FileReader()
     reader.onload = ev => setImagePreview(ev.target.result)
     reader.readAsDataURL(file)
-    setErrorMsg('');
+    setErrorMsg('')
   }
 
   function removeImage() {
@@ -109,9 +126,44 @@ export default function CreatePost() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
+  // ─── Dropbox Chooser handlers ─────────────────────────────────────────────
+
+  /**
+   * Opens the Dropbox Chooser. Selected files are stored as link-based
+   * attachments in state — nothing is uploaded to any server.
+   */
+  async function handleDropboxAttach() {
+    setDropboxLoading(true)
+    setErrorMsg('')
+    try {
+      const files = await openDropboxChooser({ multiselect: true, linkType: 'preview' })
+      if (files.length > 0) {
+        setDropboxAttachments(prev => {
+          // Deduplicate by link URL
+          const existingLinks = new Set(prev.map(f => f.link))
+          const incoming = files.filter(f => !existingLinks.has(f.link))
+          return [...prev, ...incoming]
+        })
+      }
+    } catch (err) {
+      console.error('[Dropbox]', err)
+      setErrorMsg(err.message || 'Could not open Dropbox. Please try again.')
+    } finally {
+      setDropboxLoading(false)
+    }
+  }
+
+  function removeDropboxAttachment(link) {
+    setDropboxAttachments(prev => prev.filter(f => f.link !== link))
+  }
+
+  // ─── Platform toggle ──────────────────────────────────────────────────────
+
   function togglePlatform(id) {
     setSelectedPlatforms(prev => ({ ...prev, [id]: !prev[id] }))
   }
+
+  // ─── Upload local file to R2 ──────────────────────────────────────────────
 
   async function uploadToR2(file) {
     const ext = file.name.split('.').pop()
@@ -129,49 +181,57 @@ export default function CreatePost() {
     return publicUrl
   }
 
+  // ─── Publish ──────────────────────────────────────────────────────────────
+
   async function handleSubmit() {
-    setErrorMsg('');
+    setErrorMsg('')
 
     if (!content.trim()) {
-      setErrorMsg('Please write some content for your post.'); alert('Please write some content for your post.');
+      setErrorMsg('Please write some content for your post.'); alert('Please write some content for your post.')
       return
     }
     if (activePlatforms.length === 0) {
-      setErrorMsg('Please select at least one platform.'); alert('Please select at least one platform.');
+      setErrorMsg('Please select at least one platform.'); alert('Please select at least one platform.')
       return
     }
     if (mode === 'schedule' && !scheduledFor) {
-      setErrorMsg('Please select a date and time to schedule.'); alert('Please select a date and time to schedule.');
+      setErrorMsg('Please select a date and time to schedule.'); alert('Please select a date and time to schedule.')
       return
     }
     if (charOver) {
-      setErrorMsg(`Your post exceeds the ${charLimit}-character limit.`); alert(`Your post exceeds the ${charLimit}-character limit.`);
+      setErrorMsg(`Your post exceeds the ${charLimit}-character limit.`); alert(`Your post exceeds the ${charLimit}-character limit.`)
       return
     }
     if (!clientId) {
-      setErrorMsg('Unable to identify your client profile. Please refresh.'); alert('Unable to identify your client profile. Please refresh.');
+      setErrorMsg('Unable to identify your client profile. Please refresh.'); alert('Unable to identify your client profile. Please refresh.')
       return
     }
 
     let savedPostId = null
 
     try {
-      let mediaUrl = null
-
+      // 1. Upload local image to R2 (if provided)
+      let r2MediaUrl = null
       if (imageFile) {
         setSubmitState('uploading')
-        mediaUrl = await uploadToR2(imageFile)
+        r2MediaUrl = await uploadToR2(imageFile)
       }
 
       setSubmitState('posting')
 
-      // Save draft to Supabase
+      // 2. Determine the primary media_url for Supabase:
+      //    R2 upload takes priority; fall back to first Dropbox link if available.
+      const effectiveMediaUrl =
+        r2MediaUrl ||
+        (dropboxAttachments.length > 0 ? dropboxAttachments[0].link : null)
+
+      // 3. Save draft to Supabase
       const { data: post, error: insertErr } = await supabase
         .from('posts')
         .insert({
           client_id: clientId,
           content: content.trim(),
-          media_url: mediaUrl,
+          media_url: effectiveMediaUrl,
           platforms: activePlatforms,
           status: 'draft',
           scheduled_for: mode === 'schedule' ? scheduledFor : null,
@@ -182,7 +242,8 @@ export default function CreatePost() {
       if (insertErr) throw insertErr
       savedPostId = post.id
 
-      // Fire n8n webhook
+      // 4. Fire n8n webhook — pass Dropbox links as a separate array so
+      //    the automation can handle each attachment however it needs to.
       const n8nRes = await fetch(`${N8N_BASE}/webhook/social-publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -190,20 +251,25 @@ export default function CreatePost() {
           postId: post.id,
           clientId,
           content: content.trim(),
-          mediaUrl,
+          mediaUrl: r2MediaUrl,  // R2 URL only (null if no local upload)
+          dropboxLinks: dropboxAttachments.map(({ name, link, size }) => ({
+            name,
+            link,
+            size,
+          })),
           platforms: activePlatforms,
           scheduledFor: mode === 'schedule' ? scheduledFor : null,
         }),
       })
 
       const n8nData = await n8nRes.json().catch(() => ({}))
-      // Use n8nData.success (set by n8n) to determine real outcome — n8n always returns HTTP 200
+      // Use n8nData.success to determine real outcome — n8n always returns HTTP 200
       const n8nSuccess = n8nRes.ok && n8nData?.success !== false
       const newStatus = n8nSuccess
         ? mode === 'schedule' ? 'scheduled' : 'published'
         : 'failed'
 
-      // Update status in Supabase (zernioPostId is our tracking ID)
+      // 5. Update status in Supabase
       await supabase
         .from('posts')
         .update({
@@ -225,6 +291,7 @@ export default function CreatePost() {
         setContent('')
         setImageFile(null)
         setImagePreview(null)
+        setDropboxAttachments([])
         setMode('now')
         setScheduledFor('')
         setSubmitState('idle')
@@ -236,7 +303,8 @@ export default function CreatePost() {
       if (savedPostId) {
         supabase.from('posts').update({ status: 'failed' }).eq('id', savedPostId).then(() => {})
       }
-      setErrorMsg(err.message || 'Something went wrong. Please try again.'); alert(err.message || 'Something went wrong. Please try again.');
+      setErrorMsg(err.message || 'Something went wrong. Please try again.')
+      alert(err.message || 'Something went wrong. Please try again.')
       setSubmitState('error')
       setTimeout(() => setSubmitState('idle'), 4000)
     }
@@ -244,9 +312,12 @@ export default function CreatePost() {
 
   const isSubmitting = submitState === 'uploading' || submitState === 'posting'
 
+  // ─── Render ───────────────────────────────────────────────────────────────
+
   return (
     <div className="p-6 md:p-8 max-w-6xl mx-auto">
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-10">
         <div>
           <p className="text-[10px] text-brand-gold uppercase font-black tracking-[.3em] mb-2">Publishing Station</p>
@@ -259,23 +330,28 @@ export default function CreatePost() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <a
-            href="https://www.dropbox.com/home"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 px-6 py-4 rounded-2xl group transition-all hover:border-brand-gold/30"
+          {/* ── Dropbox Chooser button ── */}
+          <button
+            onClick={handleDropboxAttach}
+            disabled={isSubmitting || dropboxLoading}
+            className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 px-6 py-4 rounded-2xl group transition-all hover:border-[#0061FE]/30 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <div className="w-8 h-8 rounded-lg bg-brand-gold/10 border border-brand-gold/20 flex items-center justify-center">
-               <ImagePlus className="w-4 h-4 text-brand-gold" />
+            <div className="w-8 h-8 rounded-lg bg-[#0061FE]/10 border border-[#0061FE]/20 flex items-center justify-center">
+              {dropboxLoading
+                ? <Loader2 className="w-4 h-4 text-[#0061FE] animate-spin" />
+                : <Paperclip className="w-4 h-4 text-[#0061FE]" />
+              }
             </div>
             <div>
               <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest leading-none mb-1">Creative Assets</p>
               <p className="text-xs font-black text-white uppercase tracking-tighter flex items-center gap-1.5">
-                Open Asset Hub
-                <ArrowUpRight className="w-3 h-3 group-hover:text-brand-gold" />
+                {dropboxLoading ? 'Opening…' : 'Attach from Dropbox'}
+                {dropboxAttachments.length > 0 && !dropboxLoading && (
+                  <span className="text-[#0061FE]">({dropboxAttachments.length})</span>
+                )}
               </p>
             </div>
-          </a>
+          </button>
 
           <Link
             to="/post/history"
@@ -296,6 +372,7 @@ export default function CreatePost() {
       </div>
 
       <div className="grid lg:grid-cols-5 gap-6">
+
         {/* ── Left column: form ── */}
         <div className="lg:col-span-3 space-y-5">
 
@@ -325,7 +402,7 @@ export default function CreatePost() {
             </label>
             <textarea
               value={content}
-              onChange={e => { setContent(e.target.value); setErrorMsg(''); }}
+              onChange={e => { setContent(e.target.value); setErrorMsg('') }}
               placeholder="What would you like to share with your audience?"
               rows={7}
               disabled={isSubmitting}
@@ -353,11 +430,13 @@ export default function CreatePost() {
             )}
           </div>
 
-          {/* Media upload */}
+          {/* ── Media card ── */}
           <div className="bg-zinc-900/70 border border-zinc-800/60 rounded-2xl p-5">
             <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-3">
               Media
             </label>
+
+            {/* Local image: preview or upload drop-zone */}
             {imagePreview ? (
               <div className="relative rounded-xl overflow-hidden">
                 <img src={imagePreview} alt="Upload preview" className="w-full max-h-64 object-cover" />
@@ -373,20 +452,136 @@ export default function CreatePost() {
                 </div>
               </div>
             ) : (
+              <>
+                {/* Upload drop-zone */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isSubmitting}
+                  className="w-full flex flex-col items-center gap-4 border-2 border-dashed border-zinc-800 hover:border-brand-gold/40 hover:bg-brand-gold/5 rounded-3xl py-12 transition-all duration-400 group"
+                >
+                  <div className="w-16 h-16 rounded-2xl bg-zinc-900 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <UploadCloud className="w-6 h-6 text-zinc-600 group-hover:text-brand-gold" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs font-black text-zinc-400 uppercase tracking-widest group-hover:text-white">Attach Creative Media</p>
+                    <p className="text-[10px] text-zinc-600 mt-2 font-bold italic">JPG, PNG, MP4 up to 50MB</p>
+                  </div>
+                </button>
+
+                {/* Divider */}
+                <div className="flex items-center gap-3 my-4">
+                  <div className="flex-1 h-px bg-zinc-800" />
+                  <span className="text-[10px] text-zinc-600 font-bold uppercase tracking-widest">or</span>
+                  <div className="flex-1 h-px bg-zinc-800" />
+                </div>
+
+                {/* Attach from Dropbox — primary CTA when no local file */}
+                <button
+                  onClick={handleDropboxAttach}
+                  disabled={isSubmitting || dropboxLoading}
+                  className="w-full flex items-center justify-center gap-2.5 border border-zinc-800 hover:border-[#0061FE]/40 hover:bg-[#0061FE]/5 rounded-2xl py-4 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {dropboxLoading
+                    ? <Loader2 className="w-4 h-4 text-[#0061FE] animate-spin" />
+                    : <Paperclip className="w-4 h-4 text-zinc-500 group-hover:text-[#0061FE] transition-colors" />
+                  }
+                  <span className="text-xs font-black text-zinc-500 uppercase tracking-widest group-hover:text-white transition-colors">
+                    {dropboxLoading ? 'Opening Dropbox…' : 'Attach from Dropbox'}
+                  </span>
+                </button>
+              </>
+            )}
+
+            {/* When an image is already previewed, show a compact Dropbox button
+                so the user can still attach Dropbox links alongside it */}
+            {imagePreview && dropboxAttachments.length === 0 && (
               <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isSubmitting}
-                className="w-full flex flex-col items-center gap-4 border-2 border-dashed border-zinc-800 hover:border-brand-gold/40 hover:bg-brand-gold/5 rounded-3xl py-12 transition-all duration-400 group"
+                onClick={handleDropboxAttach}
+                disabled={isSubmitting || dropboxLoading}
+                className="mt-3 w-full flex items-center justify-center gap-2 border border-dashed border-zinc-800 hover:border-[#0061FE]/40 hover:bg-[#0061FE]/5 rounded-xl py-3 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <div className="w-16 h-16 rounded-2xl bg-zinc-900 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <UploadCloud className="w-6 h-6 text-zinc-600 group-hover:text-brand-gold" />
-                </div>
-                <div className="text-center">
-                  <p className="text-xs font-black text-zinc-400 uppercase tracking-widest group-hover:text-white">Attach Creative Media</p>
-                  <p className="text-[10px] text-zinc-600 mt-2 font-bold italic">JPG, PNG, MP4 up to 50MB</p>
-                </div>
+                {dropboxLoading
+                  ? <Loader2 className="w-3.5 h-3.5 text-[#0061FE] animate-spin" />
+                  : <Paperclip className="w-3.5 h-3.5 text-zinc-600 group-hover:text-[#0061FE] transition-colors" />
+                }
+                <span className="text-[11px] font-black text-zinc-600 uppercase tracking-widest group-hover:text-zinc-300 transition-colors">
+                  {dropboxLoading ? 'Opening Dropbox…' : 'Also Attach from Dropbox'}
+                </span>
               </button>
             )}
+
+            {/* ── Dropbox attachments list ── */}
+            {dropboxAttachments.length > 0 && (
+              <div className={imagePreview ? 'mt-4' : 'mt-3'}>
+                <div className="flex items-center justify-between mb-2.5">
+                  <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                    Dropbox Links · {dropboxAttachments.length}
+                  </p>
+                  <button
+                    onClick={handleDropboxAttach}
+                    disabled={isSubmitting || dropboxLoading}
+                    className="flex items-center gap-1 text-[10px] text-[#0061FE] hover:text-blue-300 font-black uppercase tracking-widest transition-colors disabled:opacity-40"
+                  >
+                    {dropboxLoading
+                      ? <><Loader2 className="w-2.5 h-2.5 animate-spin" /> Opening…</>
+                      : <><Paperclip className="w-2.5 h-2.5" /> Add More</>
+                    }
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {dropboxAttachments.map(file => (
+                    <div
+                      key={file.link}
+                      className="flex items-center gap-3 bg-zinc-800/50 border border-zinc-700/40 rounded-xl px-3 py-2.5"
+                    >
+                      {/* Thumbnail for images, icon for everything else */}
+                      {file.thumbnail ? (
+                        <img
+                          src={file.thumbnail}
+                          alt={file.name}
+                          className="w-8 h-8 rounded-lg object-cover shrink-0 bg-zinc-700"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-lg bg-[#0061FE]/10 border border-[#0061FE]/20 flex items-center justify-center shrink-0">
+                          <Paperclip className="w-3.5 h-3.5 text-[#0061FE]" />
+                        </div>
+                      )}
+
+                      {/* Name + size */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-white truncate">{file.name}</p>
+                        {file.size > 0 && (
+                          <p className="text-[10px] text-zinc-500 mt-0.5">{formatFileSize(file.size)}</p>
+                        )}
+                      </div>
+
+                      {/* Open in Dropbox */}
+                      <a
+                        href={file.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-zinc-600 hover:text-zinc-300 transition-colors shrink-0 p-1"
+                        title="Open in Dropbox"
+                      >
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                      </a>
+
+                      {/* Remove */}
+                      <button
+                        onClick={() => removeDropboxAttachment(file.link)}
+                        disabled={isSubmitting}
+                        className="text-zinc-600 hover:text-red-400 transition-colors shrink-0 p-1"
+                        title="Remove attachment"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <input
               ref={fileInputRef}
               type="file"
@@ -445,9 +640,9 @@ export default function CreatePost() {
                   onClick={() => setMode(value)}
                   disabled={isSubmitting}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-medium transition-all duration-200 ${
-                      mode === value
-                        ? 'bg-brand-gold/10 border-brand-gold/20 text-brand-gold'
-                        : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600/60 hover:text-zinc-400'
+                    mode === value
+                      ? 'bg-brand-gold/10 border-brand-gold/20 text-brand-gold'
+                      : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600/60 hover:text-zinc-400'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
@@ -513,7 +708,11 @@ export default function CreatePost() {
               {/* Mock post header */}
               <div className="flex items-center gap-3 px-4 py-4 border-b border-zinc-800/60">
                 <div className="w-10 h-10 rounded-full bg-zinc-950 border border-zinc-900 flex items-center justify-center shrink-0 overflow-hidden">
-                  <img src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg" alt="Logo" className="w-full h-full object-cover" />
+                  <img
+                    src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg"
+                    alt="Logo"
+                    className="w-full h-full object-cover"
+                  />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-white leading-tight truncate">
@@ -545,9 +744,37 @@ export default function CreatePost() {
                 )}
               </div>
 
-              {/* Image preview */}
+              {/* Local image preview */}
               {imagePreview && (
                 <img src={imagePreview} alt="Post media" className="w-full object-cover max-h-52" />
+              )}
+
+              {/* Dropbox attachments preview */}
+              {dropboxAttachments.length > 0 && (
+                <div className="px-4 py-3 border-t border-zinc-800/60">
+                  <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">
+                    Dropbox · {dropboxAttachments.length} file{dropboxAttachments.length !== 1 ? 's' : ''}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {dropboxAttachments.slice(0, 3).map(file => (
+                      <div
+                        key={file.link}
+                        className="flex items-center gap-1.5 bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-2 py-1 max-w-[140px]"
+                      >
+                        {file.thumbnail
+                          ? <img src={file.thumbnail} alt="" className="w-4 h-4 rounded object-cover shrink-0" />
+                          : <Paperclip className="w-3 h-3 text-[#0061FE] shrink-0" />
+                        }
+                        <span className="text-[10px] text-zinc-300 truncate">{file.name}</span>
+                      </div>
+                    ))}
+                    {dropboxAttachments.length > 3 && (
+                      <div className="flex items-center px-2 py-1 bg-zinc-800/60 border border-zinc-700/40 rounded-lg">
+                        <span className="text-[10px] text-zinc-500">+{dropboxAttachments.length - 3} more</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
 
               {/* Footer */}
@@ -579,9 +806,8 @@ export default function CreatePost() {
             </div>
           </div>
         </div>
+
       </div>
     </div>
   )
 }
-
-
