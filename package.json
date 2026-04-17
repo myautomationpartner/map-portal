@@ -10,7 +10,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@rolldown/binding-linux-x64-gnu": "^1.0.0-rc.15",
     "@supabase/supabase-js": "^2.103.0",
     "@tanstack/react-query": "^5.97.0",
     "lucide-react": "^0.475.0",
@@ -24,7 +23,7 @@
     "@tailwindcss/vite": "^4.2.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^4.7.0",
+    "@vitejs/plugin-react": "^6.0.1",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",

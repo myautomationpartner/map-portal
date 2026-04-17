@@ -7,7 +7,4 @@ export default defineConfig({
     tailwindcss(),
     react(),
   ],
-  optimizeDeps: {
-    include: ['@reduxjs/toolkit', 'react-redux'],
-  },
 })
