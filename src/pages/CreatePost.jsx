@@ -128,10 +128,6 @@ export default function CreatePost() {
 
   // ─── Dropbox Chooser handlers ─────────────────────────────────────────────
 
-  /**
-   * Opens the Dropbox Chooser. Selected files are stored as link-based
-   * attachments in state — nothing is uploaded to any server.
-   */
   async function handleDropboxAttach() {
     setDropboxLoading(true)
     setErrorMsg('')
@@ -139,7 +135,6 @@ export default function CreatePost() {
       const files = await openDropboxChooser({ multiselect: true, linkType: 'preview' })
       if (files.length > 0) {
         setDropboxAttachments(prev => {
-          // Deduplicate by link URL
           const existingLinks = new Set(prev.map(f => f.link))
           const incoming = files.filter(f => !existingLinks.has(f.link))
           return [...prev, ...incoming]
@@ -210,7 +205,6 @@ export default function CreatePost() {
     let savedPostId = null
 
     try {
-      // 1. Upload local image to R2 (if provided)
       let r2MediaUrl = null
       if (imageFile) {
         setSubmitState('uploading')
@@ -219,13 +213,10 @@ export default function CreatePost() {
 
       setSubmitState('posting')
 
-      // 2. Determine the primary media_url for Supabase:
-      //    R2 upload takes priority; fall back to first Dropbox link if available.
       const effectiveMediaUrl =
         r2MediaUrl ||
         (dropboxAttachments.length > 0 ? dropboxAttachments[0].link : null)
 
-      // 3. Save draft to Supabase
       const { data: post, error: insertErr } = await supabase
         .from('posts')
         .insert({
@@ -242,8 +233,6 @@ export default function CreatePost() {
       if (insertErr) throw insertErr
       savedPostId = post.id
 
-      // 4. Fire n8n webhook — pass Dropbox links as a separate array so
-      //    the automation can handle each attachment however it needs to.
       const n8nRes = await fetch(`${N8N_BASE}/webhook/social-publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -251,25 +240,19 @@ export default function CreatePost() {
           postId: post.id,
           clientId,
           content: content.trim(),
-          mediaUrl: r2MediaUrl,  // R2 URL only (null if no local upload)
-          dropboxLinks: dropboxAttachments.map(({ name, link, size }) => ({
-            name,
-            link,
-            size,
-          })),
+          mediaUrl: r2MediaUrl,
+          dropboxLinks: dropboxAttachments.map(({ name, link, size }) => ({ name, link, size })),
           platforms: activePlatforms,
           scheduledFor: mode === 'schedule' ? scheduledFor : null,
         }),
       })
 
       const n8nData = await n8nRes.json().catch(() => ({}))
-      // Use n8nData.success to determine real outcome — n8n always returns HTTP 200
       const n8nSuccess = n8nRes.ok && n8nData?.success !== false
       const newStatus = n8nSuccess
         ? mode === 'schedule' ? 'scheduled' : 'published'
         : 'failed'
 
-      // 5. Update status in Supabase
       await supabase
         .from('posts')
         .update({
@@ -299,7 +282,6 @@ export default function CreatePost() {
       }, 3000)
     } catch (err) {
       console.error('[CreatePost]', err)
-      // Mark the post as failed so it doesn't stay stuck as "draft"
       if (savedPostId) {
         supabase.from('posts').update({ status: 'failed' }).eq('id', savedPostId).then(() => {})
       }
@@ -312,42 +294,46 @@ export default function CreatePost() {
 
   const isSubmitting = submitState === 'uploading' || submitState === 'posting'
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ── Shared input style ────────────────────────────────────────────────────
+  const cardStyle = { background: '#1e1910', border: '1px solid #3d3420' }
 
   return (
     <div className="p-6 md:p-8 max-w-6xl mx-auto">
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-10">
         <div>
-          <p className="text-[10px] text-brand-gold uppercase font-black tracking-[.3em] mb-2">Publishing Station</p>
-          <h1 className="text-3xl md:text-5xl font-black text-white uppercase italic tracking-tighter leading-none">
-            Social <span className="text-zinc-700">Publisher</span>
+          <p className="text-[10px] uppercase tracking-widest font-medium mb-2" style={{ color: '#8a7858' }}>
+            Social Media
+          </p>
+          <h1 className="font-display text-3xl md:text-4xl font-semibold leading-tight" style={{ color: '#f8f2e4' }}>
+            Social Publisher
           </h1>
-          <p className="text-zinc-500 text-sm mt-3 font-medium max-w-lg">
-            Draft, schedule, and distribute high-impact social content to your entire studio ecosystem from one terminal.
+          <p className="text-sm mt-2 max-w-lg" style={{ color: '#8a7858' }}>
+            Draft, schedule, and distribute content to your studio's social channels.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* ── Dropbox Chooser button ── */}
+          {/* Dropbox button */}
           <button
             onClick={handleDropboxAttach}
             disabled={isSubmitting || dropboxLoading}
-            className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 px-6 py-4 rounded-2xl group transition-all hover:border-[#0061FE]/30 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <div className="w-8 h-8 rounded-lg bg-[#0061FE]/10 border border-[#0061FE]/20 flex items-center justify-center">
+            className="flex items-center gap-3 px-5 py-3 rounded-2xl transition-all hover:-translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
+            style={cardStyle}>
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+              style={{ background: 'rgba(0,97,254,0.10)', border: '1px solid rgba(0,97,254,0.20)' }}>
               {dropboxLoading
-                ? <Loader2 className="w-4 h-4 text-[#0061FE] animate-spin" />
-                : <Paperclip className="w-4 h-4 text-[#0061FE]" />
+                ? <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+                : <Paperclip className="w-3.5 h-3.5 text-blue-400" />
               }
             </div>
             <div>
-              <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest leading-none mb-1">Creative Assets</p>
-              <p className="text-xs font-black text-white uppercase tracking-tighter flex items-center gap-1.5">
+              <p className="text-[9px] uppercase tracking-widest leading-none mb-1" style={{ color: '#4e4228' }}>Creative Assets</p>
+              <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: '#c8b898' }}>
                 {dropboxLoading ? 'Opening…' : 'Attach from Dropbox'}
                 {dropboxAttachments.length > 0 && !dropboxLoading && (
-                  <span className="text-[#0061FE]">({dropboxAttachments.length})</span>
+                  <span className="text-blue-400">({dropboxAttachments.length})</span>
                 )}
               </p>
             </div>
@@ -355,16 +341,17 @@ export default function CreatePost() {
 
           <Link
             to="/post/history"
-            className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 px-6 py-4 rounded-2xl group transition-all hover:border-brand-gold/30"
-          >
-            <div className="w-8 h-8 rounded-lg bg-zinc-950 border border-zinc-900 flex items-center justify-center">
-               <History className="w-4 h-4 text-zinc-500" />
+            className="flex items-center gap-3 px-5 py-3 rounded-2xl transition-all hover:-translate-y-px"
+            style={cardStyle}>
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+              style={{ background: '#252015', border: '1px solid #3d3420' }}>
+              <History className="w-3.5 h-3.5" style={{ color: '#8a7858' }} />
             </div>
             <div>
-              <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest leading-none mb-1">Archive</p>
-              <p className="text-xs font-black text-white uppercase tracking-tighter flex items-center gap-1.5">
+              <p className="text-[9px] uppercase tracking-widest leading-none mb-1" style={{ color: '#4e4228' }}>Archive</p>
+              <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: '#c8b898' }}>
                 Post History
-                <ChevronRight className="w-3 h-3 group-hover:text-brand-gold" />
+                <ChevronRight className="w-3 h-3" style={{ color: '#8a7858' }} />
               </p>
             </div>
           </Link>
@@ -373,31 +360,33 @@ export default function CreatePost() {
 
       <div className="grid lg:grid-cols-5 gap-6">
 
-        {/* ── Left column: form ── */}
-        <div className="lg:col-span-3 space-y-5">
+        {/* Left column: form */}
+        <div className="lg:col-span-3 space-y-4">
 
           {/* Status banners */}
           {submitState === 'success' && (
-            <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl px-5 py-4">
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div className="flex items-center gap-3 rounded-2xl px-5 py-4"
+              style={{ background: 'rgba(107,193,142,0.08)', border: '1px solid rgba(107,193,142,0.2)' }}>
+              <CheckCircle2 className="w-5 h-5 shrink-0" style={{ color: '#6bc18e' }} />
               <div>
-                <p className="text-sm font-semibold text-white">
+                <p className="text-sm font-semibold" style={{ color: '#f8f2e4' }}>
                   {mode === 'schedule' ? 'Post scheduled!' : 'Post published!'}
                 </p>
-                <p className="text-xs text-zinc-500 mt-0.5">Your post has been sent to all selected platforms.</p>
+                <p className="text-xs mt-0.5" style={{ color: '#8a7858' }}>Your post has been sent to all selected platforms.</p>
               </div>
             </div>
           )}
           {errorMsg && (
-            <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/20 rounded-2xl px-5 py-4">
-              <AlertCircle className="w-4.5 h-4.5 text-red-400 shrink-0 mt-0.5" />
-              <p className="text-sm text-red-300">{errorMsg}</p>
+            <div className="flex items-start gap-3 rounded-2xl px-5 py-4"
+              style={{ background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.2)' }}>
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: '#e8899a' }} />
+              <p className="text-sm" style={{ color: '#e8899a' }}>{errorMsg}</p>
             </div>
           )}
 
           {/* Content */}
-          <div className="bg-zinc-900/70 border border-zinc-800/60 rounded-2xl p-5">
-            <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-3">
+          <div className="rounded-2xl p-5" style={cardStyle}>
+            <label className="block text-xs font-medium uppercase tracking-wider mb-3" style={{ color: '#8a7858' }}>
               Content
             </label>
             <textarea
@@ -406,174 +395,156 @@ export default function CreatePost() {
               placeholder="What would you like to share with your audience?"
               rows={7}
               disabled={isSubmitting}
-              className="w-full bg-transparent text-white placeholder-zinc-600 text-sm leading-relaxed resize-none focus:outline-none"
+              className="w-full bg-transparent text-sm leading-relaxed resize-none focus:outline-none"
+              style={{ color: '#f8f2e4' }}
             />
-            <div className="flex items-center gap-3 mt-3 pt-3 border-t border-zinc-800/60">
-              <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
+            <div className="flex items-center gap-3 mt-3 pt-3" style={{ borderTop: '1px solid #3d3420' }}>
+              <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: '#252015' }}>
                 <div
-                  className={`h-full rounded-full transition-all duration-300 ${
-                    charOver ? 'bg-red-500' : charWarning ? 'bg-amber-500' : 'bg-brand-gold'
-                  }`}
-                  style={{ width: `${charPercent}%` }}
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{
+                    width: `${charPercent}%`,
+                    background: charOver ? '#c4556e' : charWarning ? '#d4a83a' : '#d4a83a',
+                  }}
                 />
               </div>
-              <span className={`text-xs tabular-nums font-medium shrink-0 ${
-                charOver ? 'text-red-400' : charWarning ? 'text-amber-400' : 'text-zinc-500'
-              }`}>
+              <span className="text-xs tabular-nums font-medium shrink-0"
+                style={{ color: charOver ? '#e8899a' : charWarning ? '#d4a83a' : '#4e4228' }}>
                 {content.length} / {charLimit}
               </span>
             </div>
             {selectedPlatforms.google && (
-              <p className="text-[10px] text-zinc-600 mt-1.5">
+              <p className="text-[10px] mt-1.5" style={{ color: '#4e4228' }}>
                 Google Business posts are limited to 1,500 characters.
               </p>
             )}
           </div>
 
-          {/* ── Media card ── */}
-          <div className="bg-zinc-900/70 border border-zinc-800/60 rounded-2xl p-5">
-            <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-3">
+          {/* Media card */}
+          <div className="rounded-2xl p-5" style={cardStyle}>
+            <label className="block text-xs font-medium uppercase tracking-wider mb-3" style={{ color: '#8a7858' }}>
               Media
             </label>
 
-            {/* Local image: preview or upload drop-zone */}
             {imagePreview ? (
               <div className="relative rounded-xl overflow-hidden">
                 <img src={imagePreview} alt="Upload preview" className="w-full max-h-64 object-cover" />
                 <button
                   onClick={removeImage}
                   disabled={isSubmitting}
-                  className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/80 transition-colors"
-                >
+                  className="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center text-white transition-colors"
+                  style={{ background: 'rgba(0,0,0,0.6)' }}>
                   <X className="w-4 h-4" />
                 </button>
-                <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm text-[10px] text-zinc-300 px-2 py-1 rounded-lg truncate max-w-[80%]">
+                <div className="absolute bottom-2 left-2 text-[10px] px-2 py-1 rounded-lg truncate max-w-[80%]"
+                  style={{ background: 'rgba(0,0,0,0.6)', color: '#c8b898' }}>
                   {imageFile?.name}
                 </div>
               </div>
             ) : (
               <>
-                {/* Upload drop-zone */}
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isSubmitting}
-                  className="w-full flex flex-col items-center gap-4 border-2 border-dashed border-zinc-800 hover:border-brand-gold/40 hover:bg-brand-gold/5 rounded-3xl py-12 transition-all duration-400 group"
-                >
-                  <div className="w-16 h-16 rounded-2xl bg-zinc-900 flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <UploadCloud className="w-6 h-6 text-zinc-600 group-hover:text-brand-gold" />
+                  className="w-full flex flex-col items-center gap-4 border-2 border-dashed rounded-3xl py-12 transition-all duration-200 group"
+                  style={{ borderColor: '#3d3420' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(212,168,58,0.35)'; e.currentTarget.style.background = 'rgba(212,168,58,0.04)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#3d3420'; e.currentTarget.style.background = 'transparent' }}>
+                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110"
+                    style={{ background: '#252015' }}>
+                    <UploadCloud className="w-6 h-6" style={{ color: '#8a7858' }} />
                   </div>
                   <div className="text-center">
-                    <p className="text-xs font-black text-zinc-400 uppercase tracking-widest group-hover:text-white">Attach Creative Media</p>
-                    <p className="text-[10px] text-zinc-600 mt-2 font-bold italic">JPG, PNG, MP4 up to 50MB</p>
+                    <p className="text-xs font-medium uppercase tracking-wider" style={{ color: '#8a7858' }}>
+                      Attach Creative Media
+                    </p>
+                    <p className="text-[10px] mt-1" style={{ color: '#4e4228' }}>JPG, PNG, MP4 up to 50MB</p>
                   </div>
                 </button>
 
-                {/* Divider */}
                 <div className="flex items-center gap-3 my-4">
-                  <div className="flex-1 h-px bg-zinc-800" />
-                  <span className="text-[10px] text-zinc-600 font-bold uppercase tracking-widest">or</span>
-                  <div className="flex-1 h-px bg-zinc-800" />
+                  <div className="flex-1 h-px" style={{ background: '#3d3420' }} />
+                  <span className="text-[10px] uppercase tracking-widest" style={{ color: '#4e4228' }}>or</span>
+                  <div className="flex-1 h-px" style={{ background: '#3d3420' }} />
                 </div>
 
-                {/* Attach from Dropbox — primary CTA when no local file */}
                 <button
                   onClick={handleDropboxAttach}
                   disabled={isSubmitting || dropboxLoading}
-                  className="w-full flex items-center justify-center gap-2.5 border border-zinc-800 hover:border-[#0061FE]/40 hover:bg-[#0061FE]/5 rounded-2xl py-4 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
-                >
+                  className="w-full flex items-center justify-center gap-2.5 rounded-2xl py-4 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ border: '1px solid #3d3420' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(0,97,254,0.35)'; e.currentTarget.style.background = 'rgba(0,97,254,0.04)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#3d3420'; e.currentTarget.style.background = 'transparent' }}>
                   {dropboxLoading
-                    ? <Loader2 className="w-4 h-4 text-[#0061FE] animate-spin" />
-                    : <Paperclip className="w-4 h-4 text-zinc-500 group-hover:text-[#0061FE] transition-colors" />
+                    ? <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                    : <Paperclip className="w-4 h-4" style={{ color: '#8a7858' }} />
                   }
-                  <span className="text-xs font-black text-zinc-500 uppercase tracking-widest group-hover:text-white transition-colors">
+                  <span className="text-xs font-medium uppercase tracking-wider" style={{ color: '#8a7858' }}>
                     {dropboxLoading ? 'Opening Dropbox…' : 'Attach from Dropbox'}
                   </span>
                 </button>
               </>
             )}
 
-            {/* When an image is already previewed, show a compact Dropbox button
-                so the user can still attach Dropbox links alongside it */}
             {imagePreview && dropboxAttachments.length === 0 && (
               <button
                 onClick={handleDropboxAttach}
                 disabled={isSubmitting || dropboxLoading}
-                className="mt-3 w-full flex items-center justify-center gap-2 border border-dashed border-zinc-800 hover:border-[#0061FE]/40 hover:bg-[#0061FE]/5 rounded-xl py-3 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+                className="mt-3 w-full flex items-center justify-center gap-2 rounded-xl py-3 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ border: '1px dashed #3d3420' }}>
                 {dropboxLoading
-                  ? <Loader2 className="w-3.5 h-3.5 text-[#0061FE] animate-spin" />
-                  : <Paperclip className="w-3.5 h-3.5 text-zinc-600 group-hover:text-[#0061FE] transition-colors" />
+                  ? <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+                  : <Paperclip className="w-3.5 h-3.5" style={{ color: '#4e4228' }} />
                 }
-                <span className="text-[11px] font-black text-zinc-600 uppercase tracking-widest group-hover:text-zinc-300 transition-colors">
+                <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color: '#4e4228' }}>
                   {dropboxLoading ? 'Opening Dropbox…' : 'Also Attach from Dropbox'}
                 </span>
               </button>
             )}
 
-            {/* ── Dropbox attachments list ── */}
+            {/* Dropbox attachments list */}
             {dropboxAttachments.length > 0 && (
               <div className={imagePreview ? 'mt-4' : 'mt-3'}>
                 <div className="flex items-center justify-between mb-2.5">
-                  <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                  <p className="text-[10px] uppercase tracking-widest font-medium" style={{ color: '#4e4228' }}>
                     Dropbox Links · {dropboxAttachments.length}
                   </p>
                   <button
                     onClick={handleDropboxAttach}
                     disabled={isSubmitting || dropboxLoading}
-                    className="flex items-center gap-1 text-[10px] text-[#0061FE] hover:text-blue-300 font-black uppercase tracking-widest transition-colors disabled:opacity-40"
-                  >
+                    className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-widest transition-colors disabled:opacity-40 text-blue-400 hover:text-blue-300">
                     {dropboxLoading
                       ? <><Loader2 className="w-2.5 h-2.5 animate-spin" /> Opening…</>
                       : <><Paperclip className="w-2.5 h-2.5" /> Add More</>
                     }
                   </button>
                 </div>
-
                 <div className="space-y-2">
                   {dropboxAttachments.map(file => (
-                    <div
-                      key={file.link}
-                      className="flex items-center gap-3 bg-zinc-800/50 border border-zinc-700/40 rounded-xl px-3 py-2.5"
-                    >
-                      {/* Thumbnail for images, icon for everything else */}
+                    <div key={file.link} className="flex items-center gap-3 rounded-xl px-3 py-2.5"
+                      style={{ background: '#252015', border: '1px solid #3d3420' }}>
                       {file.thumbnail ? (
-                        <img
-                          src={file.thumbnail}
-                          alt={file.name}
-                          className="w-8 h-8 rounded-lg object-cover shrink-0 bg-zinc-700"
-                        />
+                        <img src={file.thumbnail} alt={file.name} className="w-8 h-8 rounded-lg object-cover shrink-0" style={{ background: '#3d3420' }} />
                       ) : (
-                        <div className="w-8 h-8 rounded-lg bg-[#0061FE]/10 border border-[#0061FE]/20 flex items-center justify-center shrink-0">
-                          <Paperclip className="w-3.5 h-3.5 text-[#0061FE]" />
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                          style={{ background: 'rgba(0,97,254,0.10)', border: '1px solid rgba(0,97,254,0.20)' }}>
+                          <Paperclip className="w-3.5 h-3.5 text-blue-400" />
                         </div>
                       )}
-
-                      {/* Name + size */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-white truncate">{file.name}</p>
+                        <p className="text-xs font-medium truncate" style={{ color: '#f8f2e4' }}>{file.name}</p>
                         {file.size > 0 && (
-                          <p className="text-[10px] text-zinc-500 mt-0.5">{formatFileSize(file.size)}</p>
+                          <p className="text-[10px] mt-0.5" style={{ color: '#4e4228' }}>{formatFileSize(file.size)}</p>
                         )}
                       </div>
-
-                      {/* Open in Dropbox */}
-                      <a
-                        href={file.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-zinc-600 hover:text-zinc-300 transition-colors shrink-0 p-1"
-                        title="Open in Dropbox"
-                      >
+                      <a href={file.link} target="_blank" rel="noopener noreferrer"
+                        className="shrink-0 p-1 transition-colors hover:text-brand-gold"
+                        style={{ color: '#4e4228' }} title="Open in Dropbox">
                         <ArrowUpRight className="w-3.5 h-3.5" />
                       </a>
-
-                      {/* Remove */}
-                      <button
-                        onClick={() => removeDropboxAttachment(file.link)}
-                        disabled={isSubmitting}
-                        className="text-zinc-600 hover:text-red-400 transition-colors shrink-0 p-1"
-                        title="Remove attachment"
-                      >
+                      <button onClick={() => removeDropboxAttachment(file.link)} disabled={isSubmitting}
+                        className="shrink-0 p-1 transition-colors hover:text-rose-400"
+                        style={{ color: '#4e4228' }} title="Remove attachment">
                         <X className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -592,8 +563,8 @@ export default function CreatePost() {
           </div>
 
           {/* Platform toggles */}
-          <div className="bg-zinc-900/70 border border-zinc-800/60 rounded-2xl p-5">
-            <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-3">
+          <div className="rounded-2xl p-5" style={cardStyle}>
+            <label className="block text-xs font-medium uppercase tracking-wider mb-3" style={{ color: '#8a7858' }}>
               Publish to
             </label>
             <div className="grid grid-cols-2 gap-3">
@@ -605,19 +576,16 @@ export default function CreatePost() {
                     onClick={() => togglePlatform(id)}
                     disabled={isSubmitting}
                     className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all duration-200 ${
-                      active
-                        ? `${bg} ${border} ${text}`
-                        : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600/60 hover:text-zinc-400'
+                      active ? `${bg} ${border} ${text}` : 'text-[#8a7858]'
                     }`}
-                  >
+                    style={active ? {} : { background: '#252015', border: '1px solid #3d3420' }}>
                     <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center shrink-0 transition-opacity ${active ? 'opacity-100' : 'opacity-30'}`}>
                       <Icon className="w-3.5 h-3.5 text-white" strokeWidth={2} />
                     </div>
                     <span className="text-sm font-medium flex-1">{label}</span>
-                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-                      active ? 'border-current bg-current' : 'border-zinc-600'
-                    }`}>
-                      {active && <div className="w-1.5 h-1.5 rounded-full bg-zinc-900" />}
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${active ? 'border-current bg-current' : ''}`}
+                      style={active ? {} : { borderColor: '#3d3420' }}>
+                      {active && <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#0d0b08' }} />}
                     </div>
                   </button>
                 )
@@ -626,8 +594,8 @@ export default function CreatePost() {
           </div>
 
           {/* When to post */}
-          <div className="bg-zinc-900/70 border border-zinc-800/60 rounded-2xl p-5">
-            <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-3">
+          <div className="rounded-2xl p-5" style={cardStyle}>
+            <label className="block text-xs font-medium uppercase tracking-wider mb-3" style={{ color: '#8a7858' }}>
               When to post
             </label>
             <div className="flex gap-3 mb-4">
@@ -639,12 +607,11 @@ export default function CreatePost() {
                   key={value}
                   onClick={() => setMode(value)}
                   disabled={isSubmitting}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-medium transition-all duration-200 ${
-                    mode === value
-                      ? 'bg-brand-gold/10 border-brand-gold/20 text-brand-gold'
-                      : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600/60 hover:text-zinc-400'
-                  }`}
-                >
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-medium transition-all duration-200"
+                  style={mode === value
+                    ? { background: 'rgba(212,168,58,0.10)', border: '1px solid rgba(212,168,58,0.22)', color: '#d4a83a' }
+                    : { background: '#252015', border: '1px solid #3d3420', color: '#8a7858' }
+                  }>
                   <Icon className="w-4 h-4" />
                   {label}
                 </button>
@@ -657,7 +624,10 @@ export default function CreatePost() {
                 onChange={e => setScheduledFor(e.target.value)}
                 min={new Date(Date.now() + 5 * 60_000).toISOString().slice(0, 16)}
                 disabled={isSubmitting}
-                className="w-full bg-zinc-800/60 border border-zinc-700/60 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand-gold/50 transition-all [color-scheme:dark]"
+                className="w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-all [color-scheme:dark]"
+                style={{ background: '#252015', border: '1px solid #3d3420', color: '#f8f2e4' }}
+                onFocus={e => e.target.style.borderColor = '#d4a83a'}
+                onBlur={e => e.target.style.borderColor = '#3d3420'}
               />
             )}
           </div>
@@ -666,8 +636,8 @@ export default function CreatePost() {
           <button
             onClick={handleSubmit}
             disabled={isSubmitting || charOver || submitState === 'success'}
-            className="w-full flex items-center justify-center gap-3 py-5 rounded-2xl bg-brand-gold text-zinc-950 font-black text-xs uppercase tracking-[.2em] shadow-[0_0_30px_rgba(194,160,83,0.15)] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 disabled:grayscale disabled:scale-100"
-          >
+            className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl text-sm font-semibold transition-all duration-200 hover:-translate-y-px active:translate-y-0 disabled:opacity-30 disabled:cursor-not-allowed disabled:translate-y-0"
+            style={{ background: '#c4556e', color: '#fff' }}>
             {isSubmitting ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -689,25 +659,26 @@ export default function CreatePost() {
           {/* Mobile history link */}
           <Link
             to="/post/history"
-            className="sm:hidden flex items-center justify-center gap-2 text-sm text-zinc-500 hover:text-brand-gold transition-colors py-2"
-          >
+            className="sm:hidden flex items-center justify-center gap-2 text-sm py-2 transition-colors hover:text-brand-gold"
+            style={{ color: '#8a7858' }}>
             <History className="w-4 h-4" />
             View Post History
           </Link>
         </div>
 
-        {/* ── Right column: preview ── */}
+        {/* Right column: preview */}
         <div className="lg:col-span-2">
           <div className="sticky top-6">
             <div className="flex items-center gap-2 mb-3">
-              <Eye className="w-3.5 h-3.5 text-zinc-500" />
-              <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Preview</span>
+              <Eye className="w-3.5 h-3.5" style={{ color: '#8a7858' }} />
+              <span className="text-xs font-medium uppercase tracking-widest" style={{ color: '#8a7858' }}>Preview</span>
             </div>
 
-            <div className="bg-zinc-900/70 border border-zinc-800/60 rounded-2xl overflow-hidden">
+            <div className="rounded-2xl overflow-hidden" style={cardStyle}>
               {/* Mock post header */}
-              <div className="flex items-center gap-3 px-4 py-4 border-b border-zinc-800/60">
-                <div className="w-10 h-10 rounded-full bg-zinc-950 border border-zinc-900 flex items-center justify-center shrink-0 overflow-hidden">
+              <div className="flex items-center gap-3 px-4 py-4" style={{ borderBottom: '1px solid #3d3420' }}>
+                <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 border"
+                  style={{ borderColor: '#3d3420' }}>
                   <img
                     src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg"
                     alt="Logo"
@@ -715,10 +686,10 @@ export default function CreatePost() {
                   />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white leading-tight truncate">
+                  <p className="text-sm font-medium leading-tight truncate" style={{ color: '#f8f2e4' }}>
                     {profile?.clients?.business_name || 'Your Business'}
                   </p>
-                  <p className="text-[10px] text-zinc-500">Just now</p>
+                  <p className="text-[10px]" style={{ color: '#4e4228' }}>Just now</p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {activePlatforms.map(id => {
@@ -736,11 +707,11 @@ export default function CreatePost() {
               {/* Post content */}
               <div className="px-4 py-3 min-h-[60px]">
                 {content ? (
-                  <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap break-words">
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: '#c8b898' }}>
                     {content.length > 300 ? content.slice(0, 300) + '…' : content}
                   </p>
                 ) : (
-                  <p className="text-sm text-zinc-600 italic">Your post content will appear here…</p>
+                  <p className="text-sm italic" style={{ color: '#4e4228' }}>Your post content will appear here…</p>
                 )}
               </div>
 
@@ -751,26 +722,25 @@ export default function CreatePost() {
 
               {/* Dropbox attachments preview */}
               {dropboxAttachments.length > 0 && (
-                <div className="px-4 py-3 border-t border-zinc-800/60">
-                  <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">
+                <div className="px-4 py-3" style={{ borderTop: '1px solid #3d3420' }}>
+                  <p className="text-[10px] font-medium uppercase tracking-widest mb-2" style={{ color: '#4e4228' }}>
                     Dropbox · {dropboxAttachments.length} file{dropboxAttachments.length !== 1 ? 's' : ''}
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {dropboxAttachments.slice(0, 3).map(file => (
-                      <div
-                        key={file.link}
-                        className="flex items-center gap-1.5 bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-2 py-1 max-w-[140px]"
-                      >
+                      <div key={file.link} className="flex items-center gap-1.5 rounded-lg px-2 py-1 max-w-[140px]"
+                        style={{ background: '#252015', border: '1px solid #3d3420' }}>
                         {file.thumbnail
                           ? <img src={file.thumbnail} alt="" className="w-4 h-4 rounded object-cover shrink-0" />
-                          : <Paperclip className="w-3 h-3 text-[#0061FE] shrink-0" />
+                          : <Paperclip className="w-3 h-3 text-blue-400 shrink-0" />
                         }
-                        <span className="text-[10px] text-zinc-300 truncate">{file.name}</span>
+                        <span className="text-[10px] truncate" style={{ color: '#c8b898' }}>{file.name}</span>
                       </div>
                     ))}
                     {dropboxAttachments.length > 3 && (
-                      <div className="flex items-center px-2 py-1 bg-zinc-800/60 border border-zinc-700/40 rounded-lg">
-                        <span className="text-[10px] text-zinc-500">+{dropboxAttachments.length - 3} more</span>
+                      <div className="flex items-center px-2 py-1 rounded-lg"
+                        style={{ background: '#252015', border: '1px solid #3d3420' }}>
+                        <span className="text-[10px]" style={{ color: '#4e4228' }}>+{dropboxAttachments.length - 3} more</span>
                       </div>
                     )}
                   </div>
@@ -778,13 +748,13 @@ export default function CreatePost() {
               )}
 
               {/* Footer */}
-              <div className="px-4 py-3 border-t border-zinc-800/60">
+              <div className="px-4 py-3" style={{ borderTop: '1px solid #3d3420' }}>
                 {activePlatforms.length === 0 ? (
-                  <span className="text-xs text-zinc-600">No platforms selected</span>
+                  <span className="text-xs" style={{ color: '#4e4228' }}>No platforms selected</span>
                 ) : (
-                  <span className="text-xs text-zinc-500">
+                  <span className="text-xs" style={{ color: '#8a7858' }}>
                     Publishing to{' '}
-                    <span className="text-zinc-300 font-medium">
+                    <span className="font-medium" style={{ color: '#c8b898' }}>
                       {activePlatforms
                         .map(id => PLATFORMS.find(p => p.id === id)?.label)
                         .join(', ')}
@@ -792,13 +762,10 @@ export default function CreatePost() {
                   </span>
                 )}
                 {mode === 'schedule' && scheduledFor && (
-                  <div className="flex items-center gap-1 mt-1.5 text-xs text-brand-gold">
+                  <div className="flex items-center gap-1 mt-1.5 text-xs" style={{ color: '#d4a83a' }}>
                     <Clock className="w-3 h-3" />
                     {new Date(scheduledFor).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
+                      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
                     })}
                   </div>
                 )}

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, RefreshCw, Share2, Camera, Search, 
+import { ArrowLeft, RefreshCw, Share2, Camera, Search,
   MapPin, Video, ImageIcon, FileText, ChevronDown, ChevronUp
 } from 'lucide-react'
 
@@ -31,26 +31,26 @@ async function fetchPosts(clientId) {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG = {
-  draft:     { label: 'Draft',     color: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/20'    },
-  scheduled: { label: 'Scheduled', color: 'bg-blue-500/15 text-blue-400 border-blue-500/20'    },
-  published: { label: 'Published', color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' },
-  failed:    { label: 'Failed',    color: 'bg-red-500/15 text-red-400 border-red-500/20'       },
+  draft:     { label: 'Draft',     style: 'rgba(139,119,88,0.15)',  textColor: '#c8b898', borderColor: 'rgba(139,119,88,0.2)'   },
+  scheduled: { label: 'Scheduled', style: 'rgba(92,143,214,0.12)',  textColor: '#8ab4e0', borderColor: 'rgba(92,143,214,0.2)'   },
+  published: { label: 'Published', style: 'rgba(107,193,142,0.12)', textColor: '#6bc18e', borderColor: 'rgba(107,193,142,0.2)'  },
+  failed:    { label: 'Failed',    style: 'rgba(196,85,110,0.12)',  textColor: '#e8899a', borderColor: 'rgba(196,85,110,0.2)'   },
 }
 
 const PLATFORMS = [
-  { id: 'facebook', label: 'Facebook', icon: Share2 },
+  { id: 'facebook',  label: 'Facebook',  icon: Share2 },
   { id: 'instagram', label: 'Instagram', icon: Camera },
-  { id: 'google', label: 'Google', icon: MapPin },
-  { id: 'tiktok', label: 'TikTok', icon: Video },
+  { id: 'google',    label: 'Google',    icon: MapPin  },
+  { id: 'tiktok',    label: 'TikTok',    icon: Video   },
 ]
 
 // ── Post Card ────────────────────────────────────────────────────────────────
 
 function PostCard({ post }) {
   const [expanded, setExpanded] = useState(false)
-  
+
   const statusInfo = STATUS_CONFIG[post.status] || STATUS_CONFIG.draft
-  
+
   const truncateLength = 120
   const isLong = post.content?.length > truncateLength
   const displayContent = expanded ? post.content : post.content?.slice(0, truncateLength) + (isLong ? '...' : '')
@@ -59,26 +59,31 @@ function PostCard({ post }) {
   const dateLabel = post.status === 'scheduled' ? 'Scheduled for ' : (post.status === 'published' ? 'Published ' : 'Created ')
 
   return (
-    <div className="bg-zinc-900/70 border border-zinc-800/60 rounded-2xl p-5 md:p-6 transition-all hover:border-zinc-700/60">
+    <div className="rounded-2xl p-5 md:p-6 transition-all"
+      style={{ background: '#1e1910', border: '1px solid #3d3420' }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(212,168,58,0.22)'}
+      onMouseLeave={e => e.currentTarget.style.borderColor = '#3d3420'}>
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4">
         <div className="flex flex-wrap gap-2">
           {post.platforms?.map(platformId => {
             const platform = PLATFORMS.find(p => p.id === platformId)
             const Icon = platform?.icon || FileText
             return (
-              <span key={platformId} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-800/50 text-xs text-zinc-300 font-medium">
+              <span key={platformId} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+                style={{ background: '#252015', border: '1px solid #3d3420', color: '#c8b898' }}>
                 <Icon className="w-3.5 h-3.5" />
                 {platform?.label || platformId}
               </span>
             )
           })}
         </div>
-        
+
         <div className="flex items-center gap-3">
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs" style={{ color: '#4e4228' }}>
             {dateLabel} {new Date(dateToDisplay).toLocaleString()}
           </span>
-          <span className={`inline-flex items-center text-[10px] whitespace-nowrap font-semibold uppercase tracking-widest px-2.5 py-1 rounded-full border ${statusInfo.color}`}>
+          <span className="inline-flex items-center text-[10px] whitespace-nowrap font-medium uppercase tracking-widest px-2.5 py-1 rounded-full border"
+            style={{ background: statusInfo.style, color: statusInfo.textColor, borderColor: statusInfo.borderColor }}>
             {statusInfo.label}
           </span>
         </div>
@@ -86,23 +91,24 @@ function PostCard({ post }) {
 
       <div className="flex gap-4">
         {post.media_url && (
-          <div className="shrink-0 w-24 h-24 rounded-lg bg-zinc-800/50 border border-zinc-700/50 overflow-hidden flex items-center justify-center">
+          <div className="shrink-0 w-24 h-24 rounded-lg overflow-hidden flex items-center justify-center"
+            style={{ background: '#252015', border: '1px solid #3d3420' }}>
             {post.media_url.match(/\.(mp4|mov|webm)$/i) ? (
-               <Video className="w-6 h-6 text-zinc-500" />
+              <Video className="w-6 h-6" style={{ color: '#8a7858' }} />
             ) : (
-               <img src={post.media_url} alt="Post media" className="w-full h-full object-cover" />
+              <img src={post.media_url} alt="Post media" className="w-full h-full object-cover" />
             )}
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">
+          <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: '#c8b898' }}>
             {displayContent}
           </p>
           {isLong && (
-            <button 
+            <button
               onClick={() => setExpanded(!expanded)}
-              className="mt-2 text-xs font-semibold text-violet-400 hover:text-violet-300 transition-colors flex items-center gap-1"
-            >
+              className="mt-2 text-xs font-medium transition-colors flex items-center gap-1 hover:text-brand-gold"
+              style={{ color: '#d4a83a' }}>
               {expanded ? (
                 <>Show less <ChevronUp className="w-3 h-3" /></>
               ) : (
@@ -141,14 +147,18 @@ export default function PostHistory() {
     return true
   })
 
+  const filterTabBase = { padding: '6px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', border: 'none', transition: 'all .15s', whiteSpace: 'nowrap' }
+  const filterTabActive = { ...filterTabBase, background: '#252015', color: '#f8f2e4' }
+  const filterTabInactive = { ...filterTabBase, background: 'transparent', color: '#8a7858' }
+
   return (
     <div className="p-6 md:p-8 max-w-5xl mx-auto">
-      {/* Top Nav */}
+      {/* Back link */}
       <div className="mb-6">
-        <Link 
-          to="/post" 
-          className="inline-flex items-center gap-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
-        >
+        <Link
+          to="/post"
+          className="inline-flex items-center gap-2 text-sm font-medium transition-colors hover:text-brand-gold"
+          style={{ color: '#8a7858' }}>
           <ArrowLeft className="w-4 h-4" />
           Back to Publisher
         </Link>
@@ -157,55 +167,46 @@ export default function PostHistory() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
         <div>
-          <p className="text-xs text-zinc-500 uppercase tracking-widest mb-1">Social Media</p>
-          <h1 className="text-2xl md:text-3xl font-bold text-white">Post History</h1>
-          <p className="text-zinc-500 text-sm mt-1">
+          <p className="text-xs uppercase tracking-widest font-medium mb-1" style={{ color: '#8a7858' }}>Social Media</p>
+          <h1 className="font-display text-2xl md:text-3xl font-semibold" style={{ color: '#f8f2e4' }}>Post History</h1>
+          <p className="text-sm mt-1" style={{ color: '#8a7858' }}>
             View and manage your scheduled, published, and drafted posts.
           </p>
         </div>
         <button
           onClick={() => refetch()}
           disabled={isRefetching || isLoading}
-          className="shrink-0 flex items-center gap-2 px-4 py-2 bg-zinc-800/50 hover:bg-zinc-800 text-sm font-semibold text-zinc-300 rounded-lg transition-all border border-zinc-700/50 disabled:opacity-50"
-        >
+          className="shrink-0 flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all disabled:opacity-50"
+          style={{ background: '#1e1910', border: '1px solid #3d3420', color: '#c8b898' }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(212,168,58,0.25)'}
+          onMouseLeave={e => e.currentTarget.style.borderColor = '#3d3420'}>
           <RefreshCw className={`w-4 h-4 ${isRefetching ? 'animate-spin' : ''}`} />
           Refresh
         </button>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col md:flex-row gap-4 mb-6">
-        <div className="flex-1 bg-zinc-900/50 p-1.5 rounded-xl border border-zinc-800/60 inline-flex overflow-x-auto">
-          <button
-            onClick={() => setStatusFilter('all')}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${statusFilter === 'all' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}
-          >
-            All Status
-          </button>
+      <div className="flex flex-col md:flex-row gap-3 mb-6">
+        <div className="flex-1 p-1.5 rounded-xl overflow-x-auto flex gap-1"
+          style={{ background: '#141109', border: '1px solid #3d3420' }}>
+          <button onClick={() => setStatusFilter('all')}
+            style={statusFilter === 'all' ? filterTabActive : filterTabInactive}>All Status</button>
           {Object.entries(STATUS_CONFIG).map(([key, config]) => (
-            <button
-              key={key}
-              onClick={() => setStatusFilter(key)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${statusFilter === key ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}
-            >
+            <button key={key} onClick={() => setStatusFilter(key)}
+              style={statusFilter === key ? filterTabActive : filterTabInactive}>
               {config.label}
             </button>
           ))}
         </div>
 
-        <div className="flex-1 bg-zinc-900/50 p-1.5 rounded-xl border border-zinc-800/60 inline-flex overflow-x-auto">
-          <button
-            onClick={() => setPlatformFilter('all')}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${platformFilter === 'all' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}
-          >
-            All Platforms
-          </button>
+        <div className="flex-1 p-1.5 rounded-xl overflow-x-auto flex gap-1"
+          style={{ background: '#141109', border: '1px solid #3d3420' }}>
+          <button onClick={() => setPlatformFilter('all')}
+            style={platformFilter === 'all' ? filterTabActive : filterTabInactive}>All Platforms</button>
           {PLATFORMS.map(platform => (
-            <button
-              key={platform.id}
-              onClick={() => setPlatformFilter(platform.id)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${platformFilter === platform.id ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}
-            >
+            <button key={platform.id} onClick={() => setPlatformFilter(platform.id)}
+              style={platformFilter === platform.id ? filterTabActive : filterTabInactive}
+              className="flex items-center gap-1.5">
               <platform.icon className="w-3.5 h-3.5" />
               {platform.label}
             </button>
@@ -217,16 +218,8 @@ export default function PostHistory() {
       {isLoading ? (
         <div className="space-y-4">
           {[1, 2, 3].map(i => (
-            <div key={i} className="bg-zinc-900/70 border border-zinc-800/60 rounded-2xl p-6 h-40 animate-pulse flex flex-col justify-between">
-               <div className="flex justify-between">
-                 <div className="w-32 h-6 bg-zinc-800 rounded-full" />
-                 <div className="w-24 h-6 bg-zinc-800 rounded-full" />
-               </div>
-               <div className="space-y-2 mt-4">
-                 <div className="w-3/4 h-4 bg-zinc-800 rounded" />
-                 <div className="w-1/2 h-4 bg-zinc-800 rounded" />
-               </div>
-            </div>
+            <div key={i} className="rounded-2xl p-6 h-40 animate-pulse"
+              style={{ background: '#1e1910', border: '1px solid #3d3420' }} />
           ))}
         </div>
       ) : filteredPosts?.length > 0 ? (
@@ -236,18 +229,20 @@ export default function PostHistory() {
           ))}
         </div>
       ) : (
-        <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-12 flex flex-col items-center text-center">
-          <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mb-4">
-            <Search className="w-8 h-8 text-zinc-500" />
+        <div className="rounded-2xl p-12 flex flex-col items-center text-center"
+          style={{ background: '#1e1910', border: '1px solid #3d3420' }}>
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4"
+            style={{ background: '#252015' }}>
+            <Search className="w-8 h-8" style={{ color: '#8a7858' }} />
           </div>
-          <h3 className="text-lg font-bold text-white mb-2">No posts found</h3>
-          <p className="text-zinc-500 text-sm max-w-sm mb-6">
-            We couldn't find any posts matching your current filters. Try adjusting your filters or create a new post.
+          <h3 className="font-display text-xl font-semibold mb-2" style={{ color: '#f8f2e4' }}>No posts found</h3>
+          <p className="text-sm max-w-sm mb-6" style={{ color: '#8a7858' }}>
+            We couldn't find any posts matching your filters. Try adjusting them or create a new post.
           </p>
-          <Link 
+          <Link
             to="/post"
-            className="px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold rounded-xl transition-colors shadow-lg shadow-violet-500/20"
-          >
+            className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:-translate-y-px"
+            style={{ background: '#d4a83a', color: '#0d0b08' }}>
             Create New Post
           </Link>
         </div>

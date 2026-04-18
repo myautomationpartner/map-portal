@@ -15,27 +15,27 @@ const PLATFORMS = [
     label: 'Facebook',
     Icon: Share2,
     gradient: 'from-blue-600 to-blue-400',
-    color: 'text-blue-400',
-    bg: 'bg-blue-500/10',
-    border: 'border-blue-500/20',
+    color: '#8ab4e0',
+    connectedBg: 'rgba(92,143,214,0.08)',
+    connectedBorder: 'rgba(92,143,214,0.2)',
   },
   {
     id: 'instagram',
     label: 'Instagram',
     Icon: Camera,
     gradient: 'from-pink-600 to-purple-500',
-    color: 'text-pink-400',
-    bg: 'bg-pink-500/10',
-    border: 'border-pink-500/20',
+    color: '#e879a0',
+    connectedBg: 'rgba(232,121,160,0.08)',
+    connectedBorder: 'rgba(232,121,160,0.2)',
   },
   {
     id: 'tiktok',
     label: 'TikTok',
     Icon: Music2,
     gradient: 'from-red-500 to-pink-500',
-    color: 'text-red-400',
-    bg: 'bg-red-500/10',
-    border: 'border-red-500/20',
+    color: '#f0948a',
+    connectedBg: 'rgba(240,148,138,0.08)',
+    connectedBorder: 'rgba(240,148,138,0.2)',
   },
 ]
 
@@ -58,16 +58,19 @@ async function fetchConnections(clientId) {
   return data || []
 }
 
+// ── Shared components ─────────────────────────────────────────────────────────
+
 function Section({ title, description, icon: Icon, children }) {
   return (
-    <div className="bg-zinc-900/70 border border-zinc-800/60 rounded-2xl overflow-hidden">
-      <div className="px-6 py-5 border-b border-zinc-800/60 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-violet-600/20 border border-violet-500/20 flex items-center justify-center">
-          <Icon className="w-4 h-4 text-violet-400" strokeWidth={2} />
+    <div className="rounded-2xl overflow-hidden" style={{ background: '#1e1910', border: '1px solid #3d3420' }}>
+      <div className="px-6 py-5 flex items-center gap-3" style={{ borderBottom: '1px solid #3d3420' }}>
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+          style={{ background: 'rgba(212,168,58,0.10)', border: '1px solid rgba(212,168,58,0.20)' }}>
+          <Icon className="w-4 h-4" style={{ color: '#d4a83a' }} strokeWidth={2} />
         </div>
         <div>
-          <h2 className="text-sm font-semibold text-white">{title}</h2>
-          {description && <p className="text-xs text-zinc-500 mt-0.5">{description}</p>}
+          <h2 className="text-sm font-semibold" style={{ color: '#f8f2e4' }}>{title}</h2>
+          {description && <p className="text-xs mt-0.5" style={{ color: '#8a7858' }}>{description}</p>}
         </div>
       </div>
       <div className="px-6 py-5">{children}</div>
@@ -78,9 +81,9 @@ function Section({ title, description, icon: Icon, children }) {
 function Field({ label, value }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">{label}</label>
-      <div className="bg-zinc-800/40 border border-zinc-700/40 rounded-xl px-4 py-3 text-sm text-zinc-300">
-        {value || <span className="text-zinc-600">—</span>}
+      <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: '#8a7858' }}>{label}</label>
+      <div className="rounded-xl px-4 py-3 text-sm" style={{ background: '#252015', border: '1px solid #3d3420', color: '#c8b898' }}>
+        {value || <span style={{ color: '#4e4228' }}>—</span>}
       </div>
     </div>
   )
@@ -90,12 +93,18 @@ function StatusBadge({ status, message }) {
   if (!status) return null
   const isSuccess = status === 'success'
   return (
-    <div className={`flex items-center gap-2 text-sm rounded-xl px-4 py-3 ${isSuccess ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border border-red-500/20 text-red-400'}`}>
+    <div className="flex items-center gap-2 text-sm rounded-xl px-4 py-3"
+      style={isSuccess
+        ? { background: 'rgba(107,193,142,0.08)', border: '1px solid rgba(107,193,142,0.2)', color: '#6bc18e' }
+        : { background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.2)', color: '#e8899a' }
+      }>
       {isSuccess ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
       {message}
     </div>
   )
 }
+
+// ── Social Connections section ────────────────────────────────────────────────
 
 function SocialConnectionsSection({ clientId, returnedPlatform }) {
   const queryClient = useQueryClient()
@@ -103,7 +112,6 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
   const [syncing, setSyncing] = useState(false)
   const [syncStatus, setSyncStatus] = useState(null)
 
-  // Auto-sync when returning from Zernio OAuth
   useEffect(() => {
     if (!returnedPlatform || !clientId) return
     setSyncStatus({ type: 'info', message: `${returnedPlatform.charAt(0).toUpperCase() + returnedPlatform.slice(1)} connected! Syncing your accounts…` })
@@ -117,9 +125,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
     enabled: !!clientId,
   })
 
-  const connectedMap = Object.fromEntries(
-    connections.map(c => [c.platform, c])
-  )
+  const connectedMap = Object.fromEntries(connections.map(c => [c.platform, c]))
 
   async function handleConnect(platform) {
     setConnectingPlatform(platform)
@@ -175,25 +181,24 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
       icon={Link2}
     >
       {connectionsLoading ? (
-        <div className="flex items-center gap-2 text-zinc-500">
+        <div className="flex items-center gap-2" style={{ color: '#8a7858' }}>
           <Loader2 className="w-4 h-4 animate-spin" />
           <span className="text-sm">Loading connections…</span>
         </div>
       ) : (
         <div className="space-y-3">
-          {PLATFORMS.map(({ id, label, Icon, gradient, color, bg, border }) => {
+          {PLATFORMS.map(({ id, label, Icon, gradient, color, connectedBg, connectedBorder }) => {
             const conn = connectedMap[id]
             const isConnecting = connectingPlatform === id
 
             return (
               <div
                 key={id}
-                className={`flex items-center gap-4 p-4 rounded-xl border transition-all ${
-                  conn
-                    ? `${bg} ${border}`
-                    : 'bg-zinc-800/30 border-zinc-700/40'
-                }`}
-              >
+                className="flex items-center gap-4 p-4 rounded-xl transition-all"
+                style={conn
+                  ? { background: connectedBg, border: `1px solid ${connectedBorder}` }
+                  : { background: '#252015', border: '1px solid #3d3420' }
+                }>
                 {/* Platform icon */}
                 <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shrink-0`}>
                   <Icon className="w-4 h-4 text-white" strokeWidth={2} />
@@ -201,18 +206,18 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white">{label}</p>
+                  <p className="text-sm font-medium" style={{ color: '#f8f2e4' }}>{label}</p>
                   {conn ? (
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <Wifi className={`w-3 h-3 ${color}`} />
-                      <p className="text-xs text-zinc-400">
+                      <Wifi className="w-3 h-3" style={{ color }} />
+                      <p className="text-xs" style={{ color: '#8a7858' }}>
                         {conn.username ? `@${conn.username}` : 'Connected'} · {new Date(conn.connected_at).toLocaleDateString()}
                       </p>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <WifiOff className="w-3 h-3 text-zinc-600" />
-                      <p className="text-xs text-zinc-600">Not connected</p>
+                      <WifiOff className="w-3 h-3" style={{ color: '#4e4228' }} />
+                      <p className="text-xs" style={{ color: '#4e4228' }}>Not connected</p>
                     </div>
                   )}
                 </div>
@@ -221,12 +226,11 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
                 <button
                   onClick={() => handleConnect(id)}
                   disabled={!!connectingPlatform || syncing}
-                  className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    conn
-                      ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border border-zinc-700/50'
-                      : 'bg-violet-600 hover:bg-violet-500 text-white shadow-sm shadow-violet-500/20'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={conn
+                    ? { background: '#1e1910', border: '1px solid #3d3420', color: '#8a7858' }
+                    : { background: 'rgba(212,168,58,0.12)', border: '1px solid rgba(212,168,58,0.25)', color: '#d4a83a' }
+                  }>
                   {isConnecting ? (
                     <Loader2 className="w-3 h-3 animate-spin" />
                   ) : (
@@ -242,13 +246,13 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
 
       {/* Status message */}
       {syncStatus && (
-        <div className={`mt-4 flex items-start gap-2 text-sm rounded-xl px-4 py-3 ${
-          syncStatus.type === 'success'
-            ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+        <div className="mt-4 flex items-start gap-2 text-sm rounded-xl px-4 py-3"
+          style={syncStatus.type === 'success'
+            ? { background: 'rgba(107,193,142,0.08)', border: '1px solid rgba(107,193,142,0.2)', color: '#6bc18e' }
             : syncStatus.type === 'info'
-            ? 'bg-blue-500/10 border border-blue-500/20 text-blue-400'
-            : 'bg-red-500/10 border border-red-500/20 text-red-400'
-        }`}>
+            ? { background: 'rgba(212,168,58,0.08)', border: '1px solid rgba(212,168,58,0.2)', color: '#d4a83a' }
+            : { background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.2)', color: '#e8899a' }
+          }>
           {syncStatus.type === 'success' ? (
             <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
           ) : (
@@ -259,15 +263,17 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
       )}
 
       {/* Sync button */}
-      <div className="mt-4 pt-4 border-t border-zinc-800/60 flex items-center justify-between">
-        <p className="text-xs text-zinc-600">
+      <div className="mt-4 pt-4 flex items-center justify-between" style={{ borderTop: '1px solid #3d3420' }}>
+        <p className="text-xs" style={{ color: '#4e4228' }}>
           After connecting in the popup, sync to save your accounts here.
         </p>
         <button
           onClick={handleSync}
           disabled={syncing || connectionsLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-semibold rounded-lg border border-zinc-700/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ background: '#252015', border: '1px solid #3d3420', color: '#c8b898' }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(212,168,58,0.25)'}
+          onMouseLeave={e => e.currentTarget.style.borderColor = '#3d3420'}>
           <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
           Sync Accounts
         </button>
@@ -276,12 +282,13 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
   )
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function Settings() {
   const { session } = useOutletContext()
   const [searchParams, setSearchParams] = useSearchParams()
   const returnedPlatform = searchParams.get('connected') || null
 
-  // Clear query params from URL after reading them (clean up after OAuth return)
   useEffect(() => {
     if (returnedPlatform) {
       setSearchParams({}, { replace: true })
@@ -338,19 +345,27 @@ export default function Settings() {
 
   const client = profile?.clients
 
+  const inputStyle = {
+    background: '#252015',
+    border: '1px solid #3d3420',
+    color: '#f8f2e4',
+  }
+  const inputClass = 'w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all'
+
   return (
     <div className="p-6 md:p-8 max-w-3xl mx-auto">
       <div className="mb-8">
-        <p className="text-xs text-zinc-500 uppercase tracking-widest mb-1">Account</p>
-        <h1 className="text-2xl md:text-3xl font-bold text-white">Settings</h1>
-        <p className="text-zinc-500 text-sm mt-1">Manage your account, social connections, and preferences.</p>
+        <p className="text-xs uppercase tracking-widest font-medium mb-1" style={{ color: '#8a7858' }}>Account</p>
+        <h1 className="font-display text-2xl md:text-3xl font-semibold" style={{ color: '#f8f2e4' }}>Settings</h1>
+        <p className="text-sm mt-1" style={{ color: '#8a7858' }}>Manage your account, social connections, and preferences.</p>
       </div>
 
       <div className="space-y-5">
+
         {/* Account info */}
         <Section title="Account" description="Your login information" icon={User}>
           {isLoading ? (
-            <div className="flex items-center gap-2 text-zinc-500">
+            <div className="flex items-center gap-2" style={{ color: '#8a7858' }}>
               <Loader2 className="w-4 h-4 animate-spin" />
               <span className="text-sm">Loading…</span>
             </div>
@@ -371,9 +386,11 @@ export default function Settings() {
               <Field label="Contact Email" value={client.contact_email} />
               <Field label="Website" value={client.website_url} />
             </div>
-            <p className="text-xs text-zinc-600 mt-4">
+            <p className="text-xs mt-4" style={{ color: '#4e4228' }}>
               To update your business details, contact{' '}
-              <a href="mailto:billing@myautomationpartner.com" className="text-zinc-500 hover:text-zinc-400 underline underline-offset-2 transition-colors">
+              <a href="mailto:billing@myautomationpartner.com"
+                className="transition-colors hover:text-brand-gold"
+                style={{ color: '#8a7858', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
                 billing@myautomationpartner.com
               </a>
             </p>
@@ -389,36 +406,51 @@ export default function Settings() {
         <Section title="Change Password" description="Update your login password" icon={Lock}>
           <form onSubmit={handlePasswordChange} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Current Password</label>
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: '#8a7858' }}>
+                Current Password
+              </label>
               <input
                 type="password"
                 value={currentPw}
                 onChange={e => setCurrentPw(e.target.value)}
                 required
                 placeholder="••••••••"
-                className="w-full bg-zinc-800/60 border border-zinc-700/60 text-white placeholder-zinc-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 transition-all duration-200"
+                className={inputClass}
+                style={inputStyle}
+                onFocus={e => e.target.style.borderColor = '#d4a83a'}
+                onBlur={e => e.target.style.borderColor = '#3d3420'}
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">New Password</label>
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: '#8a7858' }}>
+                New Password
+              </label>
               <input
                 type="password"
                 value={newPw}
                 onChange={e => setNewPw(e.target.value)}
                 required
                 placeholder="Min. 8 characters"
-                className="w-full bg-zinc-800/60 border border-zinc-700/60 text-white placeholder-zinc-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 transition-all duration-200"
+                className={inputClass}
+                style={inputStyle}
+                onFocus={e => e.target.style.borderColor = '#d4a83a'}
+                onBlur={e => e.target.style.borderColor = '#3d3420'}
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Confirm New Password</label>
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: '#8a7858' }}>
+                Confirm New Password
+              </label>
               <input
                 type="password"
                 value={confirmPw}
                 onChange={e => setConfirmPw(e.target.value)}
                 required
                 placeholder="••••••••"
-                className="w-full bg-zinc-800/60 border border-zinc-700/60 text-white placeholder-zinc-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 transition-all duration-200"
+                className={inputClass}
+                style={inputStyle}
+                onFocus={e => e.target.style.borderColor = '#d4a83a'}
+                onBlur={e => e.target.style.borderColor = '#3d3420'}
               />
             </div>
 
@@ -427,8 +459,8 @@ export default function Settings() {
             <button
               type="submit"
               disabled={pwLoading}
-              className="bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl px-5 py-2.5 text-sm transition-all duration-200 flex items-center gap-2 shadow-md shadow-violet-500/20 hover:-translate-y-px active:translate-y-0"
-            >
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:-translate-y-px active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ background: '#d4a83a', color: '#0d0b08' }}>
               {pwLoading ? (
                 <><Loader2 className="w-4 h-4 animate-spin" />Updating…</>
               ) : (
@@ -437,6 +469,7 @@ export default function Settings() {
             </button>
           </form>
         </Section>
+
       </div>
     </div>
   )

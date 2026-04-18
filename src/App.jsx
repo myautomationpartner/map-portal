@@ -39,7 +39,7 @@ function AuthProvider({ children }) {
 
   if (session === undefined) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="min-h-screen bg-[#0d0b08] flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-brand-gold animate-spin" />
       </div>
     )
@@ -52,7 +52,7 @@ function ProtectedLayout({ session }) {
   if (!session) return <Navigate to="/login" replace />
 
   return (
-    <div className="min-h-screen bg-black flex">
+    <div className="min-h-screen bg-[#0d0b08] flex">
       {/* Desktop sidebar */}
       <Sidebar session={session} />
 

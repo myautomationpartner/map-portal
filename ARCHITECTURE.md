@@ -232,6 +232,39 @@ npx wrangler deploy
 
 ---
 
+## Dropbox Chooser Integration
+
+The Publish page (`CreatePost.jsx`) lets users attach files directly from their Dropbox accounts using the Dropbox Chooser widget. Files are **never uploaded to the server** — they are passed as preview links through the publishing pipeline.
+
+### Module
+
+All Dropbox logic lives in `src/lib/dropboxApi.js`. It lazily injects the Dropbox dropin script at runtime (no changes to `index.html` needed) and exports one function:
+
+```js
+import { openDropboxChooser } from '../lib/dropboxApi'
+
+const files = await openDropboxChooser({ multiselect: true, linkType: 'preview' })
+// files: [{ name, size, link, thumbnail }]
+// resolves with [] on cancel — not an error
+```
+
+Accepted file types: `.jpg`, `.jpeg`, `.png`, `.mp4`, `.pdf`, `.docx`
+
+### Publishing pipeline changes
+
+The n8n `/webhook/social-publish` payload now includes a `dropboxLinks` array:
+
+```json
+{
+  "mediaUrl": "<R2 URL or null>",
+  "dropboxLinks": [{ "name": "hero.jpg", "link": "https://...", "size": 204800 }]
+}
+```
+
+`media_url` in Supabase stores the R2 URL if a local file was uploaded, or falls back to the first Dropbox link if no local file was attached.
+
+---
+
 ## External Services Summary
 
 | Service | Role | Access |
@@ -241,4 +274,4 @@ npx wrangler deploy
 | Cloudflare | Worker hosting + R2 storage | Cloudflare dashboard |
 | Zernio | Social media OAuth + posting API | Zernio dashboard |
 | Tidio | Live chat inbox | https://www.tidio.com |
-| Dropbox | Creative asset storage (linked from CreatePost) | https://www.dropbox.com |
+| Dropbox | File Chooser for post attachments (link-based, no upload) | https://www.dropbox.com/developers/apps |

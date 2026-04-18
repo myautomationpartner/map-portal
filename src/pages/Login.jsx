@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { Loader2, Zap } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -12,9 +12,7 @@ export default function Login() {
     e.preventDefault()
     setLoading(true)
     setError('')
-
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-
     if (error) {
       setError(error.message)
       setLoading(false)
@@ -23,29 +21,48 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background glow orbs */}
-      <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-violet-600/10 blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] rounded-full bg-cyan-500/8 blur-[120px] pointer-events-none" />
+    <div className="min-h-screen flex items-center justify-center p-4"
+      style={{ background: '#0d0b08' }}>
 
-      <div className="w-full max-w-md relative z-10">
-        {/* Logo / Brand */}
+      {/* Subtle warm vignette */}
+      <div className="absolute inset-0 pointer-events-none"
+        style={{ background: 'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(212,168,58,0.04) 0%, transparent 70%)' }} />
+
+      <div className="w-full max-w-sm relative z-10">
+
+        {/* Brand */}
         <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400 mb-4 shadow-lg shadow-violet-500/30">
-            <Zap className="w-7 h-7 text-white" strokeWidth={2.5} />
+          <div className="inline-block w-20 h-20 rounded-2xl overflow-hidden mb-5 border"
+            style={{ borderColor: '#3d3420' }}>
+            <img
+              src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg"
+              alt="Dancescapes"
+              className="w-full h-full object-cover"
+              onError={e => {
+                e.target.style.display = 'none'
+                e.target.parentElement.style.display = 'flex'
+                e.target.parentElement.style.alignItems = 'center'
+                e.target.parentElement.style.justifyContent = 'center'
+                e.target.parentElement.style.background = '#1e1910'
+                e.target.parentElement.innerHTML = '<span style="color:#d4a83a;font-size:32px;font-family:Cormorant Garamond,serif;font-weight:600">D</span>'
+              }}
+            />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">My Automation Partner</h1>
-          <p className="text-sm text-zinc-500 mt-1">Client Portal</p>
+          <h1 className="font-display text-3xl font-semibold mb-1" style={{ color: '#f8f2e4' }}>
+            Dancescapes
+          </h1>
+          <p className="text-sm" style={{ color: '#8a7858' }}>Partner Portal</p>
         </div>
 
         {/* Card */}
-        <div className="bg-zinc-900/70 border border-zinc-800/60 backdrop-blur-xl rounded-2xl p-8 shadow-2xl shadow-black/50">
-          <h2 className="text-lg font-semibold text-white mb-1">Welcome back</h2>
-          <p className="text-sm text-zinc-500 mb-7">Sign in to your dashboard</p>
+        <div className="rounded-2xl p-8" style={{ background: '#1e1910', border: '1px solid #3d3420' }}>
+          <h2 className="font-display text-xl font-semibold mb-1" style={{ color: '#f8f2e4' }}>Welcome back</h2>
+          <p className="text-sm mb-7" style={{ color: '#8a7858' }}>Sign in to your studio dashboard</p>
 
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wider">
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2"
+                style={{ color: '#8a7858' }}>
                 Email
               </label>
               <input
@@ -53,13 +70,21 @@ export default function Login() {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
-                placeholder="you@business.com"
-                className="w-full bg-zinc-800/60 border border-zinc-700/60 text-white placeholder-zinc-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 transition-all duration-200"
+                placeholder="you@studio.com"
+                className="w-full rounded-xl px-4 py-3 text-sm transition-all duration-200 focus:outline-none"
+                style={{
+                  background: '#252015',
+                  border: '1px solid #3d3420',
+                  color: '#f8f2e4',
+                }}
+                onFocus={e => e.target.style.borderColor = '#d4a83a'}
+                onBlur={e => e.target.style.borderColor = '#3d3420'}
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wider">
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2"
+                style={{ color: '#8a7858' }}>
                 Password
               </label>
               <input
@@ -68,12 +93,20 @@ export default function Login() {
                 onChange={e => setPassword(e.target.value)}
                 required
                 placeholder="••••••••"
-                className="w-full bg-zinc-800/60 border border-zinc-700/60 text-white placeholder-zinc-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 transition-all duration-200"
+                className="w-full rounded-xl px-4 py-3 text-sm transition-all duration-200 focus:outline-none"
+                style={{
+                  background: '#252015',
+                  border: '1px solid #3d3420',
+                  color: '#f8f2e4',
+                }}
+                onFocus={e => e.target.style.borderColor = '#d4a83a'}
+                onBlur={e => e.target.style.borderColor = '#3d3420'}
               />
             </div>
 
             {error && (
-              <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-xl px-4 py-3">
+              <div className="rounded-xl px-4 py-3 text-sm flex items-center gap-2"
+                style={{ background: 'rgba(196,85,110,0.10)', border: '1px solid rgba(196,85,110,0.25)', color: '#e8899a' }}>
                 {error}
               </div>
             )}
@@ -81,7 +114,8 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl px-4 py-3 text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:-translate-y-px active:translate-y-0"
+              className="w-full rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-px active:translate-y-0"
+              style={{ background: '#d4a83a', color: '#0d0b08' }}
             >
               {loading ? (
                 <>
@@ -95,11 +129,12 @@ export default function Login() {
           </form>
         </div>
 
-        <p className="text-center text-xs text-zinc-700 mt-6">
+        <p className="text-center text-xs mt-6" style={{ color: '#4e4228' }}>
           Need access?{' '}
           <a
             href="mailto:billing@myautomationpartner.com"
-            className="text-zinc-500 hover:text-zinc-400 transition-colors"
+            className="transition-colors hover:text-brand-gold"
+            style={{ color: '#8a7858' }}
           >
             Contact your account manager
           </a>
