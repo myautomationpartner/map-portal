@@ -252,6 +252,7 @@ export default function Documents() {
   const queryClient = useQueryClient()
   const claims = getSessionClaims(session)
   const [selectedId, setSelectedId] = useState(null)
+  const [uploadedFallbackDocuments, setUploadedFallbackDocuments] = useState([])
   const [previewState, setPreviewState] = useState({ loading: false, error: '', url: '' })
   const [uploadForm, setUploadForm] = useState({ category: '', description: '' })
   const [uploadNotice, setUploadNotice] = useState({ type: '', message: '' })
@@ -263,19 +264,28 @@ export default function Documents() {
     queryFn: fetchProfile,
   })
 
-  const { data: documents = [], isLoading: documentsLoading } = useQuery({
+  const {
+    data: documents = [],
+    isLoading: documentsLoading,
+    error: documentsError,
+  } = useQuery({
     queryKey: ['documents'],
     queryFn: fetchDocuments,
   })
 
-  const { data: shareLinks = [] } = useQuery({
+  const {
+    data: shareLinks = [],
+    error: shareLinksError,
+  } = useQuery({
     queryKey: ['share-links'],
     queryFn: fetchShareLinks,
   })
 
+  const visibleDocuments = documents.length > 0 ? documents : uploadedFallbackDocuments
+
   const selectedDocument = useMemo(
-    () => documents.find((document) => document.id === selectedId) || documents[0] || null,
-    [documents, selectedId],
+    () => visibleDocuments.find((document) => document.id === selectedId) || visibleDocuments[0] || null,
+    [visibleDocuments, selectedId],
   )
 
   const selectedDocumentShareLinks = useMemo(
@@ -308,10 +318,31 @@ export default function Documents() {
       await uploadFileToSignedUrl(payload.upload_url, file)
       return payload
     },
-    onSuccess: async () => {
+    onSuccess: async (payload, file) => {
+      const optimisticDocument = {
+        id: payload.document_id,
+        file_name: file.name,
+        mime_type: payload.expected_mime || file.type,
+        category: uploadForm.category || null,
+        description: uploadForm.description || null,
+        size_bytes: file.size,
+        storage_path: payload.storage_path,
+        created_at: new Date().toISOString(),
+      }
+
+      setUploadedFallbackDocuments((current) => {
+        const next = [optimisticDocument, ...current.filter((document) => document.id !== optimisticDocument.id)]
+        return next.slice(0, 10)
+      })
+      queryClient.setQueryData(['documents'], (current = []) => {
+        const list = Array.isArray(current) ? current : []
+        return [optimisticDocument, ...list.filter((document) => document.id !== optimisticDocument.id)]
+      })
+      setSelectedId(payload.document_id)
       setUploadNotice({ type: 'success', message: 'Upload complete. Document list refreshed.' })
       setUploadForm({ category: '', description: '' })
       await queryClient.invalidateQueries({ queryKey: ['documents'] })
+      previewMutation.mutate(payload.document_id)
     },
     onError: (error) => {
       setUploadNotice({ type: 'error', message: error.message })
@@ -369,6 +400,7 @@ export default function Documents() {
     setShareNotice({ type: '', message: '' })
     createShareMutation.mutate({
       documentId: selectedDocument.id,
+      clientId: claims.client_id || profile?.client_id || null,
       expiresAt: shareDraft.expiresAt ? new Date(shareDraft.expiresAt).toISOString() : null,
       maxUses: shareDraft.maxUses ? Number(shareDraft.maxUses) : null,
     })
@@ -406,19 +438,28 @@ export default function Documents() {
                 <p className="text-xs" style={{ color: '#8a7858' }}>Tenant-scoped by Supabase RLS</p>
               </div>
               <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: '#252015', border: '1px solid #3d3420', color: '#c8b898' }}>
-                {documents.length} total
+                {visibleDocuments.length} total
               </span>
             </div>
 
             <div className="max-h-[70vh] overflow-auto">
+              {documentsError && (
+                <div className="m-4 rounded-2xl p-4 flex items-start gap-3" style={{ background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.2)', color: '#e8899a' }}>
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold">Document query failed</p>
+                    <p className="text-xs">{documentsError.message}</p>
+                  </div>
+                </div>
+              )}
               {documentsLoading ? (
                 <div className="p-6 flex items-center gap-3" style={{ color: '#8a7858' }}>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span className="text-sm">Loading documents…</span>
                 </div>
-              ) : documents.length > 0 ? (
+              ) : visibleDocuments.length > 0 ? (
                 <div className="divide-y divide-[#3d3420]">
-                  {documents.map((document) => {
+                  {visibleDocuments.map((document) => {
                     const isSelected = selectedDocument?.id === document.id
 
                     return (
@@ -547,6 +588,15 @@ export default function Documents() {
             </div>
 
             <div className="p-5 space-y-5">
+              {shareLinksError && (
+                <div className="rounded-2xl p-4 flex items-start gap-3" style={{ background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.2)', color: '#e8899a' }}>
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold">Share links query failed</p>
+                    <p className="text-xs">{shareLinksError.message}</p>
+                  </div>
+                </div>
+              )}
               {selectedDocument && canManageShares ? (
                 <form onSubmit={handleCreateShare} className="grid grid-cols-1 md:grid-cols-[1fr_180px_auto] gap-3">
                   <div>

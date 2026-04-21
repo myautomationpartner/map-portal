@@ -39,7 +39,7 @@ export async function fetchMetrics(clientId) {
 export async function fetchDocuments() {
   const { data, error } = await supabase
     .from('documents')
-    .select('id, file_name, mime_type, category, description, size_bytes, storage_path, created_at, updated_at, is_archived')
+    .select('id, file_name, mime_type, category, description, size_bytes, storage_path, created_at')
     .order('created_at', { ascending: false })
 
   if (error) throw error
@@ -134,11 +134,12 @@ export async function uploadFileToSignedUrl(uploadUrl, file) {
   }
 }
 
-export async function createShareLink({ documentId, expiresAt, maxUses }) {
+export async function createShareLink({ documentId, clientId, expiresAt, maxUses }) {
   const { data, error } = await supabase
     .from('share_links')
     .insert({
       document_id: documentId,
+      client_id: clientId,
       token: crypto.randomUUID().replace(/-/g, ''),
       expires_at: expiresAt || null,
       max_uses: maxUses ?? null,
