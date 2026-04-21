@@ -6,6 +6,7 @@ import {
   FileImage,
   FileSpreadsheet,
   FileBadge,
+  FileCode2,
   Loader2,
   Upload,
   ExternalLink,
@@ -19,6 +20,7 @@ import {
   Archive,
 } from 'lucide-react'
 import PdfDocumentViewer from '../components/PdfDocumentViewer'
+import TextDocumentViewer from '../components/TextDocumentViewer'
 import {
   MAX_DOCUMENT_BYTES,
   UPLOAD_MIME_OPTIONS,
@@ -37,6 +39,82 @@ import { supabaseUrl } from '../lib/supabase'
 
 const FUNCTION_BASE = `${supabaseUrl}/functions/v1`
 
+const TEXT_PREVIEW_MIME = new Set([
+  'text/csv',
+  'application/csv',
+  'text/tab-separated-values',
+  'text/plain',
+  'text/markdown',
+  'application/json',
+])
+
+const NATIVE_IMAGE_PREVIEW_MIME = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+  'image/bmp',
+  'image/tiff',
+  'image/avif',
+  'image/svg+xml',
+])
+
+const OFFICE_VIEWER_MIME = new Set([
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.ms-word.document.macroEnabled.12',
+  'application/vnd.ms-excel.sheet.macroEnabled.12',
+  'application/vnd.ms-excel.template.macroEnabled.12',
+  'application/vnd.ms-powerpoint.presentation.macroEnabled.12',
+  'application/vnd.ms-powerpoint.slideshow.macroEnabled.12',
+  'application/vnd.ms-powerpoint.template.macroEnabled.12',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.template',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
+  'application/vnd.openxmlformats-officedocument.presentationml.template',
+])
+
+const GOOGLE_VIEWER_MIME = new Set([
+  'application/vnd.google-apps.document',
+  'application/vnd.google-apps.spreadsheet',
+  'application/vnd.google-apps.presentation',
+  'application/vnd.google-apps.drawing',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
+  'application/rtf',
+])
+
+function getViewerSource(document, signedUrl) {
+  if (!signedUrl) return null
+  if (OFFICE_VIEWER_MIME.has(document.mime_type)) {
+    return {
+      label: 'Microsoft 365 viewer',
+      src: `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(signedUrl)}`,
+    }
+  }
+
+  if (GOOGLE_VIEWER_MIME.has(document.mime_type)) {
+    return {
+      label: 'Google Docs viewer',
+      src: `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(signedUrl)}`,
+    }
+  }
+
+  if (document.mime_type === 'image/heic' || document.mime_type === 'image/heif') {
+    return {
+      label: 'Google Docs viewer',
+      src: `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(signedUrl)}`,
+    }
+  }
+
+  return null
+}
+
 function formatDate(value) {
   if (!value) return '—'
   return new Date(value).toLocaleString()
@@ -52,6 +130,9 @@ function formatBytes(value) {
 function DocumentIcon({ mimeType, className, style }) {
   if (mimeType?.startsWith('image/')) {
     return <FileImage className={className} style={style} />
+  }
+  if (TEXT_PREVIEW_MIME.has(mimeType)) {
+    return <FileCode2 className={className} style={style} />
   }
   if (mimeType?.includes('sheet')) {
     return <FileSpreadsheet className={className} style={style} />
@@ -141,6 +222,43 @@ function ShareLinkCard({ link, documentName, canManage, onRevoke }) {
   )
 }
 
+function EmbeddedDocumentViewer({ document, signedUrl }) {
+  const viewer = getViewerSource(document, signedUrl)
+
+  if (!viewer) return null
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold" style={{ color: '#f8f2e4' }}>{document.file_name}</p>
+          <p className="text-xs" style={{ color: '#8a7858' }}>
+            Previewing through {viewer.label} for broader document compatibility.
+          </p>
+        </div>
+        <a
+          href={signedUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-all hover:-translate-y-px"
+          style={{ background: '#252015', border: '1px solid #3d3420', color: '#d4a83a' }}
+        >
+          Open Original
+          <ExternalLink className="w-3.5 h-3.5" />
+        </a>
+      </div>
+
+      <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #3d3420', background: '#141109' }}>
+        <iframe
+          src={viewer.src}
+          title={`${document.file_name} preview`}
+          className="w-full min-h-[70vh] bg-white"
+        />
+      </div>
+    </div>
+  )
+}
+
 function DocumentPreview({ selectedDocument, previewState, onRefreshPreview }) {
   if (!selectedDocument) {
     return (
@@ -216,7 +334,13 @@ function DocumentPreview({ selectedDocument, previewState, onRefreshPreview }) {
       {previewState.url && !previewState.loading && !previewState.error && (
         selectedDocument.mime_type === 'application/pdf' ? (
           <PdfDocumentViewer url={previewState.url} fileName={selectedDocument.file_name} />
-        ) : selectedDocument.mime_type?.startsWith('image/') ? (
+        ) : TEXT_PREVIEW_MIME.has(selectedDocument.mime_type) ? (
+          <TextDocumentViewer
+            url={previewState.url}
+            fileName={selectedDocument.file_name}
+            mimeType={selectedDocument.mime_type === 'application/csv' ? 'text/csv' : selectedDocument.mime_type}
+          />
+        ) : NATIVE_IMAGE_PREVIEW_MIME.has(selectedDocument.mime_type) ? (
           <div className="space-y-3">
             <p className="text-xs" style={{ color: '#8a7858' }}>Image preview from signed URL</p>
             <img
@@ -225,6 +349,8 @@ function DocumentPreview({ selectedDocument, previewState, onRefreshPreview }) {
               className="w-full rounded-2xl border border-[#3d3420] object-contain bg-[#141109] max-h-[70vh]"
             />
           </div>
+        ) : getViewerSource(selectedDocument, previewState.url) ? (
+          <EmbeddedDocumentViewer document={selectedDocument} signedUrl={previewState.url} />
         ) : (
           <div className="rounded-2xl p-5" style={{ background: '#141109', border: '1px solid #3d3420' }}>
             <p className="text-sm font-semibold mb-1" style={{ color: '#f8f2e4' }}>Preview fallback</p>
@@ -543,7 +669,7 @@ export default function Documents() {
                 <div>
                   <p className="text-sm font-semibold" style={{ color: '#f8f2e4' }}>Choose a document to upload</p>
                   <p className="text-xs mt-1" style={{ color: '#8a7858' }}>
-                    PDF, images, DOC/X, XLS/X, or PPT/X up to 50 MB
+                    PDFs, Office, Google Workspace-compatible docs, CSV/text files, and common image formats up to 50 MB
                   </p>
                 </div>
                 <input type="file" className="hidden" onChange={handleFileChange} />
