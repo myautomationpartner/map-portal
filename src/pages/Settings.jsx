@@ -143,7 +143,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
       } else {
         setSyncStatus({ type: 'error', message: `Could not get connect URL for ${platform}. Try again.` })
       }
-    } catch (err) {
+    } catch {
       setSyncStatus({ type: 'error', message: 'Failed to reach automation server. Check your connection.' })
     } finally {
       setConnectingPlatform(null)
@@ -167,7 +167,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
       } else {
         setSyncStatus({ type: 'error', message: 'Sync completed but returned no accounts.' })
       }
-    } catch (err) {
+    } catch {
       setSyncStatus({ type: 'error', message: 'Sync failed. Please try again.' })
     } finally {
       setSyncing(false)

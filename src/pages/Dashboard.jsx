@@ -1,30 +1,8 @@
 import { useState, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useOutletContext } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { fetchMetrics, fetchProfile } from '../lib/portalApi'
 import { Camera, Share2, Music2, MapPin, Send, Plus, Pencil, X, GripVertical, TrendingUp } from 'lucide-react'
-
-// ── Data fetching ─────────────────────────────────────────────────────────────
-
-async function fetchProfile() {
-  const { data, error } = await supabase
-    .from('users')
-    .select('*, clients(*)')
-    .single()
-  if (error) throw error
-  return data
-}
-
-async function fetchMetrics(clientId) {
-  const { data, error } = await supabase
-    .from('daily_metrics')
-    .select('*')
-    .eq('client_id', clientId)
-    .order('metric_date', { ascending: false })
-    .limit(90)
-  if (error) throw error
-  return data ?? []
-}
 
 function getMetricValue(metrics, platform, field) {
   const row = metrics.find(m => m.platform?.toLowerCase() === platform.toLowerCase())
@@ -56,7 +34,9 @@ function loadTools() {
 function saveTools(tools) {
   try {
     localStorage.setItem('ds_tools', JSON.stringify(tools))
-  } catch {}
+  } catch {
+    return undefined
+  }
 }
 
 // ── Platform stats strip ──────────────────────────────────────────────────────

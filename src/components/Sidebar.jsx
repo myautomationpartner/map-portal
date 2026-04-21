@@ -1,15 +1,19 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Send, MessageSquare, Settings, LogOut } from 'lucide-react'
+import { LayoutDashboard, Send, MessageSquare, Settings, LogOut, FolderOpen } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { getSessionClaims } from '../lib/portalApi'
 
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/documents', icon: FolderOpen,      label: 'Documents'  },
   { to: '/post',     icon: Send,            label: 'Publisher'  },
   { to: '/inbox',    icon: MessageSquare,   label: 'Inbox'      },
   { to: '/settings', icon: Settings,        label: 'Settings'   },
 ]
 
 export default function Sidebar({ session }) {
+  const claims = getSessionClaims(session)
+
   async function handleLogout() {
     await supabase.auth.signOut()
   }
@@ -93,7 +97,9 @@ export default function Sidebar({ session }) {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[11px] font-semibold truncate" style={{ color: '#f8f2e4' }}>{session?.user?.email}</p>
-            <p className="text-[9px] uppercase tracking-widest font-medium" style={{ color: '#8a7858' }}>Verified Client</p>
+            <p className="text-[9px] uppercase tracking-widest font-medium" style={{ color: '#8a7858' }}>
+              {claims.user_role || 'verified client'} · {claims.client_slug || 'tenant'}
+            </p>
           </div>
         </div>
         <button
