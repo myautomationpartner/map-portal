@@ -7,12 +7,38 @@ export const UPLOAD_MIME_OPTIONS = [
   'image/png',
   'image/jpeg',
   'image/webp',
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 ]
 
+const MIME_BY_EXTENSION = {
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  doc: 'application/msword',
+  xls: 'application/vnd.ms-excel',
+  ppt: 'application/vnd.ms-powerpoint',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+}
+
 export const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024
+
+export function resolveUploadMimeType(file) {
+  if (UPLOAD_MIME_OPTIONS.includes(file.type)) return file.type
+
+  const extension = file.name.split('.').pop()?.toLowerCase()
+  const inferredMime = extension ? MIME_BY_EXTENSION[extension] : null
+
+  return inferredMime && UPLOAD_MIME_OPTIONS.includes(inferredMime) ? inferredMime : ''
+}
 
 export async function fetchProfile() {
   const { data, error } = await supabase
@@ -119,11 +145,11 @@ export async function resolveShareLink(token) {
   return callEdgeFunction('resolve-share-link', { token }, { public: true })
 }
 
-export async function uploadFileToSignedUrl(uploadUrl, file) {
+export async function uploadFileToSignedUrl(uploadUrl, file, mimeType) {
   const response = await fetch(uploadUrl, {
     method: 'PUT',
     headers: {
-      'Content-Type': file.type || 'application/octet-stream',
+      'Content-Type': mimeType || file.type || 'application/octet-stream',
       'x-upsert': 'false',
     },
     body: file,

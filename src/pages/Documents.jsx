@@ -29,6 +29,7 @@ import {
   getDocumentUrl,
   getSessionClaims,
   getUploadUrl,
+  resolveUploadMimeType,
   revokeShareLink,
   uploadFileToSignedUrl,
 } from '../lib/portalApi'
@@ -308,21 +309,22 @@ export default function Documents() {
 
   const uploadMutation = useMutation({
     mutationFn: async (file) => {
+      const mimeType = resolveUploadMimeType(file)
       const payload = await getUploadUrl({
         filename: file.name,
-        mime_type: file.type,
+        mime_type: mimeType,
         size_bytes: file.size,
         category: uploadForm.category || null,
         description: uploadForm.description || null,
       })
-      await uploadFileToSignedUrl(payload.upload_url, file)
-      return payload
+      await uploadFileToSignedUrl(payload.upload_url, file, mimeType)
+      return { ...payload, resolvedMimeType: mimeType }
     },
     onSuccess: async (payload, file) => {
       const optimisticDocument = {
         id: payload.document_id,
         file_name: file.name,
-        mime_type: payload.expected_mime || file.type,
+        mime_type: payload.expected_mime || payload.resolvedMimeType || file.type,
         category: uploadForm.category || null,
         description: uploadForm.description || null,
         size_bytes: file.size,
@@ -379,7 +381,9 @@ export default function Documents() {
 
     setUploadNotice({ type: '', message: '' })
 
-    if (!UPLOAD_MIME_OPTIONS.includes(file.type)) {
+    const mimeType = resolveUploadMimeType(file)
+
+    if (!mimeType) {
       setUploadNotice({ type: 'error', message: 'That file type is not allowed by the storage bucket.' })
       return
     }
@@ -539,7 +543,7 @@ export default function Documents() {
                 <div>
                   <p className="text-sm font-semibold" style={{ color: '#f8f2e4' }}>Choose a document to upload</p>
                   <p className="text-xs mt-1" style={{ color: '#8a7858' }}>
-                    PDF, images, DOCX, XLSX, or PPTX up to 50 MB
+                    PDF, images, DOC/X, XLS/X, or PPT/X up to 50 MB
                   </p>
                 </div>
                 <input type="file" className="hidden" onChange={handleFileChange} />
