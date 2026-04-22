@@ -14,28 +14,25 @@ const PLATFORMS = [
     id: 'facebook',
     label: 'Facebook',
     Icon: Share2,
-    gradient: 'from-blue-600 to-blue-400',
-    color: '#8ab4e0',
-    connectedBg: 'rgba(92,143,214,0.08)',
-    connectedBorder: 'rgba(92,143,214,0.2)',
+    accent: '#4267B2',
+    connectedBg: 'rgba(66,103,178,0.08)',
+    connectedBorder: 'rgba(66,103,178,0.18)',
   },
   {
     id: 'instagram',
     label: 'Instagram',
     Icon: Camera,
-    gradient: 'from-pink-600 to-purple-500',
-    color: '#e879a0',
-    connectedBg: 'rgba(232,121,160,0.08)',
-    connectedBorder: 'rgba(232,121,160,0.2)',
+    accent: '#C13584',
+    connectedBg: 'rgba(193,53,132,0.08)',
+    connectedBorder: 'rgba(193,53,132,0.18)',
   },
   {
     id: 'tiktok',
     label: 'TikTok',
     Icon: Music2,
-    gradient: 'from-red-500 to-pink-500',
-    color: '#f0948a',
-    connectedBg: 'rgba(240,148,138,0.08)',
-    connectedBorder: 'rgba(240,148,138,0.2)',
+    accent: '#111111',
+    connectedBg: 'rgba(17,17,17,0.06)',
+    connectedBorder: 'rgba(17,17,17,0.14)',
   },
 ]
 
@@ -62,15 +59,15 @@ async function fetchConnections(clientId) {
 
 function Section({ title, description, icon: Icon, children }) {
   return (
-    <div className="rounded-2xl overflow-hidden" style={{ background: '#1e1910', border: '1px solid #3d3420' }}>
-      <div className="px-6 py-5 flex items-center gap-3" style={{ borderBottom: '1px solid #3d3420' }}>
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center"
-          style={{ background: 'rgba(212,168,58,0.10)', border: '1px solid rgba(212,168,58,0.20)' }}>
-          <Icon className="w-4 h-4" style={{ color: '#d4a83a' }} strokeWidth={2} />
+    <div className="portal-panel rounded-[32px] overflow-hidden">
+      <div className="flex items-center gap-3 border-b px-6 py-5" style={{ borderColor: 'var(--portal-border)' }}>
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg"
+          style={{ background: 'rgba(201,168,76,0.10)', border: '1px solid rgba(201,168,76,0.20)' }}>
+          <Icon className="w-4 h-4" style={{ color: 'var(--portal-primary)' }} strokeWidth={2} />
         </div>
         <div>
-          <h2 className="text-sm font-semibold" style={{ color: '#f8f2e4' }}>{title}</h2>
-          {description && <p className="text-xs mt-0.5" style={{ color: '#8a7858' }}>{description}</p>}
+          <h2 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{title}</h2>
+          {description && <p className="mt-0.5 text-xs" style={{ color: 'var(--portal-text-muted)' }}>{description}</p>}
         </div>
       </div>
       <div className="px-6 py-5">{children}</div>
@@ -81,9 +78,9 @@ function Section({ title, description, icon: Icon, children }) {
 function Field({ label, value }) {
   return (
     <div>
-      <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: '#8a7858' }}>{label}</label>
-      <div className="rounded-xl px-4 py-3 text-sm" style={{ background: '#252015', border: '1px solid #3d3420', color: '#c8b898' }}>
-        {value || <span style={{ color: '#4e4228' }}>—</span>}
+      <label className="mb-2 block text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--portal-text-soft)' }}>{label}</label>
+      <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+        {value || <span style={{ color: 'var(--portal-text-soft)' }}>—</span>}
       </div>
     </div>
   )
@@ -92,11 +89,14 @@ function Field({ label, value }) {
 function StatusBadge({ status, message }) {
   if (!status) return null
   const isSuccess = status === 'success'
+  const isInfo = status === 'info'
   return (
     <div className="flex items-center gap-2 text-sm rounded-xl px-4 py-3"
       style={isSuccess
-        ? { background: 'rgba(107,193,142,0.08)', border: '1px solid rgba(107,193,142,0.2)', color: '#6bc18e' }
-        : { background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.2)', color: '#e8899a' }
+        ? { background: 'rgba(107,193,142,0.08)', border: '1px solid rgba(107,193,142,0.2)', color: '#2f8f57' }
+        : isInfo
+        ? { background: 'rgba(201,168,76,0.10)', border: '1px solid rgba(201,168,76,0.2)', color: '#8c6d1c' }
+        : { background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.2)', color: '#c4556e' }
       }>
       {isSuccess ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
       {message}
@@ -187,7 +187,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {PLATFORMS.map(({ id, label, Icon, gradient, color, connectedBg, connectedBorder }) => {
+          {PLATFORMS.map(({ id, label, Icon, accent, connectedBg, connectedBorder }) => {
             const conn = connectedMap[id]
             const isConnecting = connectingPlatform === id
 
@@ -197,27 +197,27 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
                 className="flex items-center gap-4 p-4 rounded-xl transition-all"
                 style={conn
                   ? { background: connectedBg, border: `1px solid ${connectedBorder}` }
-                  : { background: '#252015', border: '1px solid #3d3420' }
+                  : { background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)' }
                 }>
                 {/* Platform icon */}
-                <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shrink-0`}>
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl shrink-0" style={{ background: accent }}>
                   <Icon className="w-4 h-4 text-white" strokeWidth={2} />
                 </div>
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium" style={{ color: '#f8f2e4' }}>{label}</p>
+                  <p className="text-sm font-medium" style={{ color: 'var(--portal-text)' }}>{label}</p>
                   {conn ? (
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <Wifi className="w-3 h-3" style={{ color }} />
-                      <p className="text-xs" style={{ color: '#8a7858' }}>
+                      <Wifi className="w-3 h-3" style={{ color: accent }} />
+                      <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
                         {conn.username ? `@${conn.username}` : 'Connected'} · {new Date(conn.connected_at).toLocaleDateString()}
                       </p>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <WifiOff className="w-3 h-3" style={{ color: '#4e4228' }} />
-                      <p className="text-xs" style={{ color: '#4e4228' }}>Not connected</p>
+                      <WifiOff className="w-3 h-3" style={{ color: 'var(--portal-text-soft)' }} />
+                      <p className="text-xs" style={{ color: 'var(--portal-text-soft)' }}>Not connected</p>
                     </div>
                   )}
                 </div>
@@ -228,8 +228,8 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
                   disabled={!!connectingPlatform || syncing}
                   className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   style={conn
-                    ? { background: '#1e1910', border: '1px solid #3d3420', color: '#8a7858' }
-                    : { background: 'rgba(212,168,58,0.12)', border: '1px solid rgba(212,168,58,0.25)', color: '#d4a83a' }
+                    ? { background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)', color: 'var(--portal-text-muted)' }
+                    : { background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.25)', color: 'var(--portal-primary)' }
                   }>
                   {isConnecting ? (
                     <Loader2 className="w-3 h-3 animate-spin" />
@@ -246,34 +246,23 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
 
       {/* Status message */}
       {syncStatus && (
-        <div className="mt-4 flex items-start gap-2 text-sm rounded-xl px-4 py-3"
-          style={syncStatus.type === 'success'
-            ? { background: 'rgba(107,193,142,0.08)', border: '1px solid rgba(107,193,142,0.2)', color: '#6bc18e' }
-            : syncStatus.type === 'info'
-            ? { background: 'rgba(212,168,58,0.08)', border: '1px solid rgba(212,168,58,0.2)', color: '#d4a83a' }
-            : { background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.2)', color: '#e8899a' }
-          }>
-          {syncStatus.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-          ) : (
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          )}
-          {syncStatus.message}
+        <div className="mt-4">
+          <StatusBadge status={syncStatus.type} message={syncStatus.message} />
         </div>
       )}
 
       {/* Sync button */}
-      <div className="mt-4 pt-4 flex items-center justify-between" style={{ borderTop: '1px solid #3d3420' }}>
-        <p className="text-xs" style={{ color: '#4e4228' }}>
+      <div className="mt-4 flex items-center justify-between border-t pt-4" style={{ borderColor: 'var(--portal-border)' }}>
+        <p className="text-xs" style={{ color: 'var(--portal-text-soft)' }}>
           After connecting in the popup, sync to save your accounts here.
         </p>
         <button
           onClick={handleSync}
           disabled={syncing || connectionsLoading}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ background: '#252015', border: '1px solid #3d3420', color: '#c8b898' }}
-          onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(212,168,58,0.25)'}
-          onMouseLeave={e => e.currentTarget.style.borderColor = '#3d3420'}>
+          style={{ background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(201,168,76,0.25)'}
+          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--portal-border)'}>
           <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
           Sync Accounts
         </button>
@@ -345,27 +334,27 @@ export default function Settings() {
 
   const client = profile?.clients
 
-  const inputStyle = {
-    background: '#252015',
-    border: '1px solid #3d3420',
-    color: '#f8f2e4',
-  }
-  const inputClass = 'w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all'
-
   return (
-    <div className="p-6 md:p-8 max-w-3xl mx-auto">
-      <div className="mb-8">
-        <p className="text-xs uppercase tracking-widest font-medium mb-1" style={{ color: '#8a7858' }}>Account</p>
-        <h1 className="font-display text-2xl md:text-3xl font-semibold" style={{ color: '#f8f2e4' }}>Settings</h1>
-        <p className="text-sm mt-1" style={{ color: '#8a7858' }}>Manage your account, social connections, and preferences.</p>
-      </div>
+    <div className="portal-page mx-auto max-w-[1180px] space-y-6 md:p-6 xl:p-8">
+      <section className="portal-surface rounded-[36px] p-5 md:p-7">
+        <div className="portal-page-header">
+          <div>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
+                Settings
+              </span>
+            </div>
+            <h1 className="portal-page-title font-display">Settings</h1>
+          </div>
+        </div>
+      </section>
 
       <div className="space-y-5">
 
         {/* Account info */}
         <Section title="Account" description="Your login information" icon={User}>
           {isLoading ? (
-            <div className="flex items-center gap-2" style={{ color: '#8a7858' }}>
+            <div className="flex items-center gap-2" style={{ color: 'var(--portal-text-muted)' }}>
               <Loader2 className="w-4 h-4 animate-spin" />
               <span className="text-sm">Loading…</span>
             </div>
@@ -386,11 +375,11 @@ export default function Settings() {
               <Field label="Contact Email" value={client.contact_email} />
               <Field label="Website" value={client.website_url} />
             </div>
-            <p className="text-xs mt-4" style={{ color: '#4e4228' }}>
+            <p className="text-xs mt-4" style={{ color: 'var(--portal-text-soft)' }}>
               To update your business details, contact{' '}
               <a href="mailto:billing@myautomationpartner.com"
                 className="transition-colors hover:text-brand-gold"
-                style={{ color: '#8a7858', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
+                style={{ color: 'var(--portal-text-muted)', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
                 billing@myautomationpartner.com
               </a>
             </p>
@@ -406,7 +395,7 @@ export default function Settings() {
         <Section title="Change Password" description="Update your login password" icon={Lock}>
           <form onSubmit={handlePasswordChange} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: '#8a7858' }}>
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
                 Current Password
               </label>
               <input
@@ -415,14 +404,11 @@ export default function Settings() {
                 onChange={e => setCurrentPw(e.target.value)}
                 required
                 placeholder="••••••••"
-                className={inputClass}
-                style={inputStyle}
-                onFocus={e => e.target.style.borderColor = '#d4a83a'}
-                onBlur={e => e.target.style.borderColor = '#3d3420'}
+                className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: '#8a7858' }}>
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
                 New Password
               </label>
               <input
@@ -431,14 +417,11 @@ export default function Settings() {
                 onChange={e => setNewPw(e.target.value)}
                 required
                 placeholder="Min. 8 characters"
-                className={inputClass}
-                style={inputStyle}
-                onFocus={e => e.target.style.borderColor = '#d4a83a'}
-                onBlur={e => e.target.style.borderColor = '#3d3420'}
+                className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: '#8a7858' }}>
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
                 Confirm New Password
               </label>
               <input
@@ -447,10 +430,7 @@ export default function Settings() {
                 onChange={e => setConfirmPw(e.target.value)}
                 required
                 placeholder="••••••••"
-                className={inputClass}
-                style={inputStyle}
-                onFocus={e => e.target.style.borderColor = '#d4a83a'}
-                onBlur={e => e.target.style.borderColor = '#3d3420'}
+                className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
               />
             </div>
 
@@ -460,7 +440,7 @@ export default function Settings() {
               type="submit"
               disabled={pwLoading}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:-translate-y-px active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ background: '#d4a83a', color: '#0d0b08' }}>
+              style={{ background: 'linear-gradient(135deg, var(--portal-primary), #ddc275)', color: 'var(--portal-dark)' }}>
               {pwLoading ? (
                 <><Loader2 className="w-4 h-4 animate-spin" />Updating…</>
               ) : (
