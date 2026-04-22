@@ -1228,7 +1228,7 @@ export default function CreatePost() {
     setEditingScheduledPostRef('')
   }
 
-  const loadScheduledPostForEditing = useCallback((post) => {
+  function loadScheduledPostForEditing(post) {
     if (!post) return
 
     const timezone = calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'
@@ -1261,7 +1261,7 @@ export default function CreatePost() {
     setErrorMsg('')
     setSearchParams({ date: post.localDate || selectedDay || '', editPost: post.id })
     composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [calendar?.policy?.timezone, profile?.clients?.timezone, selectedDay, setSearchParams])
+  }
 
   async function handleDeleteDraft(slot) {
     const draft = findDraftForSlot(drafts, slot)
