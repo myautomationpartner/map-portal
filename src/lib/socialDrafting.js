@@ -394,17 +394,36 @@ function buildAngleChoices(postType, selectedAngleId) {
 }
 
 function buildCaption({ businessName, industry, postType, angle, slot }) {
-  const config = getPostTypeConfig(postType)
   const seed = hashString(`${businessName}:${slot.slot_date_local}:${slot.slot_label}:${postType}:${angle.id}`)
-  const topicPoints = pickFromList(angle.topics, seed, 2)
-  const readableWindow = slot.slot_label.replace(/_/g, ' ')
-  const subject = config.subject
-  const supportSentence = `At ${businessName}, ${subject} can be a useful way to highlight ${topicPoints.join(' and ')} in a clear, low-pressure way.`
-  const timingSentence = slot.slot_weekday
-    ? `It fits well for ${slot.slot_weekday}'s ${readableWindow} slot and keeps the message focused on what matters most right now for your ${industry}.`
-    : ''
+  const topicPoint = pickFromList(angle.topics, seed, 1)[0] || industry
+  const opening = angle.opening
+    .replace(/^At\s+[^,]+,\s*/i, '')
+    .trim()
 
-  return [angle.opening, supportSentence, timingSentence, angle.cta]
+  const supportByPostType = {
+    promotional_offer: `A simple next step with ${topicPoint}.`,
+    class_spotlight: `A class built around ${topicPoint}.`,
+    community_story: `A moment that reflects ${topicPoint}.`,
+    testimonial_social_proof: `A real example of ${topicPoint}.`,
+    event_or_performance: `A good time to highlight ${topicPoint}.`,
+    seasonal_campaign: `A timely reminder around ${topicPoint}.`,
+  }
+
+  const supportSentence = supportByPostType[postType] || `A quick post focused on ${topicPoint}.`
+
+  const shortCta = angle.cta
+    .replace(/^If you want to /i, '')
+    .replace(/^Reach out if you want to /i, '')
+    .replace(/^Reach out soon if you want us to /i, '')
+    .replace(/^Message us if you want to /i, '')
+    .replace(/^Send us a message if you want /i, '')
+    .replace(/^Ask us about /i, 'Ask about ')
+    .replace(/^Come talk with us if you want /i, '')
+    .replace(/^Keep following along /i, 'Follow along ')
+    .replace(/^Keep an eye out /i, 'Watch for ')
+    .trim()
+
+  return [opening, supportSentence, shortCta]
     .filter(Boolean)
     .join(' ')
 }
