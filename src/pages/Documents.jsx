@@ -164,6 +164,47 @@ function isShareLinkActive(link) {
   return true
 }
 
+async function copyTextToClipboard(value) {
+  if (!value) throw new Error('Nothing to copy.')
+
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value)
+    return
+  }
+
+  const fallbackInput = window.document.createElement('textarea')
+  fallbackInput.value = value
+  fallbackInput.setAttribute('readonly', '')
+  fallbackInput.style.position = 'absolute'
+  fallbackInput.style.left = '-9999px'
+  window.document.body.appendChild(fallbackInput)
+  fallbackInput.select()
+
+  try {
+    const copied = window.document.execCommand('copy')
+    if (!copied) throw new Error('Clipboard copy failed.')
+  } finally {
+    window.document.body.removeChild(fallbackInput)
+  }
+}
+
+async function downloadSignedFile(signedUrl, fileName) {
+  const response = await fetch(signedUrl)
+  if (!response.ok) {
+    throw new Error('Could not download this file right now.')
+  }
+
+  const blob = await response.blob()
+  const objectUrl = window.URL.createObjectURL(blob)
+  const anchor = window.document.createElement('a')
+  anchor.href = objectUrl
+  anchor.download = fileName || 'download'
+  window.document.body.appendChild(anchor)
+  anchor.click()
+  window.document.body.removeChild(anchor)
+  window.URL.revokeObjectURL(objectUrl)
+}
+
 function DocumentIcon({ mimeType, className, style }) {
   if (mimeType?.startsWith('image/')) {
     return <FileImage className={className} style={style} />
@@ -407,8 +448,22 @@ function DocumentActionMenu({ document, isOpen, canManage, availableFolders, cur
   )
 }
 
-function ShareDialog({ document, draft, onChange, onClose, onSubmit, isSubmitting }) {
+function ShareDialog({
+  document,
+  draft,
+  activeShareLink,
+  shareNotice,
+  onChange,
+  onClose,
+  onSubmit,
+  onCopy,
+  onRevoke,
+  isSubmitting,
+  isRevoking,
+}) {
   if (!document) return null
+
+  const activeShareUrl = activeShareLink ? buildShareUrl(activeShareLink.token) : ''
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.34)] p-4">
@@ -429,9 +484,58 @@ function ShareDialog({ document, draft, onChange, onClose, onSubmit, isSubmittin
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4 px-6 py-6">
+          {activeShareLink ? (
+            <div className="space-y-3 rounded-[24px] border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(247, 244, 236, 0.72)' }}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Share link ready</p>
+                  <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                    Copy the URL below and send it however you like.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onRevoke}
+                  disabled={isRevoking}
+                  className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all disabled:opacity-60"
+                  style={{ color: 'var(--portal-danger)', background: 'rgba(223, 95, 143, 0.08)' }}
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                  Revoke
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="text"
+                  readOnly
+                  value={activeShareUrl}
+                  onFocus={(event) => event.target.select()}
+                  className="portal-input min-w-0 flex-1 px-4 py-3 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={onCopy}
+                  className="portal-button-primary inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-3 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                <span>Created {formatDate(activeShareLink.created_at)}</span>
+                <span>Expires {activeShareLink.expires_at ? formatDate(activeShareLink.expires_at) : 'Never'}</span>
+                <span>Uses {activeShareLink.max_uses !== null ? `${activeShareLink.use_count}/${activeShareLink.max_uses}` : `${activeShareLink.use_count} / Unlimited`}</span>
+              </div>
+            </div>
+          ) : null}
+
+          {shareNotice?.message ? <Notice kind={shareNotice.type} message={shareNotice.message} /> : null}
+
           <div>
             <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
-              Expires at
+              {activeShareLink ? 'Create a replacement link that expires at' : 'Expires at'}
             </label>
             <input
               type="datetime-local"
@@ -469,7 +573,7 @@ function ShareDialog({ document, draft, onChange, onClose, onSubmit, isSubmittin
               className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60"
             >
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
-              Create link
+              {activeShareLink ? 'Create new link' : 'Create link'}
             </button>
           </div>
         </form>
@@ -878,12 +982,9 @@ export default function Documents() {
     mutationFn: createShareLink,
     onSuccess: async (link) => {
       const shareUrl = buildShareUrl(link.token)
-      setShareNotice({ type: 'success', message: `Share link created: ${shareUrl}` })
+      setShareNotice({ type: 'success', message: 'Share link ready to copy.' })
       setShareDraft({ expiresAt: '', maxUses: '' })
-      setShareDialogDocument(null)
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(shareUrl).catch(() => {})
-      }
+      await copyTextToClipboard(shareUrl).catch(() => {})
       await queryClient.invalidateQueries({ queryKey: ['share-links'] })
     },
     onError: (error) => {
@@ -1090,8 +1191,8 @@ export default function Documents() {
   async function handleCopySharedFileLink(link) {
     const shareUrl = buildShareUrl(link.token)
     try {
-      await navigator.clipboard.writeText(shareUrl)
-      setShareNotice({ type: 'success', message: `Copied share link: ${shareUrl}` })
+      await copyTextToClipboard(shareUrl)
+      setShareNotice({ type: 'success', message: 'Share link copied to clipboard.' })
     } catch {
       setShareNotice({ type: 'error', message: 'Could not copy the share link to the clipboard.' })
     }
@@ -1101,8 +1202,13 @@ export default function Documents() {
     setOpenActionMenuId(null)
     setSelectedId(document.id)
     previewMutation.mutate(document.id, {
-      onSuccess: (payload) => {
-        window.open(payload.signed_url, '_blank', 'noopener,noreferrer')
+      onSuccess: async (payload) => {
+        try {
+          await downloadSignedFile(payload.signed_url, document.file_name)
+          setFileNotice({ type: 'success', message: `Downloading "${document.file_name}".` })
+        } catch (error) {
+          setFileNotice({ type: 'error', message: error.message || 'Could not start the download.' })
+        }
       },
     })
   }
@@ -1191,10 +1297,22 @@ export default function Documents() {
       <ShareDialog
         document={shareDialogDocument}
         draft={shareDraft}
+        activeShareLink={shareDialogDocument ? activeShareByDocumentId.get(shareDialogDocument.id) ?? null : null}
+        shareNotice={shareNotice}
         onChange={setShareDraft}
         onClose={() => setShareDialogDocument(null)}
         onSubmit={handleCreateShare}
+        onCopy={() => {
+          const activeShareLink = shareDialogDocument ? activeShareByDocumentId.get(shareDialogDocument.id) : null
+          if (!activeShareLink) return
+          handleCopySharedFileLink(activeShareLink)
+        }}
+        onRevoke={() => {
+          if (!shareDialogDocument) return
+          handleRevokeShareForDocument(shareDialogDocument)
+        }}
         isSubmitting={createShareMutation.isPending}
+        isRevoking={revokeShareMutation.isPending}
       />
       <UploadDialog
         isOpen={isUploadDialogOpen}
