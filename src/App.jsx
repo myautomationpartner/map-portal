@@ -8,6 +8,7 @@ import Settings from './pages/Settings'
 import Inbox from './pages/Inbox'
 import CreatePost from './pages/CreatePost'
 import PostHistory from './pages/PostHistory'
+import ScheduledPosts from './pages/ScheduledPosts'
 import PlatformStats from './pages/PlatformStats'
 import Documents from './pages/Documents'
 import PublicShare from './pages/PublicShare'
@@ -93,6 +94,7 @@ export default function App() {
                 <Route path="/documents" element={<Documents />} />
                 <Route path="/inbox" element={<Inbox />} />
                 <Route path="/post" element={<CreatePost />} />
+                <Route path="/post/scheduled" element={<ScheduledPosts />} />
                 <Route path="/post/history" element={<PostHistory />} />
                 <Route path="/stats/:platform" element={<PlatformStats />} />
                 <Route path="/settings" element={<Settings />} />

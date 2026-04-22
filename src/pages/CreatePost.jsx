@@ -797,31 +797,41 @@ export default function CreatePost() {
     return calendar.slots.find((slot) => getSlotKey(slot) === activeSlotKey) || null
   }, [activeSlotKey, calendar])
   const activeDraft = useMemo(() => drafts.find((draft) => draft.id === activeDraftId) || findDraftForSlot(drafts, activeSlot), [activeDraftId, drafts, activeSlot])
-  const scheduledPostsByDate = useMemo(() => {
-    const byDate = new Map()
+  const scheduledPostsDetailed = useMemo(() => {
     const timezone = calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'
 
-    for (const post of scheduledPosts) {
-      if (!post?.scheduled_for) continue
+    return scheduledPosts.flatMap((post) => {
+      if (!post?.scheduled_for) return []
       try {
         const parts = getDatePartsForZone(new Date(post.scheduled_for), timezone)
-        if (!byDate.has(parts.date)) byDate.set(parts.date, [])
-        byDate.get(parts.date).push({
+        return [{
           ...post,
           localDate: parts.date,
           localTime: parts.time,
-        })
+        }]
       } catch {
-        // Ignore malformed scheduled dates in the calendar UI.
+        return []
       }
+    })
+  }, [scheduledPosts, calendar?.policy?.timezone, profile?.clients?.timezone])
+  const scheduledPostsByDate = useMemo(() => {
+    const byDate = new Map()
+
+    for (const post of scheduledPostsDetailed) {
+      if (!byDate.has(post.localDate)) byDate.set(post.localDate, [])
+      byDate.get(post.localDate).push(post)
     }
 
     return byDate
-  }, [scheduledPosts, calendar?.policy?.timezone, profile?.clients?.timezone])
+  }, [scheduledPostsDetailed])
   const scheduledPostsForSelectedDay = selectedDay ? (scheduledPostsByDate.get(selectedDay) || []) : []
   const editingScheduledPost = useMemo(
-    () => scheduledPosts.find((post) => post.id === editingScheduledPostId) || null,
-    [scheduledPosts, editingScheduledPostId],
+    () => scheduledPostsDetailed.find((post) => post.id === editingScheduledPostId) || null,
+    [scheduledPostsDetailed, editingScheduledPostId],
+  )
+  const scheduledPostCount = useMemo(
+    () => scheduledPostsDetailed.filter((post) => post.status === 'scheduled').length,
+    [scheduledPostsDetailed],
   )
 
   const timingSummary = timingMode === 'now'
@@ -834,6 +844,7 @@ export default function CreatePost() {
 
   const draftTargetDate = searchParams.get('date') || ''
   const draftTargetSlot = searchParams.get('slot') || ''
+  const editTargetPostId = searchParams.get('editPost') || ''
 
   useEffect(() => {
     if (!activePlatforms.includes(previewPlatform)) {
@@ -1026,6 +1037,16 @@ export default function CreatePost() {
 
     resolveDraftForSlot(slot, { source: 'calendar_link' })
   }, [calendar, draftTargetDate, draftTargetSlot, draftLoading, activeSlotKey, drafts, resolveDraftForSlot])
+
+  useEffect(() => {
+    if (!editTargetPostId || scheduledPostsDetailed.length === 0) return
+    if (editingScheduledPostId === editTargetPostId) return
+
+    const target = scheduledPostsDetailed.find((post) => post.id === editTargetPostId)
+    if (target) {
+      loadScheduledPostForEditing(target)
+    }
+  }, [editTargetPostId, scheduledPostsDetailed, editingScheduledPostId, loadScheduledPostForEditing])
 
   useEffect(() => {
     if (!draftDirty || !activeDraftId || hydratingDraftRef.current) return undefined
@@ -1536,6 +1557,20 @@ export default function CreatePost() {
                 >
                   <History className="h-3.5 w-3.5" />
                   History
+                </Link>
+                <Link
+                  to="/post/scheduled"
+                  className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold"
+                  style={{ background: 'rgba(255,255,255,0.86)', color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
+                >
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Scheduled
+                  <span
+                    className="inline-flex min-w-[18px] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                    style={{ background: 'rgba(201,168,76,0.16)', color: 'var(--portal-primary)' }}
+                  >
+                    {scheduledPostCount}
+                  </span>
                 </Link>
               </div>
 
