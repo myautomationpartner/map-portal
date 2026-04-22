@@ -275,6 +275,11 @@ function getDatePartsForZone(value, timeZone) {
 }
 
 function buildPublishErrorMessage(payload, fallbackText, timingMode) {
+  const fallback = String(fallbackText || '').trim()
+  if (!fallback && (!payload || Object.keys(payload).length === 0)) {
+    return 'Publish webhook returned an empty response from n8n. Check the Social Publisher (Zernio) workflow response.'
+  }
+
   const failedEntries = [
     ...(Array.isArray(payload?.platformResults) ? payload.platformResults : []),
     ...(Array.isArray(payload?.results) ? payload.results : []),
@@ -306,7 +311,7 @@ function buildPublishErrorMessage(payload, fallbackText, timingMode) {
     payload?.error,
     payload?.details,
     payload?.detail,
-    fallbackText,
+    fallback,
   ]
     .map((value) => String(value || '').trim())
     .filter(Boolean)
