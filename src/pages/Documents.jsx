@@ -1043,22 +1043,24 @@ export default function Documents() {
               className="portal-input py-3 pl-10 pr-4 text-sm"
             />
           </div>
-          <div className="portal-chip inline-flex rounded-full p-1">
+          <div className="portal-chip inline-flex items-center gap-1 rounded-full p-1">
             <button
               type="button"
               onClick={() => setLibraryView('list')}
-              className="rounded-full p-2 transition-all"
+              className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition-all"
               style={libraryView === 'list' ? { background: 'white', color: 'var(--portal-primary)' } : { color: 'var(--portal-text-soft)' }}
             >
               <List className="h-4 w-4" />
+              <span>List view</span>
             </button>
             <button
               type="button"
               onClick={() => setLibraryView('grid')}
-              className="rounded-full p-2 transition-all"
+              className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition-all"
               style={libraryView === 'grid' ? { background: 'white', color: 'var(--portal-primary)' } : { color: 'var(--portal-text-soft)' }}
             >
               <Grid2X2 className="h-4 w-4" />
+              <span>Grid view</span>
             </button>
           </div>
         </div>
