@@ -1232,42 +1232,6 @@ export default function CreatePost() {
   return (
     <>
       <div className="portal-page mx-auto max-w-[1520px] space-y-6 md:p-6 xl:p-8">
-        <section className="portal-surface rounded-[36px] p-5 md:p-7">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="max-w-3xl">
-              <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
-                Calendar-driven publishing
-              </span>
-              <h1 className="portal-page-title mt-3 font-display">Publisher</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                Click a live calendar slot to load an existing draft or create one instantly, then approve platform-specific previews before it schedules.
-              </p>
-            </div>
-
-            <Link
-              to="/post/history"
-              className="flex items-center gap-3 rounded-[24px] px-5 py-4 text-left transition-all hover:-translate-y-px"
-              style={{ background: 'rgba(255,255,255,0.88)', border: '1px solid var(--portal-border)' }}
-            >
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-[14px]"
-                style={{ background: 'rgba(26, 24, 20, 0.06)', border: '1px solid var(--portal-border)' }}
-              >
-                <History className="h-4 w-4" style={{ color: 'var(--portal-text-muted)' }} />
-              </div>
-              <div>
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
-                  Archive
-                </p>
-                <p className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
-                  Post history
-                  <ChevronRight className="h-3 w-3" style={{ color: 'var(--portal-text-muted)' }} />
-                </p>
-              </div>
-            </Link>
-          </div>
-        </section>
-
         {(submitState === 'success' || errorMsg || draftError || draftStatus) && (
           <section className="space-y-3">
             {submitState === 'success' && (
@@ -1311,26 +1275,31 @@ export default function CreatePost() {
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.95fr)]">
           <div className="space-y-5">
-            <section ref={composerRef} className="portal-panel rounded-[34px] p-5 md:p-6">
-              <div className="flex items-start justify-between gap-4">
+            <section className="portal-panel rounded-[34px] p-5 md:p-6">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--portal-text-soft)' }}>
-                    Timing
-                  </p>
-                  <h2 className="mt-2 font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
+                  <h1 ref={composerRef} className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
+                    {activeDraftId ? 'Draft loaded' : 'Publisher'}
+                  </h1>
+                  <p className="mt-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
                     {timingSummary}
-                  </h2>
+                  </p>
                 </div>
-                <div className="rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: 'rgba(245,240,235,0.9)', color: 'var(--portal-text-soft)' }}>
-                  {timingMode === 'now' ? 'Immediate publish' : scheduledFor ? 'Ready to compose' : 'Choose timing'}
-                </div>
+                <Link
+                  to="/post/history"
+                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold"
+                  style={{ background: 'rgba(255,255,255,0.86)', color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
+                >
+                  <History className="h-3.5 w-3.5" />
+                  History
+                </Link>
               </div>
 
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={chooseNow}
-                  className="rounded-2xl px-4 py-3 text-sm font-semibold"
+                  className="rounded-2xl px-4 py-2.5 text-sm font-semibold"
                   style={timingMode === 'now'
                     ? { background: 'rgba(201,168,76,0.14)', color: 'var(--portal-primary)', border: '1px solid rgba(201,168,76,0.32)' }
                     : { background: 'rgba(255,255,255,0.82)', color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
@@ -1340,7 +1309,7 @@ export default function CreatePost() {
                 <button
                   type="button"
                   onClick={() => chooseCustomTime(selectedDay)}
-                  className="rounded-2xl px-4 py-3 text-sm font-semibold"
+                  className="rounded-2xl px-4 py-2.5 text-sm font-semibold"
                   style={timingMode === 'custom'
                     ? { background: 'rgba(201,168,76,0.14)', color: 'var(--portal-primary)', border: '1px solid rgba(201,168,76,0.32)' }
                     : { background: 'rgba(255,255,255,0.82)', color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
@@ -1353,13 +1322,16 @@ export default function CreatePost() {
                     setTimingMode('slot')
                     composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                   }}
-                  className="rounded-2xl px-4 py-3 text-sm font-semibold"
+                  className="rounded-2xl px-4 py-2.5 text-sm font-semibold"
                   style={timingMode === 'slot'
                     ? { background: 'rgba(201,168,76,0.14)', color: 'var(--portal-primary)', border: '1px solid rgba(201,168,76,0.32)' }
                     : { background: 'rgba(255,255,255,0.82)', color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
                 >
                   Calendar slot
                 </button>
+                <div className="rounded-full px-3 py-2 text-[11px] font-semibold" style={{ background: 'rgba(245,240,235,0.9)', color: draftLoading ? 'var(--portal-primary)' : 'var(--portal-text-soft)' }}>
+                  {draftLoading ? 'Generating draft…' : activeDraftId ? 'Draft-backed editor' : 'Pick a slot'}
+                </div>
               </div>
 
               {timingMode === 'custom' && (
@@ -1374,39 +1346,13 @@ export default function CreatePost() {
                   />
                 </div>
               )}
-            </section>
 
-            <section className="portal-panel rounded-[34px] p-5 md:p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--portal-text-soft)' }}>
-                    Draft assistant
-                  </p>
-                  <h2 className="mt-2 font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-                    {activeDraftId ? 'Draft loaded into the editor' : 'Pick a slot to generate a draft'}
-                  </h2>
-                  <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                    The draft stays platform-neutral first, shows a suggested media concept, and can swap to a different angle without exposing prompts.
+              <div className="mt-5">
+                <div className="rounded-[24px] px-4 py-3" style={{ background: 'rgba(255,255,255,0.76)', border: '1px solid var(--portal-border)' }}>
+                  <p className="text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>
+                    {mediaSuggestion || 'Select a recommended or saved draft slot and the media idea will appear here.'}
                   </p>
                 </div>
-                <div className="rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: 'rgba(245,240,235,0.9)', color: draftLoading ? 'var(--portal-primary)' : 'var(--portal-text-soft)' }}>
-                  {draftLoading ? 'Generating draft…' : activeDraftId ? 'Draft-backed editor' : 'No draft selected'}
-                </div>
-              </div>
-
-              <div className="mt-5 rounded-[28px] p-4" style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid var(--portal-border)' }}>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                  Suggested media
-                </p>
-                <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>
-                  {mediaSuggestion || 'Select a recommended or saved draft slot and the media idea will appear here.'}
-                </p>
-              </div>
-
-              <div className="mt-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                  Want a different angle?
-                </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {angleChoices.length > 0 ? angleChoices.map((choice) => {
                     const isActive = choice.id === selectedAngleId
@@ -1429,27 +1375,66 @@ export default function CreatePost() {
                         {choice.shortLabel || choice.label}
                       </button>
                     )
-                  }) : (
-                    <div className="rounded-2xl px-4 py-3 text-sm" style={{ background: 'rgba(255,255,255,0.72)', color: 'var(--portal-text-muted)', border: '1px solid var(--portal-border)' }}>
-                      Angle choices will appear after a draft is created.
-                    </div>
-                  )}
+                  }) : null}
                 </div>
+              </div>
+
+              <div className="mt-5">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <span className="text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+                    {content.length}/{charLimit}
+                  </span>
+                </div>
+
+                <textarea
+                  value={content}
+                  onChange={(event) => {
+                    setContent(event.target.value)
+                    setErrorMsg('')
+                    if (!hydratingDraftRef.current && activeDraftId) {
+                      setDraftDirty(true)
+                      setDraftStatus('Saving caption edits…')
+                    }
+                  }}
+                  placeholder="Select a draft-backed slot to prefill the caption…"
+                  rows={7}
+                  disabled={isSubmitting}
+                  className="w-full resize-none rounded-[24px] bg-[rgba(255,255,255,0.7)] px-4 py-4 text-sm leading-relaxed focus:outline-none"
+                  style={{ color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
+                />
+
+                <div className="mt-3 h-1 overflow-hidden rounded-full" style={{ background: 'rgba(26,24,20,0.08)' }}>
+                  <div
+                    className="h-full rounded-full transition-all duration-300"
+                    style={{
+                      width: `${charPercent}%`,
+                      background: charOver ? 'var(--portal-danger)' : 'var(--portal-primary)',
+                    }}
+                  />
+                </div>
+
+                <button
+                  onClick={openReview}
+                  disabled={isSubmitting || charOver}
+                  className="mt-5 inline-flex w-full items-center justify-center gap-3 rounded-2xl py-4 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ background: 'linear-gradient(135deg, var(--portal-primary), #ddc275)', color: 'var(--portal-dark)' }}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      {submitState === 'uploading' ? 'Uploading…' : timingMode === 'now' ? 'Publishing…' : 'Scheduling…'}
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4" />
+                      {timingMode === 'now' ? 'Preview & Publish' : 'Preview & Approve'}
+                    </>
+                  )}
+                </button>
               </div>
             </section>
 
             <section className="portal-panel rounded-[34px] p-5 md:p-6">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--portal-text-soft)' }}>
-                    Media
-                  </p>
-                  <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                    Start with the suggested concept below, then upload a real image or bring one in from Dropbox.
-                  </p>
-                </div>
-              </div>
-
               <div className="grid gap-3 sm:grid-cols-2">
                 <button
                   type="button"
@@ -1677,68 +1662,6 @@ export default function CreatePost() {
                 className="hidden"
                 onChange={handleFileChange}
               />
-            </section>
-
-            <section className="portal-panel rounded-[34px] p-5 md:p-6">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--portal-text-soft)' }}>
-                    Copy
-                  </p>
-                  <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                    The draft caption appears here automatically. You can edit freely and it will save back to the draft.
-                  </p>
-                </div>
-                <span className="rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: 'rgba(245,240,235,0.9)', color: charOver ? 'var(--portal-danger)' : 'var(--portal-text-soft)' }}>
-                  {content.length}/{charLimit}
-                </span>
-              </div>
-
-              <textarea
-                value={content}
-                onChange={(event) => {
-                  setContent(event.target.value)
-                  setErrorMsg('')
-                  if (!hydratingDraftRef.current && activeDraftId) {
-                    setDraftDirty(true)
-                    setDraftStatus('Saving caption edits…')
-                  }
-                }}
-                placeholder="Select a draft-backed slot to prefill the caption…"
-                rows={5}
-                disabled={isSubmitting}
-                className="w-full resize-none rounded-[24px] bg-[rgba(255,255,255,0.7)] px-4 py-4 text-sm leading-relaxed focus:outline-none"
-                style={{ color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
-              />
-
-              <div className="mt-3 h-1 overflow-hidden rounded-full" style={{ background: 'rgba(26,24,20,0.08)' }}>
-                <div
-                  className="h-full rounded-full transition-all duration-300"
-                  style={{
-                    width: `${charPercent}%`,
-                    background: charOver ? 'var(--portal-danger)' : 'var(--portal-primary)',
-                  }}
-                />
-              </div>
-
-              <button
-                onClick={openReview}
-                disabled={isSubmitting || charOver}
-                className="mt-5 inline-flex w-full items-center justify-center gap-3 rounded-2xl py-4 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40"
-                style={{ background: 'linear-gradient(135deg, var(--portal-primary), #ddc275)', color: 'var(--portal-dark)' }}
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    {submitState === 'uploading' ? 'Uploading…' : timingMode === 'now' ? 'Publishing…' : 'Scheduling…'}
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-4 w-4" />
-                    {timingMode === 'now' ? 'Preview & Publish' : 'Preview & Approve'}
-                  </>
-                )}
-              </button>
             </section>
           </div>
 
