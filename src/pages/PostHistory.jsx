@@ -31,10 +31,10 @@ async function fetchPosts(clientId) {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG = {
-  draft:     { label: 'Draft',     style: 'rgba(139,119,88,0.15)',  textColor: '#c8b898', borderColor: 'rgba(139,119,88,0.2)'   },
-  scheduled: { label: 'Scheduled', style: 'rgba(92,143,214,0.12)',  textColor: '#8ab4e0', borderColor: 'rgba(92,143,214,0.2)'   },
-  published: { label: 'Published', style: 'rgba(107,193,142,0.12)', textColor: '#6bc18e', borderColor: 'rgba(107,193,142,0.2)'  },
-  failed:    { label: 'Failed',    style: 'rgba(196,85,110,0.12)',  textColor: '#e8899a', borderColor: 'rgba(196,85,110,0.2)'   },
+  draft:     { label: 'Draft',     style: 'rgba(201,168,76,0.12)',  textColor: '#8c6d1c', borderColor: 'rgba(201,168,76,0.2)'   },
+  scheduled: { label: 'Scheduled', style: 'rgba(26,24,20,0.08)',    textColor: '#5e554d', borderColor: 'rgba(26,24,20,0.12)'    },
+  published: { label: 'Published', style: 'rgba(107,193,142,0.12)', textColor: '#2f8f57', borderColor: 'rgba(107,193,142,0.2)'  },
+  failed:    { label: 'Failed',    style: 'rgba(196,85,110,0.12)',  textColor: '#c4556e', borderColor: 'rgba(196,85,110,0.2)'   },
 }
 
 const PLATFORMS = [
@@ -60,9 +60,9 @@ function PostCard({ post }) {
 
   return (
     <div className="rounded-2xl p-5 md:p-6 transition-all"
-      style={{ background: '#1e1910', border: '1px solid #3d3420' }}
-      onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(212,168,58,0.22)'}
-      onMouseLeave={e => e.currentTarget.style.borderColor = '#3d3420'}>
+      style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(201,168,76,0.24)'}
+      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--portal-border)'}>
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4">
         <div className="flex flex-wrap gap-2">
           {post.platforms?.map(platformId => {
@@ -70,7 +70,7 @@ function PostCard({ post }) {
             const Icon = platform?.icon || FileText
             return (
               <span key={platformId} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
-                style={{ background: '#252015', border: '1px solid #3d3420', color: '#c8b898' }}>
+                style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.16)', color: '#8c6d1c' }}>
                 <Icon className="w-3.5 h-3.5" />
                 {platform?.label || platformId}
               </span>
@@ -79,7 +79,7 @@ function PostCard({ post }) {
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="text-xs" style={{ color: '#4e4228' }}>
+          <span className="text-xs" style={{ color: 'var(--portal-text-soft)' }}>
             {dateLabel} {new Date(dateToDisplay).toLocaleString()}
           </span>
           <span className="inline-flex items-center text-[10px] whitespace-nowrap font-medium uppercase tracking-widest px-2.5 py-1 rounded-full border"
@@ -92,23 +92,23 @@ function PostCard({ post }) {
       <div className="flex gap-4">
         {post.media_url && (
           <div className="shrink-0 w-24 h-24 rounded-lg overflow-hidden flex items-center justify-center"
-            style={{ background: '#252015', border: '1px solid #3d3420' }}>
+            style={{ background: 'rgba(245,240,235,0.95)', border: '1px solid var(--portal-border)' }}>
             {post.media_url.match(/\.(mp4|mov|webm)$/i) ? (
-              <Video className="w-6 h-6" style={{ color: '#8a7858' }} />
+              <Video className="w-6 h-6" style={{ color: 'var(--portal-text-muted)' }} />
             ) : (
               <img src={post.media_url} alt="Post media" className="w-full h-full object-cover" />
             )}
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: '#c8b898' }}>
+          <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: 'var(--portal-text)' }}>
             {displayContent}
           </p>
           {isLong && (
             <button
               onClick={() => setExpanded(!expanded)}
               className="mt-2 text-xs font-medium transition-colors flex items-center gap-1 hover:text-brand-gold"
-              style={{ color: '#d4a83a' }}>
+              style={{ color: 'var(--portal-primary)' }}>
               {expanded ? (
                 <>Show less <ChevronUp className="w-3 h-3" /></>
               ) : (
@@ -148,47 +148,48 @@ export default function PostHistory() {
   })
 
   const filterTabBase = { padding: '6px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', border: 'none', transition: 'all .15s', whiteSpace: 'nowrap' }
-  const filterTabActive = { ...filterTabBase, background: '#252015', color: '#f8f2e4' }
-  const filterTabInactive = { ...filterTabBase, background: 'transparent', color: '#8a7858' }
+  const filterTabActive = { ...filterTabBase, background: 'rgba(201,168,76,0.12)', color: 'var(--portal-primary)' }
+  const filterTabInactive = { ...filterTabBase, background: 'transparent', color: 'var(--portal-text-muted)' }
 
   return (
-    <div className="p-6 md:p-8 max-w-5xl mx-auto">
+    <div className="portal-page mx-auto max-w-[1480px] space-y-6 md:p-6 xl:p-8">
       {/* Back link */}
       <div className="mb-6">
         <Link
           to="/post"
           className="inline-flex items-center gap-2 text-sm font-medium transition-colors hover:text-brand-gold"
-          style={{ color: '#8a7858' }}>
+          style={{ color: 'var(--portal-text-muted)' }}>
           <ArrowLeft className="w-4 h-4" />
           Back to Publisher
         </Link>
       </div>
 
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
-        <div>
-          <p className="text-xs uppercase tracking-widest font-medium mb-1" style={{ color: '#8a7858' }}>Social Media</p>
-          <h1 className="font-display text-2xl md:text-3xl font-semibold" style={{ color: '#f8f2e4' }}>Post History</h1>
-          <p className="text-sm mt-1" style={{ color: '#8a7858' }}>
+      <section className="portal-surface rounded-[36px] p-5 md:p-7">
+        <div className="portal-page-header">
+          <div>
+            <p className="text-xs uppercase tracking-widest font-medium mb-1" style={{ color: 'var(--portal-text-soft)' }}>Social Media</p>
+            <h1 className="font-display text-2xl md:text-3xl font-semibold" style={{ color: 'var(--portal-text)' }}>Post History</h1>
+            <p className="text-sm mt-1" style={{ color: 'var(--portal-text-muted)' }}>
             View and manage your scheduled, published, and drafted posts.
-          </p>
-        </div>
-        <button
+            </p>
+          </div>
+          <button
           onClick={() => refetch()}
           disabled={isRefetching || isLoading}
           className="shrink-0 flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all disabled:opacity-50"
-          style={{ background: '#1e1910', border: '1px solid #3d3420', color: '#c8b898' }}
-          onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(212,168,58,0.25)'}
-          onMouseLeave={e => e.currentTarget.style.borderColor = '#3d3420'}>
+          style={{ background: 'rgba(255,255,255,0.88)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(201,168,76,0.25)'}
+          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--portal-border)'}>
           <RefreshCw className={`w-4 h-4 ${isRefetching ? 'animate-spin' : ''}`} />
           Refresh
         </button>
-      </div>
+        </div>
+      </section>
 
       {/* Filters */}
       <div className="flex flex-col md:flex-row gap-3 mb-6">
         <div className="flex-1 p-1.5 rounded-xl overflow-x-auto flex gap-1"
-          style={{ background: '#141109', border: '1px solid #3d3420' }}>
+          style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}>
           <button onClick={() => setStatusFilter('all')}
             style={statusFilter === 'all' ? filterTabActive : filterTabInactive}>All Status</button>
           {Object.entries(STATUS_CONFIG).map(([key, config]) => (
@@ -200,7 +201,7 @@ export default function PostHistory() {
         </div>
 
         <div className="flex-1 p-1.5 rounded-xl overflow-x-auto flex gap-1"
-          style={{ background: '#141109', border: '1px solid #3d3420' }}>
+          style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}>
           <button onClick={() => setPlatformFilter('all')}
             style={platformFilter === 'all' ? filterTabActive : filterTabInactive}>All Platforms</button>
           {PLATFORMS.map(platform => (
@@ -219,7 +220,7 @@ export default function PostHistory() {
         <div className="space-y-4">
           {[1, 2, 3].map(i => (
             <div key={i} className="rounded-2xl p-6 h-40 animate-pulse"
-              style={{ background: '#1e1910', border: '1px solid #3d3420' }} />
+              style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)' }} />
           ))}
         </div>
       ) : filteredPosts?.length > 0 ? (
@@ -230,19 +231,19 @@ export default function PostHistory() {
         </div>
       ) : (
         <div className="rounded-2xl p-12 flex flex-col items-center text-center"
-          style={{ background: '#1e1910', border: '1px solid #3d3420' }}>
+          style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}>
           <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4"
-            style={{ background: '#252015' }}>
-            <Search className="w-8 h-8" style={{ color: '#8a7858' }} />
+            style={{ background: 'rgba(201,168,76,0.1)' }}>
+            <Search className="w-8 h-8" style={{ color: 'var(--portal-primary)' }} />
           </div>
-          <h3 className="font-display text-xl font-semibold mb-2" style={{ color: '#f8f2e4' }}>No posts found</h3>
-          <p className="text-sm max-w-sm mb-6" style={{ color: '#8a7858' }}>
+          <h3 className="font-display text-xl font-semibold mb-2" style={{ color: 'var(--portal-text)' }}>No posts found</h3>
+          <p className="text-sm max-w-sm mb-6" style={{ color: 'var(--portal-text-muted)' }}>
             We couldn't find any posts matching your filters. Try adjusting them or create a new post.
           </p>
           <Link
             to="/post"
             className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:-translate-y-px"
-            style={{ background: '#d4a83a', color: '#0d0b08' }}>
+            style={{ background: 'linear-gradient(135deg, var(--portal-primary), #ddc275)', color: 'var(--portal-dark)' }}>
             Create New Post
           </Link>
         </div>
