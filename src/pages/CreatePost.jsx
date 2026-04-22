@@ -4,6 +4,8 @@ import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { fetchDropboxWeekSuggestions, openDropboxChooser } from '../lib/dropboxApi'
 import {
+  deletePost,
+  deleteSocialDraft,
   fetchProfile,
   fetchScheduledPosts,
   fetchSocialDrafts,
@@ -24,6 +26,7 @@ import {
   AlertCircle, ArrowUpRight, Calendar, CalendarDays, Camera, CheckCircle2,
   Clock3, Globe, History, Loader2, Music2, Paperclip,
   Send, Share2, UploadCloud, Wand2, X,
+  Trash2,
 } from 'lucide-react'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
@@ -736,6 +739,7 @@ export default function CreatePost() {
   const [editingScheduledPostId, setEditingScheduledPostId] = useState('')
   const [editingScheduledPostRef, setEditingScheduledPostRef] = useState('')
   const [existingMediaUrl, setExistingMediaUrl] = useState('')
+  const [deleteBusyKey, setDeleteBusyKey] = useState('')
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile'],
@@ -1239,6 +1243,90 @@ export default function CreatePost() {
     setErrorMsg('')
     setSearchParams({ date: post.localDate || selectedDay || '', editPost: post.id })
     composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  async function handleDeleteDraft(slot) {
+    const draft = findDraftForSlot(drafts, slot)
+    if (!draft) return
+    if (!window.confirm('Delete this saved draft?')) return
+
+    try {
+      setDeleteBusyKey(`draft:${draft.id}`)
+      await deleteSocialDraft(draft.id)
+      if (activeDraftId === draft.id) {
+        hydratingDraftRef.current = true
+        setActiveDraftId('')
+        setActiveSlotKey('')
+        setSelectedAngleId('')
+        setAngleChoices([])
+        setMediaSuggestion('')
+        setGeneratedCaption('')
+        setContent('')
+        setDraftDirty(false)
+        setDraftStatus('')
+        setDraftError('')
+      }
+      await queryClient.invalidateQueries({ queryKey: ['social-drafts', clientId] })
+      setErrorMsg('')
+    } catch (error) {
+      setErrorMsg(error.message || 'Could not delete this draft.')
+    } finally {
+      setDeleteBusyKey('')
+    }
+  }
+
+  async function handleDeleteScheduledPost(post) {
+    if (!post?.id) return
+    if (!window.confirm('Delete this scheduled post? This will also try to cancel it in the publisher workflow.')) return
+
+    try {
+      setDeleteBusyKey(`post:${post.id}`)
+      if (post.n8n_execution_id) {
+        const response = await fetch(`${N8N_BASE}/webhook/social-publish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'delete',
+            postId: post.id,
+            clientId,
+            zernioPostId: post.n8n_execution_id,
+          }),
+        })
+        const raw = await response.text()
+        let payload = {}
+        try {
+          payload = raw ? JSON.parse(raw) : {}
+        } catch {
+          payload = {}
+        }
+        if (!response.ok || payload?.success === false) {
+          throw new Error(buildPublishErrorMessage(payload, raw, 'custom'))
+        }
+      }
+
+      await deletePost(post.id)
+
+      if (editingScheduledPostId === post.id) {
+        setEditingScheduledPostId('')
+        setEditingScheduledPostRef('')
+        setExistingMediaUrl('')
+        setImageFile(null)
+        setImagePreview(null)
+        setDropboxAttachments([])
+        setPreviewedDropboxAsset(null)
+        setContent('')
+        setScheduledFor('')
+        setErrorMsg('')
+        setDraftStatus('')
+        setSearchParams({})
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['calendar-posts', clientId] })
+    } catch (error) {
+      setErrorMsg(error.message || 'Could not delete this scheduled post.')
+    } finally {
+      setDeleteBusyKey('')
+    }
   }
 
   function chooseCustomTime(dayKey = '') {
@@ -2099,6 +2187,23 @@ export default function CreatePost() {
                                   ? 'Open the saved draft in the editor.'
                                   : 'Create and save a deterministic draft for this slot.'}
                               </p>
+                              {slot.state === 'occupied_draft' && (
+                                <div className="mt-3 flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      handleDeleteDraft(slot)
+                                    }}
+                                    disabled={deleteBusyKey === `draft:${findDraftForSlot(drafts, slot)?.id || ''}`}
+                                    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] disabled:opacity-60"
+                                    style={{ background: 'rgba(196, 85, 110, 0.10)', color: '#b44660', border: '1px solid rgba(196, 85, 110, 0.18)' }}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                    Delete
+                                  </button>
+                                </div>
+                              )}
                             </button>
                           )
                         })}
@@ -2138,12 +2243,26 @@ export default function CreatePost() {
                                   className="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
                                   style={{ background: 'rgba(55, 181, 140, 0.12)', color: '#2d876a', borderColor: 'rgba(55, 181, 140, 0.2)' }}
                                 >
-                                  {post.status}
+                                {post.status}
                                 </span>
                                 {post.status === 'scheduled' && (
-                                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--portal-primary)' }}>
-                                    Edit
-                                  </span>
+                                  <>
+                                    <span className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--portal-primary)' }}>
+                                      Edit
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        handleDeleteScheduledPost(post)
+                                      }}
+                                      disabled={deleteBusyKey === `post:${post.id}`}
+                                      className="text-[10px] font-semibold uppercase tracking-[0.14em] disabled:opacity-60"
+                                      style={{ color: '#b44660' }}
+                                    >
+                                      Delete
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </button>

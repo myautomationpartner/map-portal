@@ -186,6 +186,24 @@ export async function updateSocialDraft(draftId, changes) {
   return data
 }
 
+export async function deleteSocialDraft(draftId) {
+  const { error } = await supabase
+    .from('social_drafts')
+    .delete()
+    .eq('id', draftId)
+
+  if (error) throw error
+}
+
+export async function deletePost(postId) {
+  const { error } = await supabase
+    .from('posts')
+    .delete()
+    .eq('id', postId)
+
+  if (error) throw error
+}
+
 export async function fetchDocuments() {
   const { data, error } = await supabase
     .from('documents')

@@ -1,8 +1,10 @@
-import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, CalendarDays, Clock3, Loader2, PencilLine } from 'lucide-react'
-import { fetchProfile, fetchScheduledPosts } from '../lib/portalApi'
+import { AlertCircle, ArrowLeft, CalendarDays, Clock3, Loader2, PencilLine, Trash2 } from 'lucide-react'
+import { deletePost, fetchProfile, fetchScheduledPosts } from '../lib/portalApi'
+
+const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 
 function getDatePartsForZone(value, timeZone) {
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -41,6 +43,7 @@ function formatDetailedDateTime(value) {
 }
 
 export default function ScheduledPosts() {
+  const queryClient = useQueryClient()
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile'],
     queryFn: fetchProfile,
@@ -48,6 +51,8 @@ export default function ScheduledPosts() {
 
   const clientId = profile?.client_id
   const timezone = profile?.clients?.timezone || 'America/New_York'
+  const [deleteBusyId, setDeleteBusyId] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
 
   const { data: scheduledPosts = [], isLoading: postsLoading } = useQuery({
     queryKey: ['calendar-posts', clientId],
@@ -72,6 +77,47 @@ export default function ScheduledPosts() {
         }
       })
   ), [scheduledPosts, timezone])
+
+  async function handleDeleteScheduledPost(post) {
+    if (!post?.id) return
+    if (!window.confirm('Delete this scheduled post? This will also try to cancel it in the publisher workflow.')) return
+
+    try {
+      setDeleteBusyId(post.id)
+      setErrorMsg('')
+
+      if (post.n8n_execution_id) {
+        const response = await fetch(`${N8N_BASE}/webhook/social-publish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'delete',
+            postId: post.id,
+            clientId,
+            zernioPostId: post.n8n_execution_id,
+          }),
+        })
+        const raw = await response.text()
+        let payload = {}
+        try {
+          payload = raw ? JSON.parse(raw) : {}
+        } catch {
+          payload = {}
+        }
+
+        if (!response.ok || payload?.success === false) {
+          throw new Error(payload?.message || raw || 'Could not delete this scheduled post.')
+        }
+      }
+
+      await deletePost(post.id)
+      await queryClient.invalidateQueries({ queryKey: ['calendar-posts', clientId] })
+    } catch (error) {
+      setErrorMsg(error.message || 'Could not delete this scheduled post.')
+    } finally {
+      setDeleteBusyId('')
+    }
+  }
 
   if (profileLoading || postsLoading) {
     return (
@@ -120,6 +166,13 @@ export default function ScheduledPosts() {
         </div>
       </section>
 
+      {errorMsg && (
+        <div className="portal-status-danger flex items-start gap-3 rounded-2xl px-5 py-4">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p className="text-sm">{errorMsg}</p>
+        </div>
+      )}
+
       {upcomingScheduledPosts.length > 0 ? (
         <div className="grid gap-4">
           {upcomingScheduledPosts.map((post) => (
@@ -161,6 +214,16 @@ export default function ScheduledPosts() {
                     <PencilLine className="h-4 w-4" />
                     Edit post
                   </Link>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteScheduledPost(post)}
+                    disabled={deleteBusyId === post.id}
+                    className="inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60"
+                    style={{ background: 'rgba(196, 85, 110, 0.10)', color: '#b44660', border: '1px solid rgba(196, 85, 110, 0.18)' }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </button>
                 </div>
               </div>
             </section>
