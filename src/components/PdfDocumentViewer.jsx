@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, ExternalLink, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Loader2, ExternalLink, AlertCircle, ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
@@ -11,6 +11,7 @@ export default function PdfDocumentViewer({ url, fileName }) {
   const [error, setError] = useState('')
   const [pageCount, setPageCount] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
+  const [zoom, setZoom] = useState(1.25)
   const objectUrl = useMemo(() => url, [url])
 
   useEffect(() => {
@@ -41,7 +42,7 @@ export default function PdfDocumentViewer({ url, fileName }) {
         })
 
         const page = await pdf.getPage(Math.min(currentPage, pdf.numPages))
-        const viewport = page.getViewport({ scale: 1.25 })
+        const viewport = page.getViewport({ scale: zoom })
         const canvas = document.createElement('canvas')
         const context = canvas.getContext('2d')
 
@@ -78,11 +79,14 @@ export default function PdfDocumentViewer({ url, fileName }) {
       cancelled = true
       cleanup()
     }
-  }, [objectUrl, currentPage])
+  }, [objectUrl, currentPage, zoom])
 
   useEffect(() => {
     setCurrentPage(1)
+    setZoom(1.25)
   }, [objectUrl])
+
+  const zoomPercent = Math.round((zoom / 1.25) * 100)
 
   return (
     <div className="space-y-4">
@@ -119,6 +123,27 @@ export default function PdfDocumentViewer({ url, fileName }) {
               </button>
             </div>
           )}
+          <div className="inline-flex items-center gap-1 rounded-2xl border px-2 py-1.5" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.85)' }}>
+            <button
+              type="button"
+              onClick={() => setZoom((current) => Math.max(0.75, Number((current - 0.25).toFixed(2))))}
+              disabled={status !== 'ready' || zoom <= 0.75}
+              className="portal-button-secondary inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-semibold disabled:opacity-40"
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </button>
+            <span className="min-w-[54px] px-2 text-center text-xs font-semibold" style={{ color: 'var(--portal-text-muted)' }}>
+              {zoomPercent}%
+            </span>
+            <button
+              type="button"
+              onClick={() => setZoom((current) => Math.min(2, Number((current + 0.25).toFixed(2))))}
+              disabled={status !== 'ready' || zoom >= 2}
+              className="portal-button-secondary inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-semibold disabled:opacity-40"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <a
             href={url}
             target="_blank"
