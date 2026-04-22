@@ -1632,12 +1632,6 @@ export default function Documents() {
             ) : (
               <div className="portal-scroll overflow-auto">
                 <table className="w-full border-separate border-spacing-0">
-                  <thead>
-                    <tr style={{ background: 'rgba(250, 246, 241, 0.9)' }}>
-                      <th className="w-[88px] px-4 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Actions</th>
-                      <th className="px-6 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Name</th>
-                    </tr>
-                  </thead>
                   <tbody>
                     {filteredDocuments.map((document) => {
                       const isSelected = selectedDocument?.id === document.id
@@ -1648,27 +1642,27 @@ export default function Documents() {
                           onClick={() => handlePreview(document.id)}
                           style={isSelected ? { background: 'rgba(201, 168, 76, 0.1)' } : undefined}
                         >
-                          <td className="border-t px-4 py-2 text-left align-middle" style={{ borderColor: 'var(--portal-border)' }}>
-                            <DocumentActionMenu
-                              key={`${document.id}-${openActionMenuId === document.id ? 'open' : 'closed'}-list`}
-                              document={document}
-                              isOpen={openActionMenuId === document.id}
-                              canManage={canManageDocuments}
-                              availableFolders={folderSelectOptions}
-                              currentFolder={documentFolder(document)}
-                              activeShareLink={activeShareByDocumentId.get(document.id)}
-                              onOpen={() => setOpenActionMenuId((current) => (current === document.id ? null : document.id))}
-                              onMove={handleMoveDocument}
-                              onRename={handleRenameDocument}
-                              onShare={handleCreateShareForDocument}
-                              onCopyShare={handleCopyShareForDocument}
-                              onRevokeShare={handleRevokeShareForDocument}
-                              onDownload={handleDownloadDocument}
-                              onDelete={handleDeleteDocument}
-                            />
-                          </td>
-                          <td className="border-t px-6 py-2.5" style={{ borderColor: 'var(--portal-border)' }}>
+                          <td className="border-t px-4 py-2.5" style={{ borderColor: 'var(--portal-border)' }}>
                             <div className="flex min-w-0 items-center gap-3">
+                              <div className="shrink-0">
+                                <DocumentActionMenu
+                                  key={`${document.id}-${openActionMenuId === document.id ? 'open' : 'closed'}-list`}
+                                  document={document}
+                                  isOpen={openActionMenuId === document.id}
+                                  canManage={canManageDocuments}
+                                  availableFolders={folderSelectOptions}
+                                  currentFolder={documentFolder(document)}
+                                  activeShareLink={activeShareByDocumentId.get(document.id)}
+                                  onOpen={() => setOpenActionMenuId((current) => (current === document.id ? null : document.id))}
+                                  onMove={handleMoveDocument}
+                                  onRename={handleRenameDocument}
+                                  onShare={handleCreateShareForDocument}
+                                  onCopyShare={handleCopyShareForDocument}
+                                  onRevokeShare={handleRevokeShareForDocument}
+                                  onDownload={handleDownloadDocument}
+                                  onDelete={handleDeleteDocument}
+                                />
+                              </div>
                               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
                                 <DocumentIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
                               </div>
