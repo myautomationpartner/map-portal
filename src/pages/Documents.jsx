@@ -336,12 +336,6 @@ function EmptyPreviewState() {
 function DocumentActionMenu({ document, isOpen, canManage, canShare, availableFolders, currentFolder, onOpen, onMove, onRename, onCreateShare, onCopyShare, onDelete }) {
   const [showFolderChooser, setShowFolderChooser] = useState(false)
 
-  useEffect(() => {
-    if (!isOpen) {
-      setShowFolderChooser(false)
-    }
-  }, [isOpen])
-
   return (
     <div className="relative" data-document-action-menu="true">
       <button
@@ -1258,6 +1252,7 @@ export default function Documents() {
                     >
                       <div className="absolute right-3 top-3">
                         <DocumentActionMenu
+                          key={`${document.id}-${openActionMenuId === document.id ? 'open' : 'closed'}-grid`}
                           document={document}
                           isOpen={openActionMenuId === document.id}
                           canManage={canManageDocuments}
@@ -1313,6 +1308,7 @@ export default function Documents() {
                               </div>
                               <div className="shrink-0">
                                 <DocumentActionMenu
+                                  key={`${document.id}-${openActionMenuId === document.id ? 'open' : 'closed'}-list`}
                                   document={document}
                                   isOpen={openActionMenuId === document.id}
                                   canManage={canManageDocuments}
