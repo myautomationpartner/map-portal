@@ -719,6 +719,30 @@ export default function CreatePost() {
     }, 0)
   }, [])
 
+  const applyGeneratedDraftToComposer = useCallback((generated, slot, draftId = '') => {
+    hydratingDraftRef.current = true
+    setActiveDraftId(draftId)
+    setActiveSlotKey(getSlotKey(slot))
+    setSelectedAngleId(generated.angle.id)
+    setAngleChoices(generated.angleChoices.map((choice) => ({
+      id: choice.id,
+      label: choice.label,
+      shortLabel: choice.shortLabel,
+    })))
+    setMediaSuggestion(generated.mediaSuggestion)
+    setGeneratedCaption(generated.caption)
+    setContent(generated.caption)
+    setDraftDirty(false)
+    setDraftError('')
+    setTimingMode('slot')
+    setScheduledFor(slotToInputValue(slot))
+    setSelectedDay(slot.slot_date_local)
+
+    window.setTimeout(() => {
+      hydratingDraftRef.current = false
+    }, 0)
+  }, [])
+
   const resolveDraftForSlot = useCallback(async (slot, options = {}) => {
     if (!profile || !calendar?.policy) return
 
@@ -731,6 +755,7 @@ export default function CreatePost() {
       !existingMediaSuggestion ||
       existingAngleChoices.length === 0 ||
       Boolean(preferredAngleId)
+    let generated = null
 
     setDraftLoading(true)
     setDraftError('')
@@ -742,7 +767,7 @@ export default function CreatePost() {
         return
       }
 
-      const generated = generateDraftForSlot({
+      generated = generateDraftForSlot({
         profile,
         policy: calendar.policy,
         slot,
@@ -765,13 +790,7 @@ export default function CreatePost() {
 
       // Update the assistant panel immediately so the click feels responsive
       // even before the saved draft round-trip completes.
-      setSelectedAngleId(generated.angle.id)
-      setAngleChoices(generated.angleChoices.map((choice) => ({
-        id: choice.id,
-        label: choice.label,
-        shortLabel: choice.shortLabel,
-      })))
-      setMediaSuggestion(generated.mediaSuggestion)
+      applyGeneratedDraftToComposer(generated, slot, existingDraft?.id || '')
       setDraftStatus(preferredAngleId ? 'Updating the draft angle…' : 'Generating draft…')
 
       const row = {
@@ -791,11 +810,16 @@ export default function CreatePost() {
       setDraftStatus(preferredAngleId ? 'Caption regenerated with a new angle.' : 'Draft created and loaded.')
     } catch (error) {
       console.error('[SocialDraft]', error)
-      setDraftError(error.message || 'Could not resolve this draft.')
+      if (generated) {
+        applyGeneratedDraftToComposer(generated, slot, existingDraft?.id || '')
+        setDraftStatus('Draft loaded into the editor, but we could not save the slot yet.')
+      } else {
+        setDraftError(error.message || 'Could not resolve this draft.')
+      }
     } finally {
       setDraftLoading(false)
     }
-  }, [profile, calendar, drafts, queryClient, clientId, applyDraftToComposer])
+  }, [profile, calendar, drafts, queryClient, clientId, applyDraftToComposer, applyGeneratedDraftToComposer])
 
   const persistDraftEdits = useCallback(async (nextCaption) => {
     if (!activeDraftId || !activeSlot || hydratingDraftRef.current) return
