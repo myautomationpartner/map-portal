@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useOutletContext } from 'react-router-dom'
 import {
@@ -962,6 +962,18 @@ export default function Documents() {
   const activeFolderCustom = selectedDocument && folderForm.docId === selectedDocument.id
     ? folderForm.custom
     : (folderSelectOptions.includes(selectedDocumentFolder) ? '' : selectedDocumentFolder)
+
+  useEffect(() => {
+    if (!openActionMenuId) return undefined
+
+    function handlePointerDown() {
+      setOpenActionMenuId(null)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [openActionMenuId])
+
   return (
     <div className="portal-page mx-auto max-w-[1640px] space-y-5 md:p-6 xl:p-8">
       <section className="portal-surface rounded-[36px] p-5 md:p-7">
