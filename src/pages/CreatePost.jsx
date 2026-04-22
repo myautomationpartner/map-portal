@@ -299,14 +299,8 @@ export default function CreatePost() {
               <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
                 Publisher
               </span>
-              <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
-                Social workflow
-              </span>
             </div>
-            <h1 className="portal-page-title font-display">Plan and publish content in the same polished workspace style as Documents.</h1>
-            <p className="portal-page-subtitle text-sm md:text-base">
-              Draft captions, attach media, preview the final post, and schedule delivery across your studio channels with a cleaner, more consistent interface.
-            </p>
+            <h1 className="portal-page-title font-display">Publisher</h1>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">

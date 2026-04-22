@@ -43,14 +43,7 @@ export default function Login() {
               </div>
             </div>
 
-            <h1 className="font-display text-4xl font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
-              A cleaner home for files, publishing, and client updates.
-            </h1>
-            <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-              The refreshed portal now uses a more structured dashboard layout with familiar documents patterns inspired by the best admin and cloud-drive tools.
-            </p>
-
-            <div className="mt-8 grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-3">
               <div className="portal-stat-card rounded-[24px] p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Documents</p>
                 <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>OneDrive-style file browsing</p>

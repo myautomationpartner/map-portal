@@ -603,14 +603,8 @@ export default function Documents() {
               <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
                 Documents
               </span>
-              <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
-                OneDrive-inspired workspace
-              </span>
             </div>
-            <h1 className="portal-page-title font-display">Files that feel familiar, without changing the secure backend.</h1>
-            <p className="portal-page-subtitle text-sm md:text-base">
-              Search, filter, preview, upload, and share all still run through the existing Supabase flow. The difference now is the structure: command bar, file-browser rhythm, and a more recognizable details panel.
-            </p>
+            <h1 className="portal-page-title font-display">Documents</h1>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">

@@ -216,16 +216,10 @@ export default function Dashboard() {
           <div className="max-w-3xl">
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
-                Client dashboard
-              </span>
-              <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
                 {today}
               </span>
             </div>
-            <h1 className="portal-page-title font-display">A calmer control center for the Dancescapes team.</h1>
-            <p className="portal-page-subtitle text-sm md:text-base">
-              The shell now leans into a cleaner dashboard feel: lighter surfaces, stronger content grouping, and quicker access to documents, publishing, and studio tools.
-            </p>
+            <h1 className="portal-page-title font-display">Dashboard</h1>
           </div>
 
           <div className="flex flex-wrap gap-3">

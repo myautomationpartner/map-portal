@@ -167,11 +167,7 @@ export default function PostHistory() {
       <section className="portal-surface rounded-[36px] p-5 md:p-7">
         <div className="portal-page-header">
           <div>
-            <p className="text-xs uppercase tracking-widest font-medium mb-1" style={{ color: 'var(--portal-text-soft)' }}>Social Media</p>
             <h1 className="font-display text-2xl md:text-3xl font-semibold" style={{ color: 'var(--portal-text)' }}>Post History</h1>
-            <p className="text-sm mt-1" style={{ color: 'var(--portal-text-muted)' }}>
-            View and manage your scheduled, published, and drafted posts.
-            </p>
           </div>
           <button
           onClick={() => refetch()}
