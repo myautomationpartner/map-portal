@@ -1154,7 +1154,7 @@ export default function Documents() {
           </section>
         </aside>
 
-        <section className="portal-panel overflow-hidden rounded-[34px]">
+        <section className="portal-panel overflow-visible rounded-[34px]">
           <div className="border-b px-5 py-5 md:px-6" style={{ borderColor: 'var(--portal-border)' }}>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -1232,7 +1232,6 @@ export default function Documents() {
                       <th className="px-6 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Name</th>
                       <th className="px-4 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Modified</th>
                       <th className="px-4 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Size</th>
-                      <th className="px-4 py-4 text-right text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1246,11 +1245,27 @@ export default function Documents() {
                           style={isSelected ? { background: 'rgba(201, 168, 76, 0.1)' } : undefined}
                         >
                           <td className="border-t px-6 py-3.5" style={{ borderColor: 'var(--portal-border)' }}>
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-8 w-8 items-center justify-center rounded-[12px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
-                                <DocumentIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+                                  <DocumentIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
+                                </div>
+                                <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
                               </div>
-                              <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                              <div className="shrink-0">
+                                <DocumentActionMenu
+                                  document={document}
+                                  isOpen={openActionMenuId === document.id}
+                                  canManage={canManageDocuments}
+                                  canShare={canManageShares}
+                                  onOpen={() => setOpenActionMenuId((current) => (current === document.id ? null : document.id))}
+                                  onMove={handleMoveDocument}
+                                  onRename={handleRenameDocument}
+                                  onCreateShare={handleCreateShareForDocument}
+                                  onCopyShare={handleCopyShareForDocument}
+                                  onDelete={handleDeleteDocument}
+                                />
+                              </div>
                             </div>
                           </td>
                           <td className="border-t px-4 py-3.5 text-sm" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
@@ -1258,20 +1273,6 @@ export default function Documents() {
                           </td>
                           <td className="border-t px-4 py-3.5 text-sm" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
                             {formatBytes(document.size_bytes)}
-                          </td>
-                          <td className="border-t px-4 py-3.5 text-right" style={{ borderColor: 'var(--portal-border)' }}>
-                            <DocumentActionMenu
-                              document={document}
-                              isOpen={openActionMenuId === document.id}
-                              canManage={canManageDocuments}
-                              canShare={canManageShares}
-                              onOpen={() => setOpenActionMenuId((current) => (current === document.id ? null : document.id))}
-                              onMove={handleMoveDocument}
-                              onRename={handleRenameDocument}
-                              onCreateShare={handleCreateShareForDocument}
-                              onCopyShare={handleCopyShareForDocument}
-                              onDelete={handleDeleteDocument}
-                            />
                           </td>
                         </tr>
                       )
