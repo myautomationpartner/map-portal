@@ -45,17 +45,6 @@ export default function Sidebar({ session }) {
         </div>
       </div>
 
-      <div className="px-5 pt-5">
-        <div className="rounded-[28px] px-4 py-4" style={{ background: 'linear-gradient(145deg, rgba(201, 168, 76, 0.16), rgba(232, 213, 160, 0.08))', border: '1px solid rgba(201, 168, 76, 0.18)' }}>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'rgba(255,255,255,0.55)' }}>
-            Workspace Focus
-          </p>
-          <p className="mt-2 text-sm font-semibold" style={{ color: '#fff' }}>
-            Client operations, documents, and publishing in one polished dashboard.
-          </p>
-        </div>
-      </div>
-
       <nav className="flex-1 space-y-1.5 px-4 py-6">
         {navItems.map(({ to, icon: Icon, label }) => (
           <NavLink
