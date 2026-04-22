@@ -144,20 +144,32 @@ function parseLocalDateTime(value) {
 function formatCalendarDate(dateString) {
   const parsed = parseDateOnly(dateString)
   if (!parsed) return dateString
+  const date = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day, 12, 0, 0))
+  if (Number.isNaN(date.getTime())) return dateString
 
-  return new Intl.DateTimeFormat('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day, 12, 0, 0)))
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    }).format(date)
+  } catch {
+    return dateString
+  }
 }
 
 function formatMonthLabel(date) {
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'long',
-    year: 'numeric',
-  }).format(date)
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'Calendar'
+
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      year: 'numeric',
+    }).format(date)
+  } catch {
+    return 'Calendar'
+  }
 }
 
 function toDateKey(date) {
@@ -190,13 +202,19 @@ function buildMonthGrid(baseDate) {
 function formatLocalDateTime(value) {
   const parsed = parseLocalDateTime(value)
   if (!parsed) return 'Pick a calendar slot'
+  const date = new Date(parsed.year, parsed.month - 1, parsed.day, parsed.hour, parsed.minute)
+  if (Number.isNaN(date.getTime())) return 'Pick a calendar slot'
 
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(parsed.year, parsed.month - 1, parsed.day, parsed.hour, parsed.minute))
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(date)
+  } catch {
+    return 'Pick a calendar slot'
+  }
 }
 
 function localDateTimeToIso(value) {
@@ -744,6 +762,17 @@ export default function CreatePost() {
         deleteCount: existingMeta.deleteCount || 0,
         generatedAt: new Date().toISOString(),
       }
+
+      // Update the assistant panel immediately so the click feels responsive
+      // even before the saved draft round-trip completes.
+      setSelectedAngleId(generated.angle.id)
+      setAngleChoices(generated.angleChoices.map((choice) => ({
+        id: choice.id,
+        label: choice.label,
+        shortLabel: choice.shortLabel,
+      })))
+      setMediaSuggestion(generated.mediaSuggestion)
+      setDraftStatus(preferredAngleId ? 'Updating the draft angle…' : 'Generating draft…')
 
       const row = {
         ...buildDraftPayload(profile, calendar.policy, slot),
