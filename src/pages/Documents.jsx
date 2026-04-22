@@ -11,7 +11,6 @@ import {
   FileBadge,
   FileCode2,
   FileImage,
-  FilePenLine,
   FileSpreadsheet,
   FileText,
   FolderOpen,
@@ -21,6 +20,7 @@ import {
   List,
   Loader2,
   Maximize2,
+  MoreHorizontal,
   Search,
   Share2,
   ShieldCheck,
@@ -327,6 +327,65 @@ function EmptyPreviewState() {
   )
 }
 
+function DocumentActionMenu({ document, isOpen, canManage, onOpen, onRename, onDelete }) {
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        aria-label={`Open actions for ${document.file_name}`}
+        onClick={(event) => {
+          event.stopPropagation()
+          onOpen()
+        }}
+        className="inline-flex h-9 w-9 items-center justify-center rounded-full border transition-all"
+        style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.92)', color: 'var(--portal-text-muted)' }}
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+
+      {isOpen && (
+        <div
+          className="absolute right-0 top-11 z-20 min-w-[180px] rounded-[20px] border p-2 shadow-lg"
+          style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.98)', boxShadow: '0 18px 40px rgba(26, 24, 20, 0.12)' }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {canManage ? (
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onRename(document)
+                }}
+                className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                style={{ color: 'var(--portal-text)' }}
+              >
+                Rename
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onDelete(document)
+                }}
+                className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                style={{ color: 'var(--portal-danger)', background: 'rgba(223, 95, 143, 0.06)' }}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </button>
+            </div>
+          ) : (
+            <p className="px-3 py-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+              Admin access required
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function getPreviewPopoutUrl(document, signedUrl) {
   if (!document || !signedUrl) return ''
   const viewer = getViewerSource(document, signedUrl)
@@ -484,7 +543,7 @@ export default function Documents() {
   const [folderDraft, setFolderDraft] = useState('')
   const [localFolders, setLocalFolders] = useState(loadLocalFolders)
   const [folderForm, setFolderForm] = useState({ docId: '', mode: '', custom: '' })
-  const [renameDraft, setRenameDraft] = useState({ docId: '', value: '' })
+  const [openActionMenuId, setOpenActionMenuId] = useState(null)
 
   const { data: profile } = useQuery({
     queryKey: ['profile'],
@@ -746,29 +805,39 @@ export default function Documents() {
     })
   }
 
-  function handleRenameFile() {
-    if (!selectedDocument || !canManageDocuments) return
+  function handleRenameDocument(document) {
+    setOpenActionMenuId(null)
+    setSelectedId(document.id)
+    handleRenameFileForDocument(document)
+  }
 
-    const nextName = (renameDraft.docId === selectedDocument.id ? renameDraft.value : selectedDocument.file_name).trim()
-    if (!nextName || nextName === selectedDocument.file_name) return
+  function handleRenameFileForDocument(document) {
+    if (!document || !canManageDocuments) return
+
+    const promptedName = window.prompt('Rename file', document.file_name)
+    const nextName = promptedName?.trim()
+    if (!nextName || nextName === document.file_name) return
 
     setFileNotice({ type: '', message: '' })
     updateDocumentMutation.mutate({
-      documentId: selectedDocument.id,
+      documentId: document.id,
       changes: { file_name: nextName },
     })
   }
 
-  function handleDeleteFile() {
-    if (!selectedDocument || !canManageDocuments) return
+  function handleDeleteDocument(document) {
+    setOpenActionMenuId(null)
+    setSelectedId(document.id)
 
-    const confirmed = window.confirm(`Delete "${selectedDocument.file_name}"? This will permanently remove the file from the portal.`)
+    if (!document || !canManageDocuments) return
+
+    const confirmed = window.confirm(`Delete "${document.file_name}"? This will permanently remove the file from the portal.`)
     if (!confirmed) return
 
     setFileNotice({ type: '', message: '' })
     deleteDocumentMutation.mutate({
-      documentId: selectedDocument.id,
-      storagePath: selectedDocument.storage_path,
+      documentId: document.id,
+      storagePath: document.storage_path,
     })
   }
 
@@ -789,10 +858,6 @@ export default function Documents() {
   const activeFolderCustom = selectedDocument && folderForm.docId === selectedDocument.id
     ? folderForm.custom
     : (folderSelectOptions.includes(selectedDocumentFolder) ? '' : selectedDocumentFolder)
-  const activeRenameValue = selectedDocument && renameDraft.docId === selectedDocument.id
-    ? renameDraft.value
-    : (selectedDocument?.file_name || '')
-
   return (
     <div className="portal-page mx-auto max-w-[1640px] space-y-5 md:p-6 xl:p-8">
       <section className="portal-surface rounded-[36px] p-5 md:p-7">
@@ -1014,15 +1079,32 @@ export default function Documents() {
                   const isSelected = selectedDocument?.id === document.id
 
                   return (
-                    <button
+                    <div
                       key={document.id}
-                      type="button"
                       onClick={() => handlePreview(document.id)}
-                      className="rounded-[24px] p-4 text-left transition-all"
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          handlePreview(document.id)
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      className="relative rounded-[24px] p-4 text-left transition-all cursor-pointer"
                       style={isSelected
                         ? { background: 'linear-gradient(145deg, rgba(201,168,76,0.14), rgba(232,213,160,0.08))', border: '1px solid rgba(201,168,76,0.24)', boxShadow: '0 14px 28px rgba(26,24,20,0.06)' }
                         : { background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}
                     >
+                      <div className="absolute right-3 top-3">
+                        <DocumentActionMenu
+                          document={document}
+                          isOpen={openActionMenuId === document.id}
+                          canManage={canManageDocuments}
+                          onOpen={() => setOpenActionMenuId((current) => (current === document.id ? null : document.id))}
+                          onRename={handleRenameDocument}
+                          onDelete={handleDeleteDocument}
+                        />
+                      </div>
                       <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-[14px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
                         <DocumentIcon mimeType={document.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
                       </div>
@@ -1030,7 +1112,7 @@ export default function Documents() {
                       <p className="mt-3 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
                         {formatDate(document.updated_at || document.created_at)} · {formatBytes(document.size_bytes)}
                       </p>
-                    </button>
+                    </div>
                   )
                 })}
               </div>
@@ -1042,6 +1124,7 @@ export default function Documents() {
                       <th className="px-6 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Name</th>
                       <th className="px-4 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Modified</th>
                       <th className="px-4 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Size</th>
+                      <th className="px-4 py-4 text-right text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1067,6 +1150,16 @@ export default function Documents() {
                           </td>
                           <td className="border-t px-4 py-3.5 text-sm" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
                             {formatBytes(document.size_bytes)}
+                          </td>
+                          <td className="border-t px-4 py-3.5 text-right" style={{ borderColor: 'var(--portal-border)' }}>
+                            <DocumentActionMenu
+                              document={document}
+                              isOpen={openActionMenuId === document.id}
+                              canManage={canManageDocuments}
+                              onOpen={() => setOpenActionMenuId((current) => (current === document.id ? null : document.id))}
+                              onRename={handleRenameDocument}
+                              onDelete={handleDeleteDocument}
+                            />
                           </td>
                         </tr>
                       )
@@ -1169,67 +1262,11 @@ export default function Documents() {
                     )}
                   </div>
 
-                  <div className="rounded-[24px] border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
-                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
-                      File name
-                    </label>
-                    {canManageDocuments ? (
-                      <div className="space-y-3">
-                        <input
-                          type="text"
-                          value={activeRenameValue}
-                          onChange={(event) => setRenameDraft({ docId: selectedDocument.id, value: event.target.value })}
-                          className="portal-input px-4 py-3 text-sm"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleRenameFile}
-                          disabled={updateDocumentMutation.isPending || !activeRenameValue.trim() || activeRenameValue.trim() === selectedDocument.file_name}
-                          className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60"
-                        >
-                          {updateDocumentMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FilePenLine className="h-4 w-4" />}
-                          Rename file
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="portal-status-info rounded-2xl p-4 text-sm">
-                        File renaming is limited to `admin` users.
-                      </div>
-                    )}
-                  </div>
-
                   {selectedDocument.description && (
                     <div className="rounded-[24px] border p-4 text-sm" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)', color: 'var(--portal-text-muted)' }}>
                       {selectedDocument.description}
                     </div>
                   )}
-
-                  <div className="rounded-[24px] border p-4" style={{ borderColor: 'rgba(223, 95, 143, 0.18)', background: 'rgba(255,255,255,0.86)' }}>
-                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
-                      Delete file
-                    </label>
-                    {canManageDocuments ? (
-                      <div className="space-y-3">
-                        <p className="text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                          Remove this file from the portal library and storage.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={handleDeleteFile}
-                          disabled={deleteDocumentMutation.isPending}
-                          className="inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition-all disabled:opacity-60"
-                          style={{ background: 'rgba(223, 95, 143, 0.08)', border: '1px solid rgba(223, 95, 143, 0.18)', color: 'var(--portal-danger)' }}
-                        >
-                          {deleteDocumentMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                          Delete file
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="portal-status-info rounded-2xl p-4 text-sm">
-                        File deletion is limited to `admin` users.
-                      </div>
-                    )}
-                  </div>
 
                   <Notice kind={fileNotice.type} message={fileNotice.message} />
                 </>
