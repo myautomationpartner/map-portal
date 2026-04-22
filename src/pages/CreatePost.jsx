@@ -1348,12 +1348,7 @@ export default function CreatePost() {
               )}
 
               <div className="mt-5">
-                <div className="rounded-[24px] px-4 py-3" style={{ background: 'rgba(255,255,255,0.76)', border: '1px solid var(--portal-border)' }}>
-                  <p className="text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>
-                    {mediaSuggestion || 'Select a recommended or saved draft slot and the media idea will appear here.'}
-                  </p>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2">
                   {angleChoices.length > 0 ? angleChoices.map((choice) => {
                     const isActive = choice.id === selectedAngleId
 
