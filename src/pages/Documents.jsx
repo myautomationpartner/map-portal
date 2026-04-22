@@ -47,6 +47,11 @@ import {
 const LOCAL_FOLDERS_KEY = 'ds_document_folders'
 const ALL_FILES_FOLDER = 'All Files'
 const SHARED_FILES_FOLDER = 'Shared files'
+const DESKTOP_PANE_BREAKPOINT = 1280
+const MIN_FOLDER_PANE = 220
+const MAX_FOLDER_PANE = 380
+const MIN_PREVIEW_PANE = 320
+const MAX_PREVIEW_PANE = 720
 
 const TEXT_PREVIEW_MIME = new Set([
   'text/csv',
@@ -696,6 +701,7 @@ export default function Documents() {
   const { session } = useOutletContext()
   const queryClient = useQueryClient()
   const claims = getSessionClaims(session)
+  const layoutRef = useRef(null)
 
   const [selectedId, setSelectedId] = useState(null)
   const [uploadedFallbackDocuments, setUploadedFallbackDocuments] = useState([])
@@ -713,6 +719,9 @@ export default function Documents() {
   const [openActionMenuId, setOpenActionMenuId] = useState(null)
   const [shareDialogDocument, setShareDialogDocument] = useState(null)
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
+  const [isDesktopLayout, setIsDesktopLayout] = useState(() => window.innerWidth >= DESKTOP_PANE_BREAKPOINT)
+  const [paneSizes, setPaneSizes] = useState({ folders: 260, preview: 400 })
+  const [activePaneResize, setActivePaneResize] = useState(null)
 
   const { data: profile } = useQuery({
     queryKey: ['profile'],
@@ -1128,6 +1137,55 @@ export default function Documents() {
     return () => document.removeEventListener('pointerdown', handlePointerDown)
   }, [openActionMenuId])
 
+  useEffect(() => {
+    function handleResize() {
+      setIsDesktopLayout(window.innerWidth >= DESKTOP_PANE_BREAKPOINT)
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  useEffect(() => {
+    if (!activePaneResize) return undefined
+
+    function handlePointerMove(event) {
+      const layoutBounds = layoutRef.current?.getBoundingClientRect()
+      if (!layoutBounds) return
+
+      if (activePaneResize === 'folders') {
+        const nextFoldersWidth = Math.min(
+          MAX_FOLDER_PANE,
+          Math.max(MIN_FOLDER_PANE, event.clientX - layoutBounds.left),
+        )
+        setPaneSizes((current) => ({ ...current, folders: nextFoldersWidth }))
+        return
+      }
+
+      const nextPreviewWidth = Math.min(
+        MAX_PREVIEW_PANE,
+        Math.max(MIN_PREVIEW_PANE, layoutBounds.right - event.clientX),
+      )
+      setPaneSizes((current) => ({ ...current, preview: nextPreviewWidth }))
+    }
+
+    function handlePointerUp() {
+      setActivePaneResize(null)
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+
+    return () => {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [activePaneResize])
+
   return (
     <div className="portal-page mx-auto max-w-[1640px] space-y-5 md:p-6 xl:p-8">
       <ShareDialog
@@ -1244,7 +1302,13 @@ export default function Documents() {
         </div>
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)_400px]">
+      <div
+        ref={layoutRef}
+        className="space-y-6 xl:grid xl:items-start xl:gap-0"
+        style={isDesktopLayout
+          ? { gridTemplateColumns: `${paneSizes.folders}px 14px minmax(0,1fr) 14px ${paneSizes.preview}px` }
+          : undefined}
+      >
         <aside className="space-y-6">
           <section className="portal-panel overflow-hidden rounded-[34px]">
             <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
@@ -1291,6 +1355,25 @@ export default function Documents() {
             </div>
           </section>
         </aside>
+
+        {isDesktopLayout ? (
+          <div className="flex items-stretch justify-center px-1">
+            <button
+              type="button"
+              aria-label="Resize folders panel"
+              onPointerDown={() => setActivePaneResize('folders')}
+              className="group flex w-full cursor-col-resize items-center justify-center"
+            >
+              <span
+                className="h-full min-h-[640px] w-[2px] rounded-full transition-all"
+                style={{
+                  background: activePaneResize === 'folders' ? 'rgba(201, 168, 76, 0.65)' : 'rgba(201, 168, 76, 0.22)',
+                  boxShadow: activePaneResize === 'folders' ? '0 0 0 3px rgba(201, 168, 76, 0.14)' : 'none',
+                }}
+              />
+            </button>
+          </div>
+        ) : null}
 
         <section className="portal-panel overflow-visible rounded-[34px]">
           <div className="border-b px-5 py-5 md:px-6" style={{ borderColor: 'var(--portal-border)' }}>
@@ -1360,8 +1443,8 @@ export default function Documents() {
                           onDelete={handleDeleteDocument}
                         />
                       </div>
-                      <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-[12px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
-                        <DocumentIcon mimeType={document.mime_type} className="h-4.5 w-4.5" style={{ color: 'var(--portal-primary)' }} />
+                      <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+                        <DocumentIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
                       </div>
                       <div className="flex items-center gap-2">
                         <p className="truncate text-[13px] font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
@@ -1369,22 +1452,17 @@ export default function Documents() {
                           <Share2 className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--portal-success)' }} />
                         ) : null}
                       </div>
-                      <p className="mt-2 text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>
-                        {formatDate(document.updated_at || document.created_at)} · {formatBytes(document.size_bytes)}
-                      </p>
                     </div>
                   )
                 })}
               </div>
             ) : (
               <div className="portal-scroll overflow-auto">
-                <table className="min-w-full border-separate border-spacing-0">
+                <table className="w-full border-separate border-spacing-0">
                   <thead>
                     <tr style={{ background: 'rgba(250, 246, 241, 0.9)' }}>
                       <th className="px-6 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Name</th>
-                      <th className="px-4 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Modified</th>
-                      <th className="px-4 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Size</th>
-                      <th className="px-4 py-4 text-right text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Actions</th>
+                      <th className="w-[76px] px-4 py-4 text-right text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1399,24 +1477,18 @@ export default function Documents() {
                         >
                           <td className="border-t px-6 py-2.5" style={{ borderColor: 'var(--portal-border)' }}>
                             <div className="flex min-w-0 items-center gap-3">
-                              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
-                                <DocumentIcon mimeType={document.mime_type} className="h-3.5 w-3.5" style={{ color: 'var(--portal-primary)' }} />
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+                                <DocumentIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
                               </div>
                               <div className="flex min-w-0 items-center gap-2">
-                                <p className="truncate text-[13px] font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                                <p className="truncate text-[12px] font-semibold leading-5" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
                                 {activeShareByDocumentId.get(document.id) ? (
-                                  <Share2 className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--portal-success)' }} />
+                                  <Share2 className="h-3 w-3 shrink-0" style={{ color: 'var(--portal-success)' }} />
                                 ) : null}
                               </div>
                             </div>
                           </td>
-                          <td className="border-t px-4 py-2.5 text-[12px]" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
-                            {formatDate(document.updated_at || document.created_at)}
-                          </td>
-                          <td className="border-t px-4 py-2.5 text-[12px]" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
-                            {formatBytes(document.size_bytes)}
-                          </td>
-                          <td className="border-t px-4 py-2.5 text-right" style={{ borderColor: 'var(--portal-border)' }}>
+                          <td className="border-t px-4 py-2 text-right align-middle" style={{ borderColor: 'var(--portal-border)' }}>
                             <DocumentActionMenu
                               key={`${document.id}-${openActionMenuId === document.id ? 'open' : 'closed'}-list`}
                               document={document}
@@ -1451,6 +1523,25 @@ export default function Documents() {
             </div>
           )}
         </section>
+
+        {isDesktopLayout ? (
+          <div className="flex items-stretch justify-center px-1">
+            <button
+              type="button"
+              aria-label="Resize preview panel"
+              onPointerDown={() => setActivePaneResize('preview')}
+              className="group flex w-full cursor-col-resize items-center justify-center"
+            >
+              <span
+                className="h-full min-h-[640px] w-[2px] rounded-full transition-all"
+                style={{
+                  background: activePaneResize === 'preview' ? 'rgba(201, 168, 76, 0.65)' : 'rgba(201, 168, 76, 0.22)',
+                  boxShadow: activePaneResize === 'preview' ? '0 0 0 3px rgba(201, 168, 76, 0.14)' : 'none',
+                }}
+              />
+            </button>
+          </div>
+        ) : null}
 
         <aside className="space-y-6">
           <DocumentPreview
