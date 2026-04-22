@@ -948,13 +948,8 @@ export default function Documents() {
     setSelectedId(document.id)
     if (!document || !canManageShares) return
 
-    setShareNotice({ type: '', message: '' })
-    createShareMutation.mutate({
-      documentId: document.id,
-      clientId: claims.client_id || profile?.client_id || null,
-      expiresAt: null,
-      maxUses: null,
-    })
+    setShareNotice({ type: 'info', message: `Ready to create a share link for ${document.file_name}.` })
+    document.getElementById('documents-share-links')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   async function handleCopyShareForDocument(document) {
@@ -1105,7 +1100,7 @@ export default function Documents() {
 
       <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)_420px]">
         <aside className="space-y-6">
-          <section className="portal-panel overflow-hidden rounded-[34px]">
+          <section id="documents-share-links" className="portal-panel overflow-hidden rounded-[34px]">
             <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
               <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Folders</h2>
             </div>
