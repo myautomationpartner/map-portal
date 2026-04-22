@@ -13,7 +13,8 @@ import {
   FileImage,
   FileSpreadsheet,
   FileText,
-  Filter,
+  FolderOpen,
+  FolderPlus,
   Grid2X2,
   Link2,
   List,
@@ -36,11 +37,11 @@ import {
   getUploadUrl,
   resolveUploadMimeType,
   revokeShareLink,
+  updateDocumentMetadata,
   uploadFileToSignedUrl,
 } from '../lib/portalApi'
-import { supabaseUrl } from '../lib/supabase'
 
-const FUNCTION_BASE = `${supabaseUrl}/functions/v1`
+const LOCAL_FOLDERS_KEY = 'ds_document_folders'
 
 const TEXT_PREVIEW_MIME = new Set([
   'text/csv',
@@ -91,6 +92,24 @@ const GOOGLE_VIEWER_MIME = new Set([
   'application/vnd.oasis.opendocument.presentation',
   'application/rtf',
 ])
+
+function loadLocalFolders() {
+  try {
+    const stored = localStorage.getItem(LOCAL_FOLDERS_KEY)
+    const parsed = stored ? JSON.parse(stored) : []
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : []
+  } catch {
+    return []
+  }
+}
+
+function saveLocalFolders(folders) {
+  try {
+    localStorage.setItem(LOCAL_FOLDERS_KEY, JSON.stringify(folders))
+  } catch {
+    return undefined
+  }
+}
 
 function getViewerSource(document, signedUrl) {
   if (!signedUrl) return null
@@ -144,7 +163,7 @@ function DocumentIcon({ mimeType, className, style }) {
   return <FileText className={className} style={style} />
 }
 
-function documentCategory(document) {
+function documentFolder(document) {
   return (document.category || 'General').trim()
 }
 
@@ -172,6 +191,20 @@ function statusPillStyle(isActive, isRevoked) {
   }
 }
 
+function Notice({ kind, message }) {
+  if (!message) return null
+
+  const className = kind === 'success' ? 'portal-status-success' : kind === 'info' ? 'portal-status-info' : 'portal-status-danger'
+  const Icon = kind === 'success' ? CheckCircle2 : AlertCircle
+
+  return (
+    <div className={`${className} flex items-start gap-3 rounded-2xl p-4 text-sm`}>
+      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+      <p className="break-all">{message}</p>
+    </div>
+  )
+}
+
 function ShareLinkCard({ link, documentName, canManage, onRevoke }) {
   const shareUrl = buildShareUrl(link.token)
   const isRevoked = !!link.revoked_at
@@ -186,10 +219,7 @@ function ShareLinkCard({ link, documentName, canManage, onRevoke }) {
             Created {formatDate(link.created_at)}
           </p>
         </div>
-        <span
-          className="rounded-full px-2.5 py-1 text-[11px] font-semibold"
-          style={statusPillStyle(!isRevoked && !hasReachedLimit, isRevoked)}
-        >
+        <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={statusPillStyle(!isRevoked && !hasReachedLimit, isRevoked)}>
           {isRevoked ? 'Revoked' : hasReachedLimit ? 'Limit reached' : 'Active'}
         </span>
       </div>
@@ -279,20 +309,6 @@ function EmbeddedDocumentViewer({ document, signedUrl }) {
   )
 }
 
-function Notice({ kind, message }) {
-  if (!message) return null
-
-  const className = kind === 'success' ? 'portal-status-success' : 'portal-status-danger'
-  const Icon = kind === 'success' ? CheckCircle2 : AlertCircle
-
-  return (
-    <div className={`${className} flex items-start gap-3 rounded-2xl p-4 text-sm`}>
-      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-      <p className="break-all">{message}</p>
-    </div>
-  )
-}
-
 function EmptyPreviewState() {
   return (
     <div className="portal-panel flex h-full min-h-[460px] flex-col items-center justify-center rounded-[32px] p-8 text-center">
@@ -301,7 +317,7 @@ function EmptyPreviewState() {
       </div>
       <h3 className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>Choose a document</h3>
       <p className="mt-3 max-w-md text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-        The preview panel stays securely behind the signed-URL flow. Pick a file on the left to load a short-lived preview link.
+        Select a file to load a preview on the right.
       </p>
     </div>
   )
@@ -314,15 +330,15 @@ function DocumentPreview({ selectedDocument, previewState, onRefreshPreview }) {
 
   return (
     <div className="portal-panel rounded-[32px] p-5 md:p-6 space-y-5">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <div className="flex flex-col gap-4">
         <div className="flex items-start gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-[18px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
             <DocumentIcon mimeType={selectedDocument.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
           </div>
-          <div>
-            <h3 className="text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedDocument.file_name}</h3>
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedDocument.file_name}</h3>
             <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-              {documentCategory(selectedDocument)} · {formatBytes(selectedDocument.size_bytes)} · {formatDate(selectedDocument.created_at)}
+              {documentFolder(selectedDocument)} · {formatBytes(selectedDocument.size_bytes)} · {formatDate(selectedDocument.updated_at || selectedDocument.created_at)}
             </p>
           </div>
         </div>
@@ -406,6 +422,7 @@ export default function Documents() {
   const { session } = useOutletContext()
   const queryClient = useQueryClient()
   const claims = getSessionClaims(session)
+
   const [selectedId, setSelectedId] = useState(null)
   const [uploadedFallbackDocuments, setUploadedFallbackDocuments] = useState([])
   const [previewState, setPreviewState] = useState({ loading: false, error: '', url: '' })
@@ -413,9 +430,13 @@ export default function Documents() {
   const [uploadNotice, setUploadNotice] = useState({ type: '', message: '' })
   const [shareDraft, setShareDraft] = useState({ expiresAt: '', maxUses: '' })
   const [shareNotice, setShareNotice] = useState({ type: '', message: '' })
+  const [folderNotice, setFolderNotice] = useState({ type: '', message: '' })
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState('All')
+  const [selectedFolder, setSelectedFolder] = useState('All Files')
   const [libraryView, setLibraryView] = useState('list')
+  const [folderDraft, setFolderDraft] = useState('')
+  const [localFolders, setLocalFolders] = useState(loadLocalFolders)
+  const [folderForm, setFolderForm] = useState({ docId: '', mode: '', custom: '' })
 
   const { data: profile } = useQuery({
     queryKey: ['profile'],
@@ -441,16 +462,16 @@ export default function Documents() {
 
   const visibleDocuments = documents.length > 0 ? documents : uploadedFallbackDocuments
 
-  const categories = useMemo(() => {
-    const allCategories = visibleDocuments.map((document) => documentCategory(document))
-    return ['All', ...Array.from(new Set(allCategories))]
-  }, [visibleDocuments])
+  const folders = useMemo(() => {
+    const documentFolders = visibleDocuments.map((document) => documentFolder(document))
+    return ['All Files', ...Array.from(new Set([...documentFolders, ...localFolders])).sort((a, b) => a.localeCompare(b))]
+  }, [visibleDocuments, localFolders])
 
   const filteredDocuments = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase()
 
     return visibleDocuments.filter((document) => {
-      const matchesCategory = selectedCategory === 'All' || documentCategory(document) === selectedCategory
+      const matchesFolder = selectedFolder === 'All Files' || documentFolder(document) === selectedFolder
       const matchesQuery = normalizedQuery.length === 0 || [
         document.file_name,
         document.mime_type,
@@ -458,9 +479,9 @@ export default function Documents() {
         document.description,
       ].some((value) => value?.toLowerCase().includes(normalizedQuery))
 
-      return matchesCategory && matchesQuery
+      return matchesFolder && matchesQuery
     })
-  }, [searchQuery, selectedCategory, visibleDocuments])
+  }, [searchQuery, selectedFolder, visibleDocuments])
 
   const selectedDocument = useMemo(
     () => filteredDocuments.find((document) => document.id === selectedId)
@@ -477,6 +498,7 @@ export default function Documents() {
   )
 
   const canManageShares = (claims.user_role || profile?.role) === 'admin'
+  const canManageDocuments = canManageShares
 
   const previewMutation = useMutation({
     mutationFn: getDocumentUrl,
@@ -512,20 +534,23 @@ export default function Documents() {
         size_bytes: file.size,
         storage_path: payload.storage_path,
         created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       }
 
-      setUploadedFallbackDocuments((current) => {
-        const next = [optimisticDocument, ...current.filter((document) => document.id !== optimisticDocument.id)]
-        return next.slice(0, 10)
-      })
-
-      queryClient.setQueryData(['documents'], (current = []) => {
-        const list = Array.isArray(current) ? current : []
-        return [optimisticDocument, ...list.filter((document) => document.id !== optimisticDocument.id)]
-      })
-
+      setUploadedFallbackDocuments((current) => [optimisticDocument, ...current.filter((document) => document.id !== optimisticDocument.id)].slice(0, 10))
+      queryClient.setQueryData(['documents'], (current = []) => [optimisticDocument, ...current.filter((document) => document.id !== optimisticDocument.id)])
       setSelectedId(payload.document_id)
       setUploadNotice({ type: 'success', message: 'Upload complete. Document list refreshed.' })
+
+      if (uploadForm.category?.trim()) {
+        setLocalFolders((current) => {
+          if (current.includes(uploadForm.category.trim())) return current
+          const next = [...current, uploadForm.category.trim()].sort((a, b) => a.localeCompare(b))
+          saveLocalFolders(next)
+          return next
+        })
+      }
+
       setUploadForm({ category: '', description: '' })
       await queryClient.invalidateQueries({ queryKey: ['documents'] })
       previewMutation.mutate(payload.document_id)
@@ -551,6 +576,31 @@ export default function Documents() {
     mutationFn: revokeShareLink,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['share-links'] })
+    },
+  })
+
+  const updateDocumentMutation = useMutation({
+    mutationFn: ({ documentId, changes }) => updateDocumentMetadata(documentId, changes),
+    onSuccess: async (updatedDocument) => {
+      queryClient.setQueryData(['documents'], (current = []) =>
+        current.map((document) => (document.id === updatedDocument.id ? { ...document, ...updatedDocument } : document)))
+      setUploadedFallbackDocuments((current) =>
+        current.map((document) => (document.id === updatedDocument.id ? { ...document, ...updatedDocument } : document)))
+
+      if (updatedDocument.category?.trim()) {
+        setLocalFolders((current) => {
+          if (current.includes(updatedDocument.category.trim())) return current
+          const next = [...current, updatedDocument.category.trim()].sort((a, b) => a.localeCompare(b))
+          saveLocalFolders(next)
+          return next
+        })
+      }
+
+      setFolderNotice({ type: 'success', message: 'Folder saved.' })
+      await queryClient.invalidateQueries({ queryKey: ['documents'] })
+    },
+    onError: (error) => {
+      setFolderNotice({ type: 'error', message: error.message })
     },
   })
 
@@ -594,8 +644,53 @@ export default function Documents() {
     })
   }
 
+  function handleCreateFolder(event) {
+    event.preventDefault()
+    const nextFolder = folderDraft.trim()
+    if (!nextFolder) return
+
+    if (!folders.includes(nextFolder)) {
+      const next = [...localFolders, nextFolder].sort((a, b) => a.localeCompare(b))
+      setLocalFolders(next)
+      saveLocalFolders(next)
+    }
+
+    setFolderDraft('')
+    setSelectedFolder(nextFolder)
+    setFolderNotice({ type: 'success', message: `Folder "${nextFolder}" created.` })
+  }
+
+  function handleSaveFolderAssignment() {
+    if (!selectedDocument || !canManageDocuments) return
+
+    const nextFolder = (activeFolderMode === '__custom__' ? activeFolderCustom : activeFolderMode).trim() || 'General'
+    setFolderNotice({ type: '', message: '' })
+    updateDocumentMutation.mutate({
+      documentId: selectedDocument.id,
+      changes: { category: nextFolder },
+    })
+  }
+
+  const folderCounts = useMemo(() => {
+    const counts = { 'All Files': visibleDocuments.length }
+    for (const folder of folders) {
+      if (folder === 'All Files') continue
+      counts[folder] = visibleDocuments.filter((document) => documentFolder(document) === folder).length
+    }
+    return counts
+  }, [folders, visibleDocuments])
+
+  const folderSelectOptions = folders.filter((folder) => folder !== 'All Files')
+  const selectedDocumentFolder = selectedDocument ? documentFolder(selectedDocument) : 'General'
+  const activeFolderMode = selectedDocument && folderForm.docId === selectedDocument.id
+    ? folderForm.mode
+    : (folderSelectOptions.includes(selectedDocumentFolder) ? selectedDocumentFolder : '__custom__')
+  const activeFolderCustom = selectedDocument && folderForm.docId === selectedDocument.id
+    ? folderForm.custom
+    : (folderSelectOptions.includes(selectedDocumentFolder) ? '' : selectedDocumentFolder)
+
   return (
-    <div className="portal-page mx-auto max-w-[1540px] space-y-5 md:p-6 xl:p-8">
+    <div className="portal-page mx-auto max-w-[1640px] space-y-5 md:p-6 xl:p-8">
       <section className="portal-surface rounded-[36px] p-5 md:p-7">
         <div className="portal-page-header">
           <div className="max-w-4xl">
@@ -614,9 +709,9 @@ export default function Documents() {
               <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>Available in this library</p>
             </div>
             <div className="portal-stat-card rounded-[24px] px-4 py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>Categories</p>
-              <p className="mt-2 text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>{categories.length - 1}</p>
-              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>Organized groups</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>Folders</p>
+              <p className="mt-2 text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>{folders.length - 1}</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>Current folder groups</p>
             </div>
             <div className="portal-stat-card rounded-[24px] px-4 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>Share links</p>
@@ -647,8 +742,8 @@ export default function Documents() {
             Refresh preview
           </button>
           <div className="portal-chip inline-flex items-center gap-2 rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.22em]">
-            <Filter className="h-3.5 w-3.5" />
-            {selectedCategory === 'All' ? 'All categories' : selectedCategory}
+            <FolderOpen className="h-3.5 w-3.5" />
+            {selectedFolder}
           </div>
         </div>
 
@@ -659,7 +754,7 @@ export default function Documents() {
               type="text"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search by file name, type, or note"
+              placeholder="Search by file name or note"
               className="portal-input py-3 pl-10 pr-4 text-sm"
             />
           </div>
@@ -684,212 +779,64 @@ export default function Documents() {
         </div>
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_420px]">
-        <div className="space-y-6">
-          <section id="documents-upload-panel" className="portal-panel overflow-hidden rounded-[34px]">
-            <div className="border-b px-5 py-5 md:px-6" style={{ borderColor: 'var(--portal-border)' }}>
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>My files</h2>
-                  <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                    Tenant-scoped files from the existing secure library.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {categories.map((category) => (
-                    <button
-                      key={category}
-                      type="button"
-                      onClick={() => setSelectedCategory(category)}
-                      className="rounded-full px-3 py-1.5 text-xs font-semibold transition-all"
-                      style={selectedCategory === category
-                        ? { background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.1))', border: '1px solid rgba(201, 168, 76, 0.24)', color: '#8c6d1c' }
-                        : { background: 'rgba(255,255,255,0.72)', border: '1px solid var(--portal-border)', color: 'var(--portal-text-muted)' }}
-                    >
-                      {category}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {documentsError && <div className="p-5"><Notice kind="error" message={documentsError.message} /></div>}
-
-            {documentsLoading ? (
-              <div className="flex items-center gap-3 px-6 py-10" style={{ color: 'var(--portal-text-muted)' }}>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span className="text-sm">Loading documents…</span>
-              </div>
-            ) : filteredDocuments.length > 0 ? (
-              libraryView === 'grid' ? (
-                <div className="grid gap-4 p-5 sm:grid-cols-2 2xl:grid-cols-3">
-                  {filteredDocuments.map((document) => {
-                    const isSelected = selectedDocument?.id === document.id
-
-                    return (
-                      <button
-                        key={document.id}
-                        type="button"
-                        onClick={() => handlePreview(document.id)}
-                        className="rounded-[26px] p-4 text-left transition-all"
-                        style={isSelected
-                          ? { background: 'linear-gradient(145deg, rgba(201, 168, 76, 0.14), rgba(232, 213, 160, 0.08))', border: '1px solid rgba(201, 168, 76, 0.24)', boxShadow: '0 14px 28px rgba(26, 24, 20, 0.06)' }
-                          : { background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}
-                      >
-                        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-[18px]" style={{ background: 'rgba(239, 244, 255, 0.96)' }}>
-                          <DocumentIcon mimeType={document.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
-                        </div>
-                        <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
-                        <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>{documentCategory(document)}</p>
-                        <p className="mt-4 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
-                          {formatDate(document.created_at)} · {formatBytes(document.size_bytes)}
-                        </p>
-                      </button>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="portal-scroll overflow-auto">
-                  <table className="min-w-full border-separate border-spacing-0">
-                    <thead>
-                      <tr style={{ background: 'rgba(243, 247, 255, 0.9)' }}>
-                        <th className="px-6 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Name</th>
-                        <th className="px-4 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Category</th>
-                        <th className="px-4 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Modified</th>
-                        <th className="px-4 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Size</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredDocuments.map((document) => {
-                        const isSelected = selectedDocument?.id === document.id
-                        return (
-                          <tr
-                            key={document.id}
-                            className="portal-table-row cursor-pointer transition-all"
-                            onClick={() => handlePreview(document.id)}
-                            style={isSelected ? { background: 'rgba(201, 168, 76, 0.1)' } : undefined}
-                          >
-                            <td className="border-t px-6 py-4" style={{ borderColor: 'var(--portal-border)' }}>
-                              <div className="flex items-center gap-3">
-                                <div className="flex h-10 w-10 items-center justify-center rounded-[14px]" style={{ background: 'rgba(239, 244, 255, 0.96)' }}>
-                                  <DocumentIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
-                                  <p className="truncate text-xs" style={{ color: 'var(--portal-text-soft)' }}>{document.mime_type}</p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="border-t px-4 py-4 text-sm" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
-                              {documentCategory(document)}
-                            </td>
-                            <td className="border-t px-4 py-4 text-sm" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
-                              {formatDate(document.created_at)}
-                            </td>
-                            <td className="border-t px-4 py-4 text-sm" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
-                              {formatBytes(document.size_bytes)}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            ) : (
-              <div className="px-5 py-12 text-center">
-                <div className="mx-auto max-w-md rounded-[28px] border border-dashed px-6 py-10" style={{ borderColor: 'var(--portal-border-strong)', color: 'var(--portal-text-muted)' }}>
-                  <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>No documents match this view</p>
-                  <p className="mt-2 text-xs">Try another category, clear your search, or upload the first file for this workspace.</p>
-                </div>
-              </div>
-            )}
-          </section>
-
-          <DocumentPreview
-            selectedDocument={selectedDocument}
-            previewState={previewState}
-            onRefreshPreview={() => selectedDocument && handlePreview(selectedDocument.id)}
-          />
-        </div>
-
+      <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)_420px]">
         <aside className="space-y-6">
           <section className="portal-panel overflow-hidden rounded-[34px]">
             <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
-              <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Details</h2>
-              <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                Familiar metadata and actions for the selected file.
-              </p>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Folders</h2>
             </div>
-
             <div className="space-y-4 p-5">
-              {selectedDocument ? (
-                <>
-                  <div className="rounded-[24px] border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
-                    <div className="mb-4 flex items-start gap-3">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-[18px]" style={{ background: 'rgba(239, 244, 255, 0.96)' }}>
-                        <DocumentIcon mimeType={selectedDocument.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedDocument.file_name}</p>
-                        <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>{selectedDocument.mime_type}</p>
-                      </div>
-                    </div>
-                    <div className="space-y-3 text-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <span style={{ color: 'var(--portal-text-soft)' }}>Category</span>
-                        <span style={{ color: 'var(--portal-text)' }}>{documentCategory(selectedDocument)}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span style={{ color: 'var(--portal-text-soft)' }}>Size</span>
-                        <span style={{ color: 'var(--portal-text)' }}>{formatBytes(selectedDocument.size_bytes)}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span style={{ color: 'var(--portal-text-soft)' }}>Uploaded</span>
-                        <span style={{ color: 'var(--portal-text)' }}>{formatDate(selectedDocument.created_at)}</span>
-                      </div>
-                    </div>
-                  </div>
+              <form onSubmit={handleCreateFolder} className="flex gap-2">
+                <input
+                  type="text"
+                  value={folderDraft}
+                  onChange={(event) => setFolderDraft(event.target.value)}
+                  placeholder="New folder"
+                  className="portal-input px-4 py-3 text-sm"
+                />
+                <button type="submit" className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
+                  <FolderPlus className="h-4 w-4" />
+                </button>
+              </form>
 
-                  {selectedDocument.description && (
-                    <div className="rounded-[24px] border p-4 text-sm" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)', color: 'var(--portal-text-muted)' }}>
-                      {selectedDocument.description}
+              <div className="space-y-2">
+                {folders.map((folder) => (
+                  <button
+                    key={folder}
+                    type="button"
+                    onClick={() => setSelectedFolder(folder)}
+                    className="flex w-full items-center justify-between rounded-2xl px-3 py-3 text-left transition-all"
+                    style={selectedFolder === folder
+                      ? { background: 'linear-gradient(135deg, rgba(201,168,76,0.16), rgba(232,213,160,0.08))', border: '1px solid rgba(201,168,76,0.24)' }
+                      : { background: 'rgba(255,255,255,0.78)', border: '1px solid var(--portal-border)' }}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{folder}</p>
+                      <p className="text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>{folderCounts[folder] || 0} file{(folderCounts[folder] || 0) === 1 ? '' : 's'}</p>
                     </div>
-                  )}
-                </>
-              ) : (
-                <div className="rounded-[24px] border p-4 text-sm" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)', color: 'var(--portal-text-muted)' }}>
-                  Select a file to inspect its details and share options.
-                </div>
-              )}
-
-              <div className="rounded-[24px] border p-4 text-sm" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
-                <p className="font-semibold" style={{ color: 'var(--portal-text)' }}>Workspace access</p>
-                <p className="mt-2" style={{ color: 'var(--portal-text-muted)' }}>
-                  {profile?.clients?.business_name || 'Client'} · {claims.user_role || profile?.role || 'unknown'} · {claims.client_slug || profile?.clients?.slug || 'tenant'}
-                </p>
+                  </button>
+                ))}
               </div>
+
+              <Notice kind={folderNotice.type} message={folderNotice.message} />
             </div>
           </section>
 
-          <section className="portal-panel overflow-hidden rounded-[34px]">
+          <section id="documents-upload-panel" className="portal-panel overflow-hidden rounded-[34px]">
             <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
               <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Upload</h2>
-              <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                Same signed upload flow, cleaner wrapper.
-              </p>
             </div>
 
             <div className="space-y-4 p-5">
               <div>
                 <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
-                  Category
+                  Folder
                 </label>
                 <input
                   type="text"
                   value={uploadForm.category}
                   onChange={(event) => setUploadForm((current) => ({ ...current, category: event.target.value }))}
-                  placeholder="Invoice, contract, recital plan"
+                  placeholder={selectedFolder === 'All Files' ? 'Folder name' : selectedFolder}
                   className="portal-input px-4 py-3 text-sm"
                 />
               </div>
@@ -932,13 +879,216 @@ export default function Documents() {
               )}
             </div>
           </section>
+        </aside>
+
+        <section className="portal-panel overflow-hidden rounded-[34px]">
+          <div className="border-b px-5 py-5 md:px-6" style={{ borderColor: 'var(--portal-border)' }}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedFolder}</h2>
+                <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+                  {selectedFolder === 'All Files' ? 'Tenant-scoped files from the secure library.' : `Files inside the ${selectedFolder} folder.`}
+                </p>
+              </div>
+              <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold">
+                {filteredDocuments.length} shown
+              </span>
+            </div>
+          </div>
+
+          {documentsError && <div className="p-5"><Notice kind="error" message={documentsError.message} /></div>}
+
+          {documentsLoading ? (
+            <div className="flex items-center gap-3 px-6 py-10" style={{ color: 'var(--portal-text-muted)' }}>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Loading documents…</span>
+            </div>
+          ) : filteredDocuments.length > 0 ? (
+            libraryView === 'grid' ? (
+              <div className="grid gap-3 p-5 sm:grid-cols-2 2xl:grid-cols-3">
+                {filteredDocuments.map((document) => {
+                  const isSelected = selectedDocument?.id === document.id
+
+                  return (
+                    <button
+                      key={document.id}
+                      type="button"
+                      onClick={() => handlePreview(document.id)}
+                      className="rounded-[24px] p-4 text-left transition-all"
+                      style={isSelected
+                        ? { background: 'linear-gradient(145deg, rgba(201,168,76,0.14), rgba(232,213,160,0.08))', border: '1px solid rgba(201,168,76,0.24)', boxShadow: '0 14px 28px rgba(26,24,20,0.06)' }
+                        : { background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}
+                    >
+                      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-[14px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+                        <DocumentIcon mimeType={document.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
+                      </div>
+                      <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                      <p className="mt-3 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
+                        {formatDate(document.updated_at || document.created_at)} · {formatBytes(document.size_bytes)}
+                      </p>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="portal-scroll overflow-auto">
+                <table className="min-w-full border-separate border-spacing-0">
+                  <thead>
+                    <tr style={{ background: 'rgba(250, 246, 241, 0.9)' }}>
+                      <th className="px-6 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Name</th>
+                      <th className="px-4 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Modified</th>
+                      <th className="px-4 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Size</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredDocuments.map((document) => {
+                      const isSelected = selectedDocument?.id === document.id
+                      return (
+                        <tr
+                          key={document.id}
+                          className="portal-table-row cursor-pointer transition-all"
+                          onClick={() => handlePreview(document.id)}
+                          style={isSelected ? { background: 'rgba(201, 168, 76, 0.1)' } : undefined}
+                        >
+                          <td className="border-t px-6 py-3.5" style={{ borderColor: 'var(--portal-border)' }}>
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-8 w-8 items-center justify-center rounded-[12px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+                                <DocumentIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
+                              </div>
+                              <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                            </div>
+                          </td>
+                          <td className="border-t px-4 py-3.5 text-sm" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
+                            {formatDate(document.updated_at || document.created_at)}
+                          </td>
+                          <td className="border-t px-4 py-3.5 text-sm" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
+                            {formatBytes(document.size_bytes)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : (
+            <div className="px-5 py-12 text-center">
+              <div className="mx-auto max-w-md rounded-[28px] border border-dashed px-6 py-10" style={{ borderColor: 'var(--portal-border-strong)', color: 'var(--portal-text-muted)' }}>
+                <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>No documents match this view</p>
+                <p className="mt-2 text-xs">Try another folder, clear your search, or upload the first file for this workspace.</p>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <aside className="space-y-6">
+          <DocumentPreview
+            selectedDocument={selectedDocument}
+            previewState={previewState}
+            onRefreshPreview={() => selectedDocument && handlePreview(selectedDocument.id)}
+          />
+
+          <section className="portal-panel overflow-hidden rounded-[34px]">
+            <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Details</h2>
+            </div>
+
+            <div className="space-y-4 p-5">
+              {selectedDocument ? (
+                <>
+                  <div className="rounded-[24px] border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
+                    <div className="mb-4 flex items-start gap-3">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-[18px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+                        <DocumentIcon mimeType={selectedDocument.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedDocument.file_name}</p>
+                        <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>{selectedDocument.mime_type}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span style={{ color: 'var(--portal-text-soft)' }}>Folder</span>
+                        <span style={{ color: 'var(--portal-text)' }}>{documentFolder(selectedDocument)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span style={{ color: 'var(--portal-text-soft)' }}>Size</span>
+                        <span style={{ color: 'var(--portal-text)' }}>{formatBytes(selectedDocument.size_bytes)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span style={{ color: 'var(--portal-text-soft)' }}>Updated</span>
+                        <span style={{ color: 'var(--portal-text)' }}>{formatDate(selectedDocument.updated_at || selectedDocument.created_at)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[24px] border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
+                      Move to folder
+                    </label>
+                    {canManageDocuments ? (
+                      <div className="space-y-3">
+                        <select
+                          value={activeFolderMode}
+                          onChange={(event) => setFolderForm({ docId: selectedDocument.id, mode: event.target.value, custom: activeFolderCustom })}
+                          className="portal-input px-4 py-3 text-sm"
+                        >
+                          {folderSelectOptions.map((folder) => (
+                            <option key={folder} value={folder}>{folder}</option>
+                          ))}
+                          <option value="__custom__">Create / use custom folder</option>
+                        </select>
+                        {activeFolderMode === '__custom__' && (
+                          <input
+                            type="text"
+                            value={activeFolderCustom}
+                            onChange={(event) => setFolderForm({ docId: selectedDocument.id, mode: '__custom__', custom: event.target.value })}
+                            placeholder="Folder name"
+                            className="portal-input px-4 py-3 text-sm"
+                          />
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleSaveFolderAssignment}
+                          disabled={updateDocumentMutation.isPending}
+                          className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+                        >
+                          {updateDocumentMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderOpen className="h-4 w-4" />}
+                          Save folder
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="portal-status-info rounded-2xl p-4 text-sm">
+                        Folder changes are limited to `admin` users.
+                      </div>
+                    )}
+                  </div>
+
+                  {selectedDocument.description && (
+                    <div className="rounded-[24px] border p-4 text-sm" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)', color: 'var(--portal-text-muted)' }}>
+                      {selectedDocument.description}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="rounded-[24px] border p-4 text-sm" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)', color: 'var(--portal-text-muted)' }}>
+                  Select a file to inspect its details and move it between folders.
+                </div>
+              )}
+
+              <div className="rounded-[24px] border p-4 text-sm" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
+                <p className="font-semibold" style={{ color: 'var(--portal-text)' }}>Workspace access</p>
+                <p className="mt-2" style={{ color: 'var(--portal-text-muted)' }}>
+                  {profile?.clients?.business_name || 'Client'} · {claims.user_role || profile?.role || 'unknown'} · {claims.client_slug || profile?.clients?.slug || 'tenant'}
+                </p>
+              </div>
+            </div>
+          </section>
 
           <section className="portal-panel overflow-hidden rounded-[34px]">
             <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
               <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Share links</h2>
-              <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                Managed through the existing `share_links` flow.
-              </p>
             </div>
 
             <div className="space-y-5 p-5">
@@ -1010,29 +1160,6 @@ export default function Documents() {
                   Select a document to review or create share links.
                 </div>
               )}
-            </div>
-          </section>
-
-          <section className="portal-panel overflow-hidden rounded-[34px]">
-            <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
-              <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Backend behavior</h2>
-              <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                The implementation path is unchanged.
-              </p>
-            </div>
-            <div className="space-y-3 p-5 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-              <div className="portal-card rounded-[22px] px-4 py-4">
-                <p className="font-semibold" style={{ color: 'var(--portal-text)' }}>Secure listing</p>
-                <p className="mt-1 text-xs">Documents and share links still load through Supabase RLS for the current tenant.</p>
-              </div>
-              <div className="portal-card rounded-[22px] px-4 py-4">
-                <p className="font-semibold" style={{ color: 'var(--portal-text)' }}>Signed access</p>
-                <p className="mt-1 text-xs">Preview requests still pass through the signed URL function before any file is rendered.</p>
-              </div>
-              <div className="portal-card rounded-[22px] px-4 py-4">
-                <p className="font-semibold" style={{ color: 'var(--portal-text)' }}>Upload source of truth</p>
-                <p className="mt-1 text-xs">Upload requests still originate from `{FUNCTION_BASE}/get-upload-url` before the browser PUT step.</p>
-              </div>
             </div>
           </section>
         </aside>

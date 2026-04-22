@@ -126,11 +126,33 @@ export async function fetchMetrics(clientId) {
 export async function fetchDocuments() {
   const { data, error } = await supabase
     .from('documents')
-    .select('id, file_name, mime_type, category, description, size_bytes, storage_path, created_at')
+    .select('id, file_name, mime_type, category, description, size_bytes, storage_path, created_at, updated_at')
     .order('created_at', { ascending: false })
 
   if (error) throw error
   return data ?? []
+}
+
+export async function updateDocumentMetadata(documentId, changes) {
+  const payload = {}
+
+  if (Object.prototype.hasOwnProperty.call(changes, 'category')) {
+    payload.category = changes.category ? changes.category.trim() : null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(changes, 'description')) {
+    payload.description = changes.description ? changes.description.trim() : null
+  }
+
+  const { data, error } = await supabase
+    .from('documents')
+    .update(payload)
+    .eq('id', documentId)
+    .select('id, file_name, mime_type, category, description, size_bytes, storage_path, created_at, updated_at')
+    .single()
+
+  if (error) throw error
+  return data
 }
 
 export async function fetchShareLinks() {
