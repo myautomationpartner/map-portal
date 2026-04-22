@@ -1,6 +1,7 @@
 import { supabase, supabaseUrl } from './supabase'
 
 const FUNCTION_BASE = `${supabaseUrl}/functions/v1`
+const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 
 export const UPLOAD_MIME_OPTIONS = [
   'application/pdf',
@@ -168,23 +169,66 @@ export async function reconcileScheduledPosts(clientId, options = {}) {
   if (error) throw error
 
   const overduePosts = data ?? []
-  if (!overduePosts.length) return { publishedCount: 0 }
+  if (overduePosts.length) {
+    const updates = overduePosts.map((post) => (
+      supabase
+        .from('posts')
+        .update({
+          status: 'published',
+          published_at: post.scheduled_for || new Date().toISOString(),
+        })
+        .eq('id', post.id)
+    ))
 
-  const updates = overduePosts.map((post) => (
-    supabase
-      .from('posts')
-      .update({
-        status: 'published',
-        published_at: post.scheduled_for || new Date().toISOString(),
+    const results = await Promise.all(updates)
+    const failed = results.find((result) => result.error)
+    if (failed?.error) throw failed.error
+  }
+
+  const { data: scheduledRows, error: scheduledError } = await supabase
+    .from('posts')
+    .select('id, scheduled_for, n8n_execution_id')
+    .eq('client_id', clientId)
+    .eq('status', 'scheduled')
+    .not('scheduled_for', 'is', null)
+    .not('n8n_execution_id', 'is', null)
+
+  if (scheduledError) throw scheduledError
+
+  const syncCandidates = scheduledRows ?? []
+  const syncResults = await Promise.allSettled(
+    syncCandidates.map(async (post) => {
+      const response = await fetch(`${N8N_BASE}/webhook/social-sync-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          postId: post.id,
+          clientId,
+          zernioPostId: post.n8n_execution_id,
+          scheduledFor: post.scheduled_for,
+        }),
       })
-      .eq('id', post.id)
-  ))
 
-  const results = await Promise.all(updates)
-  const failed = results.find((result) => result.error)
-  if (failed?.error) throw failed.error
+      const raw = await response.text()
+      let payload = {}
+      try {
+        payload = raw ? JSON.parse(raw) : {}
+      } catch {
+        payload = {}
+      }
 
-  return { publishedCount: overduePosts.length }
+      if (!response.ok) {
+        throw new Error(payload?.message || raw || 'Scheduled post reconciliation failed.')
+      }
+
+      return payload
+    }),
+  )
+
+  return {
+    publishedCount: overduePosts.length,
+    syncedCount: syncResults.filter((result) => result.status === 'fulfilled').length,
+  }
 }
 
 export async function fetchSocialDrafts(clientId) {
