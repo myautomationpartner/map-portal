@@ -1,4 +1,5 @@
 const DROPBOX_API_BASE = 'https://api.dropboxapi.com/2'
+const DROPBOX_OAUTH_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token'
 const SUPPORTED_MEDIA_EXTENSIONS = new Set([
   'jpg',
   'jpeg',
@@ -156,6 +157,52 @@ async function dropboxRpc(endpoint, accessToken, body) {
   return payload
 }
 
+async function exchangeDropboxRefreshToken(refreshToken, clientId, clientSecret) {
+  const response = await fetch(DROPBOX_OAUTH_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+    }),
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || !payload?.access_token) {
+    const error = new Error(payload.error_summary || payload.error_description || 'Dropbox token refresh failed.')
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload.access_token
+}
+
+async function getDropboxAccessToken(env) {
+  const refreshToken = String(env.DROPBOX_REFRESH_TOKEN || '').trim()
+  const clientId = String(env.DROPBOX_APP_KEY || '').trim()
+  const clientSecret = String(env.DROPBOX_APP_SECRET || '').trim()
+
+  if (refreshToken) {
+    if (!clientId || !clientSecret) {
+      throw new Error('Dropbox refresh token is configured, but app key/secret are missing.')
+    }
+
+    return exchangeDropboxRefreshToken(refreshToken, clientId, clientSecret)
+  }
+
+  const accessToken = String(env.DROPBOX_ACCESS_TOKEN || '').trim()
+  if (!accessToken) {
+    throw new Error('Dropbox access token is not configured in the worker.')
+  }
+
+  return accessToken
+}
+
 function isFolderMissing(error) {
   return error?.payload?.error?.['.tag'] === 'path'
     && error?.payload?.error?.path?.['.tag'] === 'not_found'
@@ -254,9 +301,11 @@ async function getBestDropboxPreviewLink(accessToken, path) {
 }
 
 async function handleDropboxWeekMedia(request, env) {
-  const accessToken = env.DROPBOX_ACCESS_TOKEN
-  if (!accessToken) {
-    return json({ error: 'Dropbox access token is not configured in the worker.' }, { status: 500 })
+  let accessToken
+  try {
+    accessToken = await getDropboxAccessToken(env)
+  } catch (error) {
+    return json({ error: error.message || 'Dropbox credentials are not configured in the worker.' }, { status: 500 })
   }
 
   const url = new URL(request.url)
