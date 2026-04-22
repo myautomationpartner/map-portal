@@ -151,6 +151,12 @@ function buildShareUrl(token) {
   return `${window.location.origin}/share/${token}`
 }
 
+function latestShareLinkForDocument(shareLinks, documentId) {
+  return shareLinks
+    .filter((link) => link.document_id === documentId && !link.revoked_at)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null
+}
+
 function DocumentIcon({ mimeType, className, style }) {
   if (mimeType?.startsWith('image/')) {
     return <FileImage className={className} style={style} />
@@ -327,7 +333,7 @@ function EmptyPreviewState() {
   )
 }
 
-function DocumentActionMenu({ document, isOpen, canManage, onOpen, onRename, onDelete }) {
+function DocumentActionMenu({ document, isOpen, canManage, canShare, onOpen, onMove, onRename, onCreateShare, onCopyShare, onDelete }) {
   return (
     <div className="relative">
       <button
@@ -355,6 +361,17 @@ function DocumentActionMenu({ document, isOpen, canManage, onOpen, onRename, onD
                 type="button"
                 onClick={(event) => {
                   event.stopPropagation()
+                  onMove(document)
+                }}
+                className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                style={{ color: 'var(--portal-text)' }}
+              >
+                Move to folder
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
                   onRename(document)
                 }}
                 className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
@@ -362,6 +379,33 @@ function DocumentActionMenu({ document, isOpen, canManage, onOpen, onRename, onD
               >
                 Rename
               </button>
+              {canShare && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onCreateShare(document)
+                    }}
+                    className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                    style={{ color: 'var(--portal-text)' }}
+                  >
+                    Create share link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onCopyShare(document)
+                    }}
+                    className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                    style={{ color: 'var(--portal-text)' }}
+                  >
+                    <Copy className="h-4 w-4" />
+                    Copy share link
+                  </button>
+                </>
+              )}
               <button
                 type="button"
                 onClick={(event) => {
@@ -670,8 +714,12 @@ export default function Documents() {
   const createShareMutation = useMutation({
     mutationFn: createShareLink,
     onSuccess: async (link) => {
-      setShareNotice({ type: 'success', message: `Share link created: ${buildShareUrl(link.token)}` })
+      const shareUrl = buildShareUrl(link.token)
+      setShareNotice({ type: 'success', message: `Share link created: ${shareUrl}` })
       setShareDraft({ expiresAt: '', maxUses: '' })
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl).catch(() => {})
+      }
       await queryClient.invalidateQueries({ queryKey: ['share-links'] })
     },
     onError: (error) => {
@@ -805,6 +853,27 @@ export default function Documents() {
     })
   }
 
+  function handleMoveDocument(document) {
+    setOpenActionMenuId(null)
+    setSelectedId(document.id)
+
+    if (!document || !canManageDocuments) return
+
+    const suggestedFolders = folderSelectOptions.join(', ')
+    const promptedFolder = window.prompt(
+      suggestedFolders ? `Move to folder. Existing folders: ${suggestedFolders}` : 'Move to folder',
+      documentFolder(document),
+    )
+    const nextFolder = promptedFolder?.trim()
+    if (!nextFolder || nextFolder === documentFolder(document)) return
+
+    setFolderNotice({ type: '', message: '' })
+    updateDocumentMutation.mutate({
+      documentId: document.id,
+      changes: { category: nextFolder },
+    })
+  }
+
   function handleRenameDocument(document) {
     setOpenActionMenuId(null)
     setSelectedId(document.id)
@@ -839,6 +908,41 @@ export default function Documents() {
       documentId: document.id,
       storagePath: document.storage_path,
     })
+  }
+
+  function handleCreateShareForDocument(document) {
+    setOpenActionMenuId(null)
+    setSelectedId(document.id)
+    if (!document || !canManageShares) return
+
+    setShareNotice({ type: '', message: '' })
+    createShareMutation.mutate({
+      documentId: document.id,
+      clientId: claims.client_id || profile?.client_id || null,
+      expiresAt: null,
+      maxUses: null,
+    })
+  }
+
+  async function handleCopyShareForDocument(document) {
+    setOpenActionMenuId(null)
+    setSelectedId(document.id)
+
+    if (!document || !canManageShares) return
+
+    const existingLink = latestShareLinkForDocument(shareLinks, document.id)
+    if (!existingLink) {
+      setShareNotice({ type: 'info', message: 'No active share link yet. Create one first from the same menu.' })
+      return
+    }
+
+    const shareUrl = buildShareUrl(existingLink.token)
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setShareNotice({ type: 'success', message: `Copied share link: ${shareUrl}` })
+    } catch {
+      setShareNotice({ type: 'error', message: 'Could not copy the share link to the clipboard.' })
+    }
   }
 
   const folderCounts = useMemo(() => {
@@ -1100,8 +1204,12 @@ export default function Documents() {
                           document={document}
                           isOpen={openActionMenuId === document.id}
                           canManage={canManageDocuments}
+                          canShare={canManageShares}
                           onOpen={() => setOpenActionMenuId((current) => (current === document.id ? null : document.id))}
+                          onMove={handleMoveDocument}
                           onRename={handleRenameDocument}
+                          onCreateShare={handleCreateShareForDocument}
+                          onCopyShare={handleCopyShareForDocument}
                           onDelete={handleDeleteDocument}
                         />
                       </div>
@@ -1156,8 +1264,12 @@ export default function Documents() {
                               document={document}
                               isOpen={openActionMenuId === document.id}
                               canManage={canManageDocuments}
+                              canShare={canManageShares}
                               onOpen={() => setOpenActionMenuId((current) => (current === document.id ? null : document.id))}
+                              onMove={handleMoveDocument}
                               onRename={handleRenameDocument}
+                              onCreateShare={handleCreateShareForDocument}
+                              onCopyShare={handleCopyShareForDocument}
                               onDelete={handleDeleteDocument}
                             />
                           </td>
