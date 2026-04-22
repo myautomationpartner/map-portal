@@ -1,8 +1,9 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Send, MessageSquare, Settings, FolderOpen } from 'lucide-react'
+import { LayoutDashboard, Send, MessageSquare, Settings, FolderOpen, CalendarDays } from 'lucide-react'
 
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/calendar', icon: CalendarDays,    label: 'Calendar'  },
   { to: '/documents', icon: FolderOpen,      label: 'Docs'      },
   { to: '/post',     icon: Send,            label: 'Publisher'  },
   { to: '/inbox',    icon: MessageSquare,   label: 'Inbox'      },

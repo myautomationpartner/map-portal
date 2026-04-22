@@ -11,6 +11,7 @@ import PostHistory from './pages/PostHistory'
 import PlatformStats from './pages/PlatformStats'
 import Documents from './pages/Documents'
 import PublicShare from './pages/PublicShare'
+import ContentCalendar from './pages/ContentCalendar'
 import Sidebar from './components/Sidebar'
 import BottomNav from './components/BottomNav'
 import { Loader2 } from 'lucide-react'
@@ -89,6 +90,7 @@ export default function App() {
               <Route path="/share/:token" element={<PublicShare />} />
               <Route element={<ProtectedLayout session={session} />}>
                 <Route path="/" element={<Dashboard />} />
+                <Route path="/calendar" element={<ContentCalendar />} />
                 <Route path="/documents" element={<Documents />} />
                 <Route path="/inbox" element={<Inbox />} />
                 <Route path="/post" element={<CreatePost />} />

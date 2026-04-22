@@ -5,6 +5,7 @@ import { fetchMetrics, fetchProfile } from '../lib/portalApi'
 import {
   ArrowUpRight,
   Camera,
+  CalendarDays,
   FolderOpen,
   MapPin,
   MessageSquareMore,
@@ -223,6 +224,10 @@ export default function Dashboard() {
           </div>
 
           <div className="flex flex-wrap gap-3">
+            <Link to="/calendar" className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
+              <CalendarDays className="h-4 w-4" />
+              Open Calendar
+            </Link>
             <Link to="/documents" className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
               <FolderOpen className="h-4 w-4" />
               Open Documents

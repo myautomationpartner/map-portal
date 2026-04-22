@@ -1,10 +1,11 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Send, MessageSquare, Settings, LogOut, FolderOpen } from 'lucide-react'
+import { LayoutDashboard, Send, MessageSquare, Settings, LogOut, FolderOpen, CalendarDays } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { getSessionClaims } from '../lib/portalApi'
 
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/calendar', icon: CalendarDays,    label: 'Calendar'   },
   { to: '/documents', icon: FolderOpen,      label: 'Documents'  },
   { to: '/post',     icon: Send,            label: 'Publisher'  },
   { to: '/inbox',    icon: MessageSquare,   label: 'Inbox'      },

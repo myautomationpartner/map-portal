@@ -123,6 +123,44 @@ export async function fetchMetrics(clientId) {
   return data ?? []
 }
 
+export async function fetchScheduledPosts(clientId) {
+  if (!clientId) return []
+
+  const { data, error } = await supabase
+    .from('posts')
+    .select('id, client_id, content, platforms, status, scheduled_for, published_at, created_at')
+    .eq('client_id', clientId)
+    .not('scheduled_for', 'is', null)
+    .in('status', ['draft', 'scheduled', 'published'])
+    .order('scheduled_for', { ascending: true })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchSocialDrafts(clientId) {
+  if (!clientId) return []
+
+  const { data, error } = await supabase
+    .from('social_drafts')
+    .select('id, client_id, planner_client_slug, planner_policy_version, slot_date_local, slot_label, slot_start_local, slot_end_local, timezone, scheduled_for, post_type, draft_title, review_state, review_notes, seasonal_modifier_context_json, created_at')
+    .eq('client_id', clientId)
+    .order('scheduled_for', { ascending: true })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createSocialDrafts(rows) {
+  const { data, error } = await supabase
+    .from('social_drafts')
+    .insert(rows)
+    .select('id, slot_date_local, slot_label, post_type, review_state')
+
+  if (error) throw error
+  return data ?? []
+}
+
 export async function fetchDocuments() {
   const { data, error } = await supabase
     .from('documents')
