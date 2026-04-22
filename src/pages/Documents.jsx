@@ -335,10 +335,11 @@ function EmptyPreviewState() {
 
 function DocumentActionMenu({ document, isOpen, canManage, canShare, onOpen, onMove, onRename, onCreateShare, onCopyShare, onDelete }) {
   return (
-    <div className="relative">
+    <div className="relative" data-document-action-menu="true">
       <button
         type="button"
         aria-label={`Open actions for ${document.file_name}`}
+        onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation()
           onOpen()
@@ -353,6 +354,7 @@ function DocumentActionMenu({ document, isOpen, canManage, canShare, onOpen, onM
         <div
           className="absolute right-0 top-11 z-20 min-w-[180px] rounded-[20px] border p-2 shadow-lg"
           style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.98)', boxShadow: '0 18px 40px rgba(26, 24, 20, 0.12)' }}
+          onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
         >
           {canManage ? (
@@ -966,7 +968,11 @@ export default function Documents() {
   useEffect(() => {
     if (!openActionMenuId) return undefined
 
-    function handlePointerDown() {
+    function handlePointerDown(event) {
+      const target = event.target
+      if (target instanceof Element && target.closest('[data-document-action-menu="true"]')) {
+        return
+      }
       setOpenActionMenuId(null)
     }
 
