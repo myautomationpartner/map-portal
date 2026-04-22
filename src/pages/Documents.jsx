@@ -497,7 +497,7 @@ function DocumentActionMenu({ document, isOpen, canManage, availableFolders, cur
             </p>
           )}
         </div>,
-        document.body,
+        window.document.body,
       ) : null}
     </div>
   )
