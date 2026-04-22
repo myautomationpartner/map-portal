@@ -136,6 +136,10 @@ export async function fetchDocuments() {
 export async function updateDocumentMetadata(documentId, changes) {
   const payload = {}
 
+  if (Object.prototype.hasOwnProperty.call(changes, 'file_name')) {
+    payload.file_name = changes.file_name ? changes.file_name.trim() : null
+  }
+
   if (Object.prototype.hasOwnProperty.call(changes, 'category')) {
     payload.category = changes.category ? changes.category.trim() : null
   }
@@ -153,6 +157,27 @@ export async function updateDocumentMetadata(documentId, changes) {
 
   if (error) throw error
   return data
+}
+
+export async function deleteDocument(documentId, storagePath) {
+  if (!documentId) {
+    throw new Error('Missing document id.')
+  }
+
+  if (storagePath) {
+    const { error: storageError } = await supabase.storage
+      .from('documents')
+      .remove([storagePath])
+
+    if (storageError) throw storageError
+  }
+
+  const { error } = await supabase
+    .from('documents')
+    .delete()
+    .eq('id', documentId)
+
+  if (error) throw error
 }
 
 export async function fetchShareLinks() {
