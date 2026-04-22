@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useOutletContext } from 'react-router-dom'
 import {
@@ -19,6 +19,7 @@ import {
   Link2,
   List,
   Loader2,
+  Maximize2,
   Search,
   Share2,
   ShieldCheck,
@@ -323,7 +324,34 @@ function EmptyPreviewState() {
   )
 }
 
+function getPreviewPopoutUrl(document, signedUrl) {
+  if (!document || !signedUrl) return ''
+  const viewer = getViewerSource(document, signedUrl)
+  return viewer?.src || signedUrl
+}
+
 function DocumentPreview({ selectedDocument, previewState, onRefreshPreview }) {
+  const previewFrameRef = useRef(null)
+
+  async function handleFullscreenPreview() {
+    if (!previewFrameRef.current || !previewState.url) return
+
+    try {
+      if (document.fullscreenElement === previewFrameRef.current) {
+        await document.exitFullscreen()
+        return
+      }
+
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+      }
+
+      await previewFrameRef.current.requestFullscreen()
+    } catch {
+      window.open(getPreviewPopoutUrl(selectedDocument, previewState.url), '_blank', 'noopener,noreferrer')
+    }
+  }
+
   if (!selectedDocument) {
     return <EmptyPreviewState />
   }
@@ -353,14 +381,24 @@ function DocumentPreview({ selectedDocument, previewState, onRefreshPreview }) {
             Refresh preview
           </button>
           {previewState.url && (
+            <button
+              type="button"
+              onClick={handleFullscreenPreview}
+              className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+              Full screen
+            </button>
+          )}
+          {previewState.url && (
             <a
-              href={previewState.url}
+              href={getPreviewPopoutUrl(selectedDocument, previewState.url)}
               target="_blank"
               rel="noopener noreferrer"
               className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all"
             >
               <ExternalLink className="h-3.5 w-3.5" />
-              Open raw file
+              Pop out preview
             </a>
           )}
         </div>
@@ -376,43 +414,48 @@ function DocumentPreview({ selectedDocument, previewState, onRefreshPreview }) {
       {previewState.error && <Notice kind="error" message={previewState.error} />}
 
       {previewState.url && !previewState.loading && !previewState.error && (
-        selectedDocument.mime_type === 'application/pdf' ? (
-          <PdfDocumentViewer url={previewState.url} fileName={selectedDocument.file_name} />
-        ) : TEXT_PREVIEW_MIME.has(selectedDocument.mime_type) ? (
-          <TextDocumentViewer
-            url={previewState.url}
-            fileName={selectedDocument.file_name}
-            mimeType={selectedDocument.mime_type === 'application/csv' ? 'text/csv' : selectedDocument.mime_type}
-          />
-        ) : NATIVE_IMAGE_PREVIEW_MIME.has(selectedDocument.mime_type) ? (
-          <div className="space-y-3">
-            <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>Image preview from the signed URL</p>
-            <img
-              src={previewState.url}
-              alt={selectedDocument.file_name}
-              className="max-h-[70vh] w-full rounded-[28px] border bg-white object-contain"
-              style={{ borderColor: 'var(--portal-border)' }}
+        <div
+          ref={previewFrameRef}
+          className="rounded-[30px] bg-[var(--portal-surface)] [&:fullscreen]:overflow-auto [&:fullscreen]:p-6"
+        >
+          {selectedDocument.mime_type === 'application/pdf' ? (
+            <PdfDocumentViewer url={previewState.url} fileName={selectedDocument.file_name} />
+          ) : TEXT_PREVIEW_MIME.has(selectedDocument.mime_type) ? (
+            <TextDocumentViewer
+              url={previewState.url}
+              fileName={selectedDocument.file_name}
+              mimeType={selectedDocument.mime_type === 'application/csv' ? 'text/csv' : selectedDocument.mime_type}
             />
-          </div>
-        ) : getViewerSource(selectedDocument, previewState.url) ? (
-          <EmbeddedDocumentViewer document={selectedDocument} signedUrl={previewState.url} />
-        ) : (
-          <div className="portal-surface-strong rounded-[26px] p-5">
-            <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Preview not available inline</p>
-            <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-              This file type does not render inline yet, but the signed URL is ready to open.
-            </p>
-            <a
-              href={previewState.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="portal-button-primary mt-4 inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Open file in new tab
-            </a>
-          </div>
-        )
+          ) : NATIVE_IMAGE_PREVIEW_MIME.has(selectedDocument.mime_type) ? (
+            <div className="space-y-3">
+              <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>Image preview from the signed URL</p>
+              <img
+                src={previewState.url}
+                alt={selectedDocument.file_name}
+                className="max-h-[70vh] w-full rounded-[28px] border bg-white object-contain"
+                style={{ borderColor: 'var(--portal-border)' }}
+              />
+            </div>
+          ) : getViewerSource(selectedDocument, previewState.url) ? (
+            <EmbeddedDocumentViewer document={selectedDocument} signedUrl={previewState.url} />
+          ) : (
+            <div className="portal-surface-strong rounded-[26px] p-5">
+              <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Preview not available inline</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                This file type does not render inline yet, but the signed URL is ready to open.
+              </p>
+              <a
+                href={previewState.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="portal-button-primary mt-4 inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Open file in new tab
+              </a>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
