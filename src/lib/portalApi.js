@@ -143,7 +143,7 @@ export async function fetchSocialDrafts(clientId) {
 
   const { data, error } = await supabase
     .from('social_drafts')
-    .select('id, client_id, planner_client_slug, planner_policy_version, slot_date_local, slot_label, slot_start_local, slot_end_local, timezone, scheduled_for, post_type, draft_title, review_state, review_notes, seasonal_modifier_context_json, created_at')
+    .select('id, client_id, planner_client_slug, planner_policy_version, slot_date_local, slot_label, slot_start_local, slot_end_local, timezone, scheduled_for, post_type, draft_title, draft_body, draft_caption, review_state, review_notes, asset_requirements_json, seasonal_modifier_context_json, published_reference, created_at, updated_at')
     .eq('client_id', clientId)
     .order('scheduled_for', { ascending: true })
 
@@ -155,10 +155,35 @@ export async function createSocialDrafts(rows) {
   const { data, error } = await supabase
     .from('social_drafts')
     .insert(rows)
-    .select('id, slot_date_local, slot_label, post_type, review_state')
+    .select('id, slot_date_local, slot_label, post_type, draft_title, draft_body, draft_caption, review_state, review_notes, asset_requirements_json, created_at, updated_at')
 
   if (error) throw error
   return data ?? []
+}
+
+export async function upsertSocialDraft(row) {
+  const { data, error } = await supabase
+    .from('social_drafts')
+    .upsert(row, {
+      onConflict: 'client_id,slot_date_local,slot_label',
+    })
+    .select('id, client_id, planner_client_slug, planner_policy_version, slot_date_local, slot_label, slot_start_local, slot_end_local, timezone, scheduled_for, post_type, draft_title, draft_body, draft_caption, review_state, review_notes, asset_requirements_json, seasonal_modifier_context_json, published_reference, created_at, updated_at')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function updateSocialDraft(draftId, changes) {
+  const { data, error } = await supabase
+    .from('social_drafts')
+    .update(changes)
+    .eq('id', draftId)
+    .select('id, client_id, planner_client_slug, planner_policy_version, slot_date_local, slot_label, slot_start_local, slot_end_local, timezone, scheduled_for, post_type, draft_title, draft_body, draft_caption, review_state, review_notes, asset_requirements_json, seasonal_modifier_context_json, published_reference, created_at, updated_at')
+    .single()
+
+  if (error) throw error
+  return data
 }
 
 export async function fetchDocuments() {

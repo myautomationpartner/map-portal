@@ -3,8 +3,8 @@ import { LayoutDashboard, Send, MessageSquare, Settings, FolderOpen, CalendarDay
 
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/calendar', icon: CalendarDays,    label: 'Calendar'  },
   { to: '/documents', icon: FolderOpen,      label: 'Docs'      },
+  { to: '/calendar', icon: CalendarDays,    label: 'Calendar'  },
   { to: '/post',     icon: Send,            label: 'Publisher'  },
   { to: '/inbox',    icon: MessageSquare,   label: 'Inbox'      },
   { to: '/settings', icon: Settings,        label: 'Settings'   },

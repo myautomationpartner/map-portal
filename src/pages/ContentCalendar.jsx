@@ -1,14 +1,15 @@
 import { useMemo, useState } from 'react'
-import { Link, useOutletContext } from 'react-router-dom'
+import { Link, useNavigate, useOutletContext } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarDays, CheckCircle2, Clock3, Loader2, Plus, RefreshCw, Sparkles } from 'lucide-react'
 import {
-  createSocialDrafts,
   fetchProfile,
   fetchScheduledPosts,
   fetchSocialDrafts,
+  upsertSocialDraft,
 } from '../lib/portalApi'
 import { buildCalendarModel, buildDraftPayload } from '../lib/socialPlanner'
+import { generateDraftForSlot, stringifyDraftMeta } from '../lib/socialDrafting'
 
 const STATE_STYLES = {
   occupied_planned: {
@@ -60,9 +61,9 @@ function SummaryCard({ title, value, hint }) {
   )
 }
 
-function SlotCard({ slot, onSave, isSaving }) {
+function SlotCard({ slot, onOpen, isSaving }) {
   const stateStyle = STATE_STYLES[slot.state]
-  const canSave = slot.state === 'recommended_fill' && slot.post_type
+  const canOpen = (slot.state === 'recommended_fill' || slot.state === 'occupied_draft') && slot.post_type
 
   return (
     <article
@@ -101,10 +102,10 @@ function SlotCard({ slot, onSave, isSaving }) {
         {slot.explanation}
       </p>
 
-      {canSave && (
+      {canOpen && (
         <button
           type="button"
-          onClick={() => onSave(slot)}
+          onClick={() => onOpen(slot)}
           disabled={isSaving}
           className="mt-5 inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-60"
           style={{
@@ -113,7 +114,7 @@ function SlotCard({ slot, onSave, isSaving }) {
           }}
         >
           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          Save Draft Slot
+          {slot.state === 'occupied_draft' ? 'Open Draft' : 'Open In Publisher'}
         </button>
       )}
     </article>
@@ -152,6 +153,7 @@ export default function ContentCalendar() {
   useOutletContext()
 
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [actionError, setActionError] = useState('')
 
   const { data: profile, isLoading: profileLoading } = useQuery({
@@ -184,8 +186,36 @@ export default function ContentCalendar() {
 
   const saveDrafts = useMutation({
     mutationFn: async (slots) => {
-      const rows = slots.map((slot) => buildDraftPayload(profile, calendar.policy, slot))
-      return createSocialDrafts(rows)
+      return Promise.all(slots.map(async (slot) => {
+        const generated = generateDraftForSlot({
+          profile,
+          policy: calendar.policy,
+          slot,
+          drafts,
+        })
+
+        const row = {
+          ...buildDraftPayload(profile, calendar.policy, slot),
+          draft_title: generated.title,
+          draft_body: generated.draftBody,
+          draft_caption: generated.caption,
+          review_state: 'draft_created',
+          review_notes: stringifyDraftMeta({
+            ...generated.meta,
+            generationSource: 'fill_my_week',
+            generationMode: 'deterministic',
+            generationSignature: `${slot.slot_date_local}:${slot.slot_label}:${slot.post_type}:${generated.angle.id}`,
+            regenerationCount: 0,
+            editCount: 0,
+            publishCount: 0,
+            deleteCount: 0,
+            generatedAt: new Date().toISOString(),
+          }),
+          asset_requirements_json: generated.assetRequirements,
+        }
+
+        return upsertSocialDraft(row)
+      }))
     },
     onSuccess: async () => {
       setActionError('')
@@ -207,6 +237,11 @@ export default function ContentCalendar() {
   }, [calendar])
 
   const recommendedSlots = calendar?.slots?.filter((slot) => slot.state === 'recommended_fill' && slot.post_type) || []
+
+  function openSlot(slot) {
+    setActionError('')
+    navigate(`/post?date=${encodeURIComponent(slot.slot_date_local)}&slot=${encodeURIComponent(slot.slot_label)}`)
+  }
 
   if (profileLoading || postsLoading || draftsLoading) {
     return (
@@ -338,7 +373,7 @@ export default function ContentCalendar() {
                   <SlotCard
                     key={`${slot.slot_date_local}-${slot.slot_label}`}
                     slot={slot}
-                    onSave={(selected) => saveDrafts.mutate([selected])}
+                    onOpen={(selected) => openSlot(selected)}
                     isSaving={saveDrafts.isPending}
                   />
                 ))}

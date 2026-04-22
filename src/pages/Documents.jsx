@@ -298,8 +298,10 @@ function DocumentActionMenu({ document, isOpen, canManage, availableFolders, cur
 
   useEffect(() => {
     if (!isOpen) {
-      setShowFolderChooser(false)
-      return undefined
+      const timeoutId = window.setTimeout(() => {
+        setShowFolderChooser(false)
+      }, 0)
+      return () => window.clearTimeout(timeoutId)
     }
 
     function updateMenuPosition() {
