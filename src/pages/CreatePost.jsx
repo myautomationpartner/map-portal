@@ -680,29 +680,6 @@ export default function CreatePost() {
     }
   }, [groupedSlots, selectedDay])
 
-  useEffect(() => {
-    if (!calendar?.slots || !draftTargetDate || !draftTargetSlot || draftLoading) return
-
-    const slot = calendar.slots.find((entry) => entry.slot_date_local === draftTargetDate && entry.slot_label === draftTargetSlot)
-    if (!slot || getSlotKey(slot) === activeSlotKey) return
-
-    resolveDraftForSlot(slot, { source: 'calendar_link' })
-  }, [calendar, draftTargetDate, draftTargetSlot, draftLoading, activeSlotKey, drafts, resolveDraftForSlot])
-
-  useEffect(() => {
-    if (!draftDirty || !activeDraftId || hydratingDraftRef.current) return undefined
-
-    autosaveTimerRef.current = window.setTimeout(() => {
-      persistDraftEdits(content)
-    }, 800)
-
-    return () => {
-      if (autosaveTimerRef.current) {
-        window.clearTimeout(autosaveTimerRef.current)
-      }
-    }
-  }, [draftDirty, activeDraftId, content, generatedCaption, mediaSuggestion, selectedAngleId, angleChoices, activeSlot, persistDraftEdits])
-
   const applyDraftToComposer = useCallback((draft, slot) => {
     hydratingDraftRef.current = true
     setActiveDraftId(draft.id || '')
@@ -821,6 +798,29 @@ export default function CreatePost() {
       setDraftError(error.message || 'Could not save draft edits.')
     }
   }, [activeDraftId, activeSlot, activeDraft, angleChoices, selectedAngleId, generatedCaption, mediaSuggestion, queryClient, clientId])
+
+  useEffect(() => {
+    if (!calendar?.slots || !draftTargetDate || !draftTargetSlot || draftLoading) return
+
+    const slot = calendar.slots.find((entry) => entry.slot_date_local === draftTargetDate && entry.slot_label === draftTargetSlot)
+    if (!slot || getSlotKey(slot) === activeSlotKey) return
+
+    resolveDraftForSlot(slot, { source: 'calendar_link' })
+  }, [calendar, draftTargetDate, draftTargetSlot, draftLoading, activeSlotKey, drafts, resolveDraftForSlot])
+
+  useEffect(() => {
+    if (!draftDirty || !activeDraftId || hydratingDraftRef.current) return undefined
+
+    autosaveTimerRef.current = window.setTimeout(() => {
+      persistDraftEdits(content)
+    }, 800)
+
+    return () => {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current)
+      }
+    }
+  }, [draftDirty, activeDraftId, content, generatedCaption, mediaSuggestion, selectedAngleId, angleChoices, activeSlot, persistDraftEdits])
 
   function handleFileChange(event) {
     const file = event.target.files?.[0]

@@ -7,7 +7,6 @@ import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import Inbox from './pages/Inbox'
 import CreatePost from './pages/CreatePost'
-import ContentCalendar from './pages/ContentCalendar'
 import PostHistory from './pages/PostHistory'
 import PlatformStats from './pages/PlatformStats'
 import Documents from './pages/Documents'
@@ -90,7 +89,7 @@ export default function App() {
               <Route path="/share/:token" element={<PublicShare />} />
               <Route element={<ProtectedLayout session={session} />}>
                 <Route path="/" element={<Dashboard />} />
-                <Route path="/calendar" element={<ContentCalendar />} />
+                <Route path="/calendar" element={<Navigate to="/post" replace />} />
                 <Route path="/documents" element={<Documents />} />
                 <Route path="/inbox" element={<Inbox />} />
                 <Route path="/post" element={<CreatePost />} />
