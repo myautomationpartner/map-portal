@@ -138,6 +138,19 @@ export async function fetchScheduledPosts(clientId) {
   return data ?? []
 }
 
+export async function fetchPostById(postId) {
+  if (!postId) return null
+
+  const { data, error } = await supabase
+    .from('posts')
+    .select('id, client_id, content, media_url, platforms, status, scheduled_for, published_at, created_at, n8n_execution_id')
+    .eq('id', postId)
+    .maybeSingle()
+
+  if (error) throw error
+  return data ?? null
+}
+
 export async function reconcileScheduledPosts(clientId, options = {}) {
   if (!clientId) return { publishedCount: 0 }
 

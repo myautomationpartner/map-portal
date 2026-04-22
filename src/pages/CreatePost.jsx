@@ -6,6 +6,7 @@ import { fetchDropboxWeekSuggestions, openDropboxChooser } from '../lib/dropboxA
 import {
   deletePost,
   deleteSocialDraft,
+  fetchPostById,
   fetchProfile,
   reconcileScheduledPosts,
   fetchScheduledPosts,
@@ -1227,7 +1228,7 @@ export default function CreatePost() {
     setEditingScheduledPostRef('')
   }
 
-  function loadScheduledPostForEditing(post) {
+  const loadScheduledPostForEditing = useCallback((post) => {
     if (!post) return
 
     const timezone = calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'
@@ -1260,7 +1261,7 @@ export default function CreatePost() {
     setErrorMsg('')
     setSearchParams({ date: post.localDate || selectedDay || '', editPost: post.id })
     composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+  }, [calendar?.policy?.timezone, profile?.clients?.timezone, selectedDay, setSearchParams])
 
   async function handleDeleteDraft(slot) {
     const draft = findDraftForSlot(drafts, slot)
@@ -1454,8 +1455,15 @@ export default function CreatePost() {
       const scheduledForIso = timingMode === 'now' ? null : localDateTimeToIso(scheduledFor)
       const targetStatus = timingMode === 'now' ? 'published' : 'scheduled'
       let post = null
+      const editCandidateId = editingScheduledPostId || editTargetPostId || ''
+      let existingEditingPost = editingScheduledPost || scheduledPostsDetailed.find((item) => item.id === editCandidateId) || null
+      if (!existingEditingPost && editCandidateId) {
+        existingEditingPost = await fetchPostById(editCandidateId)
+      }
+      const resolvedEditingPostId = existingEditingPost?.id || editCandidateId || ''
+      const resolvedEditingRef = editingScheduledPostRef || existingEditingPost?.n8n_execution_id || ''
 
-      if (editingScheduledPostId) {
+      if (resolvedEditingPostId) {
         const { data: updatedPost, error: updateError } = await supabase
           .from('posts')
           .update({
@@ -1465,7 +1473,7 @@ export default function CreatePost() {
             status: 'draft',
             scheduled_for: scheduledForIso,
           })
-          .eq('id', editingScheduledPostId)
+          .eq('id', resolvedEditingPostId)
           .select()
           .single()
 
@@ -1497,7 +1505,7 @@ export default function CreatePost() {
         body: JSON.stringify({
           postId: post.id,
           clientId,
-          zernioPostId: editingScheduledPostRef || editingScheduledPost?.n8n_execution_id || null,
+          zernioPostId: resolvedEditingRef || null,
           content: content.trim(),
           mediaUrl: effectiveMediaUrl,
           dropboxLinks: dropboxAttachments.map(({ name, link, size }) => ({ name, link, size })),
@@ -1520,7 +1528,9 @@ export default function CreatePost() {
         .from('posts')
         .update({
           status: n8nSuccess ? targetStatus : 'failed',
-          n8n_execution_id: n8nData?.zernioPostId ?? null,
+          n8n_execution_id: n8nSuccess
+            ? (n8nData?.zernioPostId ?? resolvedEditingRef ?? post.n8n_execution_id ?? null)
+            : (resolvedEditingRef || post.n8n_execution_id || null),
           published_at: n8nSuccess && targetStatus === 'published' ? new Date().toISOString() : null,
         })
         .eq('id', post.id)
