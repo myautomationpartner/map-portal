@@ -19,10 +19,12 @@ export default function Sidebar({ session }) {
   }
 
   return (
-    <aside className="portal-surface hidden fixed left-0 top-0 z-40 h-full w-64 flex-col border-r border-transparent md:flex">
-
-      <div className="flex items-center gap-3 border-b px-6 py-7" style={{ borderColor: 'var(--portal-border)' }}>
-        <div className="h-11 w-11 shrink-0 overflow-hidden rounded-2xl border bg-white" style={{ borderColor: 'rgba(85, 103, 255, 0.15)' }}>
+    <aside
+      className="hidden fixed left-0 top-0 z-40 h-full w-[280px] flex-col border-r md:flex"
+      style={{ background: 'linear-gradient(180deg, var(--portal-nav) 0%, #f3f6ff 100%)', borderColor: 'var(--portal-border)' }}
+    >
+      <div className="flex items-center gap-3 border-b px-7 py-8" style={{ borderColor: 'var(--portal-border)' }}>
+        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl border bg-white shadow-sm" style={{ borderColor: 'rgba(79, 107, 255, 0.16)' }}>
           <img
             src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg"
             alt="Dancescapes"
@@ -44,17 +46,17 @@ export default function Sidebar({ session }) {
       </div>
 
       <div className="px-5 pt-5">
-        <div className="rounded-3xl px-4 py-4" style={{ background: 'linear-gradient(135deg, rgba(85, 103, 255, 0.13), rgba(34, 195, 238, 0.1))', border: '1px solid rgba(85, 103, 255, 0.14)' }}>
+        <div className="rounded-[28px] px-4 py-4" style={{ background: 'linear-gradient(145deg, rgba(79, 107, 255, 0.12), rgba(135, 92, 245, 0.08))', border: '1px solid rgba(79, 107, 255, 0.12)' }}>
           <p className="text-[11px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--portal-text-soft)' }}>
-            Workspace
+            Workspace Focus
           </p>
           <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
-            Documents, publishing, and client updates in one place.
+            Client operations, documents, and publishing in one polished dashboard.
           </p>
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1 px-4 py-6">
+      <nav className="flex-1 space-y-1.5 px-4 py-6">
         {navItems.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
@@ -66,13 +68,13 @@ export default function Sidebar({ session }) {
               }`
             }
             style={({ isActive }) => isActive
-              ? { background: 'linear-gradient(135deg, rgba(85, 103, 255, 0.14), rgba(139, 92, 246, 0.1))', color: 'var(--portal-primary)', border: '1px solid rgba(85, 103, 255, 0.2)', boxShadow: '0 12px 26px rgba(85, 103, 255, 0.12)' }
+              ? { background: 'linear-gradient(135deg, rgba(79, 107, 255, 0.12), rgba(135, 92, 245, 0.08))', color: 'var(--portal-primary)', border: '1px solid rgba(79, 107, 255, 0.16)', boxShadow: '0 12px 24px rgba(79, 107, 255, 0.08)' }
               : { color: 'var(--portal-text-muted)', border: '1px solid transparent' }
             }
           >
             {({ isActive }) => (
               <>
-                <div className="relative flex items-center justify-center rounded-xl p-2" style={{ background: isActive ? 'rgba(255,255,255,0.75)' : 'rgba(238,242,255,0.65)' }}>
+                <div className="relative flex items-center justify-center rounded-xl p-2" style={{ background: isActive ? 'rgba(255,255,255,0.85)' : 'rgba(234,239,255,0.7)' }}>
                   <Icon
                     className="h-4 w-4 transition-colors"
                     style={{ color: isActive ? 'var(--portal-primary)' : 'var(--portal-text-soft)' }}
@@ -96,7 +98,7 @@ export default function Sidebar({ session }) {
       </nav>
 
       <div className="px-4 py-5" style={{ borderTop: '1px solid var(--portal-border)' }}>
-        <div className="mb-3 flex items-center gap-3 rounded-2xl px-3 py-3" style={{ background: 'rgba(255,255,255,0.88)', border: '1px solid var(--portal-border)' }}>
+        <div className="mb-3 flex items-center gap-3 rounded-[22px] px-3 py-3" style={{ background: 'rgba(255,255,255,0.88)', border: '1px solid var(--portal-border)' }}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
             style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-secondary))' }}>
             {session?.user?.email?.[0]?.toUpperCase() ?? '?'}

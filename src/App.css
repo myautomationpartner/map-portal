@@ -2,9 +2,9 @@
   min-height: 100svh;
   position: relative;
   background:
-    radial-gradient(circle at 0% 0%, rgba(34, 195, 238, 0.12), transparent 22%),
-    radial-gradient(circle at 100% 0%, rgba(139, 92, 246, 0.12), transparent 26%),
-    linear-gradient(180deg, rgba(248, 250, 255, 0.78), rgba(238, 244, 255, 0.92));
+    radial-gradient(circle at 0% 0%, rgba(62, 197, 255, 0.12), transparent 23%),
+    radial-gradient(circle at 100% 0%, rgba(135, 92, 245, 0.1), transparent 28%),
+    linear-gradient(180deg, rgba(249, 251, 255, 0.9), rgba(241, 246, 255, 0.96));
 }
 
 .portal-shell::before {
@@ -13,48 +13,48 @@
   inset: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(132, 144, 220, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(132, 144, 220, 0.05) 1px, transparent 1px);
-  background-size: 28px 28px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.45), transparent 88%);
+    linear-gradient(rgba(123, 137, 205, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(123, 137, 205, 0.035) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.32), transparent 88%);
 }
 
 .portal-surface {
   background: var(--portal-surface);
   border: 1px solid var(--portal-border);
   box-shadow: var(--portal-shadow);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(20px);
 }
 
 .portal-surface-strong {
   background: var(--portal-surface-strong);
   border: 1px solid var(--portal-border);
-  box-shadow: 0 20px 65px rgba(72, 82, 160, 0.12);
+  box-shadow: var(--portal-shadow-soft);
 }
 
 .portal-panel {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 249, 255, 0.95));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 255, 0.96));
   border: 1px solid var(--portal-border);
-  box-shadow: 0 18px 55px rgba(80, 92, 176, 0.12);
+  box-shadow: var(--portal-shadow-soft);
 }
 
 .portal-card {
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(109, 115, 196, 0.14);
-  box-shadow: 0 14px 40px rgba(83, 95, 182, 0.1);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(116, 129, 193, 0.12);
+  box-shadow: 0 12px 30px rgba(83, 95, 182, 0.08);
 }
 
 .portal-chip {
-  border: 1px solid rgba(109, 115, 196, 0.15);
-  background: rgba(238, 242, 255, 0.9);
+  border: 1px solid rgba(116, 129, 193, 0.14);
+  background: rgba(241, 245, 255, 0.95);
   color: var(--portal-text-muted);
 }
 
 .portal-input {
   width: 100%;
   border-radius: 1rem;
-  border: 1px solid rgba(109, 115, 196, 0.18);
-  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(116, 129, 193, 0.18);
+  background: rgba(255, 255, 255, 0.98);
   color: var(--portal-text);
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
@@ -65,31 +65,31 @@
 
 .portal-input:focus {
   outline: none;
-  border-color: rgba(85, 103, 255, 0.38);
-  box-shadow: 0 0 0 4px rgba(85, 103, 255, 0.11);
+  border-color: rgba(79, 107, 255, 0.35);
+  box-shadow: 0 0 0 4px rgba(79, 107, 255, 0.12);
 }
 
 .portal-button-primary {
   background: linear-gradient(135deg, var(--portal-primary), var(--portal-secondary));
   color: white;
-  box-shadow: 0 16px 36px rgba(85, 103, 255, 0.24);
+  box-shadow: 0 16px 36px rgba(79, 107, 255, 0.22);
 }
 
 .portal-button-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 18px 42px rgba(85, 103, 255, 0.28);
+  box-shadow: 0 18px 42px rgba(79, 107, 255, 0.26);
 }
 
 .portal-button-secondary {
   background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(109, 115, 196, 0.2);
+  border: 1px solid rgba(116, 129, 193, 0.18);
   color: var(--portal-text);
 }
 
 .portal-button-secondary:hover {
   transform: translateY(-1px);
-  border-color: rgba(85, 103, 255, 0.28);
-  box-shadow: 0 12px 26px rgba(90, 102, 186, 0.1);
+  border-color: rgba(79, 107, 255, 0.26);
+  box-shadow: 0 12px 26px rgba(90, 102, 186, 0.08);
 }
 
 .portal-button-ghost {
@@ -97,7 +97,7 @@
 }
 
 .portal-button-ghost:hover {
-  background: rgba(238, 242, 255, 0.92);
+  background: rgba(239, 244, 255, 0.96);
   color: var(--portal-primary);
 }
 
@@ -114,9 +114,64 @@
 }
 
 .portal-status-info {
-  background: rgba(85, 103, 255, 0.08);
-  border: 1px solid rgba(85, 103, 255, 0.18);
+  background: rgba(79, 107, 255, 0.08);
+  border: 1px solid rgba(79, 107, 255, 0.18);
   color: var(--portal-primary);
+}
+
+.portal-page {
+  padding: 1.25rem;
+}
+
+.portal-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.portal-page-title {
+  margin: 0;
+  font-size: clamp(1.7rem, 2vw, 2.5rem);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: var(--portal-text);
+}
+
+.portal-page-subtitle {
+  margin: 0.65rem 0 0;
+  max-width: 48rem;
+  color: var(--portal-text-muted);
+}
+
+.portal-command-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--portal-border);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--portal-shadow-soft);
+}
+
+.portal-command-bar-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.portal-stat-card {
+  border: 1px solid var(--portal-border);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: var(--portal-shadow-soft);
+}
+
+.portal-table-row:hover {
+  background: rgba(239, 244, 255, 0.8);
 }
 
 .portal-scroll {

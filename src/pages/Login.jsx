@@ -23,12 +23,54 @@ export default function Login() {
   return (
     <div className="portal-shell relative flex min-h-screen items-center justify-center p-4">
       <div className="pointer-events-none absolute inset-0"
-        style={{ background: 'radial-gradient(ellipse 80% 55% at 50% 0%, rgba(85, 103, 255, 0.12) 0%, transparent 68%)' }} />
+        style={{ background: 'radial-gradient(ellipse 80% 55% at 50% 0%, rgba(79, 107, 255, 0.12) 0%, transparent 68%)' }} />
 
-      <div className="w-full max-w-sm relative z-10">
-        <div className="mb-10 text-center">
+      <div className="relative z-10 grid w-full max-w-5xl gap-8 lg:grid-cols-[1.1fr_430px] lg:items-center">
+        <div className="hidden lg:block">
+          <div className="portal-panel rounded-[40px] p-8">
+            <div className="mb-8 flex items-center gap-4">
+              <div className="inline-flex h-20 w-20 items-center justify-center overflow-hidden rounded-[28px] border bg-white p-1 shadow-sm"
+                style={{ borderColor: 'rgba(79, 107, 255, 0.12)' }}>
+                <img
+                  src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg"
+                  alt="Dancescapes"
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <div>
+                <p className="font-display text-3xl font-semibold" style={{ color: 'var(--portal-text)' }}>Dancescapes</p>
+                <p className="mt-1 text-sm font-medium" style={{ color: 'var(--portal-text-muted)' }}>Partner Portal</p>
+              </div>
+            </div>
+
+            <h1 className="font-display text-4xl font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
+              A cleaner home for files, publishing, and client updates.
+            </h1>
+            <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+              The refreshed portal now uses a more structured dashboard layout with familiar documents patterns inspired by the best admin and cloud-drive tools.
+            </p>
+
+            <div className="mt-8 grid gap-4 md:grid-cols-3">
+              <div className="portal-stat-card rounded-[24px] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Documents</p>
+                <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>OneDrive-style file browsing</p>
+              </div>
+              <div className="portal-stat-card rounded-[24px] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Sharing</p>
+                <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Signed previews and secure links</p>
+              </div>
+              <div className="portal-stat-card rounded-[24px] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Daily Work</p>
+                <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Dashboard tools in one place</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="w-full max-w-sm justify-self-center lg:max-w-none">
+          <div className="mb-10 text-center lg:hidden">
           <div className="mb-5 inline-block h-20 w-20 overflow-hidden rounded-[26px] border bg-white p-1 shadow-lg"
-            style={{ borderColor: 'rgba(85, 103, 255, 0.15)' }}>
+            style={{ borderColor: 'rgba(79, 107, 255, 0.15)' }}>
             <img
               src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg"
               alt="Dancescapes"
@@ -122,6 +164,7 @@ export default function Login() {
             Contact your account manager
           </a>
         </p>
+        </div>
       </div>
     </div>
   )

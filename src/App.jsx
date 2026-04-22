@@ -62,7 +62,7 @@ function ProtectedLayout({ session }) {
       <Sidebar session={session} />
 
       {/* Main content area */}
-      <div className="flex-1 flex flex-col md:ml-64 min-h-screen">
+      <div className="flex-1 flex flex-col min-h-screen md:ml-[280px]">
         <main className="flex-1 overflow-auto pb-24 md:pb-0">
           <Outlet context={{ session }} />
         </main>
