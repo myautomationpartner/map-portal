@@ -1473,70 +1473,50 @@ export default function CreatePost() {
                   </div>
                 </div>
 
-                <div className="mt-4 space-y-2">
-                  {dropboxSuggestedAssets.length > 0 ? dropboxSuggestedAssets.map((file) => {
-                    const alreadyAdded = dropboxAttachments.some((attachment) => attachment.link === file.link)
-                    const isPreviewed = previewedDropboxAsset?.link === file.link
-                    const thumbSource = getDropboxThumbSource(file)
+                <div className="mt-4">
+                  {dropboxSuggestedAssets.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      {dropboxSuggestedAssets.map((file) => {
+                        const alreadyAdded = dropboxAttachments.some((attachment) => attachment.link === file.link)
+                        const isPreviewed = previewedDropboxAsset?.link === file.link
+                        const thumbSource = getDropboxThumbSource(file)
 
-                    return (
-                      <button
-                        key={file.link}
-                        type="button"
-                        onClick={() => setPreviewedDropboxAsset(file)}
-                        onDoubleClick={() => addDropboxAttachment({
-                          name: file.name,
-                          size: file.size,
-                          link: file.link,
-                          thumbnail: thumbSource,
-                        })}
-                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all"
-                        style={isPreviewed
-                          ? { background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.3)' }
-                          : { background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)' }}
-                      >
-                        <div
-                          className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl"
-                          style={{ background: 'rgba(201, 168, 76, 0.1)', border: '1px solid rgba(201, 168, 76, 0.18)' }}
-                        >
-                          {thumbSource && isImageAttachment(file) ? (
-                            <img src={thumbSource} alt={file.name} className="h-full w-full object-cover" />
-                          ) : (
-                            <Paperclip className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-medium" style={{ color: 'var(--portal-text)' }}>{file.name}</p>
-                          <p className="mt-0.5 text-[10px] leading-relaxed" style={{ color: 'var(--portal-text-soft)' }}>
-                            {(file.reasons || []).slice(0, 2).join(' • ') || 'Suggested from this week folder'}
-                          </p>
-                          <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: isPreviewed ? 'var(--portal-primary)' : 'var(--portal-text-soft)' }}>
-                            {alreadyAdded ? 'Double-click to add again is disabled' : 'Click to preview • Double-click to add'}
-                          </p>
-                        </div>
-                        <div
-                          className="rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
-                          style={alreadyAdded
-                            ? { background: 'rgba(55,181,140,0.12)', color: '#2d876a' }
-                            : { background: 'rgba(201,168,76,0.12)', color: 'var(--portal-primary)' }}
-                        >
-                          {alreadyAdded ? 'Added' : 'Preview'}
-                        </div>
-                        {file.link && (
-                          <a
-                            href={file.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(event) => event.stopPropagation()}
-                            className="shrink-0 p-1"
-                            style={{ color: 'var(--portal-text-soft)' }}
+                        return (
+                          <button
+                            key={file.link}
+                            type="button"
+                            onClick={() => setPreviewedDropboxAsset(file)}
+                            onDoubleClick={() => addDropboxAttachment({
+                              name: file.name,
+                              size: file.size,
+                              link: file.link,
+                              thumbnail: thumbSource,
+                            })}
+                            className="group overflow-hidden rounded-2xl text-left transition-all"
+                            style={isPreviewed
+                              ? { background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.32)', boxShadow: '0 0 0 2px rgba(201,168,76,0.12)' }
+                              : { background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)' }}
                           >
-                            <ArrowUpRight className="h-3.5 w-3.5" />
-                          </a>
-                        )}
-                      </button>
-                    )
-                  }) : (
+                            <div
+                              className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden"
+                              style={{ background: 'rgba(201, 168, 76, 0.08)' }}
+                            >
+                              {thumbSource && isImageAttachment(file) ? (
+                                <img src={thumbSource} alt={file.name} className="h-full w-full object-cover" />
+                              ) : (
+                                <Paperclip className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
+                              )}
+                            </div>
+                            <div className="px-3 py-2.5">
+                              <p className="truncate text-xs font-medium" style={{ color: alreadyAdded ? '#2d876a' : 'var(--portal-text)' }}>
+                                {file.name}
+                              </p>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
                     <div className="rounded-2xl px-4 py-3 text-sm" style={{ background: 'rgba(255,255,255,0.72)', color: 'var(--portal-text-muted)', border: '1px solid var(--portal-border)' }}>
                       {dropboxSuggestionStatus === 'loading'
                         ? 'Looking through the matching Dropbox week folder now…'
