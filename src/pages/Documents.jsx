@@ -291,10 +291,38 @@ function EmptyPreviewState() {
 
 function DocumentActionMenu({ document, isOpen, canManage, availableFolders, currentFolder, activeShareLink, onOpen, onMove, onRename, onShare, onCopyShare, onRevokeShare, onDownload, onDelete }) {
   const [showFolderChooser, setShowFolderChooser] = useState(false)
+  const [openDirection, setOpenDirection] = useState('down')
+  const buttonRef = useRef(null)
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    if (!isOpen) {
+      setShowFolderChooser(false)
+      setOpenDirection('down')
+      return
+    }
+
+    function updateMenuDirection() {
+      const buttonRect = buttonRef.current?.getBoundingClientRect()
+      const menuRect = menuRef.current?.getBoundingClientRect()
+      if (!buttonRect) return
+
+      const estimatedMenuHeight = menuRect?.height || (showFolderChooser ? 320 : 360)
+      const spaceBelow = window.innerHeight - buttonRect.bottom
+      const spaceAbove = buttonRect.top
+
+      setOpenDirection(spaceBelow < estimatedMenuHeight + 20 && spaceAbove > spaceBelow ? 'up' : 'down')
+    }
+
+    updateMenuDirection()
+    window.addEventListener('resize', updateMenuDirection)
+    return () => window.removeEventListener('resize', updateMenuDirection)
+  }, [isOpen, showFolderChooser])
 
   return (
     <div className="relative" data-document-action-menu="true">
       <button
+        ref={buttonRef}
         type="button"
         aria-label={`Open actions for ${document.file_name}`}
         onPointerDown={(event) => event.stopPropagation()}
@@ -310,7 +338,8 @@ function DocumentActionMenu({ document, isOpen, canManage, availableFolders, cur
 
       {isOpen && (
         <div
-          className="absolute right-0 top-11 z-20 min-w-[180px] rounded-[20px] border p-2 shadow-lg"
+          ref={menuRef}
+          className={`absolute right-0 z-40 min-w-[180px] rounded-[20px] border p-2 shadow-lg ${openDirection === 'up' ? 'bottom-11' : 'top-11'}`}
           style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.98)', boxShadow: '0 18px 40px rgba(26, 24, 20, 0.12)' }}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
