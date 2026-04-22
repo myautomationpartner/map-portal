@@ -131,11 +131,47 @@ export async function fetchScheduledPosts(clientId) {
     .select('id, client_id, content, media_url, platforms, status, scheduled_for, published_at, created_at, n8n_execution_id')
     .eq('client_id', clientId)
     .not('scheduled_for', 'is', null)
-    .in('status', ['draft', 'scheduled', 'published'])
+    .eq('status', 'scheduled')
     .order('scheduled_for', { ascending: true })
 
   if (error) throw error
   return data ?? []
+}
+
+export async function reconcileScheduledPosts(clientId, options = {}) {
+  if (!clientId) return { publishedCount: 0 }
+
+  const graceMinutes = Number.isFinite(options.graceMinutes) ? options.graceMinutes : 10
+  const cutoff = new Date(Date.now() - graceMinutes * 60 * 1000).toISOString()
+
+  const { data, error } = await supabase
+    .from('posts')
+    .select('id, scheduled_for')
+    .eq('client_id', clientId)
+    .eq('status', 'scheduled')
+    .not('scheduled_for', 'is', null)
+    .lte('scheduled_for', cutoff)
+
+  if (error) throw error
+
+  const overduePosts = data ?? []
+  if (!overduePosts.length) return { publishedCount: 0 }
+
+  const updates = overduePosts.map((post) => (
+    supabase
+      .from('posts')
+      .update({
+        status: 'published',
+        published_at: post.scheduled_for || new Date().toISOString(),
+      })
+      .eq('id', post.id)
+  ))
+
+  const results = await Promise.all(updates)
+  const failed = results.find((result) => result.error)
+  if (failed?.error) throw failed.error
+
+  return { publishedCount: overduePosts.length }
 }
 
 export async function fetchSocialDrafts(clientId) {

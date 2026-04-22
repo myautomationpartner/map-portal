@@ -7,6 +7,7 @@ import {
   deletePost,
   deleteSocialDraft,
   fetchProfile,
+  reconcileScheduledPosts,
   fetchScheduledPosts,
   fetchSocialDrafts,
   updateSocialDraft,
@@ -750,7 +751,10 @@ export default function CreatePost() {
 
   const { data: scheduledPosts = [], isLoading: postsLoading } = useQuery({
     queryKey: ['calendar-posts', clientId],
-    queryFn: () => fetchScheduledPosts(clientId),
+    queryFn: async () => {
+      await reconcileScheduledPosts(clientId)
+      return fetchScheduledPosts(clientId)
+    },
     enabled: !!clientId,
   })
 

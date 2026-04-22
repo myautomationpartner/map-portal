@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { reconcileScheduledPosts } from '../lib/portalApi'
 import { ArrowLeft, RefreshCw, Share2, Camera, Search,
   MapPin, Video, ImageIcon, FileText, ChevronDown, ChevronUp
 } from 'lucide-react'
@@ -19,10 +20,14 @@ async function fetchClientProfile() {
 
 async function fetchPosts(clientId) {
   if (!clientId) return []
+
+  await reconcileScheduledPosts(clientId)
+
   const { data, error } = await supabase
     .from('posts')
     .select('*')
     .eq('client_id', clientId)
+    .order('published_at', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
   if (error) throw error
   return data

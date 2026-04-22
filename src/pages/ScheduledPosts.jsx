@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { AlertCircle, ArrowLeft, CalendarDays, Clock3, Loader2, PencilLine, Trash2 } from 'lucide-react'
-import { deletePost, fetchProfile, fetchScheduledPosts } from '../lib/portalApi'
+import { deletePost, fetchProfile, fetchScheduledPosts, reconcileScheduledPosts } from '../lib/portalApi'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 
@@ -56,7 +56,10 @@ export default function ScheduledPosts() {
 
   const { data: scheduledPosts = [], isLoading: postsLoading } = useQuery({
     queryKey: ['calendar-posts', clientId],
-    queryFn: () => fetchScheduledPosts(clientId),
+    queryFn: async () => {
+      await reconcileScheduledPosts(clientId)
+      return fetchScheduledPosts(clientId)
+    },
     enabled: !!clientId,
   })
 
