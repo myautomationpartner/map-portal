@@ -204,6 +204,55 @@ async function getTemporaryLink(accessToken, path) {
   return payload?.link || null
 }
 
+async function listDirectSharedLinks(accessToken, path) {
+  const payload = await dropboxRpc('/sharing/list_shared_links', accessToken, {
+    path,
+    direct_only: true,
+  })
+  return payload?.links || []
+}
+
+async function createSharedLink(accessToken, path) {
+  const payload = await dropboxRpc('/sharing/create_shared_link_with_settings', accessToken, {
+    path,
+    settings: {
+      requested_visibility: 'public',
+    },
+  })
+  return payload?.url || null
+}
+
+async function getBestDropboxPreviewLink(accessToken, path) {
+  try {
+    return await getTemporaryLink(accessToken, path)
+  } catch {
+    // Fall through to shared-link lookup below.
+  }
+
+  try {
+    const existingLinks = await listDirectSharedLinks(accessToken, path)
+    if (existingLinks.length > 0) {
+      return existingLinks[0]?.url || null
+    }
+  } catch {
+    // Fall through to shared-link creation below.
+  }
+
+  try {
+    return await createSharedLink(accessToken, path)
+  } catch (error) {
+    if (error?.payload?.error?.['.tag'] === 'shared_link_already_exists') {
+      try {
+        const existingLinks = await listDirectSharedLinks(accessToken, path)
+        return existingLinks[0]?.url || null
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
+}
+
 async function handleDropboxWeekMedia(request, env) {
   const accessToken = env.DROPBOX_ACCESS_TOKEN
   if (!accessToken) {
@@ -273,12 +322,7 @@ async function handleDropboxWeekMedia(request, env) {
 
   const suggestions = await Promise.all(
     rankedEntries.map(async ({ entry, score, reasons }) => {
-      let link = null
-      try {
-        link = await getTemporaryLink(accessToken, entry.path_lower || entry.path_display)
-      } catch {
-        link = null
-      }
+      const link = await getBestDropboxPreviewLink(accessToken, entry.path_lower || entry.path_display)
 
       return {
         name: entry.name,
