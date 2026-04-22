@@ -22,7 +22,7 @@ import {
 } from '../lib/socialDrafting'
 import {
   AlertCircle, ArrowUpRight, Calendar, CalendarDays, Camera, CheckCircle2,
-  ChevronRight, Clock3, Globe, History, Loader2, Music2, Paperclip,
+  Clock3, Globe, History, Loader2, Music2, Paperclip,
   Send, Share2, UploadCloud, Wand2, X,
 } from 'lucide-react'
 
@@ -196,6 +196,14 @@ function buildMonthGrid(baseDate) {
   })
 }
 
+function startOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
+function addMonths(date, delta) {
+  return new Date(date.getFullYear(), date.getMonth() + delta, 1)
+}
+
 function formatLocalDateTime(value) {
   const parsed = parseLocalDateTime(value)
   if (!parsed) return 'Pick a calendar slot'
@@ -247,6 +255,64 @@ function getMinScheduleValue() {
 
 function getSlotKey(slot) {
   return slot ? `${slot.slot_date_local}::${slot.slot_label}` : ''
+}
+
+function getDatePartsForZone(value, timeZone) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const parts = Object.fromEntries(formatter.formatToParts(value).map((part) => [part.type, part.value]))
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`,
+  }
+}
+
+function buildPublishErrorMessage(payload, fallbackText, timingMode) {
+  const failedEntries = [
+    ...(Array.isArray(payload?.platformResults) ? payload.platformResults : []),
+    ...(Array.isArray(payload?.results) ? payload.results : []),
+    ...(Array.isArray(payload?.platforms) ? payload.platforms : []),
+  ]
+    .filter((entry) => entry && typeof entry === 'object')
+    .map((entry) => {
+      const platform = entry.platform || entry.name || entry.id || 'Platform'
+      const status = String(entry.status || '').toLowerCase()
+      const reason = entry.error || entry.message || entry.detail || entry.details || ''
+      return {
+        platform,
+        failed: status.includes('fail') || status.includes('error') || Boolean(reason),
+        reason: String(reason || '').trim(),
+      }
+    })
+    .filter((entry) => entry.failed)
+
+  if (failedEntries.length > 0) {
+    const summary = failedEntries
+      .slice(0, 4)
+      .map((entry) => `${entry.platform}: ${entry.reason || 'failed'}`)
+      .join('; ')
+    return failedEntries.length === 1 ? summary : `Platform errors: ${summary}`
+  }
+
+  const messageCandidates = [
+    payload?.message,
+    payload?.error,
+    payload?.details,
+    payload?.detail,
+    fallbackText,
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+
+  const generic = timingMode === 'now' ? 'Publishing failed. Please try again.' : 'Scheduling failed. Please try again.'
+  return messageCandidates[0] || generic
 }
 
 function findDraftForSlot(drafts, slot) {
@@ -598,6 +664,7 @@ export default function CreatePost() {
   const [reviewOpen, setReviewOpen] = useState(false)
   const [previewPlatform, setPreviewPlatform] = useState('facebook')
   const [selectedDay, setSelectedDay] = useState('')
+  const [viewedMonth, setViewedMonth] = useState(() => startOfMonth(new Date()))
   const [activeDraftId, setActiveDraftId] = useState('')
   const [activeSlotKey, setActiveSlotKey] = useState('')
   const [selectedAngleId, setSelectedAngleId] = useState('')
@@ -648,15 +715,7 @@ export default function CreatePost() {
   }, [calendar])
 
   const slotsByDate = useMemo(() => new Map(groupedSlots), [groupedSlots])
-  const monthBaseDate = useMemo(() => {
-    const firstSlotDate = groupedSlots[0]?.[0]
-    if (firstSlotDate) {
-      const parsed = parseDateOnly(firstSlotDate)
-      if (parsed) return new Date(parsed.year, parsed.month - 1, 1)
-    }
-    return new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-  }, [groupedSlots])
-  const monthGrid = useMemo(() => buildMonthGrid(monthBaseDate), [monthBaseDate])
+  const monthGrid = useMemo(() => buildMonthGrid(viewedMonth), [viewedMonth])
 
   const activePlatforms = Object.entries(selectedPlatforms)
     .filter(([, enabled]) => enabled)
@@ -677,6 +736,28 @@ export default function CreatePost() {
     return calendar.slots.find((slot) => getSlotKey(slot) === activeSlotKey) || null
   }, [activeSlotKey, calendar])
   const activeDraft = useMemo(() => drafts.find((draft) => draft.id === activeDraftId) || findDraftForSlot(drafts, activeSlot), [activeDraftId, drafts, activeSlot])
+  const scheduledPostsByDate = useMemo(() => {
+    const byDate = new Map()
+    const timezone = calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'
+
+    for (const post of scheduledPosts) {
+      if (!post?.scheduled_for) continue
+      try {
+        const parts = getDatePartsForZone(new Date(post.scheduled_for), timezone)
+        if (!byDate.has(parts.date)) byDate.set(parts.date, [])
+        byDate.get(parts.date).push({
+          ...post,
+          localDate: parts.date,
+          localTime: parts.time,
+        })
+      } catch {
+        // Ignore malformed scheduled dates in the calendar UI.
+      }
+    }
+
+    return byDate
+  }, [scheduledPosts, calendar?.policy?.timezone, profile?.clients?.timezone])
+  const scheduledPostsForSelectedDay = selectedDay ? (scheduledPostsByDate.get(selectedDay) || []) : []
 
   const timingSummary = timingMode === 'now'
     ? 'Publishing as soon as you approve'
@@ -701,6 +782,13 @@ export default function CreatePost() {
     }
   }, [groupedSlots, selectedDay])
 
+  useEffect(() => {
+    if (!selectedDay) return
+    const parsed = parseDateOnly(selectedDay)
+    if (!parsed) return
+    setViewedMonth(new Date(parsed.year, parsed.month - 1, 1))
+  }, [selectedDay])
+
   const applyDraftToComposer = useCallback((draft, slot) => {
     hydratingDraftRef.current = true
     setActiveDraftId(draft.id || '')
@@ -716,6 +804,8 @@ export default function CreatePost() {
     setTimingMode('slot')
     setScheduledFor(slotToInputValue(slot))
     setSelectedDay(slot.slot_date_local)
+    const parsed = parseDateOnly(slot.slot_date_local)
+    if (parsed) setViewedMonth(new Date(parsed.year, parsed.month - 1, 1))
 
     window.setTimeout(() => {
       hydratingDraftRef.current = false
@@ -740,6 +830,8 @@ export default function CreatePost() {
     setTimingMode('slot')
     setScheduledFor(slotToInputValue(slot))
     setSelectedDay(slot.slot_date_local)
+    const parsed = parseDateOnly(slot.slot_date_local)
+    if (parsed) setViewedMonth(new Date(parsed.year, parsed.month - 1, 1))
 
     window.setTimeout(() => {
       hydratingDraftRef.current = false
@@ -1021,6 +1113,10 @@ export default function CreatePost() {
   function chooseCustomTime(dayKey = '') {
     setTimingMode('custom')
     setSelectedDay(dayKey || selectedDay)
+    if (dayKey) {
+      const parsed = parseDateOnly(dayKey)
+      if (parsed) setViewedMonth(new Date(parsed.year, parsed.month - 1, 1))
+    }
     if (dayKey && !scheduledFor.startsWith(`${dayKey}T`)) {
       setScheduledFor(`${dayKey}T12:00`)
     } else if (!scheduledFor) {
@@ -1148,7 +1244,14 @@ export default function CreatePost() {
         }),
       })
 
-      const n8nData = await n8nResponse.json().catch(() => ({}))
+      const n8nRawText = await n8nResponse.text()
+      const n8nData = (() => {
+        try {
+          return n8nRawText ? JSON.parse(n8nRawText) : {}
+        } catch {
+          return {}
+        }
+      })()
       const n8nSuccess = n8nResponse.ok && n8nData?.success !== false
 
       await supabase
@@ -1161,7 +1264,7 @@ export default function CreatePost() {
         .eq('id', post.id)
 
       if (!n8nSuccess) {
-        throw new Error(typeof n8nData?.message === 'string' ? n8nData.message : `${timingMode === 'now' ? 'Publishing' : 'Scheduling'} failed. Please try again.`)
+        throw new Error(buildPublishErrorMessage(n8nData, n8nRawText, timingMode))
       }
 
       if (activeDraftId) {
@@ -1642,19 +1745,37 @@ export default function CreatePost() {
 
           <div className="space-y-5">
             <section className="rounded-[34px] p-5 md:p-6" style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--portal-text-soft)' }}>
-                    Calendar planner
-                  </p>
-                  <h2 className="mt-1 font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-                    {formatMonthLabel(monthBaseDate)}
-                  </h2>
-                </div>
-                <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: 'rgba(245,240,235,0.9)', color: 'var(--portal-text-soft)' }}>
-                  <Clock3 className="h-3.5 w-3.5" />
-                  {timingSummary}
-                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--portal-text-soft)' }}>
+                      Calendar planner
+                    </p>
+                    <h2 className="mt-1 font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
+                    {formatMonthLabel(viewedMonth)}
+                    </h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setViewedMonth((current) => addMonths(current, -1))}
+                      className="rounded-full px-3 py-1 text-sm font-semibold"
+                      style={{ background: 'rgba(255,255,255,0.82)', color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
+                    >
+                      ‹
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewedMonth((current) => addMonths(current, 1))}
+                      className="rounded-full px-3 py-1 text-sm font-semibold"
+                      style={{ background: 'rgba(255,255,255,0.82)', color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
+                    >
+                      ›
+                    </button>
+                    <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: 'rgba(245,240,235,0.9)', color: 'var(--portal-text-soft)' }}>
+                      <Clock3 className="h-3.5 w-3.5" />
+                      {timingSummary}
+                    </div>
+                  </div>
               </div>
 
               {calendar?.error ? (
@@ -1675,9 +1796,10 @@ export default function CreatePost() {
                   <div className="grid grid-cols-7 gap-2">
                     {monthGrid.map((day) => {
                       const daySlots = slotsByDate.get(day.key) || []
+                      const scheduledDayPosts = scheduledPostsByDate.get(day.key) || []
                       const counts = {
                         recommended: daySlots.filter((slot) => slot.state === 'recommended_fill').length,
-                        planned: daySlots.filter((slot) => slot.state === 'occupied_planned').length,
+                        planned: scheduledDayPosts.length,
                         draft: daySlots.filter((slot) => slot.state === 'occupied_draft').length,
                       }
                       const isSelectedDay = selectedDay === day.key
@@ -1686,7 +1808,12 @@ export default function CreatePost() {
                         <button
                           key={day.key}
                           type="button"
-                          onClick={() => setSelectedDay(day.key)}
+                          onClick={() => {
+                            setSelectedDay(day.key)
+                            if (!day.inMonth) {
+                              setViewedMonth(new Date(day.date.getFullYear(), day.date.getMonth(), 1))
+                            }
+                          }}
                           className="min-h-[88px] rounded-[22px] p-3 text-left transition-all"
                           style={isSelectedDay
                             ? { background: 'rgba(201,168,76,0.16)', border: '1px solid rgba(201,168,76,0.34)' }
@@ -1792,6 +1919,38 @@ export default function CreatePost() {
                     ) : (
                       <div className="mt-4 rounded-[22px] p-4 text-sm" style={{ background: 'rgba(255,255,255,0.74)', color: 'var(--portal-text-muted)' }}>
                         No recommended or saved draft slot on this day. Use `Custom time for this day` if you still want to schedule it here.
+                      </div>
+                    )}
+
+                    {scheduledPostsForSelectedDay.length > 0 && (
+                      <div className="mt-4 rounded-[22px] p-4" style={{ background: 'rgba(255,255,255,0.74)', border: '1px solid var(--portal-border)' }}>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                          Scheduled posts
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {scheduledPostsForSelectedDay.map((post) => (
+                            <div
+                              key={post.id}
+                              className="flex items-center justify-between gap-3 rounded-2xl px-3 py-2"
+                              style={{ background: 'rgba(248,244,238,0.85)', border: '1px solid var(--portal-border)' }}
+                            >
+                              <div>
+                                <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
+                                  {post.localTime}
+                                </p>
+                                <p className="mt-0.5 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                                  {(post.platforms || []).join(', ') || post.status}
+                                </p>
+                              </div>
+                              <span
+                                className="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                                style={{ background: 'rgba(55, 181, 140, 0.12)', color: '#2d876a', borderColor: 'rgba(55, 181, 140, 0.2)' }}
+                              >
+                                {post.status}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
