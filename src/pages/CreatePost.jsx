@@ -222,6 +222,26 @@ function formatLocalDateTime(value) {
   }
 }
 
+function formatDetailedLocalDateTime(value) {
+  const parsed = parseLocalDateTime(value)
+  if (!parsed) return 'Pick a calendar slot'
+  const date = new Date(parsed.year, parsed.month - 1, parsed.day, parsed.hour, parsed.minute)
+  if (Number.isNaN(date.getTime())) return 'Pick a calendar slot'
+
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(date)
+  } catch {
+    return formatLocalDateTime(value)
+  }
+}
+
 function localDateTimeToIso(value) {
   const parsed = parseLocalDateTime(value)
   if (!parsed) {
@@ -280,6 +300,23 @@ function buildPublishErrorMessage(payload, fallbackText, timingMode) {
     return 'Publish webhook returned an empty response from n8n. Check the Social Publisher (Zernio) workflow response.'
   }
 
+  const normalizeReason = (value) => {
+    if (!value) return ''
+    if (typeof value === 'string') return value.trim()
+    if (typeof value === 'object') {
+      return String(
+        value.error
+        || value.message
+        || value.detail
+        || value.details?.error
+        || value.details?.message
+        || value.details
+        || '',
+      ).trim()
+    }
+    return String(value).trim()
+  }
+
   const failedEntries = [
     ...(Array.isArray(payload?.platformResults) ? payload.platformResults : []),
     ...(Array.isArray(payload?.results) ? payload.results : []),
@@ -289,11 +326,11 @@ function buildPublishErrorMessage(payload, fallbackText, timingMode) {
     .map((entry) => {
       const platform = entry.platform || entry.name || entry.id || 'Platform'
       const status = String(entry.status || '').toLowerCase()
-      const reason = entry.error || entry.message || entry.detail || entry.details || ''
+      const reason = normalizeReason(entry.error || entry.message || entry.detail || entry.details || '')
       return {
         platform,
         failed: status.includes('fail') || status.includes('error') || Boolean(reason),
-        reason: String(reason || '').trim(),
+        reason,
       }
     })
     .filter((entry) => entry.failed)
@@ -307,10 +344,10 @@ function buildPublishErrorMessage(payload, fallbackText, timingMode) {
   }
 
   const messageCandidates = [
-    payload?.message,
-    payload?.error,
-    payload?.details,
-    payload?.detail,
+    normalizeReason(payload?.message),
+    normalizeReason(payload?.error),
+    normalizeReason(payload?.details),
+    normalizeReason(payload?.detail),
     fallback,
   ]
     .map((value) => String(value || '').trim())
@@ -344,7 +381,7 @@ function PlatformPreview({ platformId, profile, content, imagePreview, dropboxAt
   if (!platform) return null
 
   const businessName = profile?.clients?.business_name || 'Your Business'
-  const previewTime = scheduledFor ? formatLocalDateTime(scheduledFor) : 'Ready to publish'
+  const previewTime = scheduledFor ? formatDetailedLocalDateTime(scheduledFor) : 'Ready to publish'
   const attachmentCount = dropboxAttachments.length
   const visualPreview = imagePreview || getDropboxPreviewSource(dropboxAttachments)
 
@@ -555,8 +592,13 @@ function ReviewModal({
                 Timing
               </p>
               <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
-                {timingMode === 'now' ? 'Publish now' : formatLocalDateTime(scheduledFor)}
+                {timingMode === 'now' ? 'Publish now' : formatDetailedLocalDateTime(scheduledFor)}
               </p>
+              {timingMode !== 'now' && scheduledFor && (
+                <p className="mt-2 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                  This will schedule the post for {formatDetailedLocalDateTime(scheduledFor)}.
+                </p>
+              )}
             </div>
           </div>
 
@@ -767,7 +809,7 @@ export default function CreatePost() {
   const timingSummary = timingMode === 'now'
     ? 'Publishing as soon as you approve'
     : scheduledFor
-      ? formatLocalDateTime(scheduledFor)
+      ? formatDetailedLocalDateTime(scheduledFor)
       : timingMode === 'custom'
         ? 'Choose any date and time'
         : 'Pick a slot from the calendar'
@@ -1352,7 +1394,9 @@ export default function CreatePost() {
                   <p className="mt-0.5 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
                     {timingMode === 'now'
                       ? 'Your post has been sent to the selected platforms.'
-                      : 'The scheduled slot is now reserved and ready for publish time.'}
+                      : scheduledFor
+                        ? `Scheduled for ${formatDetailedLocalDateTime(scheduledFor)}.`
+                        : 'The scheduled slot is now reserved and ready for publish time.'}
                   </p>
                 </div>
               </div>
@@ -1444,6 +1488,9 @@ export default function CreatePost() {
 
               {timingMode === 'custom' && (
                 <div className="mt-4">
+                  <p className="mb-2 text-xs font-medium" style={{ color: 'var(--portal-text-muted)' }}>
+                    Scheduling for {scheduledFor ? formatDetailedLocalDateTime(scheduledFor) : 'a custom date and time'}.
+                  </p>
                   <input
                     type="datetime-local"
                     value={scheduledFor}
@@ -1456,6 +1503,14 @@ export default function CreatePost() {
               )}
 
               <div className="mt-5">
+                {timingMode !== 'now' && scheduledFor && (
+                  <div
+                    className="mb-4 rounded-2xl px-4 py-3 text-sm"
+                    style={{ background: 'rgba(201,168,76,0.10)', color: 'var(--portal-text)', border: '1px solid rgba(201,168,76,0.22)' }}
+                  >
+                    This post will be scheduled for <span className="font-semibold">{formatDetailedLocalDateTime(scheduledFor)}</span>.
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2">
                   {angleChoices.length > 0 ? angleChoices.map((choice) => {
                     const isActive = choice.id === selectedAngleId
