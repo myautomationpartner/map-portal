@@ -136,8 +136,8 @@ export default function TextDocumentViewer({ url, fileName, mimeType }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold" style={{ color: '#f8f2e4' }}>{fileName}</p>
-          <p className="text-xs" style={{ color: '#8a7858' }}>
+          <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{fileName}</p>
+          <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
             {mimeType === 'text/csv' || mimeType === 'text/tab-separated-values'
               ? 'Inline spreadsheet-style preview'
               : 'Inline text preview'}
@@ -147,8 +147,7 @@ export default function TextDocumentViewer({ url, fileName, mimeType }) {
           href={url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-all hover:-translate-y-px"
-          style={{ background: '#252015', border: '1px solid #3d3420', color: '#d4a83a' }}
+          className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all"
         >
           Open Original
           <ExternalLink className="w-3.5 h-3.5" />
@@ -156,14 +155,14 @@ export default function TextDocumentViewer({ url, fileName, mimeType }) {
       </div>
 
       {status === 'loading' && (
-        <div className="rounded-2xl p-8 flex items-center justify-center gap-3" style={{ background: '#141109', border: '1px solid #3d3420' }}>
-          <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#d4a83a' }} />
-          <span className="text-sm" style={{ color: '#c8b898' }}>Loading document preview…</span>
+        <div className="portal-surface-strong flex items-center justify-center gap-3 rounded-[24px] p-8">
+          <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} />
+          <span className="text-sm" style={{ color: 'var(--portal-text-muted)' }}>Loading document preview…</span>
         </div>
       )}
 
       {status === 'error' && (
-        <div className="rounded-2xl p-4 flex items-start gap-3" style={{ background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.2)', color: '#e8899a' }}>
+        <div className="portal-status-danger flex items-start gap-3 rounded-[24px] p-4">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold">Preview unavailable</p>
@@ -173,16 +172,16 @@ export default function TextDocumentViewer({ url, fileName, mimeType }) {
       )}
 
       {status === 'ready' && tableModel ? (
-        <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #3d3420', background: '#141109' }}>
+        <div className="overflow-hidden rounded-[24px] border bg-white" style={{ borderColor: 'var(--portal-border)' }}>
           <div className="overflow-auto max-h-[70vh]">
             <table className="min-w-full text-sm">
-              <thead style={{ background: '#1e1910' }}>
+              <thead style={{ background: 'rgba(244, 247, 255, 0.96)' }}>
                 <tr>
                   {tableModel.headers.map((header) => (
                     <th
                       key={header}
                       className="px-3 py-2 text-left text-xs uppercase tracking-widest font-medium whitespace-nowrap"
-                      style={{ color: '#8a7858', borderBottom: '1px solid #3d3420' }}
+                      style={{ color: 'var(--portal-text-soft)', borderBottom: '1px solid var(--portal-border)' }}
                     >
                       {header}
                     </th>
@@ -191,12 +190,12 @@ export default function TextDocumentViewer({ url, fileName, mimeType }) {
               </thead>
               <tbody>
                 {tableModel.rows.map((row, rowIndex) => (
-                  <tr key={`${fileName}-row-${rowIndex}`} style={{ borderBottom: '1px solid #2b2416' }}>
+                  <tr key={`${fileName}-row-${rowIndex}`} style={{ borderBottom: '1px solid rgba(109, 115, 196, 0.12)' }}>
                     {row.map((value, columnIndex) => (
                       <td
                         key={`${fileName}-${rowIndex}-${columnIndex}`}
                         className="px-3 py-2 align-top whitespace-pre-wrap"
-                        style={{ color: '#c8b898' }}
+                        style={{ color: 'var(--portal-text-muted)' }}
                       >
                         {value || '—'}
                       </td>
@@ -206,7 +205,7 @@ export default function TextDocumentViewer({ url, fileName, mimeType }) {
               </tbody>
             </table>
           </div>
-          <div className="px-3 py-2 text-xs" style={{ background: '#1e1910', color: '#8a7858', borderTop: '1px solid #3d3420' }}>
+          <div className="px-3 py-2 text-xs" style={{ background: 'rgba(244, 247, 255, 0.96)', color: 'var(--portal-text-muted)', borderTop: '1px solid var(--portal-border)' }}>
             Showing {Math.min(tableModel.totalRows, TABLE_ROW_LIMIT)} of {tableModel.totalRows} row{tableModel.totalRows === 1 ? '' : 's'}
             {tableModel.hasMore ? ' in the inline preview.' : '.'}
           </div>
@@ -214,10 +213,10 @@ export default function TextDocumentViewer({ url, fileName, mimeType }) {
       ) : null}
 
       {status === 'ready' && !tableModel ? (
-        <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #3d3420', background: '#141109' }}>
+        <div className="overflow-hidden rounded-[24px] border bg-white" style={{ borderColor: 'var(--portal-border)' }}>
           <pre
             className="p-4 overflow-auto max-h-[70vh] text-sm whitespace-pre-wrap break-words"
-            style={{ color: '#c8b898', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
+            style={{ color: 'var(--portal-text-muted)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
           >
             {normalizedContent || 'This document is empty.'}
           </pre>

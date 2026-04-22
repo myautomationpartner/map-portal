@@ -1,9 +1,30 @@
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,600&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-brand-gold: #d4a83a;
-  --color-brand-rose: #c4556e;
+  --color-brand-primary: #5567ff;
+  --color-brand-secondary: #8b5cf6;
+  --color-brand-accent: #22c3ee;
+}
+
+:root {
+  --portal-bg: #eef4ff;
+  --portal-bg-secondary: #f7f9ff;
+  --portal-surface: rgba(255, 255, 255, 0.9);
+  --portal-surface-strong: #ffffff;
+  --portal-surface-muted: #eef2ff;
+  --portal-border: rgba(109, 115, 196, 0.16);
+  --portal-border-strong: rgba(99, 102, 241, 0.22);
+  --portal-text: #1f275c;
+  --portal-text-muted: #6672a7;
+  --portal-text-soft: #8b94bd;
+  --portal-primary: #5567ff;
+  --portal-primary-strong: #3d4fe0;
+  --portal-secondary: #8b5cf6;
+  --portal-cyan: #22c3ee;
+  --portal-success: #1fa971;
+  --portal-danger: #df5f8f;
+  --portal-shadow: 0 24px 80px rgba(73, 86, 180, 0.14);
 }
 
 *, *::before, *::after {
@@ -14,9 +35,12 @@ body {
   margin: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #0d0b08;
-  font-family: 'Inter', system-ui, sans-serif;
-  color: #f8f2e4;
+  background:
+    radial-gradient(circle at top left, rgba(34, 195, 238, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(139, 92, 246, 0.18), transparent 30%),
+    linear-gradient(180deg, #f8faff 0%, #eef4ff 52%, #f7f8ff 100%);
+  font-family: 'Manrope', system-ui, sans-serif;
+  color: var(--portal-text);
 }
 
 #root {
@@ -24,5 +48,5 @@ body {
 }
 
 .font-display {
-  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-family: 'Fraunces', Georgia, serif;
 }

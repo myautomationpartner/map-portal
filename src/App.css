@@ -1,1 +1,137 @@
-/* App-level styles — mostly handled by Tailwind */
+.portal-shell {
+  min-height: 100svh;
+  position: relative;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(34, 195, 238, 0.12), transparent 22%),
+    radial-gradient(circle at 100% 0%, rgba(139, 92, 246, 0.12), transparent 26%),
+    linear-gradient(180deg, rgba(248, 250, 255, 0.78), rgba(238, 244, 255, 0.92));
+}
+
+.portal-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(132, 144, 220, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(132, 144, 220, 0.05) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.45), transparent 88%);
+}
+
+.portal-surface {
+  background: var(--portal-surface);
+  border: 1px solid var(--portal-border);
+  box-shadow: var(--portal-shadow);
+  backdrop-filter: blur(18px);
+}
+
+.portal-surface-strong {
+  background: var(--portal-surface-strong);
+  border: 1px solid var(--portal-border);
+  box-shadow: 0 20px 65px rgba(72, 82, 160, 0.12);
+}
+
+.portal-panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 249, 255, 0.95));
+  border: 1px solid var(--portal-border);
+  box-shadow: 0 18px 55px rgba(80, 92, 176, 0.12);
+}
+
+.portal-card {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(109, 115, 196, 0.14);
+  box-shadow: 0 14px 40px rgba(83, 95, 182, 0.1);
+}
+
+.portal-chip {
+  border: 1px solid rgba(109, 115, 196, 0.15);
+  background: rgba(238, 242, 255, 0.9);
+  color: var(--portal-text-muted);
+}
+
+.portal-input {
+  width: 100%;
+  border-radius: 1rem;
+  border: 1px solid rgba(109, 115, 196, 0.18);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--portal-text);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.portal-input::placeholder {
+  color: var(--portal-text-soft);
+}
+
+.portal-input:focus {
+  outline: none;
+  border-color: rgba(85, 103, 255, 0.38);
+  box-shadow: 0 0 0 4px rgba(85, 103, 255, 0.11);
+}
+
+.portal-button-primary {
+  background: linear-gradient(135deg, var(--portal-primary), var(--portal-secondary));
+  color: white;
+  box-shadow: 0 16px 36px rgba(85, 103, 255, 0.24);
+}
+
+.portal-button-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 42px rgba(85, 103, 255, 0.28);
+}
+
+.portal-button-secondary {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(109, 115, 196, 0.2);
+  color: var(--portal-text);
+}
+
+.portal-button-secondary:hover {
+  transform: translateY(-1px);
+  border-color: rgba(85, 103, 255, 0.28);
+  box-shadow: 0 12px 26px rgba(90, 102, 186, 0.1);
+}
+
+.portal-button-ghost {
+  color: var(--portal-text-muted);
+}
+
+.portal-button-ghost:hover {
+  background: rgba(238, 242, 255, 0.92);
+  color: var(--portal-primary);
+}
+
+.portal-status-success {
+  background: rgba(31, 169, 113, 0.09);
+  border: 1px solid rgba(31, 169, 113, 0.2);
+  color: var(--portal-success);
+}
+
+.portal-status-danger {
+  background: rgba(223, 95, 143, 0.1);
+  border: 1px solid rgba(223, 95, 143, 0.22);
+  color: var(--portal-danger);
+}
+
+.portal-status-info {
+  background: rgba(85, 103, 255, 0.08);
+  border: 1px solid rgba(85, 103, 255, 0.18);
+  color: var(--portal-primary);
+}
+
+.portal-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(137, 145, 210, 0.65) transparent;
+}
+
+.portal-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.portal-scroll::-webkit-scrollbar-thumb {
+  background: rgba(137, 145, 210, 0.55);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}

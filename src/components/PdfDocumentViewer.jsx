@@ -42,7 +42,8 @@ export default function PdfDocumentViewer({ url, fileName }) {
 
           canvas.width = viewport.width
           canvas.height = viewport.height
-          canvas.className = 'w-full h-auto rounded-2xl border border-[#3d3420] bg-white shadow-sm'
+          canvas.className = 'h-auto w-full rounded-[24px] border bg-white shadow-sm'
+          canvas.style.borderColor = 'var(--portal-border)'
 
           if (!context) {
             throw new Error('Could not create PDF canvas context.')
@@ -55,7 +56,8 @@ export default function PdfDocumentViewer({ url, fileName }) {
             wrapper.className = 'space-y-2'
 
             const label = document.createElement('p')
-            label.className = 'text-[11px] uppercase tracking-widest font-medium text-[#8a7858]'
+            label.className = 'text-[11px] font-semibold uppercase tracking-[0.22em]'
+            label.style.color = 'var(--portal-text-soft)'
             label.textContent = `Page ${pageNumber}`
 
             wrapper.appendChild(label)
@@ -88,8 +90,8 @@ export default function PdfDocumentViewer({ url, fileName }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold" style={{ color: '#f8f2e4' }}>{fileName || 'PDF document'}</p>
-          <p className="text-xs" style={{ color: '#8a7858' }}>
+          <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{fileName || 'PDF document'}</p>
+          <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
             {status === 'ready' ? `${pageCount} page${pageCount === 1 ? '' : 's'} rendered with PDF.js` : 'Signed preview link expires shortly'}
           </p>
         </div>
@@ -97,8 +99,7 @@ export default function PdfDocumentViewer({ url, fileName }) {
           href={url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-all hover:-translate-y-px"
-          style={{ background: '#252015', border: '1px solid #3d3420', color: '#d4a83a' }}
+          className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all"
         >
           Open Original
           <ExternalLink className="w-3.5 h-3.5" />
@@ -106,14 +107,14 @@ export default function PdfDocumentViewer({ url, fileName }) {
       </div>
 
       {status === 'loading' && (
-        <div className="rounded-2xl p-8 flex items-center justify-center gap-3" style={{ background: '#141109', border: '1px solid #3d3420' }}>
-          <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#d4a83a' }} />
-          <span className="text-sm" style={{ color: '#c8b898' }}>Rendering PDF preview…</span>
+        <div className="portal-surface-strong flex items-center justify-center gap-3 rounded-[24px] p-8">
+          <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} />
+          <span className="text-sm" style={{ color: 'var(--portal-text-muted)' }}>Rendering PDF preview…</span>
         </div>
       )}
 
       {status === 'error' && (
-        <div className="rounded-2xl p-4 flex items-start gap-3" style={{ background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.2)', color: '#e8899a' }}>
+        <div className="portal-status-danger flex items-start gap-3 rounded-[24px] p-4">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold">Preview unavailable</p>

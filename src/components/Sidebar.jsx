@@ -19,68 +19,75 @@ export default function Sidebar({ session }) {
   }
 
   return (
-    <aside className="hidden md:flex fixed top-0 left-0 h-full w-64 flex-col z-40"
-      style={{ background: '#141109', borderRight: '1px solid #3d3420' }}>
+    <aside className="portal-surface hidden fixed left-0 top-0 z-40 h-full w-64 flex-col border-r border-transparent md:flex">
 
-      {/* Logo */}
-      <div className="flex items-center gap-3 px-6 py-7" style={{ borderBottom: '1px solid #3d3420' }}>
-        <div className="w-10 h-10 rounded-xl overflow-hidden shrink-0 border"
-          style={{ borderColor: '#3d3420' }}>
+      <div className="flex items-center gap-3 border-b px-6 py-7" style={{ borderColor: 'var(--portal-border)' }}>
+        <div className="h-11 w-11 shrink-0 overflow-hidden rounded-2xl border bg-white" style={{ borderColor: 'rgba(85, 103, 255, 0.15)' }}>
           <img
             src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg"
             alt="Dancescapes"
             className="w-full h-full object-cover"
             onError={e => {
               e.target.style.display = 'none'
-              e.target.parentElement.innerHTML = '<span style="color:#d4a83a;font-weight:700;font-size:18px;display:flex;align-items:center;justify-content:center;width:100%;height:100%">D</span>'
+              e.target.parentElement.innerHTML = '<span style="color:#5567ff;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;width:100%;height:100%">D</span>'
             }}
           />
         </div>
         <div>
-          <p className="font-display text-base font-semibold leading-tight" style={{ color: '#f8f2e4' }}>
+          <p className="font-display text-lg font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
             Dancescapes
           </p>
-          <p className="text-[10px] uppercase tracking-widest font-medium" style={{ color: '#8a7858' }}>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.28em]" style={{ color: 'var(--portal-text-soft)' }}>
             Partner Portal
           </p>
         </div>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-4 py-6 space-y-1">
+      <div className="px-5 pt-5">
+        <div className="rounded-3xl px-4 py-4" style={{ background: 'linear-gradient(135deg, rgba(85, 103, 255, 0.13), rgba(34, 195, 238, 0.1))', border: '1px solid rgba(85, 103, 255, 0.14)' }}>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--portal-text-soft)' }}>
+            Workspace
+          </p>
+          <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
+            Documents, publishing, and client updates in one place.
+          </p>
+        </div>
+      </div>
+
+      <nav className="flex-1 space-y-1 px-4 py-6">
         {navItems.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}
             end={to === '/'}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 group ${
+              `group flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition-all duration-200 ${
                 isActive ? 'active-nav' : 'inactive-nav'
               }`
             }
             style={({ isActive }) => isActive
-              ? { background: 'rgba(212,168,58,0.10)', color: '#d4a83a', border: '1px solid rgba(212,168,58,0.22)' }
-              : { color: '#8a7858', border: '1px solid transparent' }
+              ? { background: 'linear-gradient(135deg, rgba(85, 103, 255, 0.14), rgba(139, 92, 246, 0.1))', color: 'var(--portal-primary)', border: '1px solid rgba(85, 103, 255, 0.2)', boxShadow: '0 12px 26px rgba(85, 103, 255, 0.12)' }
+              : { color: 'var(--portal-text-muted)', border: '1px solid transparent' }
             }
           >
             {({ isActive }) => (
               <>
-                <div className="relative flex items-center justify-center">
+                <div className="relative flex items-center justify-center rounded-xl p-2" style={{ background: isActive ? 'rgba(255,255,255,0.75)' : 'rgba(238,242,255,0.65)' }}>
                   <Icon
-                    className="w-4 h-4 transition-colors"
-                    style={{ color: isActive ? '#d4a83a' : '#8a7858' }}
+                    className="h-4 w-4 transition-colors"
+                    style={{ color: isActive ? 'var(--portal-primary)' : 'var(--portal-text-soft)' }}
                     strokeWidth={2.2}
                   />
                   {to === '/inbox' && (
-                    <span className="absolute -top-2 -right-2.5 flex items-center justify-center min-w-[17px] h-[17px] bg-rose-600 text-white text-[9px] font-black px-1 rounded-full border-2 z-10"
-                      style={{ borderColor: '#141109' }}>
+                    <span className="absolute -right-2.5 -top-2 flex h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 bg-violet-600 px-1 text-[9px] font-black text-white shadow-sm"
+                      style={{ borderColor: 'white' }}>
                       3
                     </span>
                   )}
                 </div>
                 {label}
                 {isActive && (
-                  <div className="ml-auto w-1 h-3 rounded-full bg-brand-gold" style={{ boxShadow: '0 0 8px rgba(212,168,58,0.5)' }} />
+                  <div className="ml-auto h-3 w-1 rounded-full" style={{ background: 'linear-gradient(180deg, var(--portal-primary), var(--portal-secondary))', boxShadow: '0 0 12px rgba(85, 103, 255, 0.35)' }} />
                 )}
               </>
             )}
@@ -88,28 +95,24 @@ export default function Sidebar({ session }) {
         ))}
       </nav>
 
-      {/* User + Logout */}
-      <div className="px-4 py-5" style={{ borderTop: '1px solid #3d3420' }}>
-        <div className="flex items-center gap-3 px-3 py-2.5 mb-2 rounded-xl" style={{ background: '#1e1910', border: '1px solid #3d3420' }}>
-          <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-            style={{ background: '#d4a83a', color: '#0d0b08' }}>
+      <div className="px-4 py-5" style={{ borderTop: '1px solid var(--portal-border)' }}>
+        <div className="mb-3 flex items-center gap-3 rounded-2xl px-3 py-3" style={{ background: 'rgba(255,255,255,0.88)', border: '1px solid var(--portal-border)' }}>
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+            style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-secondary))' }}>
             {session?.user?.email?.[0]?.toUpperCase() ?? '?'}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[11px] font-semibold truncate" style={{ color: '#f8f2e4' }}>{session?.user?.email}</p>
-            <p className="text-[9px] uppercase tracking-widest font-medium" style={{ color: '#8a7858' }}>
+            <p className="truncate text-[11px] font-semibold" style={{ color: 'var(--portal-text)' }}>{session?.user?.email}</p>
+            <p className="text-[9px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--portal-text-soft)' }}>
               {claims.user_role || 'verified client'} · {claims.client_slug || 'tenant'}
             </p>
           </div>
         </div>
         <button
           onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group hover:text-rose-400"
-          style={{ color: '#4e4228' }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(196,85,110,0.06)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          className="portal-button-ghost group flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition-all duration-200"
         >
-          <LogOut className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" strokeWidth={2} />
+          <LogOut className="h-4 w-4 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
           Sign out
         </button>
       </div>

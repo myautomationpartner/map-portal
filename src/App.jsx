@@ -14,6 +14,7 @@ import PublicShare from './pages/PublicShare'
 import Sidebar from './components/Sidebar'
 import BottomNav from './components/BottomNav'
 import { Loader2 } from 'lucide-react'
+import './App.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,8 +42,10 @@ function AuthProvider({ children }) {
 
   if (session === undefined) {
     return (
-      <div className="min-h-screen bg-[#0d0b08] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-brand-gold animate-spin" />
+      <div className="portal-shell flex min-h-screen items-center justify-center">
+        <div className="portal-surface rounded-[28px] p-6">
+          <Loader2 className="h-8 w-8 animate-spin text-[var(--portal-primary)]" />
+        </div>
       </div>
     )
   }
@@ -54,13 +57,13 @@ function ProtectedLayout({ session }) {
   if (!session) return <Navigate to="/login" replace />
 
   return (
-    <div className="min-h-screen bg-[#0d0b08] flex">
+    <div className="portal-shell flex">
       {/* Desktop sidebar */}
       <Sidebar session={session} />
 
       {/* Main content area */}
       <div className="flex-1 flex flex-col md:ml-64 min-h-screen">
-        <main className="flex-1 overflow-auto pb-20 md:pb-0">
+        <main className="flex-1 overflow-auto pb-24 md:pb-0">
           <Outlet context={{ session }} />
         </main>
 
