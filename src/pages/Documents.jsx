@@ -4,7 +4,6 @@ import { useOutletContext } from 'react-router-dom'
 import {
   Archive,
   AlertCircle,
-  CalendarClock,
   CheckCircle2,
   Copy,
   ExternalLink,
@@ -23,9 +22,9 @@ import {
   MoreHorizontal,
   Search,
   Share2,
-  ShieldCheck,
   Trash2,
   Upload,
+  X,
 } from 'lucide-react'
 import PdfDocumentViewer from '../components/PdfDocumentViewer'
 import TextDocumentViewer from '../components/TextDocumentViewer'
@@ -157,6 +156,13 @@ function latestShareLinkForDocument(shareLinks, documentId) {
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null
 }
 
+function isShareLinkActive(link) {
+  if (!link || link.revoked_at) return false
+  if (link.expires_at && new Date(link.expires_at).getTime() <= Date.now()) return false
+  if (link.max_uses !== null && link.use_count >= link.max_uses) return false
+  return true
+}
+
 function DocumentIcon({ mimeType, className, style }) {
   if (mimeType?.startsWith('image/')) {
     return <FileImage className={className} style={style} />
@@ -177,30 +183,6 @@ function documentFolder(document) {
   return (document.category || 'General').trim()
 }
 
-function statusPillStyle(isActive, isRevoked) {
-  if (isRevoked) {
-    return {
-      background: 'rgba(223, 95, 143, 0.1)',
-      border: '1px solid rgba(223, 95, 143, 0.2)',
-      color: 'var(--portal-danger)',
-    }
-  }
-
-  if (isActive) {
-    return {
-      background: 'rgba(31, 169, 113, 0.1)',
-      border: '1px solid rgba(31, 169, 113, 0.2)',
-      color: 'var(--portal-success)',
-    }
-  }
-
-  return {
-    background: 'rgba(201, 168, 76, 0.1)',
-    border: '1px solid rgba(201, 168, 76, 0.22)',
-    color: '#8c6d1c',
-  }
-}
-
 function Notice({ kind, message }) {
   if (!message) return null
 
@@ -211,74 +193,6 @@ function Notice({ kind, message }) {
     <div className={`${className} flex items-start gap-3 rounded-2xl p-4 text-sm`}>
       <Icon className="mt-0.5 h-4 w-4 shrink-0" />
       <p className="break-all">{message}</p>
-    </div>
-  )
-}
-
-function ShareLinkCard({ link, documentName, canManage, onRevoke }) {
-  const shareUrl = buildShareUrl(link.token)
-  const isRevoked = !!link.revoked_at
-  const hasReachedLimit = link.max_uses !== null && link.use_count >= link.max_uses
-
-  return (
-    <div className="portal-card rounded-[26px] p-4 space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{documentName}</p>
-          <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-            Created {formatDate(link.created_at)}
-          </p>
-        </div>
-        <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={statusPillStyle(!isRevoked && !hasReachedLimit, isRevoked)}>
-          {isRevoked ? 'Revoked' : hasReachedLimit ? 'Limit reached' : 'Active'}
-        </span>
-      </div>
-
-      <div className="rounded-2xl border px-3 py-3 text-xs break-all" style={{ background: 'rgba(245, 247, 255, 0.92)', borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
-        {shareUrl}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-        <span className="portal-chip inline-flex items-center gap-1.5 rounded-full px-2.5 py-1">
-          <CalendarClock className="h-3.5 w-3.5" />
-          Expires {link.expires_at ? formatDate(link.expires_at) : 'Never'}
-        </span>
-        <span className="portal-chip inline-flex items-center gap-1.5 rounded-full px-2.5 py-1">
-          <ShieldCheck className="h-3.5 w-3.5" />
-          Uses {link.use_count}/{link.max_uses ?? '∞'}
-        </span>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => navigator.clipboard.writeText(shareUrl)}
-          className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all"
-        >
-          <Copy className="h-3.5 w-3.5" />
-          Copy link
-        </button>
-        <a
-          href={shareUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-          Open public page
-        </a>
-        {canManage && !isRevoked && (
-          <button
-            type="button"
-            onClick={() => onRevoke(link.id)}
-            className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all"
-            style={{ background: 'rgba(223, 95, 143, 0.08)', border: '1px solid rgba(223, 95, 143, 0.18)', color: 'var(--portal-danger)' }}
-          >
-            <Archive className="h-3.5 w-3.5" />
-            Revoke
-          </button>
-        )}
-      </div>
     </div>
   )
 }
@@ -333,7 +247,7 @@ function EmptyPreviewState() {
   )
 }
 
-function DocumentActionMenu({ document, isOpen, canManage, canShare, availableFolders, currentFolder, onOpen, onMove, onRename, onCreateShare, onCopyShare, onDelete }) {
+function DocumentActionMenu({ document, isOpen, canManage, availableFolders, currentFolder, onOpen, onMove, onRename, onShare, onDelete }) {
   const [showFolderChooser, setShowFolderChooser] = useState(false)
 
   return (
@@ -408,6 +322,18 @@ function DocumentActionMenu({ document, isOpen, canManage, canShare, availableFo
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation()
+                    onShare(document)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                  style={{ color: 'var(--portal-text)' }}
+                >
+                  <Share2 className="h-4 w-4" />
+                  Share file
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
                     onRename(document)
                   }}
                   className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
@@ -415,33 +341,6 @@ function DocumentActionMenu({ document, isOpen, canManage, canShare, availableFo
                 >
                   Rename
                 </button>
-                {canShare && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onCreateShare(document)
-                      }}
-                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
-                      style={{ color: 'var(--portal-text)' }}
-                    >
-                      Create share link
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onCopyShare(document)
-                      }}
-                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
-                      style={{ color: 'var(--portal-text)' }}
-                    >
-                      <Copy className="h-4 w-4" />
-                      Copy share link
-                    </button>
-                  </>
-                )}
                 <button
                   type="button"
                   onClick={(event) => {
@@ -463,6 +362,77 @@ function DocumentActionMenu({ document, isOpen, canManage, canShare, availableFo
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function ShareDialog({ document, draft, onChange, onClose, onSubmit, isSubmitting }) {
+  if (!document) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.34)] p-4">
+      <div className="w-full max-w-lg rounded-[32px] border bg-white shadow-2xl" style={{ borderColor: 'var(--portal-border)' }}>
+        <div className="flex items-center justify-between border-b px-6 py-5" style={{ borderColor: 'var(--portal-border)' }}>
+          <div>
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Share file</h3>
+            <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>{document.file_name}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border"
+            style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit} className="space-y-4 px-6 py-6">
+          <div>
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
+              Expires at
+            </label>
+            <input
+              type="datetime-local"
+              value={draft.expiresAt}
+              onChange={(event) => onChange((current) => ({ ...current, expiresAt: event.target.value }))}
+              className="portal-input px-4 py-3 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
+              Max uses
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={draft.maxUses}
+              onChange={(event) => onChange((current) => ({ ...current, maxUses: event.target.value }))}
+              placeholder="Unlimited"
+              className="portal-input px-4 py-3 text-sm"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="portal-button-secondary rounded-2xl px-4 py-3 text-sm font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60"
+            >
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
+              Create link
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
@@ -625,6 +595,7 @@ export default function Documents() {
   const [localFolders, setLocalFolders] = useState(loadLocalFolders)
   const [folderForm, setFolderForm] = useState({ docId: '', mode: '', custom: '' })
   const [openActionMenuId, setOpenActionMenuId] = useState(null)
+  const [shareDialogDocument, setShareDialogDocument] = useState(null)
 
   const { data: profile } = useQuery({
     queryKey: ['profile'],
@@ -680,10 +651,25 @@ export default function Documents() {
     [filteredDocuments, visibleDocuments, selectedId],
   )
 
-  const selectedDocumentShareLinks = useMemo(
-    () => shareLinks.filter((link) => link.document_id === selectedDocument?.id),
-    [shareLinks, selectedDocument],
-  )
+  const sharedFileEntries = useMemo(() => {
+    const latestLinksByDocument = new Map()
+
+    shareLinks
+      .filter(isShareLinkActive)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .forEach((link) => {
+        if (!latestLinksByDocument.has(link.document_id)) {
+          latestLinksByDocument.set(link.document_id, link)
+        }
+      })
+
+    return Array.from(latestLinksByDocument.entries())
+      .map(([documentId, link]) => ({
+        document: visibleDocuments.find((document) => document.id === documentId),
+        link,
+      }))
+      .filter((entry) => entry.document)
+  }, [shareLinks, visibleDocuments])
 
   const canManageShares = (claims.user_role || profile?.role) === 'admin'
   const canManageDocuments = canManageShares
@@ -754,6 +740,7 @@ export default function Documents() {
       const shareUrl = buildShareUrl(link.token)
       setShareNotice({ type: 'success', message: `Share link created: ${shareUrl}` })
       setShareDraft({ expiresAt: '', maxUses: '' })
+      setShareDialogDocument(null)
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(shareUrl).catch(() => {})
       }
@@ -852,11 +839,11 @@ export default function Documents() {
 
   function handleCreateShare(event) {
     event.preventDefault()
-    if (!selectedDocument || !canManageShares) return
+    if (!shareDialogDocument || !canManageShares) return
 
     setShareNotice({ type: '', message: '' })
     createShareMutation.mutate({
-      documentId: selectedDocument.id,
+      documentId: shareDialogDocument.id,
       clientId: claims.client_id || profile?.client_id || null,
       expiresAt: shareDraft.expiresAt ? new Date(shareDraft.expiresAt).toISOString() : null,
       maxUses: shareDraft.maxUses ? Number(shareDraft.maxUses) : null,
@@ -948,23 +935,13 @@ export default function Documents() {
     setSelectedId(document.id)
     if (!document || !canManageShares) return
 
-    setShareNotice({ type: 'info', message: `Ready to create a share link for ${document.file_name}.` })
-    document.getElementById('documents-share-links')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setShareNotice({ type: '', message: '' })
+    setShareDraft({ expiresAt: '', maxUses: '' })
+    setShareDialogDocument(document)
   }
 
-  async function handleCopyShareForDocument(document) {
-    setOpenActionMenuId(null)
-    setSelectedId(document.id)
-
-    if (!document || !canManageShares) return
-
-    const existingLink = latestShareLinkForDocument(shareLinks, document.id)
-    if (!existingLink) {
-      setShareNotice({ type: 'info', message: 'No active share link yet. Create one first from the same menu.' })
-      return
-    }
-
-    const shareUrl = buildShareUrl(existingLink.token)
+  async function handleCopySharedFileLink(link) {
+    const shareUrl = buildShareUrl(link.token)
     try {
       await navigator.clipboard.writeText(shareUrl)
       setShareNotice({ type: 'success', message: `Copied share link: ${shareUrl}` })
@@ -1008,6 +985,15 @@ export default function Documents() {
 
   return (
     <div className="portal-page mx-auto max-w-[1640px] space-y-5 md:p-6 xl:p-8">
+      <ShareDialog
+        document={shareDialogDocument}
+        draft={shareDraft}
+        onChange={setShareDraft}
+        onClose={() => setShareDialogDocument(null)}
+        onSubmit={handleCreateShare}
+        isSubmitting={createShareMutation.isPending}
+      />
+
       <section className="portal-surface rounded-[36px] p-5 md:p-7">
         <div className="portal-page-header">
           <div className="max-w-4xl">
@@ -1100,7 +1086,7 @@ export default function Documents() {
 
       <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)_420px]">
         <aside className="space-y-6">
-          <section id="documents-share-links" className="portal-panel overflow-hidden rounded-[34px]">
+          <section className="portal-panel overflow-hidden rounded-[34px]">
             <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
               <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Folders</h2>
             </div>
@@ -1251,21 +1237,24 @@ export default function Documents() {
                           document={document}
                           isOpen={openActionMenuId === document.id}
                           canManage={canManageDocuments}
-                          canShare={canManageShares}
                           availableFolders={folderSelectOptions}
                           currentFolder={documentFolder(document)}
                           onOpen={() => setOpenActionMenuId((current) => (current === document.id ? null : document.id))}
                           onMove={handleMoveDocument}
                           onRename={handleRenameDocument}
-                          onCreateShare={handleCreateShareForDocument}
-                          onCopyShare={handleCopyShareForDocument}
+                          onShare={handleCreateShareForDocument}
                           onDelete={handleDeleteDocument}
                         />
                       </div>
                       <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-[14px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
                         <DocumentIcon mimeType={document.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
                       </div>
-                      <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                        {latestShareLinkForDocument(shareLinks, document.id) && isShareLinkActive(latestShareLinkForDocument(shareLinks, document.id)) ? (
+                          <Share2 className="h-4 w-4 shrink-0" style={{ color: 'var(--portal-success)' }} />
+                        ) : null}
+                      </div>
                       <p className="mt-3 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
                         {formatDate(document.updated_at || document.created_at)} · {formatBytes(document.size_bytes)}
                       </p>
@@ -1299,7 +1288,12 @@ export default function Documents() {
                                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
                                   <DocumentIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
                                 </div>
-                                <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                                  {latestShareLinkForDocument(shareLinks, document.id) && isShareLinkActive(latestShareLinkForDocument(shareLinks, document.id)) ? (
+                                    <Share2 className="h-4 w-4 shrink-0" style={{ color: 'var(--portal-success)' }} />
+                                  ) : null}
+                                </div>
                               </div>
                               <div className="shrink-0">
                                 <DocumentActionMenu
@@ -1307,14 +1301,12 @@ export default function Documents() {
                                   document={document}
                                   isOpen={openActionMenuId === document.id}
                                   canManage={canManageDocuments}
-                                  canShare={canManageShares}
                                   availableFolders={folderSelectOptions}
                                   currentFolder={documentFolder(document)}
                                   onOpen={() => setOpenActionMenuId((current) => (current === document.id ? null : document.id))}
                                   onMove={handleMoveDocument}
                                   onRename={handleRenameDocument}
-                                  onCreateShare={handleCreateShareForDocument}
-                                  onCopyShare={handleCopyShareForDocument}
+                                  onShare={handleCreateShareForDocument}
                                   onDelete={handleDeleteDocument}
                                 />
                               </div>
@@ -1450,78 +1442,66 @@ export default function Documents() {
             </div>
           </section>
 
-          <section className="portal-panel overflow-hidden rounded-[34px]">
+          <section id="documents-share-links" className="portal-panel overflow-hidden rounded-[34px]">
             <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
-              <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Share links</h2>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Shared files</h2>
             </div>
 
             <div className="space-y-5 p-5">
               {shareLinksError && <Notice kind="error" message={shareLinksError.message} />}
 
-              {selectedDocument && canManageShares ? (
-                <form onSubmit={handleCreateShare} className="grid grid-cols-1 gap-3">
-                  <div>
-                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
-                      Expires at
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={shareDraft.expiresAt}
-                      onChange={(event) => setShareDraft((current) => ({ ...current, expiresAt: event.target.value }))}
-                      className="portal-input px-4 py-3 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
-                      Max uses
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={shareDraft.maxUses}
-                      onChange={(event) => setShareDraft((current) => ({ ...current, maxUses: event.target.value }))}
-                      placeholder="Unlimited"
-                      className="portal-input px-4 py-3 text-sm"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={createShareMutation.isPending}
-                    className="portal-button-primary inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition-all disabled:opacity-60"
-                  >
-                    {createShareMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
-                    Create link
-                  </button>
-                </form>
-              ) : selectedDocument ? (
-                <div className="portal-status-info rounded-2xl p-4 text-sm">
-                  Share-link creation is limited to `admin` users. Your current app role is `{claims.user_role || profile?.role || 'unknown'}`.
-                </div>
-              ) : null}
-
               <Notice kind={shareNotice.type} message={shareNotice.message} />
 
-              {selectedDocument ? (
-                selectedDocumentShareLinks.length > 0 ? (
-                  <div className="space-y-3">
-                    {selectedDocumentShareLinks.map((link) => (
-                      <ShareLinkCard
-                        key={link.id}
-                        link={link}
-                        documentName={selectedDocument.file_name}
-                        canManage={canManageShares}
-                        onRevoke={(id) => revokeShareMutation.mutate(id)}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="portal-surface-strong rounded-[24px] p-4 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                    No share links yet for this document.
-                  </div>
-                )
+              {sharedFileEntries.length > 0 ? (
+                <div className="space-y-3">
+                  {sharedFileEntries.map(({ document, link }) => (
+                    <div key={link.id} className="rounded-[24px] border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                            <Share2 className="h-4 w-4 shrink-0" style={{ color: 'var(--portal-success)' }} />
+                          </div>
+                          <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                            Shared {formatDate(link.created_at)} · Expires {link.expires_at ? formatDate(link.expires_at) : 'Never'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(document.id)}
+                          className="portal-button-secondary rounded-2xl px-3 py-2 text-xs font-semibold"
+                        >
+                          View
+                        </button>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopySharedFileLink(link)}
+                          className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Copy link
+                        </button>
+                        {canManageShares ? (
+                          <button
+                            type="button"
+                            onClick={() => revokeShareMutation.mutate(link.id)}
+                            className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold"
+                            style={{ background: 'rgba(223, 95, 143, 0.08)', border: '1px solid rgba(223, 95, 143, 0.18)', color: 'var(--portal-danger)' }}
+                          >
+                            <Archive className="h-3.5 w-3.5" />
+                            Revoke
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <div className="portal-surface-strong rounded-[24px] p-4 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                  Select a document to review or create share links.
+                  No active shared files yet. Use `Share file` from a document menu to create one.
                 </div>
               )}
             </div>
