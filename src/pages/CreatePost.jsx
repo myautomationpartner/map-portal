@@ -706,7 +706,13 @@ export default function CreatePost() {
 
     const preferredAngleId = options.preferredAngleId || ''
     const existingDraft = findDraftForSlot(drafts, slot)
-    const shouldGenerate = !existingDraft?.draft_caption || Boolean(preferredAngleId)
+    const existingMediaSuggestion = existingDraft ? extractMediaSuggestion(existingDraft) : ''
+    const existingAngleChoices = existingDraft ? extractAngleChoices(existingDraft) : []
+    const shouldGenerate =
+      !existingDraft?.draft_caption ||
+      !existingMediaSuggestion ||
+      existingAngleChoices.length === 0 ||
+      Boolean(preferredAngleId)
 
     setDraftLoading(true)
     setDraftError('')
