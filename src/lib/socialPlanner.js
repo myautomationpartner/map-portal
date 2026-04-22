@@ -35,6 +35,15 @@ function addDays(date, days) {
   return next
 }
 
+function hashString(value) {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(index)
+    hash |= 0
+  }
+  return Math.abs(hash)
+}
+
 function getWeekKey(dateString) {
   const date = new Date(`${dateString}T12:00:00`)
   const day = date.getDay()
@@ -59,16 +68,23 @@ function getOffsetForDate(dateString, timeZone) {
 
   const normalized = /^[-+]\d{2}:\d{2}$/.test(part)
     ? part
-    : /^[-+]\d{1,2}$/.test(part)
-      ? `${part.padStart(3, part.startsWith('-') ? '-' : '+')}:00`.replace(/^([+-])(\d):/, '$10$2:')
-      : '+00:00'
+    : (() => {
+        const match = part.match(/^([+-])(\d{1,2})$/)
+        if (!match) return '+00:00'
+        const [, sign, hours] = match
+        return `${sign}${hours.padStart(2, '0')}:00`
+      })()
 
   return normalized
 }
 
 function toScheduledForIso(dateString, timeString, timeZone) {
   const offset = getOffsetForDate(dateString, timeZone)
-  return new Date(`${dateString}T${timeString}:00${offset}`).toISOString()
+  const scheduled = new Date(`${dateString}T${timeString}:00${offset}`)
+  if (Number.isNaN(scheduled.getTime())) {
+    throw new Error(`Invalid scheduled slot time: ${dateString} ${timeString} (${timeZone})`)
+  }
+  return scheduled.toISOString()
 }
 
 function resolvePolicyKey(clientSlug, businessName) {
@@ -148,19 +164,26 @@ function getEffectiveCadenceForWeek(policy, weekSlots) {
   }
 }
 
-function selectPostType(policy, weekCounts, lastPostType, boostedTypes, recommendationCount) {
+function selectPostType(policy, weekCounts, lastPostType, boostedTypes, recommendationCount, slot) {
   const candidates = Object.entries(policy.allowedPostTypes)
     .filter(([, config]) => config.enabled)
     .filter(([type, config]) => (weekCounts[type] || 0) < config.max_per_week)
     .map(([type, config]) => {
+      const currentCount = weekCounts[type] || 0
       const mixTarget = policy.contentMixTargets[type] || 0
+      const currentShare = recommendationCount > 0 ? (currentCount / recommendationCount) : 0
+      const mixDeficit = mixTarget - currentShare
+      const noveltyBonus = currentCount === 0 ? 8 : 0
+      const seedJitter = (hashString(`${slot.weekKey}:${slot.slot_label}:${type}`) % 5) - 2
       const score =
         (PRIORITY_SCORES[config.priority] || 0) +
         (boostedTypes.includes(type) ? 8 : 0) +
-        (mixTarget * 10) -
-        ((weekCounts[type] || 0) * 3) -
-        (lastPostType === type ? 6 : 0) -
-        recommendationCount
+        (mixTarget * 18) +
+        (mixDeficit * 32) +
+        noveltyBonus -
+        (currentCount * 7) -
+        (lastPostType === type ? 10 : 0) +
+        seedJitter
 
       return { type, score }
     })
@@ -264,6 +287,7 @@ export function buildCalendarModel(profile, scheduledPosts, drafts) {
         lastSelectedType,
         effectiveCadence.boostedTypes,
         weekState.recommendations.length,
+        slot,
       )
 
       weekState.total += 1

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { openDropboxChooser } from '../lib/dropboxApi'
+import { fetchDropboxWeekSuggestions, openDropboxChooser } from '../lib/dropboxApi'
 import {
   fetchProfile,
   fetchScheduledPosts,
@@ -583,6 +583,10 @@ export default function CreatePost() {
   const [imagePreview, setImagePreview] = useState(null)
   const [dropboxAttachments, setDropboxAttachments] = useState([])
   const [dropboxLoading, setDropboxLoading] = useState(false)
+  const [dropboxSuggestedAssets, setDropboxSuggestedAssets] = useState([])
+  const [dropboxSuggestionStatus, setDropboxSuggestionStatus] = useState('idle')
+  const [dropboxSuggestionMessage, setDropboxSuggestionMessage] = useState('')
+  const [dropboxSuggestionWeek, setDropboxSuggestionWeek] = useState('')
   const [timingMode, setTimingMode] = useState('slot')
   const [selectedPlatforms, setSelectedPlatforms] = useState({
     facebook: true,
@@ -881,6 +885,56 @@ export default function CreatePost() {
     }
   }, [draftDirty, activeDraftId, content, generatedCaption, mediaSuggestion, selectedAngleId, angleChoices, activeSlot, persistDraftEdits])
 
+  useEffect(() => {
+    if (!activeSlot?.slot_date_local || !activeSlot?.post_type || !mediaSuggestion) {
+      setDropboxSuggestedAssets([])
+      setDropboxSuggestionStatus('idle')
+      setDropboxSuggestionMessage('')
+      setDropboxSuggestionWeek('')
+      return undefined
+    }
+
+    let ignore = false
+
+    async function loadWeekSuggestions() {
+      setDropboxSuggestionStatus('loading')
+      setDropboxSuggestionMessage('')
+
+      try {
+        const payload = await fetchDropboxWeekSuggestions({
+          dateString: activeSlot.slot_date_local,
+          postType: activeSlot.post_type,
+          mediaHint: mediaSuggestion,
+        })
+
+        if (ignore) return
+
+        setDropboxSuggestedAssets(payload.suggestions || [])
+        setDropboxSuggestionWeek(payload.weekFolder || '')
+        setDropboxSuggestionStatus('ready')
+        setDropboxSuggestionMessage(
+          payload.message
+          || (payload.suggestions?.length
+            ? `Suggested from Dropbox folder ${payload.weekFolder}.`
+            : `No matching media found in Dropbox folder ${payload.weekFolder}.`),
+        )
+      } catch (error) {
+        if (ignore) return
+        console.error('[DropboxWeeklySuggestions]', error)
+        setDropboxSuggestedAssets([])
+        setDropboxSuggestionWeek('')
+        setDropboxSuggestionStatus('error')
+        setDropboxSuggestionMessage(error.message || 'Could not load Dropbox suggestions for this week.')
+      }
+    }
+
+    loadWeekSuggestions()
+
+    return () => {
+      ignore = true
+    }
+  }, [activeSlot?.slot_date_local, activeSlot?.post_type, mediaSuggestion])
+
   function handleFileChange(event) {
     const file = event.target.files?.[0]
     if (!file) return
@@ -924,6 +978,15 @@ export default function CreatePost() {
 
   function removeDropboxAttachment(link) {
     setDropboxAttachments((previous) => previous.filter((file) => file.link !== link))
+  }
+
+  function addDropboxAttachment(file) {
+    if (!file?.link) return
+
+    setDropboxAttachments((previous) => {
+      if (previous.some((existing) => existing.link === file.link)) return previous
+      return [...previous, file]
+    })
   }
 
   function chooseSlot(slot) {
@@ -1114,6 +1177,10 @@ export default function CreatePost() {
         setImageFile(null)
         setImagePreview(null)
         setDropboxAttachments([])
+        setDropboxSuggestedAssets([])
+        setDropboxSuggestionStatus('idle')
+        setDropboxSuggestionMessage('')
+        setDropboxSuggestionWeek('')
         setScheduledFor('')
         setTimingMode('slot')
         setSubmitState('idle')
@@ -1394,6 +1461,85 @@ export default function CreatePost() {
                   {dropboxLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                   {dropboxLoading ? 'Opening Dropbox…' : 'Choose from Dropbox'}
                 </button>
+              </div>
+
+              <div className="mt-4 rounded-[24px] px-4 py-4" style={{ background: 'rgba(255,255,255,0.78)', border: '1px solid var(--portal-border)' }}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                      This week&apos;s Dropbox folder
+                    </p>
+                    <p className="mt-2 text-sm" style={{ color: 'var(--portal-text)' }}>
+                      {dropboxSuggestionWeek || 'Pick a dated slot to load the matching week folder.'}
+                    </p>
+                    {dropboxSuggestionMessage && (
+                      <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                        {dropboxSuggestionMessage}
+                      </p>
+                    )}
+                  </div>
+                  <div className="rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: 'rgba(245,240,235,0.92)', color: dropboxSuggestionStatus === 'loading' ? 'var(--portal-primary)' : 'var(--portal-text-soft)' }}>
+                    {dropboxSuggestionStatus === 'loading' ? 'Checking Dropbox…' : 'Weekly photo suggestions'}
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {dropboxSuggestedAssets.length > 0 ? dropboxSuggestedAssets.map((file) => {
+                    const alreadyAdded = dropboxAttachments.some((attachment) => attachment.link === file.link)
+
+                    return (
+                      <div
+                        key={file.link}
+                        className="flex items-center gap-3 rounded-xl px-3 py-2.5"
+                        style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)' }}
+                      >
+                        <div
+                          className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl"
+                          style={{ background: 'rgba(201, 168, 76, 0.1)', border: '1px solid rgba(201, 168, 76, 0.18)' }}
+                        >
+                          {file.link ? (
+                            <img src={file.link} alt={file.name} className="h-full w-full object-cover" />
+                          ) : (
+                            <Paperclip className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-medium" style={{ color: 'var(--portal-text)' }}>{file.name}</p>
+                          <p className="mt-0.5 text-[10px] leading-relaxed" style={{ color: 'var(--portal-text-soft)' }}>
+                            {(file.reasons || []).slice(0, 2).join(' • ') || 'Suggested from this week folder'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => addDropboxAttachment({
+                            name: file.name,
+                            size: file.size,
+                            link: file.link,
+                            thumbnail: file.link,
+                          })}
+                          disabled={alreadyAdded || !file.link || isSubmitting}
+                          className="rounded-xl px-3 py-2 text-xs font-semibold disabled:opacity-60"
+                          style={alreadyAdded
+                            ? { background: 'rgba(55,181,140,0.12)', color: '#2d876a' }
+                            : { background: 'rgba(201,168,76,0.12)', color: 'var(--portal-primary)' }}
+                        >
+                          {alreadyAdded ? 'Added' : 'Use this'}
+                        </button>
+                        {file.link && (
+                          <a href={file.link} target="_blank" rel="noopener noreferrer" className="shrink-0 p-1" style={{ color: 'var(--portal-text-soft)' }}>
+                            <ArrowUpRight className="h-3.5 w-3.5" />
+                          </a>
+                        )}
+                      </div>
+                    )
+                  }) : (
+                    <div className="rounded-2xl px-4 py-3 text-sm" style={{ background: 'rgba(255,255,255,0.72)', color: 'var(--portal-text-muted)', border: '1px solid var(--portal-border)' }}>
+                      {dropboxSuggestionStatus === 'loading'
+                        ? 'Looking through the matching Dropbox week folder now…'
+                        : 'No Dropbox photo suggestions are ready for this slot yet.'}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="mt-4 overflow-hidden rounded-[28px]" style={{ border: '1px solid var(--portal-border)', background: 'rgba(255,255,255,0.78)' }}>
