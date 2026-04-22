@@ -222,7 +222,7 @@ async function handleDropboxWeekMedia(request, env) {
     return json({ error: error.message }, { status: 400 })
   }
 
-  const parentPath = normalizePath(env.DROPBOX_WEEKLY_PARENT_PATH)
+  const parentPath = normalizePath(env.DROPBOX_WEEKLY_PARENT_PATH || '/Social Posts')
   const folderPath = normalizePath(`${parentPath}/${weekFolder}`)
   const sharedWeekLink = env.DROPBOX_WEEKLY_SHARED_LINK || ''
 
