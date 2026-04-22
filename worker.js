@@ -1,4 +1,5 @@
 const DROPBOX_API_BASE = 'https://api.dropboxapi.com/2'
+const DROPBOX_CONTENT_API_BASE = 'https://content.dropboxapi.com/2'
 const DROPBOX_OAUTH_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token'
 const SUPPORTED_MEDIA_EXTENSIONS = new Set([
   'jpg',
@@ -96,6 +97,10 @@ function getExtension(name) {
 
 function isSupportedMedia(entry) {
   return entry?.['.tag'] === 'file' && SUPPORTED_MEDIA_EXTENSIONS.has(getExtension(entry.name))
+}
+
+function isImageMedia(entry) {
+  return entry?.['.tag'] === 'file' && ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif', 'heic', 'heif'].includes(getExtension(entry.name))
 }
 
 function scoreEntry(entry, { mediaHint, postType, weekFolder }) {
@@ -300,6 +305,31 @@ async function getBestDropboxPreviewLink(accessToken, path) {
   }
 }
 
+async function getDropboxThumbnail(accessToken, path, size = 'w128h128') {
+  const response = await fetch(`${DROPBOX_CONTENT_API_BASE}/files/get_thumbnail_v2`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'Dropbox-API-Arg': JSON.stringify({
+        resource: { '.tag': 'path', path },
+        format: 'jpeg',
+        size,
+        mode: 'strict',
+      }),
+    },
+  })
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    const error = new Error(payload.error_summary || 'Dropbox thumbnail lookup failed.')
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return response
+}
+
 async function handleDropboxWeekMedia(request, env) {
   let accessToken
   try {
@@ -378,6 +408,9 @@ async function handleDropboxWeekMedia(request, env) {
         size: entry.size || 0,
         path: entry.path_display || entry.path_lower || '',
         link,
+        thumbnail: isImageMedia(entry)
+          ? `/api/dropbox/thumbnail?path=${encodeURIComponent(entry.path_lower || entry.path_display || '')}&rev=${encodeURIComponent(entry.rev || '')}`
+          : null,
         score,
         reasons,
       }
@@ -393,6 +426,34 @@ async function handleDropboxWeekMedia(request, env) {
       ? `Suggested from Dropbox folder ${weekFolder}.`
       : `Dropbox folder ${weekFolder} is available, but no supported media files were found yet.`,
   })
+}
+
+async function handleDropboxThumbnail(request, env) {
+  const url = new URL(request.url)
+  const path = String(url.searchParams.get('path') || '').trim()
+  if (!path) {
+    return json({ error: 'Missing Dropbox file path.' }, { status: 400 })
+  }
+
+  let accessToken
+  try {
+    accessToken = await getDropboxAccessToken(env)
+  } catch (error) {
+    return json({ error: error.message || 'Dropbox credentials are not configured in the worker.' }, { status: 500 })
+  }
+
+  try {
+    const thumbResponse = await getDropboxThumbnail(accessToken, path)
+    return new Response(thumbResponse.body, {
+      status: thumbResponse.status,
+      headers: {
+        'content-type': 'image/jpeg',
+        'cache-control': 'public, max-age=3600',
+      },
+    })
+  } catch (error) {
+    return json({ error: error.message || 'Could not load Dropbox thumbnail.' }, { status: error.status || 502 })
+  }
 }
 
 export { getIsoWeekFolder }
@@ -415,6 +476,22 @@ export default {
       }
 
       return handleDropboxWeekMedia(request, env)
+    }
+
+    if (url.pathname === '/api/dropbox/thumbnail') {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          headers: {
+            allow: 'GET, OPTIONS',
+          },
+        })
+      }
+
+      if (request.method !== 'GET') {
+        return json({ error: 'Method not allowed.' }, { status: 405 })
+      }
+
+      return handleDropboxThumbnail(request, env)
     }
 
     return env.ASSETS.fetch(request)

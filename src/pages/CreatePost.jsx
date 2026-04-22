@@ -1115,7 +1115,7 @@ export default function CreatePost() {
           if (current && (payload.suggestions || []).some((file) => file.link === current.link)) {
             return current
           }
-          return payload.suggestions?.[0] || null
+          return null
         })
         setDropboxSuggestionStatus('ready')
         setDropboxSuggestionMessage(
