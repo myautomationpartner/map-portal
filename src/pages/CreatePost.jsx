@@ -266,6 +266,17 @@ function slotToInputValue(slot) {
   return slot?.slot_date_local && time ? `${slot.slot_date_local}T${time}` : ''
 }
 
+function isoToLocalInputValue(value, timeZone) {
+  if (!value) return ''
+
+  try {
+    const parts = getDatePartsForZone(new Date(value), timeZone || 'America/New_York')
+    return `${parts.date}T${parts.time}`
+  } catch {
+    return ''
+  }
+}
+
 function getMinScheduleValue() {
   const threshold = new Date(Date.now() + 5 * 60_000)
   threshold.setSeconds(0, 0)
@@ -722,6 +733,9 @@ export default function CreatePost() {
   const [draftError, setDraftError] = useState('')
   const [draftDirty, setDraftDirty] = useState(false)
   const [generatedCaption, setGeneratedCaption] = useState('')
+  const [editingScheduledPostId, setEditingScheduledPostId] = useState('')
+  const [editingScheduledPostRef, setEditingScheduledPostRef] = useState('')
+  const [existingMediaUrl, setExistingMediaUrl] = useState('')
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile'],
@@ -805,6 +819,10 @@ export default function CreatePost() {
     return byDate
   }, [scheduledPosts, calendar?.policy?.timezone, profile?.clients?.timezone])
   const scheduledPostsForSelectedDay = selectedDay ? (scheduledPostsByDate.get(selectedDay) || []) : []
+  const editingScheduledPost = useMemo(
+    () => scheduledPosts.find((post) => post.id === editingScheduledPostId) || null,
+    [scheduledPosts, editingScheduledPostId],
+  )
 
   const timingSummary = timingMode === 'now'
     ? 'Publishing as soon as you approve'
@@ -1099,6 +1117,7 @@ export default function CreatePost() {
   function removeImage() {
     setImageFile(null)
     setImagePreview(null)
+    setExistingMediaUrl('')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -1145,6 +1164,13 @@ export default function CreatePost() {
     setScheduledFor(nextValue)
     setSelectedDay(slot.slot_date_local)
     setErrorMsg('')
+    setEditingScheduledPostId('')
+    setEditingScheduledPostRef('')
+    setExistingMediaUrl('')
+    setImageFile(null)
+    setImagePreview(null)
+    setDropboxAttachments([])
+    setPreviewedDropboxAsset(null)
     setSearchParams({ date: slot.slot_date_local, slot: slot.slot_label })
     composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     resolveDraftForSlot(slot, { source: 'slot_click' })
@@ -1155,6 +1181,43 @@ export default function CreatePost() {
     setScheduledFor('')
     setErrorMsg('')
     setDraftError('')
+    setEditingScheduledPostId('')
+    setEditingScheduledPostRef('')
+  }
+
+  function loadScheduledPostForEditing(post) {
+    if (!post) return
+
+    const timezone = calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'
+    setEditingScheduledPostId(post.id)
+    setEditingScheduledPostRef(post.n8n_execution_id || '')
+    setContent(post.content || '')
+    setSelectedPlatforms({
+      facebook: Boolean(post.platforms?.includes('facebook')),
+      instagram: Boolean(post.platforms?.includes('instagram')),
+      google: Boolean(post.platforms?.includes('google')),
+      tiktok: Boolean(post.platforms?.includes('tiktok')),
+    })
+    setPreviewPlatform(post.platforms?.[0] || 'facebook')
+    setTimingMode('custom')
+    setScheduledFor(isoToLocalInputValue(post.scheduled_for, timezone))
+    setSelectedDay(post.localDate || selectedDay)
+    setExistingMediaUrl(post.media_url || '')
+    setImageFile(null)
+    setImagePreview(post.media_url || null)
+    setDropboxAttachments([])
+    setPreviewedDropboxAsset(null)
+    setActiveDraftId('')
+    setActiveSlotKey('')
+    setSelectedAngleId('')
+    setAngleChoices([])
+    setMediaSuggestion('')
+    setDraftStatus('Editing a scheduled post. Save changes to update the live schedule.')
+    setDraftError('')
+    setDraftDirty(false)
+    setErrorMsg('')
+    setSearchParams({ date: post.localDate || selectedDay || '', editPost: post.id })
+    composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   function chooseCustomTime(dayKey = '') {
@@ -1257,25 +1320,46 @@ export default function CreatePost() {
 
       setSubmitState('posting')
 
-      const effectiveMediaUrl = r2MediaUrl || (dropboxAttachments.length > 0 ? dropboxAttachments[0].link : null)
+      const effectiveMediaUrl = r2MediaUrl || (dropboxAttachments.length > 0 ? dropboxAttachments[0].link : null) || existingMediaUrl || null
       const scheduledForIso = timingMode === 'now' ? null : localDateTimeToIso(scheduledFor)
       const targetStatus = timingMode === 'now' ? 'published' : 'scheduled'
+      let post = null
 
-      const { data: post, error: insertError } = await supabase
-        .from('posts')
-        .insert({
-          client_id: clientId,
-          content: content.trim(),
-          media_url: effectiveMediaUrl,
-          platforms: activePlatforms,
-          status: 'draft',
-          scheduled_for: scheduledForIso,
-        })
-        .select()
-        .single()
+      if (editingScheduledPostId) {
+        const { data: updatedPost, error: updateError } = await supabase
+          .from('posts')
+          .update({
+            content: content.trim(),
+            media_url: effectiveMediaUrl,
+            platforms: activePlatforms,
+            status: 'draft',
+            scheduled_for: scheduledForIso,
+          })
+          .eq('id', editingScheduledPostId)
+          .select()
+          .single()
 
-      if (insertError) throw insertError
-      savedPostId = post.id
+        if (updateError) throw updateError
+        post = updatedPost
+        savedPostId = updatedPost.id
+      } else {
+        const { data: createdPost, error: insertError } = await supabase
+          .from('posts')
+          .insert({
+            client_id: clientId,
+            content: content.trim(),
+            media_url: effectiveMediaUrl,
+            platforms: activePlatforms,
+            status: 'draft',
+            scheduled_for: scheduledForIso,
+          })
+          .select()
+          .single()
+
+        if (insertError) throw insertError
+        post = createdPost
+        savedPostId = createdPost.id
+      }
 
       const n8nResponse = await fetch(`${N8N_BASE}/webhook/social-publish`, {
         method: 'POST',
@@ -1283,8 +1367,9 @@ export default function CreatePost() {
         body: JSON.stringify({
           postId: post.id,
           clientId,
+          zernioPostId: editingScheduledPostRef || editingScheduledPost?.n8n_execution_id || null,
           content: content.trim(),
-          mediaUrl: r2MediaUrl,
+          mediaUrl: effectiveMediaUrl,
           dropboxLinks: dropboxAttachments.map(({ name, link, size }) => ({ name, link, size })),
           platforms: activePlatforms,
           scheduledFor: scheduledForIso,
@@ -1341,10 +1426,13 @@ export default function CreatePost() {
         setDropboxSuggestionMessage('')
         setDropboxSuggestionWeek('')
         setPreviewedDropboxAsset(null)
+        setExistingMediaUrl('')
         setScheduledFor('')
         setTimingMode('slot')
         setSubmitState('idle')
         setErrorMsg('')
+        setEditingScheduledPostId('')
+        setEditingScheduledPostRef('')
         setActiveDraftId('')
         setActiveSlotKey('')
         setSelectedAngleId('')
@@ -1389,7 +1477,11 @@ export default function CreatePost() {
                 <CheckCircle2 className="h-5 w-5 shrink-0" />
                 <div>
                   <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
-                    {timingMode === 'now' ? 'Post published successfully' : 'Post scheduled successfully'}
+                    {editingScheduledPostId
+                      ? 'Scheduled post updated successfully'
+                      : timingMode === 'now'
+                        ? 'Post published successfully'
+                        : 'Post scheduled successfully'}
                   </p>
                   <p className="mt-0.5 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
                     {timingMode === 'now'
@@ -1431,7 +1523,7 @@ export default function CreatePost() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h1 ref={composerRef} className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-                    {activeDraftId ? 'Draft loaded' : 'Publisher'}
+                    {editingScheduledPostId ? 'Editing scheduled post' : activeDraftId ? 'Draft loaded' : 'Publisher'}
                   </h1>
                   <p className="mt-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
                     {timingSummary}
@@ -1482,7 +1574,7 @@ export default function CreatePost() {
                   Calendar slot
                 </button>
                 <div className="rounded-full px-3 py-2 text-[11px] font-semibold" style={{ background: 'rgba(245,240,235,0.9)', color: draftLoading ? 'var(--portal-primary)' : 'var(--portal-text-soft)' }}>
-                  {draftLoading ? 'Generating draft…' : activeDraftId ? 'Draft-backed editor' : 'Pick a slot'}
+                  {draftLoading ? 'Generating draft…' : editingScheduledPostId ? 'Scheduled-post editor' : activeDraftId ? 'Draft-backed editor' : 'Pick a slot'}
                 </div>
               </div>
 
@@ -1989,10 +2081,14 @@ export default function CreatePost() {
                         </p>
                         <div className="mt-3 space-y-2">
                           {scheduledPostsForSelectedDay.map((post) => (
-                            <div
+                            <button
                               key={post.id}
-                              className="flex items-center justify-between gap-3 rounded-2xl px-3 py-2"
-                              style={{ background: 'rgba(248,244,238,0.85)', border: '1px solid var(--portal-border)' }}
+                              type="button"
+                              onClick={() => loadScheduledPostForEditing(post)}
+                              className="flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2 text-left"
+                              style={editingScheduledPostId === post.id
+                                ? { background: 'rgba(201,168,76,0.14)', border: '1px solid rgba(201,168,76,0.36)' }
+                                : { background: 'rgba(248,244,238,0.85)', border: '1px solid var(--portal-border)' }}
                             >
                               <div>
                                 <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
@@ -2002,13 +2098,20 @@ export default function CreatePost() {
                                   {(post.platforms || []).join(', ') || post.status}
                                 </p>
                               </div>
-                              <span
-                                className="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                                style={{ background: 'rgba(55, 181, 140, 0.12)', color: '#2d876a', borderColor: 'rgba(55, 181, 140, 0.2)' }}
-                              >
-                                {post.status}
-                              </span>
-                            </div>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                                  style={{ background: 'rgba(55, 181, 140, 0.12)', color: '#2d876a', borderColor: 'rgba(55, 181, 140, 0.2)' }}
+                                >
+                                  {post.status}
+                                </span>
+                                {post.status === 'scheduled' && (
+                                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--portal-primary)' }}>
+                                    Edit
+                                  </span>
+                                )}
+                              </div>
+                            </button>
                           ))}
                         </div>
                       </div>

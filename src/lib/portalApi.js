@@ -128,7 +128,7 @@ export async function fetchScheduledPosts(clientId) {
 
   const { data, error } = await supabase
     .from('posts')
-    .select('id, client_id, content, platforms, status, scheduled_for, published_at, created_at')
+    .select('id, client_id, content, media_url, platforms, status, scheduled_for, published_at, created_at, n8n_execution_id')
     .eq('client_id', clientId)
     .not('scheduled_for', 'is', null)
     .in('status', ['draft', 'scheduled', 'published'])
