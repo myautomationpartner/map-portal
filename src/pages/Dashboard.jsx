@@ -26,8 +26,8 @@ function getMetricValue(metrics, platform, field) {
 
 const PLATFORM_CONFIG = [
   { id: 'instagram', label: 'Instagram', icon: Camera, color: '#ee6aa7', field: 'followers' },
-  { id: 'facebook', label: 'Facebook', icon: Share2, color: '#4f6bff', field: 'followers' },
-  { id: 'tiktok', label: 'TikTok', icon: Music2, color: '#7b61ff', field: 'followers' },
+  { id: 'facebook', label: 'Facebook', icon: Share2, color: '#c9a84c', field: 'followers' },
+  { id: 'tiktok', label: 'TikTok', icon: Music2, color: '#8a8278', field: 'followers' },
   { id: 'google', label: 'Google', icon: MapPin, color: '#37b58c', field: 'reach' },
 ]
 
@@ -81,7 +81,7 @@ function ToolForm({ onAdd, onClose }) {
           type="button"
           onClick={onClose}
           className="rounded-full px-3 py-1.5 text-xs font-semibold transition-all"
-          style={{ background: 'rgba(79, 107, 255, 0.08)', color: 'var(--portal-primary)' }}
+          style={{ background: 'rgba(201, 168, 76, 0.1)', color: 'var(--portal-primary)' }}
         >
           Close
         </button>
@@ -100,7 +100,7 @@ function ToolForm({ onAdd, onClose }) {
                 onClick={() => setIcon(entry)}
                 className="flex h-10 w-10 items-center justify-center rounded-2xl border text-lg transition-all"
                 style={icon === entry
-                  ? { borderColor: 'rgba(79, 107, 255, 0.24)', background: 'rgba(79, 107, 255, 0.1)' }
+                  ? { borderColor: 'rgba(201, 168, 76, 0.28)', background: 'rgba(201, 168, 76, 0.12)' }
                   : { borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.9)' }}
               >
                 {entry}
@@ -300,7 +300,7 @@ export default function Dashboard() {
         <div className="space-y-6">
           <section className="portal-panel rounded-[32px] p-5 md:p-6">
             <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-[18px]" style={{ background: 'linear-gradient(135deg, rgba(79, 107, 255, 0.12), rgba(62, 197, 255, 0.12))' }}>
+              <div className="flex h-12 w-12 items-center justify-center rounded-[18px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.1))' }}>
                 <Sparkles className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
               </div>
               <div>
@@ -325,11 +325,11 @@ export default function Dashboard() {
               <div className="portal-stat-card rounded-[24px] p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Priority Actions</p>
                 <div className="mt-3 space-y-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                  <Link to="/documents" className="flex items-center justify-between rounded-2xl px-3 py-3" style={{ background: 'rgba(79, 107, 255, 0.05)' }}>
+                  <Link to="/documents" className="flex items-center justify-between rounded-2xl px-3 py-3" style={{ background: 'rgba(201, 168, 76, 0.08)' }}>
                     <span className="inline-flex items-center gap-2"><FolderOpen className="h-4 w-4" /> Review client files</span>
                     <ArrowUpRight className="h-4 w-4" />
                   </Link>
-                  <Link to="/inbox" className="flex items-center justify-between rounded-2xl px-3 py-3" style={{ background: 'rgba(135, 92, 245, 0.05)' }}>
+                  <Link to="/inbox" className="flex items-center justify-between rounded-2xl px-3 py-3" style={{ background: 'rgba(26, 24, 20, 0.05)' }}>
                     <span className="inline-flex items-center gap-2"><MessageSquareMore className="h-4 w-4" /> Check inbox</span>
                     <ArrowUpRight className="h-4 w-4" />
                   </Link>

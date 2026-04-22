@@ -166,9 +166,9 @@ function statusPillStyle(isActive, isRevoked) {
   }
 
   return {
-    background: 'rgba(85, 103, 255, 0.08)',
-    border: '1px solid rgba(85, 103, 255, 0.16)',
-    color: 'var(--portal-primary)',
+    background: 'rgba(201, 168, 76, 0.1)',
+    border: '1px solid rgba(201, 168, 76, 0.22)',
+    color: '#8c6d1c',
   }
 }
 
@@ -296,7 +296,7 @@ function Notice({ kind, message }) {
 function EmptyPreviewState() {
   return (
     <div className="portal-panel flex h-full min-h-[460px] flex-col items-center justify-center rounded-[32px] p-8 text-center">
-      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-[22px]" style={{ background: 'linear-gradient(135deg, rgba(85, 103, 255, 0.14), rgba(34, 195, 238, 0.16))' }}>
+      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-[22px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
         <FileText className="h-8 w-8" style={{ color: 'var(--portal-primary)' }} />
       </div>
       <h3 className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>Choose a document</h3>
@@ -316,7 +316,7 @@ function DocumentPreview({ selectedDocument, previewState, onRefreshPreview }) {
     <div className="portal-panel rounded-[32px] p-5 md:p-6 space-y-5">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex items-start gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-[18px]" style={{ background: 'linear-gradient(135deg, rgba(85, 103, 255, 0.14), rgba(139, 92, 246, 0.12))' }}>
+          <div className="flex h-12 w-12 items-center justify-center rounded-[18px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
             <DocumentIcon mimeType={selectedDocument.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
           </div>
           <div>
@@ -709,7 +709,7 @@ export default function Documents() {
                       onClick={() => setSelectedCategory(category)}
                       className="rounded-full px-3 py-1.5 text-xs font-semibold transition-all"
                       style={selectedCategory === category
-                        ? { background: 'linear-gradient(135deg, rgba(79, 107, 255, 0.14), rgba(135, 92, 245, 0.1))', border: '1px solid rgba(79, 107, 255, 0.18)', color: 'var(--portal-primary)' }
+                        ? { background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.1))', border: '1px solid rgba(201, 168, 76, 0.24)', color: '#8c6d1c' }
                         : { background: 'rgba(255,255,255,0.72)', border: '1px solid var(--portal-border)', color: 'var(--portal-text-muted)' }}
                     >
                       {category}
@@ -739,7 +739,7 @@ export default function Documents() {
                         onClick={() => handlePreview(document.id)}
                         className="rounded-[26px] p-4 text-left transition-all"
                         style={isSelected
-                          ? { background: 'linear-gradient(145deg, rgba(79, 107, 255, 0.12), rgba(62, 197, 255, 0.08))', border: '1px solid rgba(79, 107, 255, 0.18)', boxShadow: '0 14px 28px rgba(79, 107, 255, 0.08)' }
+                          ? { background: 'linear-gradient(145deg, rgba(201, 168, 76, 0.14), rgba(232, 213, 160, 0.08))', border: '1px solid rgba(201, 168, 76, 0.24)', boxShadow: '0 14px 28px rgba(26, 24, 20, 0.06)' }
                           : { background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}
                       >
                         <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-[18px]" style={{ background: 'rgba(239, 244, 255, 0.96)' }}>
@@ -773,7 +773,7 @@ export default function Documents() {
                             key={document.id}
                             className="portal-table-row cursor-pointer transition-all"
                             onClick={() => handlePreview(document.id)}
-                            style={isSelected ? { background: 'rgba(79, 107, 255, 0.08)' } : undefined}
+                            style={isSelected ? { background: 'rgba(201, 168, 76, 0.1)' } : undefined}
                           >
                             <td className="border-t px-6 py-4" style={{ borderColor: 'var(--portal-border)' }}>
                               <div className="flex items-center gap-3">
@@ -914,7 +914,7 @@ export default function Documents() {
 
               <label
                 className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-[28px] border border-dashed px-5 py-8 text-center transition-all"
-                style={{ borderColor: 'rgba(79, 107, 255, 0.24)', background: 'linear-gradient(145deg, rgba(79, 107, 255, 0.07), rgba(62, 197, 255, 0.06))' }}
+                style={{ borderColor: 'rgba(201, 168, 76, 0.28)', background: 'linear-gradient(145deg, rgba(201, 168, 76, 0.1), rgba(232, 213, 160, 0.08))' }}
               >
                 <div className="flex h-14 w-14 items-center justify-center rounded-[20px] bg-white shadow-sm">
                   <Upload className="h-6 w-6" style={{ color: 'var(--portal-primary)' }} />

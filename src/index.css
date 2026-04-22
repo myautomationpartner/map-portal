@@ -2,33 +2,33 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand-primary: #4f6bff;
-  --color-brand-secondary: #875cf5;
-  --color-brand-accent: #3ec5ff;
+  --color-brand-primary: #c9a84c;
+  --color-brand-secondary: #e8d5a0;
+  --color-brand-accent: #1a1814;
 }
 
 :root {
-  --portal-bg: #f3f7ff;
-  --portal-bg-secondary: #fbfcff;
+  --portal-bg: #f5f0eb;
+  --portal-bg-secondary: #f9f5f1;
   --portal-surface: rgba(255, 255, 255, 0.94);
   --portal-surface-strong: #ffffff;
-  --portal-surface-muted: #eef3ff;
-  --portal-border: rgba(116, 129, 193, 0.16);
-  --portal-border-strong: rgba(79, 107, 255, 0.26);
-  --portal-text: #18213f;
-  --portal-text-muted: #5f6f96;
-  --portal-text-soft: #8a96ba;
-  --portal-primary: #4f6bff;
-  --portal-primary-strong: #3453ee;
-  --portal-secondary: #875cf5;
-  --portal-cyan: #3ec5ff;
+  --portal-surface-muted: #f0e8dc;
+  --portal-border: rgba(26, 24, 20, 0.1);
+  --portal-border-strong: rgba(201, 168, 76, 0.34);
+  --portal-text: #1a1814;
+  --portal-text-muted: #5e554d;
+  --portal-text-soft: #8a8278;
+  --portal-primary: #c9a84c;
+  --portal-primary-strong: #b28f35;
+  --portal-secondary: #1a1814;
+  --portal-cyan: #e8d5a0;
   --portal-success: #1fa971;
   --portal-danger: #d85f98;
-  --portal-shadow: 0 30px 80px rgba(68, 87, 180, 0.12);
-  --portal-shadow-soft: 0 16px 34px rgba(74, 90, 170, 0.08);
-  --portal-nav: #f7f9ff;
-  --portal-nav-strong: #eef3ff;
-  --portal-dark: #101931;
+  --portal-shadow: 0 24px 70px rgba(26, 24, 20, 0.08);
+  --portal-shadow-soft: 0 14px 28px rgba(26, 24, 20, 0.06);
+  --portal-nav: #11100d;
+  --portal-nav-strong: #1a1814;
+  --portal-dark: #0a0a0a;
 }
 
 *, *::before, *::after {
@@ -40,9 +40,9 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background:
-    radial-gradient(circle at top left, rgba(62, 197, 255, 0.14), transparent 26%),
-    radial-gradient(circle at top right, rgba(135, 92, 245, 0.14), transparent 28%),
-    linear-gradient(180deg, #f9fbff 0%, #f2f6ff 55%, #f7f9ff 100%);
+    radial-gradient(circle at top left, rgba(232, 213, 160, 0.24), transparent 24%),
+    radial-gradient(circle at top right, rgba(201, 168, 76, 0.16), transparent 28%),
+    linear-gradient(180deg, #faf6f1 0%, #f5f0eb 52%, #f7f2ec 100%);
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   color: var(--portal-text);
 }

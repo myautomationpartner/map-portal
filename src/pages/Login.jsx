@@ -23,14 +23,14 @@ export default function Login() {
   return (
     <div className="portal-shell relative flex min-h-screen items-center justify-center p-4">
       <div className="pointer-events-none absolute inset-0"
-        style={{ background: 'radial-gradient(ellipse 80% 55% at 50% 0%, rgba(79, 107, 255, 0.12) 0%, transparent 68%)' }} />
+        style={{ background: 'radial-gradient(ellipse 80% 55% at 50% 0%, rgba(201, 168, 76, 0.16) 0%, transparent 68%)' }} />
 
       <div className="relative z-10 grid w-full max-w-5xl gap-8 lg:grid-cols-[1.1fr_430px] lg:items-center">
         <div className="hidden lg:block">
           <div className="portal-panel rounded-[40px] p-8">
             <div className="mb-8 flex items-center gap-4">
               <div className="inline-flex h-20 w-20 items-center justify-center overflow-hidden rounded-[28px] border bg-white p-1 shadow-sm"
-                style={{ borderColor: 'rgba(79, 107, 255, 0.12)' }}>
+                style={{ borderColor: 'rgba(201, 168, 76, 0.2)' }}>
                 <img
                   src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg"
                   alt="Dancescapes"
@@ -70,7 +70,7 @@ export default function Login() {
         <div className="w-full max-w-sm justify-self-center lg:max-w-none">
           <div className="mb-10 text-center lg:hidden">
           <div className="mb-5 inline-block h-20 w-20 overflow-hidden rounded-[26px] border bg-white p-1 shadow-lg"
-            style={{ borderColor: 'rgba(79, 107, 255, 0.15)' }}>
+            style={{ borderColor: 'rgba(201, 168, 76, 0.2)' }}>
             <img
               src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg"
               alt="Dancescapes"
@@ -81,7 +81,7 @@ export default function Login() {
                 e.target.parentElement.style.alignItems = 'center'
                 e.target.parentElement.style.justifyContent = 'center'
                 e.target.parentElement.style.background = '#ffffff'
-                e.target.parentElement.innerHTML = '<span style="color:#5567ff;font-size:32px;font-family:Fraunces,serif;font-weight:600">D</span>'
+                e.target.parentElement.innerHTML = '<span style="color:#c9a84c;font-size:32px;font-family:Sora,Georgia,serif;font-weight:600">D</span>'
               }}
             />
           </div>

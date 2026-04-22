@@ -21,36 +21,36 @@ export default function Sidebar({ session }) {
   return (
     <aside
       className="hidden fixed left-0 top-0 z-40 h-full w-[280px] flex-col border-r md:flex"
-      style={{ background: 'linear-gradient(180deg, var(--portal-nav) 0%, #f3f6ff 100%)', borderColor: 'var(--portal-border)' }}
+      style={{ background: 'linear-gradient(180deg, var(--portal-nav) 0%, var(--portal-nav-strong) 100%)', borderColor: 'rgba(201, 168, 76, 0.18)' }}
     >
       <div className="flex items-center gap-3 border-b px-7 py-8" style={{ borderColor: 'var(--portal-border)' }}>
-        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl border bg-white shadow-sm" style={{ borderColor: 'rgba(79, 107, 255, 0.16)' }}>
+        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl border bg-white shadow-sm" style={{ borderColor: 'rgba(201, 168, 76, 0.24)' }}>
           <img
             src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg"
             alt="Dancescapes"
             className="w-full h-full object-cover"
             onError={e => {
               e.target.style.display = 'none'
-              e.target.parentElement.innerHTML = '<span style="color:#5567ff;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;width:100%;height:100%">D</span>'
+              e.target.parentElement.innerHTML = '<span style="color:#c9a84c;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;width:100%;height:100%">D</span>'
             }}
           />
         </div>
         <div>
-          <p className="font-display text-lg font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
+          <p className="font-display text-lg font-semibold leading-tight" style={{ color: '#ffffff' }}>
             Dancescapes
           </p>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.28em]" style={{ color: 'var(--portal-text-soft)' }}>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.28em]" style={{ color: 'rgba(201, 168, 76, 0.9)' }}>
             Partner Portal
           </p>
         </div>
       </div>
 
       <div className="px-5 pt-5">
-        <div className="rounded-[28px] px-4 py-4" style={{ background: 'linear-gradient(145deg, rgba(79, 107, 255, 0.12), rgba(135, 92, 245, 0.08))', border: '1px solid rgba(79, 107, 255, 0.12)' }}>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--portal-text-soft)' }}>
+        <div className="rounded-[28px] px-4 py-4" style={{ background: 'linear-gradient(145deg, rgba(201, 168, 76, 0.16), rgba(232, 213, 160, 0.08))', border: '1px solid rgba(201, 168, 76, 0.18)' }}>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'rgba(255,255,255,0.55)' }}>
             Workspace Focus
           </p>
-          <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
+          <p className="mt-2 text-sm font-semibold" style={{ color: '#fff' }}>
             Client operations, documents, and publishing in one polished dashboard.
           </p>
         </div>
@@ -68,28 +68,28 @@ export default function Sidebar({ session }) {
               }`
             }
             style={({ isActive }) => isActive
-              ? { background: 'linear-gradient(135deg, rgba(79, 107, 255, 0.12), rgba(135, 92, 245, 0.08))', color: 'var(--portal-primary)', border: '1px solid rgba(79, 107, 255, 0.16)', boxShadow: '0 12px 24px rgba(79, 107, 255, 0.08)' }
-              : { color: 'var(--portal-text-muted)', border: '1px solid transparent' }
+              ? { background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.1))', color: '#fff', border: '1px solid rgba(201, 168, 76, 0.24)', boxShadow: '0 12px 24px rgba(0, 0, 0, 0.18)' }
+              : { color: 'rgba(255,255,255,0.72)', border: '1px solid transparent' }
             }
           >
             {({ isActive }) => (
               <>
-                <div className="relative flex items-center justify-center rounded-xl p-2" style={{ background: isActive ? 'rgba(255,255,255,0.85)' : 'rgba(234,239,255,0.7)' }}>
+                <div className="relative flex items-center justify-center rounded-xl p-2" style={{ background: isActive ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)' }}>
                   <Icon
                     className="h-4 w-4 transition-colors"
-                    style={{ color: isActive ? 'var(--portal-primary)' : 'var(--portal-text-soft)' }}
+                    style={{ color: isActive ? 'var(--portal-primary)' : 'rgba(255,255,255,0.62)' }}
                     strokeWidth={2.2}
                   />
                   {to === '/inbox' && (
-                    <span className="absolute -right-2.5 -top-2 flex h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 bg-violet-600 px-1 text-[9px] font-black text-white shadow-sm"
-                      style={{ borderColor: 'white' }}>
+                    <span className="absolute -right-2.5 -top-2 flex h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 px-1 text-[9px] font-black text-[var(--portal-dark)] shadow-sm"
+                      style={{ borderColor: 'white', background: 'var(--portal-primary)' }}>
                       3
                     </span>
                   )}
                 </div>
                 {label}
                 {isActive && (
-                  <div className="ml-auto h-3 w-1 rounded-full" style={{ background: 'linear-gradient(180deg, var(--portal-primary), var(--portal-secondary))', boxShadow: '0 0 12px rgba(85, 103, 255, 0.35)' }} />
+                  <div className="ml-auto h-3 w-1 rounded-full" style={{ background: 'linear-gradient(180deg, var(--portal-primary), #f0ddb0)', boxShadow: '0 0 12px rgba(201, 168, 76, 0.35)' }} />
                 )}
               </>
             )}
@@ -97,15 +97,15 @@ export default function Sidebar({ session }) {
         ))}
       </nav>
 
-      <div className="px-4 py-5" style={{ borderTop: '1px solid var(--portal-border)' }}>
-        <div className="mb-3 flex items-center gap-3 rounded-[22px] px-3 py-3" style={{ background: 'rgba(255,255,255,0.88)', border: '1px solid var(--portal-border)' }}>
+      <div className="px-4 py-5" style={{ borderTop: '1px solid rgba(201, 168, 76, 0.15)' }}>
+        <div className="mb-3 flex items-center gap-3 rounded-[22px] px-3 py-3" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(201, 168, 76, 0.16)' }}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-            style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-secondary))' }}>
+            style={{ background: 'linear-gradient(135deg, var(--portal-primary), #e8d5a0)', color: 'var(--portal-dark)' }}>
             {session?.user?.email?.[0]?.toUpperCase() ?? '?'}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="truncate text-[11px] font-semibold" style={{ color: 'var(--portal-text)' }}>{session?.user?.email}</p>
-            <p className="text-[9px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--portal-text-soft)' }}>
+            <p className="truncate text-[11px] font-semibold" style={{ color: '#fff' }}>{session?.user?.email}</p>
+            <p className="text-[9px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'rgba(255,255,255,0.55)' }}>
               {claims.user_role || 'verified client'} · {claims.client_slug || 'tenant'}
             </p>
           </div>
