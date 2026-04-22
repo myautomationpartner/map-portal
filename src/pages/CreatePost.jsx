@@ -118,6 +118,19 @@ function getDropboxThumbSource(file) {
   return getDropboxRenderableImageUrl(file.thumbnail) || getDropboxRenderableImageUrl(file.link) || null
 }
 
+function isMissingRemoteDelete(payload, raw) {
+  const message = [
+    payload?.message,
+    payload?.error,
+    raw,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  return message.includes('404') && message.includes('post not found')
+}
+
 function parseDateOnly(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '')
   if (!match) return null
@@ -1304,7 +1317,11 @@ export default function CreatePost() {
           payload = {}
         }
         if (!response.ok || payload?.success === false) {
+          if (isMissingRemoteDelete(payload, raw)) {
+            payload = { success: true }
+          } else {
           throw new Error(buildPublishErrorMessage(payload, raw, 'custom'))
+          }
         }
       }
 

@@ -6,6 +6,19 @@ import { deletePost, fetchProfile, fetchScheduledPosts, reconcileScheduledPosts 
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 
+function isMissingRemoteDelete(payload, raw) {
+  const message = [
+    payload?.message,
+    payload?.error,
+    raw,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  return message.includes('404') && message.includes('post not found')
+}
+
 function getDatePartsForZone(value, timeZone) {
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone,
@@ -109,7 +122,9 @@ export default function ScheduledPosts() {
         }
 
         if (!response.ok || payload?.success === false) {
-          throw new Error(payload?.message || raw || 'Could not delete this scheduled post.')
+          if (!isMissingRemoteDelete(payload, raw)) {
+            throw new Error(payload?.message || raw || 'Could not delete this scheduled post.')
+          }
         }
       }
 
