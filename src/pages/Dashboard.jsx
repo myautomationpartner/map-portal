@@ -58,6 +58,16 @@ function getToolInitials(label) {
   return `${words[0][0] ?? ''}${words[1][0] ?? ''}`.toUpperCase()
 }
 
+function getToolHostname(url) {
+  if (!url) return ''
+
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
+}
+
 function getToolIconCandidates(url) {
   if (!url) return []
 
@@ -252,31 +262,80 @@ function ToolIcon({ tool }) {
   )
 }
 
-function ToolCard({ tool, onRemove }) {
+function ToolCard({ tool, onRemove, isActive, onActivate }) {
+  const hostname = getToolHostname(tool.url)
+
+  function handleOpen() {
+    window.open(tool.url, '_blank', 'noopener,noreferrer')
+  }
+
   return (
-    <div className="portal-stat-card rounded-[24px] p-4">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onActivate(tool)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onActivate(tool)
+        }
+      }}
+      className="portal-stat-card group rounded-[24px] p-4 text-left transition-all duration-200 hover:-translate-y-0.5"
+      style={isActive
+        ? {
+          borderColor: 'rgba(201, 168, 76, 0.34)',
+          boxShadow: '0 18px 38px rgba(26, 24, 20, 0.1)',
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248, 244, 236, 0.92))',
+        }
+        : undefined}
+    >
       <div className="mb-5 flex items-start justify-between gap-3">
         <ToolIcon tool={tool} />
+        <div className="flex items-center gap-2">
+          <span
+            className="rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
+            style={{
+              background: isActive ? 'rgba(201, 168, 76, 0.14)' : 'rgba(26, 24, 20, 0.05)',
+              color: isActive ? 'var(--portal-primary-strong)' : 'var(--portal-text-soft)',
+            }}
+          >
+            {isActive ? 'Selected' : 'Pinned'}
+          </span>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              onRemove(tool.id)
+            }}
+            className="rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all"
+            style={{ background: 'rgba(216, 95, 152, 0.08)', color: 'var(--portal-danger)' }}
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+
+      <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{tool.label}</p>
+      <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
+        {hostname || 'External app'}
+      </p>
+
+      <div className="mt-5 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={() => onRemove(tool.id)}
-          className="rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all"
-          style={{ background: 'rgba(216, 95, 152, 0.08)', color: 'var(--portal-danger)' }}
+          onClick={(event) => {
+            event.stopPropagation()
+            handleOpen()
+          }}
+          className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold"
         >
-          Remove
+          Launch app
+          <ArrowUpRight className="h-3.5 w-3.5" />
         </button>
+        <span className="inline-flex items-center gap-2 text-xs font-semibold" style={{ color: 'var(--portal-primary)' }}>
+          Ready to open
+        </span>
       </div>
-      <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{tool.label}</p>
-      <a
-        href={tool.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-3 inline-flex items-center gap-2 text-xs font-semibold"
-        style={{ color: 'var(--portal-primary)' }}
-      >
-        Open tool
-        <ArrowUpRight className="h-3.5 w-3.5" />
-      </a>
     </div>
   )
 }
@@ -301,6 +360,7 @@ export default function Dashboard() {
 
   const [tools, setTools] = useState(loadTools)
   const [showAddTool, setShowAddTool] = useState(false)
+  const [activeToolId, setActiveToolId] = useState(() => loadTools()[0]?.id ?? null)
 
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -311,14 +371,21 @@ export default function Dashboard() {
   function addTool(tool) {
     const next = [...tools, tool]
     setTools(next)
+    setActiveToolId(tool.id)
     saveTools(next)
   }
 
   function removeTool(id) {
     const next = tools.filter((tool) => tool.id !== id)
     setTools(next)
+    if (activeToolId === id) {
+      setActiveToolId(next[0]?.id ?? null)
+    }
     saveTools(next)
   }
+
+  const activeTool = tools.find((tool) => tool.id === activeToolId) || tools[0] || null
+  const activeHostname = activeTool ? getToolHostname(activeTool.url) : ''
 
   return (
     <div className="portal-page mx-auto max-w-[1480px] space-y-6 md:p-6 xl:p-8">
@@ -400,9 +467,71 @@ export default function Dashboard() {
 
         {showAddTool && <ToolForm onAdd={addTool} onClose={() => setShowAddTool(false)} />}
 
+        {activeTool && (
+          <div
+            className="mb-5 rounded-[28px] border px-4 py-4 md:px-5"
+            style={{
+              borderColor: 'rgba(201, 168, 76, 0.2)',
+              background: 'linear-gradient(135deg, rgba(248, 244, 236, 0.95), rgba(255,255,255,0.95))',
+            }}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-4">
+                <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-[20px] border bg-white" style={{ borderColor: 'rgba(201, 168, 76, 0.18)' }}>
+                  <ToolIcon tool={activeTool} />
+                </div>
+                <div className="min-w-0">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <span
+                      className="rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]"
+                      style={{ background: 'rgba(31, 169, 113, 0.1)', color: 'var(--portal-success)' }}
+                    >
+                      App launcher
+                    </span>
+                    <span
+                      className="rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]"
+                      style={{ background: 'rgba(201, 168, 76, 0.1)', color: 'var(--portal-primary-strong)' }}
+                    >
+                      {activeHostname || 'External app'}
+                    </span>
+                  </div>
+                  <p className="truncate text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>{activeTool.label}</p>
+                  <p className="truncate text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+                    Selected app is ready to launch in a new tab from your dashboard.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.open(activeTool.url, '_blank', 'noopener,noreferrer')}
+                  className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+                >
+                  Open {activeTool.label}
+                  <ArrowUpRight className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard?.writeText(activeTool.url)}
+                  className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+                >
+                  Copy link
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {tools.map((tool) => (
-            <ToolCard key={tool.id} tool={tool} onRemove={removeTool} />
+            <ToolCard
+              key={tool.id}
+              tool={tool}
+              onRemove={removeTool}
+              isActive={tool.id === activeTool?.id}
+              onActivate={(selectedTool) => setActiveToolId(selectedTool.id)}
+            />
           ))}
         </div>
       </section>
