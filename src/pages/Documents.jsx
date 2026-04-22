@@ -333,7 +333,15 @@ function EmptyPreviewState() {
   )
 }
 
-function DocumentActionMenu({ document, isOpen, canManage, canShare, onOpen, onMove, onRename, onCreateShare, onCopyShare, onDelete }) {
+function DocumentActionMenu({ document, isOpen, canManage, canShare, availableFolders, currentFolder, onOpen, onMove, onRename, onCreateShare, onCopyShare, onDelete }) {
+  const [showFolderChooser, setShowFolderChooser] = useState(false)
+
+  useEffect(() => {
+    if (!isOpen) {
+      setShowFolderChooser(false)
+    }
+  }, [isOpen])
+
   return (
     <div className="relative" data-document-action-menu="true">
       <button
@@ -358,69 +366,102 @@ function DocumentActionMenu({ document, isOpen, canManage, canShare, onOpen, onM
           onClick={(event) => event.stopPropagation()}
         >
           {canManage ? (
-            <div className="space-y-1">
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onMove(document)
-                }}
-                className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
-                style={{ color: 'var(--portal-text)' }}
-              >
-                Move to folder
-              </button>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onRename(document)
-                }}
-                className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
-                style={{ color: 'var(--portal-text)' }}
-              >
-                Rename
-              </button>
-              {canShare && (
-                <>
+            showFolderChooser ? (
+              <div className="space-y-1">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setShowFolderChooser(false)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-[0.18em] transition-all"
+                  style={{ color: 'var(--portal-text-soft)' }}
+                >
+                  Back
+                </button>
+                {availableFolders.map((folder) => (
                   <button
+                    key={folder}
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation()
-                      onCreateShare(document)
+                      onMove(document, folder)
                     }}
-                    className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
-                    style={{ color: 'var(--portal-text)' }}
+                    className="flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                    style={folder === currentFolder
+                      ? { background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary)' }
+                      : { color: 'var(--portal-text)' }}
                   >
-                    Create share link
+                    <span className="truncate">{folder}</span>
+                    {folder === currentFolder ? <span className="text-[11px] font-semibold">Current</span> : null}
                   </button>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onCopyShare(document)
-                    }}
-                    className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
-                    style={{ color: 'var(--portal-text)' }}
-                  >
-                    <Copy className="h-4 w-4" />
-                    Copy share link
-                  </button>
-                </>
-              )}
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onDelete(document)
-                }}
-                className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
-                style={{ color: 'var(--portal-danger)', background: 'rgba(223, 95, 143, 0.06)' }}
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete
-              </button>
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setShowFolderChooser(true)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                  style={{ color: 'var(--portal-text)' }}
+                >
+                  Move to folder
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onRename(document)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                  style={{ color: 'var(--portal-text)' }}
+                >
+                  Rename
+                </button>
+                {canShare && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onCreateShare(document)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                      style={{ color: 'var(--portal-text)' }}
+                    >
+                      Create share link
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onCopyShare(document)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                      style={{ color: 'var(--portal-text)' }}
+                    >
+                      <Copy className="h-4 w-4" />
+                      Copy share link
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onDelete(document)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                  style={{ color: 'var(--portal-danger)', background: 'rgba(223, 95, 143, 0.06)' }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </button>
+              </div>
+            )
           ) : (
             <p className="px-3 py-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
               Admin access required
@@ -855,24 +896,20 @@ export default function Documents() {
     })
   }
 
-  function handleMoveDocument(document) {
-    setOpenActionMenuId(null)
+  function handleMoveDocument(document, nextFolder) {
     setSelectedId(document.id)
 
     if (!document || !canManageDocuments) return
 
-    const suggestedFolders = folderSelectOptions.join(', ')
-    const promptedFolder = window.prompt(
-      suggestedFolders ? `Move to folder. Existing folders: ${suggestedFolders}` : 'Move to folder',
-      documentFolder(document),
-    )
-    const nextFolder = promptedFolder?.trim()
-    if (!nextFolder || nextFolder === documentFolder(document)) return
+    const normalizedFolder = nextFolder?.trim()
+    if (!normalizedFolder || normalizedFolder === documentFolder(document)) return
+
+    setOpenActionMenuId(null)
 
     setFolderNotice({ type: '', message: '' })
     updateDocumentMutation.mutate({
       documentId: document.id,
-      changes: { category: nextFolder },
+      changes: { category: normalizedFolder },
     })
   }
 
@@ -1225,6 +1262,8 @@ export default function Documents() {
                           isOpen={openActionMenuId === document.id}
                           canManage={canManageDocuments}
                           canShare={canManageShares}
+                          availableFolders={folderSelectOptions}
+                          currentFolder={documentFolder(document)}
                           onOpen={() => setOpenActionMenuId((current) => (current === document.id ? null : document.id))}
                           onMove={handleMoveDocument}
                           onRename={handleRenameDocument}
@@ -1278,6 +1317,8 @@ export default function Documents() {
                                   isOpen={openActionMenuId === document.id}
                                   canManage={canManageDocuments}
                                   canShare={canManageShares}
+                                  availableFolders={folderSelectOptions}
+                                  currentFolder={documentFolder(document)}
                                   onOpen={() => setOpenActionMenuId((current) => (current === document.id ? null : document.id))}
                                   onMove={handleMoveDocument}
                                   onRename={handleRenameDocument}
