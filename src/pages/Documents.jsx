@@ -243,7 +243,7 @@ function EmptyPreviewState() {
   )
 }
 
-function DocumentActionMenu({ document, isOpen, canManage, availableFolders, currentFolder, activeShareLink, onOpen, onMove, onRename, onShare, onCopyShare, onRevokeShare, onDelete }) {
+function DocumentActionMenu({ document, isOpen, canManage, availableFolders, currentFolder, activeShareLink, onOpen, onMove, onRename, onShare, onCopyShare, onRevokeShare, onDownload, onDelete }) {
   const [showFolderChooser, setShowFolderChooser] = useState(false)
 
   return (
@@ -369,6 +369,18 @@ function DocumentActionMenu({ document, isOpen, canManage, availableFolders, cur
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation()
+                    onDownload(document)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                  style={{ color: 'var(--portal-text)' }}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Download
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
                     onDelete(document)
                   }}
                   className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
@@ -456,6 +468,88 @@ function ShareDialog({ document, draft, onChange, onClose, onSubmit, isSubmittin
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+function UploadDialog({ isOpen, draft, folders, onChange, onClose, onSubmit, isSubmitting }) {
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.34)] p-4">
+      <div className="w-full max-w-lg rounded-[32px] border bg-white shadow-2xl" style={{ borderColor: 'var(--portal-border)' }}>
+        <div className="flex items-center justify-between border-b px-6 py-5" style={{ borderColor: 'var(--portal-border)' }}>
+          <div>
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>File Upload</h3>
+            <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>Choose a folder and upload a file.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border"
+            style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-6 py-6">
+          <div>
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
+              Folder
+            </label>
+            <select
+              value={draft.category}
+              onChange={(event) => onChange((current) => ({ ...current, category: event.target.value }))}
+              className="portal-input px-4 py-3 text-sm"
+            >
+              <option value="">Choose folder</option>
+              {folders.map((folder) => (
+                <option key={folder} value={folder}>{folder}</option>
+              ))}
+            </select>
+          </div>
+
+          <input
+            type="text"
+            value={draft.description}
+            onChange={(event) => onChange((current) => ({ ...current, description: event.target.value }))}
+            placeholder="Optional internal note"
+            className="portal-input px-4 py-3 text-sm"
+          />
+
+          <label
+            className="flex cursor-pointer items-center gap-3 rounded-[24px] border border-dashed px-4 py-4 transition-all"
+            style={{ borderColor: 'rgba(201, 168, 76, 0.28)', background: 'linear-gradient(145deg, rgba(201, 168, 76, 0.08), rgba(232, 213, 160, 0.06))' }}
+          >
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-white shadow-sm">
+              <Upload className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Choose document</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                Upload into the selected folder.
+              </p>
+            </div>
+            <input
+              type="file"
+              className="hidden"
+              onChange={onSubmit}
+              disabled={isSubmitting || !draft.category}
+            />
+          </label>
+
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="portal-button-secondary rounded-2xl px-4 py-3 text-sm font-semibold"
+            >
+              Close
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -607,19 +701,18 @@ export default function Documents() {
   const [uploadedFallbackDocuments, setUploadedFallbackDocuments] = useState([])
   const [previewState, setPreviewState] = useState({ loading: false, error: '', url: '' })
   const [uploadForm, setUploadForm] = useState({ category: '', description: '' })
-  const [uploadNotice, setUploadNotice] = useState({ type: '', message: '' })
   const [shareDraft, setShareDraft] = useState({ expiresAt: '', maxUses: '' })
   const [shareNotice, setShareNotice] = useState({ type: '', message: '' })
   const [folderNotice, setFolderNotice] = useState({ type: '', message: '' })
   const [fileNotice, setFileNotice] = useState({ type: '', message: '' })
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedFolder, setSelectedFolder] = useState('All Files')
+  const [selectedFolder, setSelectedFolder] = useState(ALL_FILES_FOLDER)
   const [libraryView, setLibraryView] = useState('list')
   const [folderDraft, setFolderDraft] = useState('')
   const [localFolders, setLocalFolders] = useState(loadLocalFolders)
-  const [folderForm, setFolderForm] = useState({ docId: '', mode: '', custom: '' })
   const [openActionMenuId, setOpenActionMenuId] = useState(null)
   const [shareDialogDocument, setShareDialogDocument] = useState(null)
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
 
   const { data: profile } = useQuery({
     queryKey: ['profile'],
@@ -724,7 +817,7 @@ export default function Documents() {
   const uploadMutation = useMutation({
     mutationFn: async (file) => {
       const mimeType = resolveUploadMimeType(file)
-      const targetFolder = canUploadIntoCurrentFolder ? selectedFolder : uploadForm.category
+      const targetFolder = uploadForm.category
       const payload = await getUploadUrl({
         filename: file.name,
         mime_type: mimeType,
@@ -751,7 +844,7 @@ export default function Documents() {
       setUploadedFallbackDocuments((current) => [optimisticDocument, ...current.filter((document) => document.id !== optimisticDocument.id)].slice(0, 10))
       queryClient.setQueryData(['documents'], (current = []) => [optimisticDocument, ...current.filter((document) => document.id !== optimisticDocument.id)])
       setSelectedId(payload.document_id)
-      setUploadNotice({ type: 'success', message: 'Upload complete. Document list refreshed.' })
+      setFileNotice({ type: 'success', message: 'Upload complete. Document list refreshed.' })
 
       if (payload.targetFolder?.trim()) {
         setLocalFolders((current) => {
@@ -763,11 +856,12 @@ export default function Documents() {
       }
 
       setUploadForm({ category: '', description: '' })
+      setIsUploadDialogOpen(false)
       await queryClient.invalidateQueries({ queryKey: ['documents'] })
       previewMutation.mutate(payload.document_id)
     },
     onError: (error) => {
-      setUploadNotice({ type: 'error', message: error.message })
+      setFileNotice({ type: 'error', message: error.message })
     },
   })
 
@@ -856,10 +950,7 @@ export default function Documents() {
     const file = event.target.files?.[0]
     if (!file) return
 
-    setUploadNotice({ type: '', message: '' })
-
-    if (!canUploadIntoCurrentFolder) {
-      setUploadNotice({ type: 'info', message: 'Choose a specific folder before uploading a file.' })
+    if (!uploadForm.category) {
       event.target.value = ''
       return
     }
@@ -867,12 +958,10 @@ export default function Documents() {
     const mimeType = resolveUploadMimeType(file)
 
     if (!mimeType) {
-      setUploadNotice({ type: 'error', message: 'That file type is not allowed by the storage bucket.' })
       return
     }
 
     if (file.size > MAX_DOCUMENT_BYTES) {
-      setUploadNotice({ type: 'error', message: 'That file is larger than the 50 MB bucket limit.' })
       return
     }
 
@@ -907,17 +996,6 @@ export default function Documents() {
     setFolderDraft('')
     setSelectedFolder(nextFolder)
     setFolderNotice({ type: 'success', message: `Folder "${nextFolder}" created.` })
-  }
-
-  function handleSaveFolderAssignment() {
-    if (!selectedDocument || !canManageDocuments) return
-
-    const nextFolder = (activeFolderMode === '__custom__' ? activeFolderCustom : activeFolderMode).trim() || 'General'
-    setFolderNotice({ type: '', message: '' })
-    updateDocumentMutation.mutate({
-      documentId: selectedDocument.id,
-      changes: { category: nextFolder },
-    })
   }
 
   function handleMoveDocument(document, nextFolder) {
@@ -1010,6 +1088,16 @@ export default function Documents() {
     }
   }
 
+  function handleDownloadDocument(document) {
+    setOpenActionMenuId(null)
+    setSelectedId(document.id)
+    previewMutation.mutate(document.id, {
+      onSuccess: (payload) => {
+        window.open(payload.signed_url, '_blank', 'noopener,noreferrer')
+      },
+    })
+  }
+
   const folderCounts = useMemo(() => {
     const counts = {
       [ALL_FILES_FOLDER]: visibleDocuments.length,
@@ -1023,15 +1111,7 @@ export default function Documents() {
   }, [folders, sharedDocuments.length, visibleDocuments])
 
   const folderSelectOptions = folders.filter((folder) => folder !== ALL_FILES_FOLDER && folder !== SHARED_FILES_FOLDER)
-  const selectedDocumentFolder = selectedDocument ? documentFolder(selectedDocument) : 'General'
-  const activeFolderMode = selectedDocument && folderForm.docId === selectedDocument.id
-    ? folderForm.mode
-    : (folderSelectOptions.includes(selectedDocumentFolder) ? selectedDocumentFolder : '__custom__')
-  const activeFolderCustom = selectedDocument && folderForm.docId === selectedDocument.id
-    ? folderForm.custom
-    : (folderSelectOptions.includes(selectedDocumentFolder) ? '' : selectedDocumentFolder)
   const isSpecialFolderView = selectedFolder === ALL_FILES_FOLDER || selectedFolder === SHARED_FILES_FOLDER
-  const canUploadIntoCurrentFolder = !isSpecialFolderView
 
   useEffect(() => {
     if (!openActionMenuId) return undefined
@@ -1057,6 +1137,15 @@ export default function Documents() {
         onClose={() => setShareDialogDocument(null)}
         onSubmit={handleCreateShare}
         isSubmitting={createShareMutation.isPending}
+      />
+      <UploadDialog
+        isOpen={isUploadDialogOpen}
+        draft={uploadForm}
+        folders={folderSelectOptions}
+        onChange={setUploadForm}
+        onClose={() => setIsUploadDialogOpen(false)}
+        onSubmit={handleFileChange}
+        isSubmitting={uploadMutation.isPending}
       />
 
       <section className="portal-surface rounded-[36px] p-5 md:p-7">
@@ -1094,11 +1183,17 @@ export default function Documents() {
         <div className="portal-command-bar-group">
           <button
             type="button"
-            onClick={() => document.getElementById('documents-upload-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            onClick={() => {
+              setUploadForm((current) => ({
+                ...current,
+                category: !isSpecialFolderView ? selectedFolder : current.category,
+              }))
+              setIsUploadDialogOpen(true)
+            }}
             className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
           >
             <Upload className="h-4 w-4" />
-            Upload
+            File Upload
           </button>
           <button
             type="button"
@@ -1149,7 +1244,7 @@ export default function Documents() {
         </div>
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)_420px]">
+      <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)_400px]">
         <aside className="space-y-6">
           <section className="portal-panel overflow-hidden rounded-[34px]">
             <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
@@ -1193,60 +1288,6 @@ export default function Documents() {
               </div>
 
               <Notice kind={folderNotice.type} message={folderNotice.message} />
-            </div>
-          </section>
-
-          <section id="documents-upload-panel" className="portal-panel overflow-hidden rounded-[34px]">
-            <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
-              <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Upload</h2>
-            </div>
-
-            <div className="space-y-4 p-5">
-              {canUploadIntoCurrentFolder ? (
-                <>
-                  <div className="rounded-[24px] border px-4 py-3" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.84)' }}>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>Uploading into</p>
-                    <p className="mt-1 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedFolder}</p>
-                  </div>
-
-                  <input
-                    type="text"
-                    value={uploadForm.description}
-                    onChange={(event) => setUploadForm((current) => ({ ...current, description: event.target.value }))}
-                    placeholder="Optional internal note"
-                    className="portal-input px-4 py-3 text-sm"
-                  />
-
-                  <label
-                    className="flex cursor-pointer items-center gap-3 rounded-[24px] border border-dashed px-4 py-4 transition-all"
-                    style={{ borderColor: 'rgba(201, 168, 76, 0.28)', background: 'linear-gradient(145deg, rgba(201, 168, 76, 0.08), rgba(232, 213, 160, 0.06))' }}
-                  >
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-white shadow-sm">
-                      <Upload className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Choose a document</p>
-                      <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                        Upload into this folder.
-                      </p>
-                    </div>
-                    <input type="file" className="hidden" onChange={handleFileChange} />
-                  </label>
-                </>
-              ) : (
-                <div className="rounded-[24px] border border-dashed px-4 py-5 text-sm" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.84)', color: 'var(--portal-text-muted)' }}>
-                  Choose a specific folder to upload files. Upload is disabled in `All Files` and `Shared files`.
-                </div>
-              )}
-
-              <Notice kind={uploadNotice.type} message={uploadNotice.message} />
-
-              {uploadMutation.isPending && (
-                <div className="portal-status-info flex items-center gap-3 rounded-2xl p-4 text-sm">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Uploading file to the signed storage URL…
-                </div>
-              )}
             </div>
           </section>
         </aside>
@@ -1315,19 +1356,20 @@ export default function Documents() {
                           onShare={handleCreateShareForDocument}
                           onCopyShare={handleCopyShareForDocument}
                           onRevokeShare={handleRevokeShareForDocument}
+                          onDownload={handleDownloadDocument}
                           onDelete={handleDeleteDocument}
                         />
                       </div>
-                      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-[14px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
-                        <DocumentIcon mimeType={document.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
+                      <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-[12px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+                        <DocumentIcon mimeType={document.mime_type} className="h-4.5 w-4.5" style={{ color: 'var(--portal-primary)' }} />
                       </div>
                       <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                        <p className="truncate text-[13px] font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
                         {activeShareByDocumentId.get(document.id) ? (
-                          <Share2 className="h-4 w-4 shrink-0" style={{ color: 'var(--portal-success)' }} />
+                          <Share2 className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--portal-success)' }} />
                         ) : null}
                       </div>
-                      <p className="mt-3 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
+                      <p className="mt-2 text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>
                         {formatDate(document.updated_at || document.created_at)} · {formatBytes(document.size_bytes)}
                       </p>
                     </div>
@@ -1355,26 +1397,26 @@ export default function Documents() {
                           onClick={() => handlePreview(document.id)}
                           style={isSelected ? { background: 'rgba(201, 168, 76, 0.1)' } : undefined}
                         >
-                          <td className="border-t px-6 py-3.5" style={{ borderColor: 'var(--portal-border)' }}>
+                          <td className="border-t px-6 py-2.5" style={{ borderColor: 'var(--portal-border)' }}>
                             <div className="flex min-w-0 items-center gap-3">
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
-                                <DocumentIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
+                              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+                                <DocumentIcon mimeType={document.mime_type} className="h-3.5 w-3.5" style={{ color: 'var(--portal-primary)' }} />
                               </div>
                               <div className="flex min-w-0 items-center gap-2">
-                                <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                                <p className="truncate text-[13px] font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
                                 {activeShareByDocumentId.get(document.id) ? (
-                                  <Share2 className="h-4 w-4 shrink-0" style={{ color: 'var(--portal-success)' }} />
+                                  <Share2 className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--portal-success)' }} />
                                 ) : null}
                               </div>
                             </div>
                           </td>
-                          <td className="border-t px-4 py-3.5 text-sm" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
+                          <td className="border-t px-4 py-2.5 text-[12px]" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
                             {formatDate(document.updated_at || document.created_at)}
                           </td>
-                          <td className="border-t px-4 py-3.5 text-sm" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
+                          <td className="border-t px-4 py-2.5 text-[12px]" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
                             {formatBytes(document.size_bytes)}
                           </td>
-                          <td className="border-t px-4 py-3.5 text-right" style={{ borderColor: 'var(--portal-border)' }}>
+                          <td className="border-t px-4 py-2.5 text-right" style={{ borderColor: 'var(--portal-border)' }}>
                             <DocumentActionMenu
                               key={`${document.id}-${openActionMenuId === document.id ? 'open' : 'closed'}-list`}
                               document={document}
@@ -1389,6 +1431,7 @@ export default function Documents() {
                               onShare={handleCreateShareForDocument}
                               onCopyShare={handleCopyShareForDocument}
                               onRevokeShare={handleRevokeShareForDocument}
+                              onDownload={handleDownloadDocument}
                               onDelete={handleDeleteDocument}
                             />
                           </td>
@@ -1416,107 +1459,9 @@ export default function Documents() {
             onRefreshPreview={() => selectedDocument && handlePreview(selectedDocument.id)}
           />
 
-          <section className="portal-panel overflow-hidden rounded-[34px]">
-            <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
-              <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Details</h2>
-            </div>
-
-            <div className="space-y-4 p-5">
-              {selectedDocument ? (
-                <>
-                  <div className="rounded-[24px] border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
-                    <div className="mb-4 flex items-start gap-3">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-[18px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
-                        <DocumentIcon mimeType={selectedDocument.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedDocument.file_name}</p>
-                        <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>{selectedDocument.mime_type}</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 text-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <span style={{ color: 'var(--portal-text-soft)' }}>Folder</span>
-                        <span style={{ color: 'var(--portal-text)' }}>{documentFolder(selectedDocument)}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span style={{ color: 'var(--portal-text-soft)' }}>Size</span>
-                        <span style={{ color: 'var(--portal-text)' }}>{formatBytes(selectedDocument.size_bytes)}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span style={{ color: 'var(--portal-text-soft)' }}>Updated</span>
-                        <span style={{ color: 'var(--portal-text)' }}>{formatDate(selectedDocument.updated_at || selectedDocument.created_at)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-[24px] border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
-                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
-                      Move to folder
-                    </label>
-                    {canManageDocuments ? (
-                      <div className="space-y-3">
-                        <select
-                          value={activeFolderMode}
-                          onChange={(event) => setFolderForm({ docId: selectedDocument.id, mode: event.target.value, custom: activeFolderCustom })}
-                          className="portal-input px-4 py-3 text-sm"
-                        >
-                          {folderSelectOptions.map((folder) => (
-                            <option key={folder} value={folder}>{folder}</option>
-                          ))}
-                          <option value="__custom__">Create / use custom folder</option>
-                        </select>
-                        {activeFolderMode === '__custom__' && (
-                          <input
-                            type="text"
-                            value={activeFolderCustom}
-                            onChange={(event) => setFolderForm({ docId: selectedDocument.id, mode: '__custom__', custom: event.target.value })}
-                            placeholder="Folder name"
-                            className="portal-input px-4 py-3 text-sm"
-                          />
-                        )}
-                        <button
-                          type="button"
-                          onClick={handleSaveFolderAssignment}
-                          disabled={updateDocumentMutation.isPending}
-                          className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
-                        >
-                          {updateDocumentMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderOpen className="h-4 w-4" />}
-                          Save folder
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="portal-status-info rounded-2xl p-4 text-sm">
-                        Folder changes are limited to `admin` users.
-                      </div>
-                    )}
-                  </div>
-
-                  {selectedDocument.description && (
-                    <div className="rounded-[24px] border p-4 text-sm" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)', color: 'var(--portal-text-muted)' }}>
-                      {selectedDocument.description}
-                    </div>
-                  )}
-
-                  <Notice kind={fileNotice.type} message={fileNotice.message} />
-                  {shareLinksError ? <Notice kind="error" message={shareLinksError.message} /> : null}
-                  <Notice kind={shareNotice.type} message={shareNotice.message} />
-                </>
-              ) : (
-                <div className="rounded-[24px] border p-4 text-sm" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)', color: 'var(--portal-text-muted)' }}>
-                  Select a file to inspect its details and move it between folders.
-                </div>
-              )}
-
-              <div className="rounded-[24px] border p-4 text-sm" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
-                <p className="font-semibold" style={{ color: 'var(--portal-text)' }}>Workspace access</p>
-                <p className="mt-2" style={{ color: 'var(--portal-text-muted)' }}>
-                  {profile?.clients?.business_name || 'Client'} · {claims.user_role || profile?.role || 'unknown'} · {claims.client_slug || profile?.clients?.slug || 'tenant'}
-                </p>
-              </div>
-            </div>
-          </section>
+          <Notice kind={fileNotice.type} message={fileNotice.message} />
+          {shareLinksError ? <Notice kind="error" message={shareLinksError.message} /> : null}
+          <Notice kind={shareNotice.type} message={shareNotice.message} />
         </aside>
       </div>
     </div>
