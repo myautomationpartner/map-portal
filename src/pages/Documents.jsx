@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useOutletContext } from 'react-router-dom'
 import {
@@ -291,28 +292,49 @@ function EmptyPreviewState() {
 
 function DocumentActionMenu({ document, isOpen, canManage, availableFolders, currentFolder, activeShareLink, onOpen, onMove, onRename, onShare, onCopyShare, onRevokeShare, onDownload, onDelete }) {
   const [showFolderChooser, setShowFolderChooser] = useState(false)
-  const [openDirection, setOpenDirection] = useState('down')
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, direction: 'down' })
   const buttonRef = useRef(null)
   const menuRef = useRef(null)
 
   useEffect(() => {
-    if (!isOpen) return undefined
+    if (!isOpen) {
+      setShowFolderChooser(false)
+      return undefined
+    }
 
-    function updateMenuDirection() {
+    function updateMenuPosition() {
       const buttonRect = buttonRef.current?.getBoundingClientRect()
       const menuRect = menuRef.current?.getBoundingClientRect()
       if (!buttonRect) return
 
+      const estimatedMenuWidth = menuRect?.width || 220
       const estimatedMenuHeight = menuRect?.height || (showFolderChooser ? 320 : 360)
+      const horizontalPadding = 12
+      const verticalGap = 8
       const spaceBelow = window.innerHeight - buttonRect.bottom
       const spaceAbove = buttonRect.top
+      const direction = spaceBelow < estimatedMenuHeight + 20 && spaceAbove > spaceBelow ? 'up' : 'down'
+      const unclampedLeft = buttonRect.right - estimatedMenuWidth
+      const left = Math.min(
+        Math.max(horizontalPadding, unclampedLeft),
+        window.innerWidth - estimatedMenuWidth - horizontalPadding,
+      )
+      const top = direction === 'up'
+        ? Math.max(horizontalPadding, buttonRect.top - estimatedMenuHeight - verticalGap)
+        : Math.min(window.innerHeight - estimatedMenuHeight - horizontalPadding, buttonRect.bottom + verticalGap)
 
-      setOpenDirection(spaceBelow < estimatedMenuHeight + 20 && spaceAbove > spaceBelow ? 'up' : 'down')
+      setMenuPosition({ top, left, direction })
     }
 
-    updateMenuDirection()
-    window.addEventListener('resize', updateMenuDirection)
-    return () => window.removeEventListener('resize', updateMenuDirection)
+    const frameId = window.requestAnimationFrame(updateMenuPosition)
+    window.addEventListener('resize', updateMenuPosition)
+    window.addEventListener('scroll', updateMenuPosition, true)
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      window.removeEventListener('resize', updateMenuPosition)
+      window.removeEventListener('scroll', updateMenuPosition, true)
+    }
   }, [isOpen, showFolderChooser])
 
   return (
@@ -333,11 +355,17 @@ function DocumentActionMenu({ document, isOpen, canManage, availableFolders, cur
         <MoreHorizontal className="h-4 w-4" />
       </button>
 
-      {isOpen && (
+      {isOpen ? createPortal(
         <div
           ref={menuRef}
-          className={`absolute right-0 z-40 min-w-[180px] rounded-[20px] border p-2 shadow-lg ${openDirection === 'up' ? 'bottom-11' : 'top-11'}`}
-          style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.98)', boxShadow: '0 18px 40px rgba(26, 24, 20, 0.12)' }}
+          className="fixed z-[120] min-w-[180px] rounded-[20px] border p-2 shadow-lg"
+          style={{
+            top: `${menuPosition.top}px`,
+            left: `${menuPosition.left}px`,
+            borderColor: 'var(--portal-border)',
+            background: 'rgba(255,255,255,0.98)',
+            boxShadow: '0 18px 40px rgba(26, 24, 20, 0.12)',
+          }}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
         >
@@ -468,8 +496,9 @@ function DocumentActionMenu({ document, isOpen, canManage, availableFolders, cur
               Admin access required
             </p>
           )}
-        </div>
-      )}
+        </div>,
+        document.body,
+      ) : null}
     </div>
   )
 }
