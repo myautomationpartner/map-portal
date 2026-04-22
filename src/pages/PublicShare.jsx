@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useLocation, useParams } from 'react-router-dom'
-import { AlertCircle, CheckCircle2, ExternalLink, FileText, Loader2 } from 'lucide-react'
+import { useLocation, useParams } from 'react-router-dom'
+import { AlertCircle, CheckCircle2, Clock3, ExternalLink, FileText, Loader2, Share2 } from 'lucide-react'
 import PdfDocumentViewer from '../components/PdfDocumentViewer'
 import { resolveShareLink } from '../lib/portalApi'
 
@@ -15,134 +15,217 @@ function getMessage(errorCode) {
   return 'We could not resolve this share link.'
 }
 
+function formatShareExpiry(value) {
+  if (!value) return 'No expiration date was set for this share.'
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return 'Expiration details are not available.'
+
+  return `Access expires ${parsed.toLocaleString()}.`
+}
+
 export default function PublicShare() {
   const { token: routeToken } = useParams()
   const location = useLocation()
-  const derivedToken = useMemo(
+  const shareToken = useMemo(
     () => routeToken || new URLSearchParams(location.search).get('token') || '',
     [location.search, routeToken],
   )
-  const [tokenInput, setTokenInput] = useState(derivedToken)
-  const [submittedToken, setSubmittedToken] = useState(derivedToken)
 
   const shareQuery = useQuery({
-    queryKey: ['public-share', submittedToken],
-    queryFn: () => resolveShareLink(submittedToken),
-    enabled: !!submittedToken,
+    queryKey: ['public-share', shareToken],
+    queryFn: () => resolveShareLink(shareToken),
+    enabled: !!shareToken,
     retry: false,
   })
-
-  function handleSubmit(event) {
-    event.preventDefault()
-    setSubmittedToken(tokenInput.trim())
-  }
 
   const payload = shareQuery.data
   const isPdf = payload?.mime_type === 'application/pdf'
   const isImage = payload?.mime_type?.startsWith('image/')
 
   return (
-    <div className="min-h-screen px-4 py-10 md:py-16" style={{ background: '#0d0b08' }}>
-      <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse 80% 55% at 50% 0%, rgba(212,168,58,0.06) 0%, transparent 70%)' }} />
-      <div className="relative max-w-5xl mx-auto space-y-6">
-        <div className="text-center space-y-3">
-          <p className="text-xs uppercase tracking-[0.35em]" style={{ color: '#8a7858' }}>My Automation Partner</p>
-          <h1 className="font-display text-4xl md:text-5xl font-semibold" style={{ color: '#f8f2e4' }}>Secure Share Link</h1>
-          <p className="text-sm max-w-2xl mx-auto" style={{ color: '#8a7858' }}>
-            This page validates the opaque token through the public `resolve-share-link` function, then uses the returned signed URL for a short-lived preview.
-          </p>
-        </div>
+    <div className="portal-shell relative min-h-screen px-4 py-8 md:px-6 md:py-12">
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{ background: 'radial-gradient(ellipse 78% 58% at 50% 0%, rgba(201, 168, 76, 0.18) 0%, transparent 68%)' }}
+      />
 
-        <div className="rounded-3xl p-5 md:p-6 space-y-4" style={{ background: '#1e1910', border: '1px solid #3d3420' }}>
-          <form onSubmit={handleSubmit} className="flex flex-col md:flex-row gap-3">
-            <input
-              type="text"
-              value={tokenInput}
-              onChange={(event) => setTokenInput(event.target.value)}
-              placeholder="Paste share token"
-              className="flex-1 rounded-2xl px-4 py-3 text-sm focus:outline-none"
-              style={{ background: '#252015', border: '1px solid #3d3420', color: '#f8f2e4' }}
-            />
-            <button
-              type="submit"
-              className="inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold transition-all hover:-translate-y-px"
-              style={{ background: '#d4a83a', color: '#0d0b08' }}
-            >
-              Resolve link
-            </button>
-          </form>
-
-          {shareQuery.isLoading && (
-            <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: '#141109', border: '1px solid #3d3420', color: '#c8b898' }}>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Resolving token and issuing a short-lived signed URL…
+      <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6">
+        <section className="portal-surface rounded-[36px] p-6 md:p-8">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-3xl">
+              <span className="portal-chip inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
+                Secure file share
+              </span>
+              <h1 className="portal-page-title mt-4 font-display">
+                Dancescapes Performing Arts, LLC has shared a file with you.
+              </h1>
+              <p className="mt-3 text-sm md:text-base" style={{ color: 'var(--portal-text-muted)' }}>
+                Open the file preview below or download the original file while this shared access remains active.
+              </p>
             </div>
-          )}
 
-          {shareQuery.isError && (
-            <div className="rounded-2xl p-4 flex items-start gap-3" style={{ background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.2)', color: '#e8899a' }}>
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div className="portal-panel min-w-[240px] rounded-[28px] p-4 md:p-5">
+              <div className="flex items-start gap-3">
+                <div
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl"
+                  style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary)' }}
+                >
+                  <Clock3 className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
+                    Shared access
+                  </p>
+                  <p className="mt-2 text-sm font-medium" style={{ color: 'var(--portal-text)' }}>
+                    {payload ? formatShareExpiry(payload.expires_at) : 'Checking availability…'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {!shareToken ? (
+          <section className="portal-panel rounded-[34px] p-6 md:p-7">
+            <div className="portal-status-danger flex items-start gap-3 rounded-[24px] p-4">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <div>
                 <p className="text-sm font-semibold">Link unavailable</p>
-                <p className="text-xs">{getMessage(shareQuery.error?.payload?.error || shareQuery.error?.message)}</p>
+                <p className="text-sm">This page needs a valid shared-file link to open the document.</p>
               </div>
             </div>
-          )}
+          </section>
+        ) : null}
 
-          {shareQuery.isSuccess && payload && (
-            <div className="rounded-2xl p-4 flex items-start gap-3" style={{ background: 'rgba(107,193,142,0.08)', border: '1px solid rgba(107,193,142,0.2)', color: '#6bc18e' }}>
-              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+        {shareQuery.isLoading ? (
+          <section className="portal-panel rounded-[34px] p-6 md:p-7">
+            <div className="portal-surface-strong flex items-center gap-3 rounded-[24px] p-6">
+              <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} />
               <div>
-                <p className="text-sm font-semibold">Link resolved</p>
-                <p className="text-xs">
-                  Signed URL expires at {new Date(payload.expires_at).toLocaleString()}.
-                </p>
+                <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Loading shared file</p>
+                <p className="text-sm" style={{ color: 'var(--portal-text-muted)' }}>Preparing a secure preview now.</p>
               </div>
             </div>
-          )}
-        </div>
+          </section>
+        ) : null}
 
-        {shareQuery.isSuccess && payload && (
-          <div className="rounded-3xl p-5 md:p-6 space-y-5" style={{ background: '#1e1910', border: '1px solid #3d3420' }}>
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        {shareQuery.isError ? (
+          <section className="portal-panel rounded-[34px] p-6 md:p-7">
+            <div className="portal-status-danger flex items-start gap-3 rounded-[24px] p-4">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <div>
-                <p className="text-lg font-semibold" style={{ color: '#f8f2e4' }}>{payload.file_name}</p>
-                <p className="text-xs" style={{ color: '#8a7858' }}>{payload.mime_type}</p>
+                <p className="text-sm font-semibold">Link unavailable</p>
+                <p className="text-sm">{getMessage(shareQuery.error?.payload?.error || shareQuery.error?.message)}</p>
               </div>
-              <a
-                href={payload.signed_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-all hover:-translate-y-px"
-                style={{ background: '#252015', border: '1px solid #3d3420', color: '#d4a83a' }}
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                Open signed file
-              </a>
             </div>
+          </section>
+        ) : null}
 
-            {isPdf ? (
-              <PdfDocumentViewer url={payload.signed_url} fileName={payload.file_name} />
-            ) : isImage ? (
-              <img
-                src={payload.signed_url}
-                alt={payload.file_name}
-                className="w-full rounded-2xl border border-[#3d3420] object-contain bg-[#141109] max-h-[70vh]"
-              />
-            ) : (
-              <div className="rounded-2xl p-6 text-center" style={{ background: '#141109', border: '1px solid #3d3420' }}>
-                <FileText className="w-8 h-8 mx-auto mb-3" style={{ color: '#d4a83a' }} />
-                <p className="text-sm font-semibold mb-1" style={{ color: '#f8f2e4' }}>Preview not available for this file type</p>
-                <p className="text-xs" style={{ color: '#8a7858' }}>
-                  Open the signed file directly before the short-lived URL expires.
-                </p>
+        {shareQuery.isSuccess && payload ? (
+          <>
+            <section className="portal-panel rounded-[34px] p-5 md:p-6">
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+                <div className="min-w-0">
+                  <div className="mb-4 flex flex-wrap items-center gap-3">
+                    <div
+                      className="flex h-12 w-12 items-center justify-center rounded-[18px]"
+                      style={{ background: 'rgba(245, 240, 235, 0.98)', color: 'var(--portal-primary)' }}
+                    >
+                      <Share2 className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-xl font-semibold md:text-2xl" style={{ color: 'var(--portal-text)' }}>
+                        {payload.file_name}
+                      </p>
+                      <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+                        {payload.mime_type}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="portal-surface-strong rounded-[24px] p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
+                        Access status
+                      </p>
+                      <div className="portal-status-success mt-3 flex items-start gap-3 rounded-[20px] p-3">
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div>
+                          <p className="text-sm font-semibold">Ready to view</p>
+                          <p className="text-sm">{formatShareExpiry(payload.expires_at)}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="portal-surface-strong rounded-[24px] p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
+                        File details
+                      </p>
+                      <p className="mt-3 text-sm font-medium" style={{ color: 'var(--portal-text)' }}>
+                        Use the preview below, or open the original file in a new tab if needed.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <a
+                  href={payload.signed_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="portal-button-primary inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+                >
+                  Open original file
+                  <ExternalLink className="h-4 w-4" />
+                </a>
               </div>
-            )}
-          </div>
-        )}
+            </section>
 
-        <p className="text-center text-xs" style={{ color: '#4e4228' }}>
-          Need help? <Link to="/login" style={{ color: '#8a7858' }}>Return to the client portal</Link>
+            <section className="portal-panel rounded-[34px] p-5 md:p-6">
+              {isPdf ? (
+                <PdfDocumentViewer url={payload.signed_url} fileName={payload.file_name} />
+              ) : isImage ? (
+                <div className="portal-surface-strong rounded-[28px] p-4">
+                  <img
+                    src={payload.signed_url}
+                    alt={payload.file_name}
+                    className="max-h-[72vh] w-full rounded-[24px] border object-contain"
+                    style={{ borderColor: 'var(--portal-border)', background: 'white' }}
+                  />
+                </div>
+              ) : (
+                <div className="portal-surface-strong rounded-[28px] p-8 text-center">
+                  <FileText className="mx-auto mb-3 h-9 w-9" style={{ color: 'var(--portal-primary)' }} />
+                  <p className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>
+                    Preview not available for this file type
+                  </p>
+                  <p className="mt-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+                    Open the original file to view or download it before access expires.
+                  </p>
+                  <a
+                    href={payload.signed_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="portal-button-secondary mt-5 inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+                  >
+                    Open original file
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                </div>
+              )}
+            </section>
+          </>
+        ) : null}
+
+        <p className="text-center text-sm" style={{ color: 'var(--portal-text-soft)' }}>
+          Need help?{' '}
+          <a
+            href="mailto:info@dancescapes.com"
+            style={{ color: 'var(--portal-text-muted)' }}
+            className="font-medium transition-colors hover:text-[var(--portal-primary)]"
+          >
+            info@dancescapes.com
+          </a>
         </p>
       </div>
     </div>

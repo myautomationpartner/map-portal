@@ -296,11 +296,7 @@ function DocumentActionMenu({ document, isOpen, canManage, availableFolders, cur
   const menuRef = useRef(null)
 
   useEffect(() => {
-    if (!isOpen) {
-      setShowFolderChooser(false)
-      setOpenDirection('down')
-      return
-    }
+    if (!isOpen) return undefined
 
     function updateMenuDirection() {
       const buttonRect = buttonRef.current?.getBoundingClientRect()
@@ -328,6 +324,7 @@ function DocumentActionMenu({ document, isOpen, canManage, availableFolders, cur
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation()
+          setShowFolderChooser(false)
           onOpen()
         }}
         className="inline-flex h-9 w-9 items-center justify-center rounded-full border transition-all"
