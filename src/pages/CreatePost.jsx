@@ -86,14 +86,6 @@ const SLOT_STATE_STYLES = {
   },
 }
 
-function formatFileSize(bytes) {
-  if (!bytes || bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
-}
-
 function isImageAttachment(file) {
   return /\.(png|jpe?g|webp|gif|bmp|avif|heic|heif)$/i.test(file?.name || '')
 }
@@ -115,6 +107,11 @@ function getDropboxPreviewSource(attachments) {
   const imageAttachment = (attachments || []).find((file) => isImageAttachment(file))
   if (!imageAttachment) return null
   return getDropboxRenderableImageUrl(imageAttachment.link) || imageAttachment.thumbnail || null
+}
+
+function getDropboxThumbSource(file) {
+  if (!file) return null
+  return getDropboxRenderableImageUrl(file.thumbnail) || getDropboxRenderableImageUrl(file.link) || null
 }
 
 function parseDateOnly(value) {
@@ -587,6 +584,7 @@ export default function CreatePost() {
   const [dropboxSuggestionStatus, setDropboxSuggestionStatus] = useState('idle')
   const [dropboxSuggestionMessage, setDropboxSuggestionMessage] = useState('')
   const [dropboxSuggestionWeek, setDropboxSuggestionWeek] = useState('')
+  const [previewedDropboxAsset, setPreviewedDropboxAsset] = useState(null)
   const [timingMode, setTimingMode] = useState('slot')
   const [selectedPlatforms, setSelectedPlatforms] = useState({
     facebook: true,
@@ -670,7 +668,8 @@ export default function CreatePost() {
   const isSubmitting = submitState === 'uploading' || submitState === 'posting'
   const minScheduleValue = getMinScheduleValue()
   const dropboxPreviewSource = getDropboxPreviewSource(dropboxAttachments)
-  const mediaPreviewSource = imagePreview || dropboxPreviewSource
+  const previewedDropboxSource = getDropboxThumbSource(previewedDropboxAsset)
+  const mediaPreviewSource = imagePreview || previewedDropboxSource || dropboxPreviewSource
   const selectedDaySlots = selectedDay ? (slotsByDate.get(selectedDay) || []) : []
   const selectableDaySlots = selectedDaySlots.filter((slot) => ['recommended_fill', 'occupied_draft'].includes(slot.state))
   const activeSlot = useMemo(() => {
@@ -891,6 +890,7 @@ export default function CreatePost() {
       setDropboxSuggestionStatus('idle')
       setDropboxSuggestionMessage('')
       setDropboxSuggestionWeek('')
+      setPreviewedDropboxAsset(null)
       return undefined
     }
 
@@ -911,6 +911,12 @@ export default function CreatePost() {
 
         setDropboxSuggestedAssets(payload.suggestions || [])
         setDropboxSuggestionWeek(payload.weekFolder || '')
+        setPreviewedDropboxAsset((current) => {
+          if (current && (payload.suggestions || []).some((file) => file.link === current.link)) {
+            return current
+          }
+          return payload.suggestions?.[0] || null
+        })
         setDropboxSuggestionStatus('ready')
         setDropboxSuggestionMessage(
           payload.message
@@ -923,6 +929,7 @@ export default function CreatePost() {
         console.error('[DropboxWeeklySuggestions]', error)
         setDropboxSuggestedAssets([])
         setDropboxSuggestionWeek('')
+        setPreviewedDropboxAsset(null)
         setDropboxSuggestionStatus('error')
         setDropboxSuggestionMessage(error.message || 'Could not load Dropbox suggestions for this week.')
       }
@@ -978,11 +985,13 @@ export default function CreatePost() {
 
   function removeDropboxAttachment(link) {
     setDropboxAttachments((previous) => previous.filter((file) => file.link !== link))
+    setPreviewedDropboxAsset((current) => (current?.link === link ? null : current))
   }
 
   function addDropboxAttachment(file) {
     if (!file?.link) return
 
+    setPreviewedDropboxAsset(file)
     setDropboxAttachments((previous) => {
       if (previous.some((existing) => existing.link === file.link)) return previous
       return [...previous, file]
@@ -1181,6 +1190,7 @@ export default function CreatePost() {
         setDropboxSuggestionStatus('idle')
         setDropboxSuggestionMessage('')
         setDropboxSuggestionWeek('')
+        setPreviewedDropboxAsset(null)
         setScheduledFor('')
         setTimingMode('slot')
         setSubmitState('idle')
@@ -1486,19 +1496,31 @@ export default function CreatePost() {
                 <div className="mt-4 space-y-2">
                   {dropboxSuggestedAssets.length > 0 ? dropboxSuggestedAssets.map((file) => {
                     const alreadyAdded = dropboxAttachments.some((attachment) => attachment.link === file.link)
+                    const isPreviewed = previewedDropboxAsset?.link === file.link
+                    const thumbSource = getDropboxThumbSource(file)
 
                     return (
-                      <div
+                      <button
                         key={file.link}
-                        className="flex items-center gap-3 rounded-xl px-3 py-2.5"
-                        style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)' }}
+                        type="button"
+                        onClick={() => setPreviewedDropboxAsset(file)}
+                        onDoubleClick={() => addDropboxAttachment({
+                          name: file.name,
+                          size: file.size,
+                          link: file.link,
+                          thumbnail: thumbSource,
+                        })}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all"
+                        style={isPreviewed
+                          ? { background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.3)' }
+                          : { background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)' }}
                       >
                         <div
-                          className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl"
+                          className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl"
                           style={{ background: 'rgba(201, 168, 76, 0.1)', border: '1px solid rgba(201, 168, 76, 0.18)' }}
                         >
-                          {file.link ? (
-                            <img src={file.link} alt={file.name} className="h-full w-full object-cover" />
+                          {thumbSource && isImageAttachment(file) ? (
+                            <img src={thumbSource} alt={file.name} className="h-full w-full object-cover" />
                           ) : (
                             <Paperclip className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
                           )}
@@ -1508,29 +1530,31 @@ export default function CreatePost() {
                           <p className="mt-0.5 text-[10px] leading-relaxed" style={{ color: 'var(--portal-text-soft)' }}>
                             {(file.reasons || []).slice(0, 2).join(' • ') || 'Suggested from this week folder'}
                           </p>
+                          <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: isPreviewed ? 'var(--portal-primary)' : 'var(--portal-text-soft)' }}>
+                            {alreadyAdded ? 'Double-click to add again is disabled' : 'Click to preview • Double-click to add'}
+                          </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => addDropboxAttachment({
-                            name: file.name,
-                            size: file.size,
-                            link: file.link,
-                            thumbnail: file.link,
-                          })}
-                          disabled={alreadyAdded || !file.link || isSubmitting}
-                          className="rounded-xl px-3 py-2 text-xs font-semibold disabled:opacity-60"
+                        <div
+                          className="rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
                           style={alreadyAdded
                             ? { background: 'rgba(55,181,140,0.12)', color: '#2d876a' }
                             : { background: 'rgba(201,168,76,0.12)', color: 'var(--portal-primary)' }}
                         >
-                          {alreadyAdded ? 'Added' : 'Use this'}
-                        </button>
+                          {alreadyAdded ? 'Added' : 'Preview'}
+                        </div>
                         {file.link && (
-                          <a href={file.link} target="_blank" rel="noopener noreferrer" className="shrink-0 p-1" style={{ color: 'var(--portal-text-soft)' }}>
+                          <a
+                            href={file.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(event) => event.stopPropagation()}
+                            className="shrink-0 p-1"
+                            style={{ color: 'var(--portal-text-soft)' }}
+                          >
                             <ArrowUpRight className="h-3.5 w-3.5" />
                           </a>
                         )}
-                      </div>
+                      </button>
                     )
                   }) : (
                     <div className="rounded-2xl px-4 py-3 text-sm" style={{ background: 'rgba(255,255,255,0.72)', color: 'var(--portal-text-muted)', border: '1px solid var(--portal-border)' }}>
@@ -1556,7 +1580,7 @@ export default function CreatePost() {
                         <X className="h-4 w-4" />
                       </button>
                     )}
-                    {!imagePreview && dropboxPreviewSource && (
+                    {!imagePreview && (previewedDropboxSource || dropboxPreviewSource) && (
                       <div
                         className="absolute left-3 top-3 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
                         style={{ background: 'rgba(0,0,0,0.58)', color: '#fff' }}
@@ -1592,36 +1616,57 @@ export default function CreatePost() {
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
                     Dropbox assets
                   </p>
-                  {dropboxAttachments.map((file) => (
-                    <div
+                  <div className="flex flex-wrap gap-2">
+                    {dropboxAttachments.map((file) => {
+                      const thumbSource = getDropboxThumbSource(file)
+                      const isPreviewed = previewedDropboxAsset?.link === file.link
+
+                      return (
+                        <button
                       key={file.link}
-                      className="flex items-center gap-3 rounded-xl px-3 py-2.5"
-                      style={{ background: 'rgba(255,255,255,0.86)', border: '1px solid var(--portal-border)' }}
-                    >
-                      {file.thumbnail ? (
-                        <img src={file.thumbnail} alt={file.name} className="h-8 w-8 shrink-0 rounded-lg object-cover" />
-                      ) : (
-                        <div
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                          style={{ background: 'rgba(201, 168, 76, 0.1)', border: '1px solid rgba(201, 168, 76, 0.18)' }}
+                          type="button"
+                          onClick={() => setPreviewedDropboxAsset(file)}
+                          className="group relative overflow-hidden rounded-2xl text-left"
+                          style={isPreviewed
+                            ? { border: '1px solid rgba(201,168,76,0.34)', boxShadow: '0 0 0 2px rgba(201,168,76,0.14)' }
+                            : { border: '1px solid var(--portal-border)' }}
                         >
-                          <Paperclip className="h-3.5 w-3.5" style={{ color: 'var(--portal-primary)' }} />
-                        </div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium" style={{ color: 'var(--portal-text)' }}>{file.name}</p>
-                        {file.size > 0 && (
-                          <p className="mt-0.5 text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>{formatFileSize(file.size)}</p>
-                        )}
-                      </div>
-                      <a href={file.link} target="_blank" rel="noopener noreferrer" className="shrink-0 p-1" style={{ color: 'var(--portal-text-soft)' }}>
-                        <ArrowUpRight className="h-3.5 w-3.5" />
-                      </a>
-                      <button onClick={() => removeDropboxAttachment(file.link)} disabled={isSubmitting} className="shrink-0 p-1" style={{ color: 'var(--portal-text-soft)' }}>
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
+                          <div className="flex h-20 w-20 items-center justify-center overflow-hidden" style={{ background: 'rgba(255,255,255,0.86)' }}>
+                            {thumbSource && isImageAttachment(file) ? (
+                              <img src={thumbSource} alt={file.name} className="h-full w-full object-cover" />
+                            ) : (
+                              <Paperclip className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
+                            )}
+                          </div>
+                          <div className="absolute inset-x-0 bottom-0 bg-[rgba(17,14,10,0.68)] px-2 py-1">
+                            <p className="truncate text-[10px] font-medium text-white">{file.name}</p>
+                          </div>
+                          <a
+                            href={file.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(event) => event.stopPropagation()}
+                            className="absolute right-1 top-1 rounded-full p-1"
+                            style={{ background: 'rgba(17,14,10,0.5)', color: '#fff' }}
+                          >
+                            <ArrowUpRight className="h-3 w-3" />
+                          </a>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              removeDropboxAttachment(file.link)
+                            }}
+                            disabled={isSubmitting}
+                            className="absolute left-1 top-1 rounded-full p-1 disabled:opacity-50"
+                            style={{ background: 'rgba(17,14,10,0.5)', color: '#fff' }}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
 
