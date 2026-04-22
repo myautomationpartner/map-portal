@@ -1475,7 +1475,7 @@ export default function CreatePost() {
 
                 <div className="mt-4">
                   {dropboxSuggestedAssets.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                       {dropboxSuggestedAssets.map((file) => {
                         const alreadyAdded = dropboxAttachments.some((attachment) => attachment.link === file.link)
                         const isPreviewed = previewedDropboxAsset?.link === file.link
@@ -1492,13 +1492,13 @@ export default function CreatePost() {
                               link: file.link,
                               thumbnail: thumbSource,
                             })}
-                            className="group overflow-hidden rounded-2xl text-left transition-all"
+                            className="group overflow-hidden rounded-xl text-left transition-all"
                             style={isPreviewed
                               ? { background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.32)', boxShadow: '0 0 0 2px rgba(201,168,76,0.12)' }
                               : { background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)' }}
                           >
                             <div
-                              className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden"
+                              className="flex aspect-square w-full items-center justify-center overflow-hidden"
                               style={{ background: 'rgba(201, 168, 76, 0.08)' }}
                             >
                               {thumbSource && isImageAttachment(file) ? (
@@ -1507,8 +1507,8 @@ export default function CreatePost() {
                                 <Paperclip className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
                               )}
                             </div>
-                            <div className="px-3 py-2.5">
-                              <p className="truncate text-xs font-medium" style={{ color: alreadyAdded ? '#2d876a' : 'var(--portal-text)' }}>
+                            <div className="px-2 py-1.5">
+                              <p className="truncate text-[11px] font-medium" style={{ color: alreadyAdded ? '#2d876a' : 'var(--portal-text)' }}>
                                 {file.name}
                               </p>
                             </div>
