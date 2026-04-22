@@ -1634,8 +1634,8 @@ export default function Documents() {
                 <table className="w-full border-separate border-spacing-0">
                   <thead>
                     <tr style={{ background: 'rgba(250, 246, 241, 0.9)' }}>
+                      <th className="w-[88px] px-4 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Actions</th>
                       <th className="px-6 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Name</th>
-                      <th className="w-[76px] px-4 py-4 text-right text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1648,20 +1648,7 @@ export default function Documents() {
                           onClick={() => handlePreview(document.id)}
                           style={isSelected ? { background: 'rgba(201, 168, 76, 0.1)' } : undefined}
                         >
-                          <td className="border-t px-6 py-2.5" style={{ borderColor: 'var(--portal-border)' }}>
-                            <div className="flex min-w-0 items-center gap-3">
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
-                                <DocumentIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
-                              </div>
-                              <div className="flex min-w-0 items-center gap-2">
-                                <p className="truncate text-[12px] font-semibold leading-5" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
-                                {activeShareByDocumentId.get(document.id) ? (
-                                  <Share2 className="h-3 w-3 shrink-0" style={{ color: 'var(--portal-success)' }} />
-                                ) : null}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="border-t px-4 py-2 text-right align-middle" style={{ borderColor: 'var(--portal-border)' }}>
+                          <td className="border-t px-4 py-2 text-left align-middle" style={{ borderColor: 'var(--portal-border)' }}>
                             <DocumentActionMenu
                               key={`${document.id}-${openActionMenuId === document.id ? 'open' : 'closed'}-list`}
                               document={document}
@@ -1679,6 +1666,19 @@ export default function Documents() {
                               onDownload={handleDownloadDocument}
                               onDelete={handleDeleteDocument}
                             />
+                          </td>
+                          <td className="border-t px-6 py-2.5" style={{ borderColor: 'var(--portal-border)' }}>
+                            <div className="flex min-w-0 items-center gap-3">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+                                <DocumentIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
+                              </div>
+                              <div className="flex min-w-0 items-center gap-2">
+                                <p className="truncate text-[12px] font-semibold leading-5" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                                {activeShareByDocumentId.get(document.id) ? (
+                                  <Share2 className="h-3 w-3 shrink-0" style={{ color: 'var(--portal-success)' }} />
+                                ) : null}
+                              </div>
+                            </div>
                           </td>
                         </tr>
                       )
