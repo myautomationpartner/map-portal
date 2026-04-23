@@ -112,6 +112,41 @@ export async function fetchProfile() {
   return data
 }
 
+export async function fetchWorkspacePreferences(clientId, userId) {
+  if (!clientId || !userId) return null
+
+  const { data, error } = await supabase
+    .from('portal_workspace_preferences')
+    .select('id, client_id, user_id, workspace_tools_json, updated_at')
+    .eq('client_id', clientId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) throw error
+  return data ?? null
+}
+
+export async function upsertWorkspacePreferences({ clientId, userId, workspaceTools }) {
+  if (!clientId || !userId) {
+    throw new Error('Client and user are required to save workspace preferences.')
+  }
+
+  const { data, error } = await supabase
+    .from('portal_workspace_preferences')
+    .upsert({
+      client_id: clientId,
+      user_id: userId,
+      workspace_tools_json: workspaceTools,
+    }, {
+      onConflict: 'client_id,user_id',
+    })
+    .select('id, client_id, user_id, workspace_tools_json, updated_at')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
 export async function fetchMetrics(clientId) {
   const { data, error } = await supabase
     .from('daily_metrics')

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useOutletContext } from 'react-router-dom'
-import { fetchMetrics, fetchProfile } from '../lib/portalApi'
+import { fetchMetrics, fetchProfile, fetchWorkspacePreferences, upsertWorkspacePreferences } from '../lib/portalApi'
 import {
   ArrowUpRight,
   Camera,
@@ -96,19 +96,56 @@ function hydrateTool(tool) {
   }
 }
 
-function loadTools() {
+function getWorkspaceStorageKey(clientKey) {
+  return `map_workspace_tools:${clientKey || 'default'}`
+}
+
+function buildDefaultTools(client) {
+  const websiteUrl = normalizeToolUrl(client?.website_url || '')
+  const tidioUrl = normalizeToolUrl(client?.tidio_project_url || '') || 'https://www.tidio.com/panel/'
+  const next = [
+    ...(websiteUrl ? [{
+      id: 'client-website',
+      label: client?.business_name ? `${client.business_name} Website` : 'Client Website',
+      url: websiteUrl,
+      size: 'lg',
+    }] : []),
+    { ...DEFAULT_TOOLS[0] },
+    { ...DEFAULT_TOOLS[1], url: tidioUrl },
+    { ...DEFAULT_TOOLS[2] },
+    { ...DEFAULT_TOOLS[3] },
+  ]
+
+  const seen = new Set()
+  return next
+    .map(hydrateTool)
+    .filter((tool) => {
+      const key = `${tool.label.toLowerCase()}|${tool.url.toLowerCase()}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
+function loadTools(storageKey, fallbackTools) {
   try {
-    const stored = localStorage.getItem('ds_tools')
-    const parsed = stored ? JSON.parse(stored) : DEFAULT_TOOLS
-    return Array.isArray(parsed) ? parsed.map(hydrateTool) : DEFAULT_TOOLS.map(hydrateTool)
+    const stored = localStorage.getItem(storageKey)
+    const parsed = stored ? JSON.parse(stored) : null
+    if (Array.isArray(parsed)) return parsed.map(hydrateTool)
+
+    const legacyStored = localStorage.getItem('ds_tools')
+    const legacyParsed = legacyStored ? JSON.parse(legacyStored) : null
+    if (Array.isArray(legacyParsed)) return legacyParsed.map(hydrateTool)
+
+    return fallbackTools.map(hydrateTool)
   } catch {
-    return DEFAULT_TOOLS.map(hydrateTool)
+    return fallbackTools.map(hydrateTool)
   }
 }
 
-function saveTools(tools) {
+function saveTools(storageKey, tools) {
   try {
-    localStorage.setItem('ds_tools', JSON.stringify(tools))
+    localStorage.setItem(storageKey, JSON.stringify(tools))
   } catch {
     return undefined
   }
@@ -391,10 +428,22 @@ export default function Dashboard() {
 
   const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: fetchProfile })
   const clientId = profile?.client_id
+  const client = profile?.clients || null
+  const userId = profile?.id
   const { data: rawMetrics = [] } = useQuery({
     queryKey: ['metrics', clientId],
     queryFn: () => fetchMetrics(clientId),
     enabled: !!clientId,
+  })
+  const defaultTools = useMemo(() => buildDefaultTools(client), [client])
+  const storageKey = useMemo(
+    () => getWorkspaceStorageKey(clientId || client?.slug || client?.business_name || 'default'),
+    [clientId, client?.slug, client?.business_name],
+  )
+  const { data: workspacePreference } = useQuery({
+    queryKey: ['workspace-preferences', clientId, userId],
+    queryFn: () => fetchWorkspacePreferences(clientId, userId),
+    enabled: !!clientId && !!userId,
   })
 
   const metrics = [
@@ -404,10 +453,13 @@ export default function Dashboard() {
     { platform: 'google', reach: 2148 },
   ].map((fallback) => rawMetrics.find((metric) => metric.platform?.toLowerCase() === fallback.platform) || fallback)
 
-  const [tools, setTools] = useState(loadTools)
+  const [draftTools, setDraftTools] = useState(null)
+  const [draftOwnerKey, setDraftOwnerKey] = useState('')
   const [showAddTool, setShowAddTool] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [draggedToolId, setDraggedToolId] = useState(null)
+  const [workspaceState, setWorkspaceState] = useState('idle')
+  const workspaceOwnerKey = `${clientId || 'unknown'}:${userId || 'unknown'}`
 
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -415,16 +467,49 @@ export default function Dashboard() {
     day: 'numeric',
   })
 
+  const resolvedTools = useMemo(() => {
+    const persistedTools = Array.isArray(workspacePreference?.workspace_tools_json)
+      ? workspacePreference.workspace_tools_json.map(hydrateTool)
+      : null
+    return persistedTools ?? loadTools(storageKey, defaultTools)
+  }, [workspacePreference, storageKey, defaultTools])
+
+  const tools = draftOwnerKey === workspaceOwnerKey && draftTools !== null
+    ? draftTools
+    : resolvedTools
+
+  async function persistTools(next, options = {}) {
+    setDraftOwnerKey(workspaceOwnerKey)
+    setDraftTools(next)
+    saveTools(storageKey, next)
+
+    if (!clientId || !userId) return
+
+    if (!options.silent) setWorkspaceState('saving')
+
+    try {
+      await upsertWorkspacePreferences({
+        clientId,
+        userId,
+        workspaceTools: next,
+      })
+      setWorkspaceState('saved')
+    } catch (error) {
+      setWorkspaceState('error')
+      if (!options.silent) {
+        window.alert(error instanceof Error ? error.message : 'Could not save workspace layout right now.')
+      }
+    }
+  }
+
   function addTool(tool) {
     const next = [...tools, tool]
-    setTools(next)
-    saveTools(next)
+    void persistTools(next)
   }
 
   function removeTool(id) {
     const next = tools.filter((tool) => tool.id !== id)
-    setTools(next)
-    saveTools(next)
+    void persistTools(next)
   }
 
   function resizeTool(id) {
@@ -433,8 +518,7 @@ export default function Dashboard() {
         ? { ...tool, size: getNextToolSize(tool.size) }
         : tool
     ))
-    setTools(next)
-    saveTools(next)
+    void persistTools(next)
   }
 
   function openTool(tool) {
@@ -444,9 +528,8 @@ export default function Dashboard() {
   function handleToolDrop(targetId) {
     if (!draggedToolId || draggedToolId === targetId) return
     const next = reorderTools(tools, draggedToolId, targetId)
-    setTools(next)
     setDraggedToolId(null)
-    saveTools(next)
+    void persistTools(next)
   }
 
   return (
@@ -545,6 +628,20 @@ export default function Dashboard() {
           </span>
           <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ background: editMode ? 'rgba(201, 168, 76, 0.14)' : 'rgba(31, 169, 113, 0.1)', color: editMode ? 'var(--portal-primary-strong)' : 'var(--portal-success)' }}>
             {editMode ? 'Edit mode on' : 'Launcher ready'}
+          </span>
+          <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{
+            background: workspaceState === 'error'
+              ? 'rgba(216, 95, 152, 0.12)'
+              : workspaceState === 'saving'
+                ? 'rgba(201, 168, 76, 0.14)'
+                : 'rgba(26, 24, 20, 0.05)',
+            color: workspaceState === 'error'
+              ? 'var(--portal-danger)'
+              : workspaceState === 'saving'
+                ? 'var(--portal-primary-strong)'
+                : 'var(--portal-text-soft)',
+          }}>
+            {workspaceState === 'error' ? 'Save issue' : workspaceState === 'saving' ? 'Saving layout' : workspaceState === 'saved' ? 'Saved to portal' : 'Local fallback ready'}
           </span>
           <span className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
             {editMode ? 'Drag icons to move them and use the resize control to change their footprint.' : 'Tap any icon to open the app directly.'}

@@ -106,3 +106,15 @@ Current implementation note:
 - the template is future-safe for `billing_status`, `billing_portal_url`, and `billing_checkout_url`
 - the preferred runtime pattern is authenticated on-demand Checkout / Billing Portal session creation, with stored billing URLs treated as optional fallback values rather than the primary unlock mechanism
 - real Stripe-managed unlock/payment URLs still need to be provided by provisioning or billing workflows
+
+## Workspace Defaults And Persistence
+The shared portal template now supports durable dashboard workspace preferences so customer launcher settings survive template deploys.
+
+Current runtime pattern:
+- launcher defaults can be derived from tenant data such as `website_url` and future client-specific tool URLs
+- user-customized launcher state is stored in `public.portal_workspace_preferences`
+- local browser storage remains a fallback path if the DB write fails or the preference row does not exist yet
+
+Provisioning decision still open:
+- onboarding can pre-seed starter workspace rows for each first admin user
+- or the template can continue creating them lazily on first dashboard save
