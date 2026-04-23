@@ -75,6 +75,44 @@ Current cutover behavior:
 - API routes stay on the technical host so internal webhook/proxy paths are not broken during rollout
 - document share links now prefer the tenant canonical host when one is configured
 
+## Provision A New Client Portal
+
+The shared template now includes a real provisioning helper that automates the current per-client worker model.
+
+```bash
+npm run provision:client -- --client-slug dancescapes-performing-arts --dry-run
+```
+
+Live deploy:
+
+```bash
+npm run provision:client -- --client-slug dancescapes-performing-arts
+```
+
+What it does:
+- loads the client row from Supabase
+- builds the SPA with tenant branding/canonical-host env
+- deploys a dedicated Cloudflare Worker with the MAP-managed custom domain
+- preserves existing worker vars/secrets while updating the current runtime secret set
+- optionally registers and tests the Zernio account-events webhook
+- mirrors deployment state back into onboarding tables when a matching signup/run exists
+
+Required runtime inputs:
+- `CLOUDFLARE_API_TOKEN`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_URL`
+
+Optional but recommended:
+- `CLOUDFLARE_ACCOUNT_ID`
+- `ZERNIO_WEBHOOK_SECRET`
+- `N8N_BASE_URL`
+- `PORTAL_WEBHOOK_BASE_URL`
+
+Notes:
+- `SUPABASE_ANON_KEY` can come from env, Supabase secrets naming, or the repo fallback constant in `src/lib/supabase.js`.
+- If `ZERNIO_WEBHOOK_SECRET` is unavailable, the script still deploys the portal but leaves the onboarding run in follow-up mode because the signed Settings webhook cannot be registered safely for a brand-new worker.
+- Use `--skip-webhook-config` if you want to deploy first and wire Zernio later.
+
 ## Notes
 
 - Auth/session is handled entirely in the browser with Supabase Auth.

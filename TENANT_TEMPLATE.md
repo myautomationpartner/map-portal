@@ -62,6 +62,15 @@ These align with the live onboarding DB contract in:
 
 - `db-agent/ONBOARDING_CONTRACT.md`
 
+These runtime fields now also have a live home on `public.clients`:
+
+- `support_email`
+- `portal_subdomain`
+- `portal_domain`
+- `worker_name`
+
+That means future portal runtime reads do not need to depend only on onboarding metadata once provisioning persists the final tenant state.
+
 ## Domain Strategy
 Recommended MAP-managed default:
 
@@ -118,3 +127,22 @@ Current runtime pattern:
 Provisioning decision still open:
 - onboarding can pre-seed starter workspace rows for each first admin user
 - or the template can continue creating them lazily on first dashboard save
+
+## Current Deployment Automation
+The shared template now has a concrete provisioning helper for the current per-client worker model:
+
+- script: `portal-app/scripts/provision-client-portal.mjs`
+- npm entrypoint: `npm run provision:client -- --client-slug <slug>`
+
+Current automation coverage:
+- fetches the tenant runtime row from `public.clients`
+- builds the portal with tenant-facing branding env
+- deploys a dedicated Cloudflare Worker named from `worker_name`
+- attaches the MAP-managed custom domain from `portal_domain`
+- uploads/refreshes the current worker secret set
+- can register the Zernio account-events webhook through the live n8n helper
+- can mirror deployment completion/follow-up state back into onboarding tables
+
+Current limitation:
+- brand-new worker provisioning still needs `ZERNIO_WEBHOOK_SECRET` available at deploy time if MAP wants the final Settings webhook path fully active on first deploy
+- if that secret is missing, the portal can still be deployed, but onboarding should remain in follow-up mode until the signed webhook secret is added and the Zernio helper is run
