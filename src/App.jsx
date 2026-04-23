@@ -34,15 +34,45 @@ function AuthProvider({ children }) {
   const [session, setSession] = useState(undefined) // undefined = loading
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-    })
+    let active = true
+
+    async function bootstrapSession() {
+      const url = new URL(window.location.href)
+      const hash = url.hash.startsWith('#') ? url.hash.slice(1) : ''
+      const hashParams = new URLSearchParams(hash)
+      const accessToken = hashParams.get('access_token')
+      const refreshToken = hashParams.get('refresh_token')
+
+      if (accessToken && refreshToken) {
+        const { data, error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        })
+
+        if (!error && data?.session && active) {
+          setSession(data.session)
+        }
+
+        url.hash = ''
+        window.history.replaceState({}, '', `${url.pathname}${url.search}`)
+      }
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (active) {
+        setSession(session)
+      }
+    }
+
+    bootstrapSession()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   if (session === undefined) {
