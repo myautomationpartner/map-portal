@@ -251,6 +251,20 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
   async function handleConnect(platform) {
     if (!requireWriteAccess('change social connections')) return
 
+    const connectPopup = typeof window !== 'undefined'
+      ? window.open('', '_blank', 'width=600,height=700')
+      : null
+
+    if (connectPopup && !connectPopup.closed) {
+      connectPopup.document.write(`
+        <title>Opening ${formatPlatformLabel(platform)}…</title>
+        <body style="font-family: ui-sans-serif, system-ui, sans-serif; padding: 24px; color: #1f2937;">
+          <p style="margin: 0 0 8px; font-size: 15px; font-weight: 600;">Opening ${formatPlatformLabel(platform)}…</p>
+          <p style="margin: 0; font-size: 14px; color: #6b7280;">If nothing happens in a moment, return to the portal and try again.</p>
+        </body>
+      `)
+    }
+
     setConnectingPlatform(platform)
     setSyncStatus(null)
     clearAutoSyncTimer()
@@ -267,18 +281,30 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
       })
       const data = await res.json().catch(() => ({}))
       if (res.ok && data.authUrl) {
-        window.open(data.authUrl, '_blank', 'width=600,height=700,noopener,noreferrer')
+        if (connectPopup && !connectPopup.closed) {
+          connectPopup.opener = null
+          connectPopup.location.href = data.authUrl
+          connectPopup.focus()
+        } else {
+          window.location.assign(data.authUrl)
+        }
         setSyncStatus({
           type: 'info',
           message: `Finish connecting ${formatPlatformLabel(platform)} in the new tab. We'll update this page automatically when Zernio confirms it.`,
         })
         startAutoSync(platform)
       } else {
+        if (connectPopup && !connectPopup.closed) {
+          connectPopup.close()
+        }
         const details = normalizeWorkflowError(data, `Could not get connect URL for ${formatPlatformLabel(platform)}. Try again.`)
         setSyncStatus({ type: 'error', message: details })
         setConnectingPlatform(null)
       }
     } catch {
+      if (connectPopup && !connectPopup.closed) {
+        connectPopup.close()
+      }
       setSyncStatus({ type: 'error', message: 'Failed to reach automation server. Check your connection.' })
       setConnectingPlatform(null)
     }
