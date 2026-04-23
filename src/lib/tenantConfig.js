@@ -89,6 +89,30 @@ export function buildTenantConfig(input = {}) {
     sharePayload.worker_name ||
     ''
 
+  const billingStatus =
+    import.meta.env.VITE_PORTAL_BILLING_STATUS ||
+    client?.billing_status ||
+    claims.billing_status ||
+    sharePayload.billing_status ||
+    ''
+
+  const billingPortalUrl =
+    import.meta.env.VITE_PORTAL_BILLING_PORTAL_URL ||
+    client?.billing_portal_url ||
+    sharePayload.billing_portal_url ||
+    null
+
+  const billingCheckoutUrl =
+    import.meta.env.VITE_PORTAL_BILLING_CHECKOUT_URL ||
+    client?.billing_checkout_url ||
+    sharePayload.billing_checkout_url ||
+    null
+
+  const selectedPlan =
+    client?.selected_plan ||
+    sharePayload.selected_plan ||
+    ''
+
   const theme = pickTheme(client?.brand_colors || sharePayload.brand_colors)
 
   return {
@@ -102,5 +126,9 @@ export function buildTenantConfig(input = {}) {
     workerName,
     domainPattern: DEFAULT_DOMAIN_PATTERN,
     theme,
+    billingStatus,
+    billingPortalUrl,
+    billingCheckoutUrl,
+    selectedPlan,
   }
 }

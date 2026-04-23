@@ -861,7 +861,7 @@ function DocumentPreview({ selectedDocument, previewState, onRefreshPreview }) {
 }
 
 export default function Documents() {
-  const { session } = useOutletContext()
+  const { session, billingAccess, requireWriteAccess } = useOutletContext()
   const queryClient = useQueryClient()
   const claims = getSessionClaims(session)
   const layoutRef = useRef(null)
@@ -1120,6 +1120,11 @@ export default function Documents() {
   }
 
   function handleFileChange(event) {
+    if (!requireWriteAccess('upload files')) {
+      event.target.value = ''
+      return
+    }
+
     const file = event.target.files?.[0]
     if (!file) return
 
@@ -1144,6 +1149,7 @@ export default function Documents() {
 
   function handleCreateShare(event) {
     event.preventDefault()
+    if (!requireWriteAccess('create share links')) return
     if (!shareDialogDocument || !canManageShares) return
 
     setShareNotice({ type: '', message: '' })
@@ -1157,6 +1163,8 @@ export default function Documents() {
 
   function handleCreateFolder(event) {
     event.preventDefault()
+    if (!requireWriteAccess('create folders')) return
+
     const nextFolder = folderDraft.trim()
     if (!nextFolder) return
 
@@ -1172,6 +1180,8 @@ export default function Documents() {
   }
 
   function handleMoveDocument(document, nextFolder) {
+    if (!requireWriteAccess('move documents')) return
+
     setSelectedId(document.id)
 
     if (!document || !canManageDocuments) return
@@ -1195,6 +1205,7 @@ export default function Documents() {
   }
 
   function handleRenameFileForDocument(document) {
+    if (!requireWriteAccess('rename documents')) return
     if (!document || !canManageDocuments) return
 
     const promptedName = window.prompt('Rename file', document.file_name)
@@ -1209,6 +1220,8 @@ export default function Documents() {
   }
 
   function handleDeleteDocument(document) {
+    if (!requireWriteAccess('delete documents')) return
+
     setOpenActionMenuId(null)
     setSelectedId(document.id)
 
@@ -1225,6 +1238,8 @@ export default function Documents() {
   }
 
   function handleCreateShareForDocument(document) {
+    if (!requireWriteAccess('create share links')) return
+
     setOpenActionMenuId(null)
     setSelectedId(document.id)
     if (!document || !canManageShares) return
@@ -1245,6 +1260,8 @@ export default function Documents() {
   }
 
   function handleRevokeShareForDocument(document) {
+    if (!requireWriteAccess('revoke share links')) return
+
     const activeShareLink = activeShareByDocumentId.get(document.id)
     if (!activeShareLink) return
 
@@ -1423,13 +1440,15 @@ export default function Documents() {
           <button
             type="button"
             onClick={() => {
+              if (!requireWriteAccess('upload files')) return
               setUploadForm((current) => ({
                 ...current,
                 category: !isSpecialFolderView ? selectedFolder : current.category,
               }))
               setIsUploadDialogOpen(true)
             }}
-            className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+            disabled={billingAccess?.readOnly}
+            className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <Upload className="h-4 w-4" />
             File Upload
@@ -1503,8 +1522,13 @@ export default function Documents() {
                   onChange={(event) => setFolderDraft(event.target.value)}
                   placeholder="New folder"
                   className="portal-input px-4 py-3 text-sm"
+                  disabled={billingAccess?.readOnly}
                 />
-                <button type="submit" className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
+                <button
+                  type="submit"
+                  disabled={billingAccess?.readOnly}
+                  className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                >
                   <FolderPlus className="h-4 w-4" />
                 </button>
               </form>

@@ -423,6 +423,14 @@ export async function getUploadUrl(input) {
   return callEdgeFunction('get-upload-url', input)
 }
 
+export async function createBillingCheckoutSession(input) {
+  return callEdgeFunction('stripe-create-checkout-session', input)
+}
+
+export async function createBillingPortalSession(input) {
+  return callEdgeFunction('stripe-create-portal-session', input)
+}
+
 export async function resolveShareLink(token) {
   return callEdgeFunction('resolve-share-link', { token }, { public: true })
 }

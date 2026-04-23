@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './lib/supabase'
+import { createBillingCheckoutSession, createBillingPortalSession, fetchProfile, getSessionClaims } from './lib/portalApi'
+import { buildTenantConfig } from './lib/tenantConfig'
+import { buildReadOnlyMessage, resolveBillingAccess } from './lib/portalBilling'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
@@ -14,6 +17,7 @@ import Documents from './pages/Documents'
 import PublicShare from './pages/PublicShare'
 import Sidebar from './components/Sidebar'
 import BottomNav from './components/BottomNav'
+import PortalBillingBanner from './components/PortalBillingBanner'
 import { Loader2 } from 'lucide-react'
 import './App.css'
 
@@ -55,21 +59,109 @@ function AuthProvider({ children }) {
 }
 
 function ProtectedLayout({ session }) {
+  const queryClient = useQueryClient()
+  const { data: profile } = useQuery({
+    queryKey: ['profile'],
+    queryFn: fetchProfile,
+    enabled: !!session,
+  })
+  const [billingActionPending, setBillingActionPending] = useState(false)
+
+  const claims = useMemo(() => getSessionClaims(session), [session])
+  const tenant = useMemo(
+    () => buildTenantConfig({ client: profile?.clients || null, claims }),
+    [profile, claims],
+  )
+  const billingAccess = useMemo(() => resolveBillingAccess(tenant), [tenant])
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (url.searchParams.get('billing') !== 'updated') return
+
+    queryClient.invalidateQueries({ queryKey: ['profile'] })
+    url.searchParams.delete('billing')
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+  }, [queryClient])
+
+  function requireWriteAccess(actionLabel = 'make changes') {
+    if (!billingAccess.readOnly) return true
+    window.alert(buildReadOnlyMessage(actionLabel))
+    return false
+  }
+
+  async function handleBillingAction() {
+    if (billingActionPending) return
+
+    const currentUrl = new URL(window.location.href)
+    currentUrl.searchParams.set('billing', 'updated')
+    const billingReturnUrl = currentUrl.toString()
+    const selectedPlan = tenant.selectedPlan || profile?.clients?.selected_plan || ''
+
+    try {
+      setBillingActionPending(true)
+
+      if (billingAccess.mode === 'read_only' || billingAccess.mode === 'warning') {
+        const result = await createBillingCheckoutSession({
+          ...(selectedPlan ? { selected_plan: selectedPlan } : {}),
+          success_url: billingReturnUrl,
+          cancel_url: billingReturnUrl,
+        })
+        if (!result?.checkoutUrl) {
+          throw new Error('Billing checkout session did not return a checkout URL.')
+        }
+        window.location.assign(result.checkoutUrl)
+        return
+      }
+
+      if (tenant.billingPortalUrl && /^https?:/i.test(tenant.billingPortalUrl)) {
+        window.location.assign(tenant.billingPortalUrl)
+        return
+      }
+
+      const result = await createBillingPortalSession({
+        return_url: billingReturnUrl,
+        ...(selectedPlan ? { selected_plan: selectedPlan } : {}),
+      })
+      if (!result?.portalUrl) {
+        throw new Error('Billing portal session did not return a portal URL.')
+      }
+      window.location.assign(result.portalUrl)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Unable to open billing right now.')
+      setBillingActionPending(false)
+    }
+  }
+
   if (!session) return <Navigate to="/login" replace />
 
   return (
     <div className="portal-shell flex">
       {/* Desktop sidebar */}
-      <Sidebar session={session} />
+      <Sidebar
+        session={session}
+        tenant={tenant}
+        billingAccess={billingAccess}
+        onBillingAction={handleBillingAction}
+        billingActionPending={billingActionPending}
+      />
 
       {/* Main content area */}
       <div className="flex-1 flex flex-col min-h-screen md:ml-[280px]">
         <main className="flex-1 overflow-auto pb-24 md:pb-0">
-          <Outlet context={{ session }} />
+          <PortalBillingBanner
+            billingAccess={billingAccess}
+            onAction={handleBillingAction}
+            actionPending={billingActionPending}
+          />
+          <Outlet context={{ session, profile, tenant, billingAccess, requireWriteAccess }} />
         </main>
 
         {/* Mobile bottom nav */}
-        <BottomNav />
+        <BottomNav
+          billingAccess={billingAccess}
+          onBillingAction={handleBillingAction}
+          billingActionPending={billingActionPending}
+        />
       </div>
     </div>
   )

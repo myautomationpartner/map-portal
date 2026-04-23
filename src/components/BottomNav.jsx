@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Send, MessageSquare, Settings, FolderOpen } from 'lucide-react'
+import { LayoutDashboard, Send, MessageSquare, Settings, FolderOpen, CreditCard } from 'lucide-react'
 
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
@@ -9,7 +9,7 @@ const navItems = [
   { to: '/settings', icon: Settings,        label: 'Settings'   },
 ]
 
-export default function BottomNav() {
+export default function BottomNav({ billingAccess, onBillingAction, billingActionPending = false }) {
   return (
     <nav className="fixed bottom-3 left-3 right-3 z-50 rounded-[28px] border shadow-2xl md:hidden"
       style={{ background: 'rgba(10,10,10,0.94)', borderColor: 'rgba(201, 168, 76, 0.22)', backdropFilter: 'blur(20px)' }}>
@@ -43,6 +43,23 @@ export default function BottomNav() {
             )}
           </NavLink>
         ))}
+        {billingAccess?.showBanner && (billingAccess?.actionUrl || onBillingAction) ? (
+          <button
+            type="button"
+            onClick={onBillingAction}
+            disabled={billingActionPending}
+            className="flex-1 flex flex-col items-center gap-1 py-3 transition-all duration-200"
+            style={{ color: 'var(--portal-primary)' }}
+          >
+            <div
+              className="relative rounded-2xl p-2.5 transition-all duration-200"
+              style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.08))' }}
+            >
+              <CreditCard className="h-5 w-5" strokeWidth={2.5} />
+            </div>
+            <span className="text-[9px] font-semibold uppercase tracking-[0.24em]">{billingActionPending ? '...' : 'Pay'}</span>
+          </button>
+        ) : null}
       </div>
     </nav>
   )

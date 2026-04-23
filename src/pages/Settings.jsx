@@ -140,7 +140,7 @@ function normalizeWorkflowError(data, fallbackMessage) {
 
 // ── Social Connections section ────────────────────────────────────────────────
 
-function SocialConnectionsSection({ clientId, returnedPlatform }) {
+function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAccess, billingAccess }) {
   const queryClient = useQueryClient()
   const [connectingPlatform, setConnectingPlatform] = useState(null)
   const [syncStatus, setSyncStatus] = useState(null)
@@ -249,6 +249,8 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
   }
 
   async function handleConnect(platform) {
+    if (!requireWriteAccess('change social connections')) return
+
     setConnectingPlatform(platform)
     setSyncStatus(null)
     clearAutoSyncTimer()
@@ -379,7 +381,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
                   ) : (
                     <button
                       onClick={() => handleConnect(id)}
-                      disabled={!!connectingPlatform}
+                      disabled={!!connectingPlatform || billingAccess?.readOnly}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.25)', color: 'var(--portal-primary)' }}>
                       {isConnecting ? (
@@ -416,7 +418,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Settings() {
-  const { session } = useOutletContext()
+  const { session, requireWriteAccess, billingAccess } = useOutletContext()
   const [searchParams, setSearchParams] = useSearchParams()
   const returnedPlatform = searchParams.get('connected') || null
 
@@ -531,7 +533,12 @@ export default function Settings() {
 
         {/* Social connections */}
         {profile?.client_id && (
-          <SocialConnectionsSection clientId={profile.client_id} returnedPlatform={returnedPlatform} />
+          <SocialConnectionsSection
+            clientId={profile.client_id}
+            returnedPlatform={returnedPlatform}
+            requireWriteAccess={requireWriteAccess}
+            billingAccess={billingAccess}
+          />
         )}
 
         {/* Change password */}

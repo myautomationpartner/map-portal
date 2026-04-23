@@ -708,7 +708,7 @@ function ReviewModal({
 }
 
 export default function CreatePost() {
-  useOutletContext()
+  const { requireWriteAccess } = useOutletContext()
 
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -1265,6 +1265,8 @@ export default function CreatePost() {
   }
 
   async function handleDeleteDraft(slot) {
+    if (!requireWriteAccess('delete drafts')) return
+
     const draft = findDraftForSlot(drafts, slot)
     if (!draft) return
     if (!window.confirm('Delete this saved draft?')) return
@@ -1295,6 +1297,8 @@ export default function CreatePost() {
   }
 
   async function handleDeleteScheduledPost(post) {
+    if (!requireWriteAccess('delete scheduled posts')) return
+
     if (!post?.id) return
     if (!window.confirm('Delete this scheduled post? This will also try to cancel it in the publisher workflow.')) return
 
@@ -1429,6 +1433,11 @@ export default function CreatePost() {
   }
 
   async function handleSubmit() {
+    if (!requireWriteAccess('publish or schedule posts')) {
+      setReviewOpen(false)
+      return
+    }
+
     const validationError = validatePost()
     if (validationError) {
       setErrorMsg(validationError)

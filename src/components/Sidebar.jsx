@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Send, MessageSquare, Settings, LogOut, FolderOpen } from 'lucide-react'
+import { LayoutDashboard, Send, MessageSquare, Settings, LogOut, FolderOpen, CreditCard } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { getSessionClaims } from '../lib/portalApi'
 import { buildTenantConfig } from '../lib/tenantConfig'
@@ -12,9 +12,9 @@ const navItems = [
   { to: '/settings', icon: Settings,        label: 'Settings'   },
 ]
 
-export default function Sidebar({ session }) {
+export default function Sidebar({ session, tenant: providedTenant, billingAccess, onBillingAction, billingActionPending = false }) {
   const claims = getSessionClaims(session)
-  const tenant = buildTenantConfig({ claims })
+  const tenant = providedTenant || buildTenantConfig({ claims })
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -86,6 +86,26 @@ export default function Sidebar({ session }) {
             )}
           </NavLink>
         ))}
+
+        {billingAccess?.showBanner && (billingAccess?.actionUrl || onBillingAction) ? (
+          <button
+            type="button"
+            onClick={onBillingAction}
+            disabled={billingActionPending}
+            className="mt-3 flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition-all duration-200"
+            style={{
+              background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.1))',
+              color: '#fff',
+              border: '1px solid rgba(201, 168, 76, 0.24)',
+              boxShadow: '0 12px 24px rgba(0, 0, 0, 0.18)',
+            }}
+          >
+            <div className="relative flex items-center justify-center rounded-xl p-2" style={{ background: 'rgba(255,255,255,0.12)' }}>
+              <CreditCard className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} strokeWidth={2.2} />
+            </div>
+            {billingActionPending ? 'Opening billing...' : (billingAccess.ctaLabel || 'Manage billing')}
+          </button>
+        ) : null}
       </nav>
 
       <div className="px-4 py-5" style={{ borderTop: '1px solid rgba(201, 168, 76, 0.15)' }}>

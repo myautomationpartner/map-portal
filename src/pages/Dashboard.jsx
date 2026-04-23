@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useOutletContext } from 'react-router-dom'
 import { fetchMetrics, fetchProfile } from '../lib/portalApi'
@@ -229,11 +229,6 @@ function ToolIcon({ tool }) {
   const [sourceIndex, setSourceIndex] = useState(0)
   const [showFallback, setShowFallback] = useState(!sources.length)
 
-  useEffect(() => {
-    setSourceIndex(0)
-    setShowFallback(!sources.length)
-  }, [sources.length, tool.url])
-
   if (!showFallback && sources[sourceIndex]) {
     return (
       <img
@@ -369,7 +364,7 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onResize, onDragStart, onD
               height: isLarge ? '6rem' : '4.5rem',
             }}
           >
-            <ToolIcon tool={tool} />
+            <ToolIcon key={`${tool.id}:${tool.url}`} tool={tool} />
           </div>
 
           <div>
