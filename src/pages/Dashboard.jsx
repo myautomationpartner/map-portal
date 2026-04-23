@@ -8,12 +8,14 @@ import {
   CalendarDays,
   FolderOpen,
   Globe,
+  Grip,
   MapPin,
   Music2,
   Pencil,
   Plus,
   Send,
   Share2,
+  Shrink,
 } from 'lucide-react'
 
 function getMetricValue(metrics, platform, field) {
@@ -90,6 +92,7 @@ function hydrateTool(tool) {
     ...tool,
     url: normalizeToolUrl(tool.url),
     icon: tool.icon ?? null,
+    size: ['sm', 'lg'].includes(tool.size) ? tool.size : 'sm',
   }
 }
 
@@ -262,79 +265,127 @@ function ToolIcon({ tool }) {
   )
 }
 
-function ToolCard({ tool, onRemove, isActive, onActivate }) {
-  const hostname = getToolHostname(tool.url)
+function getNextToolSize(size) {
+  return size === 'sm' ? 'lg' : 'sm'
+}
 
-  function handleOpen() {
-    window.open(tool.url, '_blank', 'noopener,noreferrer')
-  }
+function reorderTools(tools, fromId, toId) {
+  const fromIndex = tools.findIndex((tool) => tool.id === fromId)
+  const toIndex = tools.findIndex((tool) => tool.id === toId)
+
+  if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return tools
+
+  const next = [...tools]
+  const [moved] = next.splice(fromIndex, 1)
+  next.splice(toIndex, 0, moved)
+  return next
+}
+
+function ToolTile({ tool, editMode, onOpen, onRemove, onResize, onDragStart, onDragOver, onDrop }) {
+  const hostname = getToolHostname(tool.url)
+  const isLarge = tool.size === 'lg'
 
   return (
     <div
       role="button"
       tabIndex={0}
-      onClick={() => onActivate(tool)}
+      draggable={editMode}
+      onDragStart={() => onDragStart(tool.id)}
+      onDragOver={(event) => onDragOver(event, tool.id)}
+      onDrop={() => onDrop(tool.id)}
+      onClick={() => onOpen(tool)}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()
-          onActivate(tool)
+          onOpen(tool)
         }
       }}
-      className="portal-stat-card group rounded-[24px] p-4 text-left transition-all duration-200 hover:-translate-y-0.5"
-      style={isActive
-        ? {
-          borderColor: 'rgba(201, 168, 76, 0.34)',
-          boxShadow: '0 18px 38px rgba(26, 24, 20, 0.1)',
-          background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248, 244, 236, 0.92))',
-        }
-        : undefined}
+      className={`group relative overflow-hidden rounded-[30px] border text-left transition-all duration-200 hover:-translate-y-1 ${isLarge ? 'sm:col-span-2' : ''}`}
+      style={{
+        borderColor: 'rgba(26, 24, 20, 0.08)',
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248, 250, 255, 0.92))',
+        boxShadow: '0 14px 28px rgba(26, 24, 20, 0.06)',
+      }}
     >
-      <div className="mb-5 flex items-start justify-between gap-3">
-        <ToolIcon tool={tool} />
-        <div className="flex items-center gap-2">
-          <span
-            className="rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
-            style={{
-              background: isActive ? 'rgba(201, 168, 76, 0.14)' : 'rgba(26, 24, 20, 0.05)',
-              color: isActive ? 'var(--portal-primary-strong)' : 'var(--portal-text-soft)',
-            }}
-          >
-            {isActive ? 'Selected' : 'Pinned'}
-          </span>
+      <div
+        className="absolute inset-x-0 top-0 h-24"
+        style={{
+          background: 'linear-gradient(180deg, rgba(201, 168, 76, 0.08), transparent)',
+        }}
+      />
+
+      <div className={`relative flex h-full flex-col ${isLarge ? 'min-h-[220px] p-5' : 'min-h-[170px] p-4'}`}>
+        <div className="flex items-start justify-between gap-3">
           <button
             type="button"
             onClick={(event) => {
               event.stopPropagation()
-              onRemove(tool.id)
+              if (editMode) onRemove(tool.id)
             }}
             className="rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all"
-            style={{ background: 'rgba(216, 95, 152, 0.08)', color: 'var(--portal-danger)' }}
+            style={editMode
+              ? { background: 'rgba(216, 95, 152, 0.08)', color: 'var(--portal-danger)', opacity: 1 }
+              : { background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-soft)', opacity: 0 }}
+            aria-hidden={!editMode}
+            tabIndex={editMode ? 0 : -1}
           >
             Remove
           </button>
+
+          <div className="flex items-center gap-2">
+            {editMode && (
+              <>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onResize(tool.id)
+                  }}
+                  className="rounded-full p-2 transition-all"
+                  style={{ background: 'rgba(255,255,255,0.9)', color: 'var(--portal-text-soft)' }}
+                  aria-label={`Resize ${tool.label}`}
+                >
+                  <Shrink className="h-4 w-4" />
+                </button>
+                <div
+                  className="rounded-full p-2"
+                  style={{ background: 'rgba(255,255,255,0.9)', color: 'var(--portal-text-soft)' }}
+                  aria-hidden="true"
+                >
+                  <Grip className="h-4 w-4" />
+                </div>
+              </>
+            )}
+          </div>
         </div>
-      </div>
 
-      <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{tool.label}</p>
-      <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
-        {hostname || 'External app'}
-      </p>
+        <div className={`mt-auto flex flex-col items-center text-center ${isLarge ? 'gap-4' : 'gap-3'}`}>
+          <div
+            className={`flex items-center justify-center overflow-hidden rounded-[28px] bg-white shadow-sm ${isLarge ? 'h-24 w-24' : 'h-18 w-18'}`}
+            style={{
+              border: '1px solid rgba(26, 24, 20, 0.07)',
+              boxShadow: '0 14px 24px rgba(26, 24, 20, 0.08)',
+              width: isLarge ? '6rem' : '4.5rem',
+              height: isLarge ? '6rem' : '4.5rem',
+            }}
+          >
+            <ToolIcon tool={tool} />
+          </div>
 
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation()
-            handleOpen()
-          }}
-          className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold"
-        >
-          Launch app
-          <ArrowUpRight className="h-3.5 w-3.5" />
-        </button>
-        <span className="inline-flex items-center gap-2 text-xs font-semibold" style={{ color: 'var(--portal-primary)' }}>
-          Ready to open
-        </span>
+          <div>
+            <p className={`font-semibold ${isLarge ? 'text-base' : 'text-sm'}`} style={{ color: 'var(--portal-text)' }}>
+              {tool.label}
+            </p>
+            <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
+              {hostname || 'External app'}
+            </p>
+          </div>
+
+          <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ background: 'rgba(201, 168, 76, 0.1)', color: 'var(--portal-primary-strong)' }}>
+            {editMode ? 'Drag to move' : 'Tap to open'}
+            {!editMode && <ArrowUpRight className="h-3.5 w-3.5" />}
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -360,7 +411,8 @@ export default function Dashboard() {
 
   const [tools, setTools] = useState(loadTools)
   const [showAddTool, setShowAddTool] = useState(false)
-  const [activeToolId, setActiveToolId] = useState(() => loadTools()[0]?.id ?? null)
+  const [editMode, setEditMode] = useState(false)
+  const [draggedToolId, setDraggedToolId] = useState(null)
 
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -371,21 +423,36 @@ export default function Dashboard() {
   function addTool(tool) {
     const next = [...tools, tool]
     setTools(next)
-    setActiveToolId(tool.id)
     saveTools(next)
   }
 
   function removeTool(id) {
     const next = tools.filter((tool) => tool.id !== id)
     setTools(next)
-    if (activeToolId === id) {
-      setActiveToolId(next[0]?.id ?? null)
-    }
     saveTools(next)
   }
 
-  const activeTool = tools.find((tool) => tool.id === activeToolId) || tools[0] || null
-  const activeHostname = activeTool ? getToolHostname(activeTool.url) : ''
+  function resizeTool(id) {
+    const next = tools.map((tool) => (
+      tool.id === id
+        ? { ...tool, size: getNextToolSize(tool.size) }
+        : tool
+    ))
+    setTools(next)
+    saveTools(next)
+  }
+
+  function openTool(tool) {
+    window.open(tool.url, '_blank', 'noopener,noreferrer')
+  }
+
+  function handleToolDrop(targetId) {
+    if (!draggedToolId || draggedToolId === targetId) return
+    const next = reorderTools(tools, draggedToolId, targetId)
+    setTools(next)
+    setDraggedToolId(null)
+    saveTools(next)
+  }
 
   return (
     <div className="portal-page mx-auto max-w-[1480px] space-y-6 md:p-6 xl:p-8">
@@ -455,82 +522,55 @@ export default function Dashboard() {
               Pinned apps, inboxes, and drives for the client team.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowAddTool((current) => !current)}
-            className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
-          >
-            {showAddTool ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-            {showAddTool ? 'Hide editor' : 'Add tool'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setEditMode((current) => !current)}
+              className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+            >
+              <Pencil className="h-4 w-4" />
+              {editMode ? 'Done editing' : 'Edit layout'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAddTool((current) => !current)}
+              className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+            >
+              <Plus className="h-4 w-4" />
+              {showAddTool ? 'Hide tools' : 'Add tool'}
+            </button>
+          </div>
         </div>
 
         {showAddTool && <ToolForm onAdd={addTool} onClose={() => setShowAddTool(false)} />}
 
-        {activeTool && (
-          <div
-            className="mb-5 rounded-[28px] border px-4 py-4 md:px-5"
-            style={{
-              borderColor: 'rgba(201, 168, 76, 0.2)',
-              background: 'linear-gradient(135deg, rgba(248, 244, 236, 0.95), rgba(255,255,255,0.95))',
-            }}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex min-w-0 items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-[20px] border bg-white" style={{ borderColor: 'rgba(201, 168, 76, 0.18)' }}>
-                  <ToolIcon tool={activeTool} />
-                </div>
-                <div className="min-w-0">
-                  <div className="mb-1 flex flex-wrap items-center gap-2">
-                    <span
-                      className="rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]"
-                      style={{ background: 'rgba(31, 169, 113, 0.1)', color: 'var(--portal-success)' }}
-                    >
-                      App launcher
-                    </span>
-                    <span
-                      className="rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]"
-                      style={{ background: 'rgba(201, 168, 76, 0.1)', color: 'var(--portal-primary-strong)' }}
-                    >
-                      {activeHostname || 'External app'}
-                    </span>
-                  </div>
-                  <p className="truncate text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>{activeTool.label}</p>
-                  <p className="truncate text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                    Selected app is ready to launch in a new tab from your dashboard.
-                  </p>
-                </div>
-              </div>
+        <div className="mb-5 flex flex-wrap items-center gap-2">
+          <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-soft)' }}>
+            {tools.length} apps pinned
+          </span>
+          <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ background: editMode ? 'rgba(201, 168, 76, 0.14)' : 'rgba(31, 169, 113, 0.1)', color: editMode ? 'var(--portal-primary-strong)' : 'var(--portal-success)' }}>
+            {editMode ? 'Edit mode on' : 'Launcher ready'}
+          </span>
+          <span className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+            {editMode ? 'Drag icons to move them and use the resize control to change their footprint.' : 'Tap any icon to open the app directly.'}
+          </span>
+        </div>
 
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => window.open(activeTool.url, '_blank', 'noopener,noreferrer')}
-                  className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
-                >
-                  Open {activeTool.label}
-                  <ArrowUpRight className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigator.clipboard?.writeText(activeTool.url)}
-                  className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
-                >
-                  Copy link
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid auto-rows-[170px] gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {tools.map((tool) => (
-            <ToolCard
+            <ToolTile
               key={tool.id}
               tool={tool}
+              editMode={editMode}
+              onOpen={openTool}
               onRemove={removeTool}
-              isActive={tool.id === activeTool?.id}
-              onActivate={(selectedTool) => setActiveToolId(selectedTool.id)}
+              onResize={resizeTool}
+              onDragStart={(id) => setDraggedToolId(id)}
+              onDragOver={(event) => {
+                if (!editMode) return
+                event.preventDefault()
+              }}
+              onDrop={handleToolDrop}
             />
           ))}
         </div>
