@@ -144,5 +144,6 @@ Current automation coverage:
 - can mirror deployment completion/follow-up state back into onboarding tables
 
 Current limitation:
-- brand-new worker provisioning still needs `ZERNIO_WEBHOOK_SECRET` available at deploy time if MAP wants the final Settings webhook path fully active on first deploy
-- if that secret is missing, the portal can still be deployed, but onboarding should remain in follow-up mode until the signed webhook secret is added and the Zernio helper is run
+- brand-new worker provisioning now expects one MAP-level `ZERNIO_WEBHOOK_SECRET` to be available to the provisioning helper at deploy time
+- the current durable source on the operator machine is the macOS Keychain service `MAP_ZERNIO_WEBHOOK_SECRET` (with `ZERNIO_WEBHOOK_SECRET` as a legacy alias), and the helper also accepts env / `credential.txt` overrides when needed
+- if the secret is truly missing, the portal can still be deployed, but onboarding should remain in follow-up mode until the signed webhook secret is added and the Zernio helper is run

@@ -50,6 +50,25 @@ function readCredentialMap() {
 
 const credentialMap = readCredentialMap()
 
+function readKeychainValue(serviceNames) {
+  const list = Array.isArray(serviceNames) ? serviceNames : [serviceNames]
+
+  for (const serviceName of list) {
+    if (!serviceName) continue
+    const result = spawnSync('security', ['find-generic-password', '-w', '-s', serviceName], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+
+    if (result.status === 0) {
+      const value = String(result.stdout || '').trim()
+      if (value) return value
+    }
+  }
+
+  return ''
+}
+
 function envValue(keys, fallback = '') {
   const list = Array.isArray(keys) ? keys : [keys]
 
@@ -59,6 +78,19 @@ function envValue(keys, fallback = '') {
   }
 
   return fallback
+}
+
+function secretValue(keys, options = {}) {
+  const list = Array.isArray(keys) ? keys : [keys]
+  const keychainServices = options.keychainServices || []
+
+  const plain = envValue(list)
+  if (plain) return plain
+
+  const keychainValue = readKeychainValue(keychainServices)
+  if (keychainValue) return keychainValue
+
+  return options.fallback || ''
 }
 
 function requiredValue(keys, label, fallback = '') {
@@ -256,7 +288,13 @@ function buildSecretEnv(client) {
     PORTAL_CLIENT_ID: client.id,
     PORTAL_CANONICAL_HOST: client.portal_domain || '',
     N8N_BASE_URL: envValue(['N8N_BASE_URL'], DEFAULT_N8N_BASE_URL),
-    ZERNIO_WEBHOOK_SECRET: envValue(['ZERNIO_WEBHOOK_SECRET']),
+    ZERNIO_WEBHOOK_SECRET: requiredValue(
+      ['ZERNIO_WEBHOOK_SECRET'],
+      'ZERNIO_WEBHOOK_SECRET',
+      secretValue(['ZERNIO_WEBHOOK_SECRET'], {
+        keychainServices: ['MAP_ZERNIO_WEBHOOK_SECRET', 'ZERNIO_WEBHOOK_SECRET'],
+      }),
+    ),
   }
 }
 
@@ -281,13 +319,6 @@ function buildWranglerConfig(client) {
 
 async function configureZernioWebhook(client, secretEnv) {
   const webhookSecret = String(secretEnv.ZERNIO_WEBHOOK_SECRET || '').trim()
-  if (!webhookSecret) {
-    return {
-      configured: false,
-      skipped: true,
-      reason: 'ZERNIO_WEBHOOK_SECRET is not available locally.',
-    }
-  }
 
   const baseUrl = envValue(['PORTAL_WEBHOOK_BASE_URL'])
   const targetUrl = baseUrl

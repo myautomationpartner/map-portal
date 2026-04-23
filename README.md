@@ -101,16 +101,18 @@ Required runtime inputs:
 - `CLOUDFLARE_API_TOKEN`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_URL`
+- `ZERNIO_WEBHOOK_SECRET` (from env / `credential.txt`) or macOS Keychain service `MAP_ZERNIO_WEBHOOK_SECRET`
 
 Optional but recommended:
 - `CLOUDFLARE_ACCOUNT_ID`
-- `ZERNIO_WEBHOOK_SECRET`
 - `N8N_BASE_URL`
 - `PORTAL_WEBHOOK_BASE_URL`
 
 Notes:
 - `SUPABASE_ANON_KEY` can come from env, Supabase secrets naming, or the repo fallback constant in `src/lib/supabase.js`.
-- If `ZERNIO_WEBHOOK_SECRET` is unavailable, the script still deploys the portal but leaves the onboarding run in follow-up mode because the signed Settings webhook cannot be registered safely for a brand-new worker.
+- `ZERNIO_WEBHOOK_SECRET` now resolves from env / `credential.txt` first, then from the macOS Keychain services `MAP_ZERNIO_WEBHOOK_SECRET` or `ZERNIO_WEBHOOK_SECRET`.
+- Recommended setup for this machine:
+  - `security add-generic-password -U -a "$USER" -s MAP_ZERNIO_WEBHOOK_SECRET -w '<secret>'`
 - Use `--skip-webhook-config` if you want to deploy first and wire Zernio later.
 
 ## Notes
