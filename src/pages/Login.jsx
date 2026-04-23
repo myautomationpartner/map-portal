@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { Loader2 } from 'lucide-react'
+import { buildTenantConfig } from '../lib/tenantConfig'
 
 export default function Login() {
+  const tenant = useMemo(() => buildTenantConfig(), [])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -32,14 +34,25 @@ export default function Login() {
               <div className="inline-flex h-20 w-20 items-center justify-center overflow-hidden rounded-[28px] border bg-white p-1 shadow-sm"
                 style={{ borderColor: 'rgba(201, 168, 76, 0.2)' }}>
                 <img
-                  src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg"
-                  alt="Dancescapes"
+                  src={tenant.logoUrl}
+                  alt={tenant.displayName}
                   className="h-full w-full object-cover"
+                  onError={e => {
+                    e.target.style.display = 'none'
+                    e.target.parentElement.style.display = 'flex'
+                    e.target.parentElement.style.alignItems = 'center'
+                    e.target.parentElement.style.justifyContent = 'center'
+                    e.target.parentElement.textContent = tenant.logoInitials
+                    e.target.parentElement.style.color = '#c9a84c'
+                    e.target.parentElement.style.fontSize = '28px'
+                    e.target.parentElement.style.fontFamily = 'Sora,Georgia,serif'
+                    e.target.parentElement.style.fontWeight = '600'
+                  }}
                 />
               </div>
               <div>
-                <p className="font-display text-3xl font-semibold" style={{ color: 'var(--portal-text)' }}>Dancescapes</p>
-                <p className="mt-1 text-sm font-medium" style={{ color: 'var(--portal-text-muted)' }}>Partner Portal</p>
+                <p className="font-display text-3xl font-semibold" style={{ color: 'var(--portal-text)' }}>{tenant.displayName}</p>
+                <p className="mt-1 text-sm font-medium" style={{ color: 'var(--portal-text-muted)' }}>{tenant.portalLabel}</p>
               </div>
             </div>
 
@@ -65,8 +78,8 @@ export default function Login() {
           <div className="mb-5 inline-block h-20 w-20 overflow-hidden rounded-[26px] border bg-white p-1 shadow-lg"
             style={{ borderColor: 'rgba(201, 168, 76, 0.2)' }}>
             <img
-              src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg"
-              alt="Dancescapes"
+              src={tenant.logoUrl}
+              alt={tenant.displayName}
               className="w-full h-full object-cover"
               onError={e => {
                 e.target.style.display = 'none'
@@ -74,14 +87,14 @@ export default function Login() {
                 e.target.parentElement.style.alignItems = 'center'
                 e.target.parentElement.style.justifyContent = 'center'
                 e.target.parentElement.style.background = '#ffffff'
-                e.target.parentElement.innerHTML = '<span style="color:#c9a84c;font-size:32px;font-family:Sora,Georgia,serif;font-weight:600">D</span>'
+                e.target.parentElement.innerHTML = `<span style="color:#c9a84c;font-size:32px;font-family:Sora,Georgia,serif;font-weight:600">${tenant.logoInitials}</span>`
               }}
             />
           </div>
           <h1 className="font-display mb-1 text-3xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-            Dancescapes
+            {tenant.displayName}
           </h1>
-          <p className="text-sm font-medium" style={{ color: 'var(--portal-text-muted)' }}>Partner Portal</p>
+          <p className="text-sm font-medium" style={{ color: 'var(--portal-text-muted)' }}>{tenant.portalLabel}</p>
         </div>
 
         <div className="portal-surface rounded-[32px] p-8">
@@ -90,7 +103,7 @@ export default function Login() {
               Secure client access
             </span>
             <h2 className="font-display mt-4 text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>Welcome back</h2>
-            <p className="mt-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>Sign in to your studio dashboard and documents workspace.</p>
+            <p className="mt-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>Sign in to your portal dashboard and documents workspace.</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
@@ -150,11 +163,11 @@ export default function Login() {
         <p className="mt-6 text-center text-xs" style={{ color: 'var(--portal-text-soft)' }}>
           Need access?{' '}
           <a
-            href="mailto:billing@myautomationpartner.com"
+            href={`mailto:${tenant.supportEmail}`}
             className="transition-colors hover:text-[var(--portal-primary)]"
             style={{ color: 'var(--portal-text-muted)' }}
           >
-            Contact your account manager
+            Contact support
           </a>
         </p>
         </div>

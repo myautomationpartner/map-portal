@@ -44,6 +44,7 @@ import {
   updateDocumentMetadata,
   uploadFileToSignedUrl,
 } from '../lib/portalApi'
+import { buildTenantConfig } from '../lib/tenantConfig'
 
 const LOCAL_FOLDERS_KEY = 'ds_document_folders'
 const ALL_FILES_FOLDER = 'All Files'
@@ -154,8 +155,9 @@ function formatBytes(value) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function buildShareUrl(token) {
-  return `${window.location.origin}/share/${token}`
+function buildShareUrl(token, canonicalHost) {
+  const baseOrigin = canonicalHost ? `https://${canonicalHost}` : window.location.origin
+  return `${baseOrigin}/share/${token}`
 }
 
 function isShareLinkActive(link) {
@@ -888,6 +890,10 @@ export default function Documents() {
     queryKey: ['profile'],
     queryFn: fetchProfile,
   })
+  const tenant = useMemo(
+    () => buildTenantConfig({ client: profile?.clients || null, claims }),
+    [profile, claims],
+  )
 
   const {
     data: documents = [],
@@ -1246,7 +1252,7 @@ export default function Documents() {
   }
 
   async function handleCopySharedFileLink(link) {
-    const shareUrl = buildShareUrl(link.token)
+    const shareUrl = buildShareUrl(link.token, tenant.canonicalHost)
     try {
       await copyTextToClipboard(shareUrl)
       setShareNotice({ type: 'success', message: 'Share link copied to clipboard.' })

@@ -4,6 +4,7 @@ import { useLocation, useParams } from 'react-router-dom'
 import { AlertCircle, CheckCircle2, Clock3, ExternalLink, FileText, Loader2, Share2 } from 'lucide-react'
 import PdfDocumentViewer from '../components/PdfDocumentViewer'
 import { resolveShareLink } from '../lib/portalApi'
+import { buildTenantConfig } from '../lib/tenantConfig'
 
 function getMessage(errorCode) {
   if (errorCode === 'invalid_token') return 'This share link does not exist or has already been revoked.'
@@ -40,6 +41,7 @@ export default function PublicShare() {
   })
 
   const payload = shareQuery.data
+  const tenant = useMemo(() => buildTenantConfig({ sharePayload: payload }), [payload])
   const isPdf = payload?.mime_type === 'application/pdf'
   const isImage = payload?.mime_type?.startsWith('image/')
 
@@ -58,7 +60,7 @@ export default function PublicShare() {
                 Secure file share
               </span>
               <h1 className="portal-page-title mt-4 font-display">
-                Dancescapes Performing Arts, LLC has shared a file with you.
+                {tenant.displayName} has shared a file with you.
               </h1>
               <p className="mt-3 text-sm md:text-base" style={{ color: 'var(--portal-text-muted)' }}>
                 Open the file preview below or download the original file while this shared access remains active.
@@ -220,11 +222,11 @@ export default function PublicShare() {
         <p className="text-center text-sm" style={{ color: 'var(--portal-text-soft)' }}>
           Need help?{' '}
           <a
-            href="mailto:info@dancescapes.com"
+            href={`mailto:${tenant.supportEmail}`}
             style={{ color: 'var(--portal-text-muted)' }}
             className="font-medium transition-colors hover:text-[var(--portal-primary)]"
           >
-            info@dancescapes.com
+            {tenant.supportEmail}
           </a>
         </p>
       </div>

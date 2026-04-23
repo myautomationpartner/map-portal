@@ -737,6 +737,7 @@ export default function CreatePost() {
   const [scheduledFor, setScheduledFor] = useState('')
   const [submitState, setSubmitState] = useState('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const [publishResult, setPublishResult] = useState(null)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [previewPlatform, setPreviewPlatform] = useState('facebook')
   const [selectedDay, setSelectedDay] = useState('')
@@ -1443,6 +1444,7 @@ export default function CreatePost() {
     let savedPostId = null
 
     try {
+      setPublishResult(null)
       let r2MediaUrl = null
       if (imageFile) {
         setSubmitState('uploading')
@@ -1539,6 +1541,12 @@ export default function CreatePost() {
         throw new Error(buildPublishErrorMessage(n8nData, n8nRawText, timingMode))
       }
 
+      setPublishResult({
+        requestedPlatforms: Array.isArray(n8nData?.requestedPlatforms) ? n8nData.requestedPlatforms : activePlatforms,
+        publishedPlatforms: Array.isArray(n8nData?.publishedPlatforms) ? n8nData.publishedPlatforms : [],
+        skippedPlatforms: Array.isArray(n8nData?.skippedPlatforms) ? n8nData.skippedPlatforms : [],
+      })
+
       if (activeDraftId) {
         const currentMeta = parseDraftMeta(activeDraft?.review_notes)
         await updateSocialDraft(activeDraftId, {
@@ -1571,6 +1579,7 @@ export default function CreatePost() {
         setTimingMode('slot')
         setSubmitState('idle')
         setErrorMsg('')
+        setPublishResult(null)
         setEditingScheduledPostId('')
         setEditingScheduledPostRef('')
         setActiveDraftId('')
@@ -1591,6 +1600,7 @@ export default function CreatePost() {
         supabase.from('posts').update({ status: 'failed' }).eq('id', savedPostId).then(() => {})
       }
       setErrorMsg(error.message || 'Something went wrong. Please try again.')
+      setPublishResult(null)
       setSubmitState('error')
       setReviewOpen(false)
       setTimeout(() => setSubmitState('idle'), 4000)
@@ -1625,11 +1635,16 @@ export default function CreatePost() {
                   </p>
                   <p className="mt-0.5 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
                     {timingMode === 'now'
-                      ? 'Your post has been sent to the selected platforms.'
+                      ? 'Your post has been sent to the connected selected platforms.'
                       : scheduledFor
                         ? `Scheduled for ${formatDetailedLocalDateTime(scheduledFor)}.`
                         : 'The scheduled slot is now reserved and ready for publish time.'}
                   </p>
+                  {publishResult?.skippedPlatforms?.length > 0 && (
+                    <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                      Skipped disconnected platform{publishResult.skippedPlatforms.length !== 1 ? 's' : ''}: {publishResult.skippedPlatforms.join(', ')}.
+                    </p>
+                  )}
                 </div>
               </div>
             )}

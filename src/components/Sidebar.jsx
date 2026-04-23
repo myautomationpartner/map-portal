@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { LayoutDashboard, Send, MessageSquare, Settings, LogOut, FolderOpen } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { getSessionClaims } from '../lib/portalApi'
+import { buildTenantConfig } from '../lib/tenantConfig'
 
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
@@ -13,6 +14,7 @@ const navItems = [
 
 export default function Sidebar({ session }) {
   const claims = getSessionClaims(session)
+  const tenant = buildTenantConfig({ claims })
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -26,21 +28,21 @@ export default function Sidebar({ session }) {
       <div className="flex items-center gap-3 border-b px-7 py-8" style={{ borderColor: 'var(--portal-border)' }}>
         <div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl border bg-white shadow-sm" style={{ borderColor: 'rgba(201, 168, 76, 0.24)' }}>
           <img
-            src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg"
-            alt="Dancescapes"
+            src={tenant.logoUrl}
+            alt={tenant.displayName}
             className="w-full h-full object-cover"
             onError={e => {
               e.target.style.display = 'none'
-              e.target.parentElement.innerHTML = '<span style="color:#c9a84c;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;width:100%;height:100%">D</span>'
+              e.target.parentElement.innerHTML = `<span style="color:#c9a84c;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;width:100%;height:100%">${tenant.logoInitials}</span>`
             }}
           />
         </div>
         <div>
           <p className="font-display text-lg font-semibold leading-tight" style={{ color: '#ffffff' }}>
-            Dancescapes
+            {tenant.displayName}
           </p>
           <p className="text-[10px] font-semibold uppercase tracking-[0.28em]" style={{ color: 'rgba(201, 168, 76, 0.9)' }}>
-            Partner Portal
+            {tenant.portalLabel}
           </p>
         </div>
       </div>

@@ -1,6 +1,8 @@
 const DROPBOX_API_BASE = 'https://api.dropboxapi.com/2'
 const DROPBOX_CONTENT_API_BASE = 'https://content.dropboxapi.com/2'
 const DROPBOX_OAUTH_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token'
+const DEFAULT_N8N_BASE_URL = 'https://n8n.myautomationpartner.com'
+const TECHNICAL_HOST_SUFFIXES = ['.workers.dev', '.pages.dev']
 const SUPPORTED_MEDIA_EXTENSIONS = new Set([
   'jpg',
   'jpeg',
@@ -42,6 +44,303 @@ function json(data, init = {}) {
       ...(init.headers || {}),
     },
   })
+}
+
+function getCanonicalPortalHost(env) {
+  return String(env.PORTAL_CANONICAL_HOST || '').trim().toLowerCase()
+}
+
+function shouldBypassCanonicalRedirect(url) {
+  return url.pathname.startsWith('/api/')
+}
+
+function buildCanonicalRedirect(request, env) {
+  const canonicalHost = getCanonicalPortalHost(env)
+  if (!canonicalHost) return null
+  if (!['GET', 'HEAD'].includes(request.method)) return null
+
+  const url = new URL(request.url)
+  const currentHost = String(url.hostname || '').toLowerCase()
+
+  if (!currentHost || currentHost === canonicalHost) return null
+  if (shouldBypassCanonicalRedirect(url)) return null
+
+  const isTechnicalHost = TECHNICAL_HOST_SUFFIXES.some((suffix) => currentHost.endsWith(suffix))
+  if (!isTechnicalHost) return null
+
+  url.protocol = 'https:'
+  url.host = canonicalHost
+
+  return new Response(null, {
+    status: 308,
+    headers: {
+      location: url.toString(),
+      'cache-control': 'no-store',
+    },
+  })
+}
+
+function getN8nBaseUrl(env) {
+  return String(env.N8N_BASE_URL || DEFAULT_N8N_BASE_URL).replace(/\/$/, '')
+}
+
+async function proxyN8nWebhook(request, env, webhookPath) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        allow: 'POST, OPTIONS',
+      },
+    })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+
+  const targetUrl = `${getN8nBaseUrl(env)}/webhook/${webhookPath}`
+
+  let bodyText = ''
+  try {
+    bodyText = await request.text()
+  } catch {
+    return json({ error: 'Could not read request body.' }, { status: 400 })
+  }
+
+  try {
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: bodyText || '{}',
+    })
+
+    const responseText = await response.text()
+    return new Response(responseText, {
+      status: response.status,
+      headers: {
+        'content-type': response.headers.get('content-type') || 'application/json; charset=utf-8',
+        'cache-control': 'no-store',
+      },
+    })
+  } catch (error) {
+    return json({
+      error: error?.message || `Failed to reach ${webhookPath}.`,
+    }, { status: 502 })
+  }
+}
+
+function normalizePlatform(platform) {
+  const value = String(platform || '').trim().toLowerCase()
+  const platformMap = {
+    facebook: 'facebook',
+    facebook_page: 'facebook',
+    fb: 'facebook',
+    instagram: 'instagram',
+    ig: 'instagram',
+    tiktok: 'tiktok',
+    tt: 'tiktok',
+  }
+
+  return platformMap[value] || null
+}
+
+function safeCompareHex(left, right) {
+  if (left.length !== right.length) return false
+  let mismatch = 0
+  for (let index = 0; index < left.length; index += 1) {
+    mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index)
+  }
+  return mismatch === 0
+}
+
+async function verifyZernioWebhookSignature(rawBody, signature, secret) {
+  const normalizedSignature = String(signature || '').trim().toLowerCase()
+  const normalizedSecret = String(secret || '')
+  if (!normalizedSignature || !normalizedSecret) return false
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(normalizedSecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+
+  const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody))
+  const expected = Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+
+  return safeCompareHex(expected, normalizedSignature)
+}
+
+function getSupabaseConfig(env) {
+  const url = String(env.SUPABASE_URL || '').replace(/\/$/, '')
+  const serviceRoleKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '')
+  const clientId = String(env.PORTAL_CLIENT_ID || '')
+  const webhookSecret = String(env.ZERNIO_WEBHOOK_SECRET || '')
+
+  if (!url || !serviceRoleKey || !clientId || !webhookSecret) {
+    throw new Error('Missing worker secrets for Zernio webhook reconciliation.')
+  }
+
+  return { url, serviceRoleKey, clientId, webhookSecret }
+}
+
+async function supabaseRest(envConfig, path, init = {}) {
+  const response = await fetch(`${envConfig.url}${path}`, {
+    ...init,
+    headers: {
+      apikey: envConfig.serviceRoleKey,
+      Authorization: `Bearer ${envConfig.serviceRoleKey}`,
+      'Content-Type': 'application/json',
+      ...(init.headers || {}),
+    },
+  })
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(text || `Supabase request failed (${response.status}).`)
+  }
+
+  return response
+}
+
+async function replaceSocialConnection(envConfig, { platform, accountId, username }) {
+  const filters = new URLSearchParams({
+    client_id: `eq.${envConfig.clientId}`,
+    platform: `eq.${platform}`,
+  })
+
+  await supabaseRest(
+    envConfig,
+    `/rest/v1/social_connections?${filters.toString()}`,
+    { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
+  )
+
+  const payload = [{
+    client_id: envConfig.clientId,
+    platform,
+    zernio_account_id: accountId,
+    username,
+    connected_at: new Date().toISOString(),
+  }]
+
+  await supabaseRest(
+    envConfig,
+    '/rest/v1/social_connections',
+    {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
+async function removeSocialConnection(envConfig, { platform, accountId }) {
+  const filters = new URLSearchParams({
+    client_id: `eq.${envConfig.clientId}`,
+  })
+
+  if (accountId) {
+    filters.set('zernio_account_id', `eq.${accountId}`)
+  } else if (platform) {
+    filters.set('platform', `eq.${platform}`)
+  }
+
+  await supabaseRest(
+    envConfig,
+    `/rest/v1/social_connections?${filters.toString()}`,
+    { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
+  )
+}
+
+async function handleZernioAccountWebhook(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: { allow: 'POST, OPTIONS' },
+    })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+
+  let envConfig
+  try {
+    envConfig = getSupabaseConfig(env)
+  } catch (error) {
+    return json({ error: error.message || 'Webhook configuration is incomplete.' }, { status: 500 })
+  }
+
+  let rawBody = ''
+  try {
+    rawBody = await request.text()
+  } catch {
+    return json({ error: 'Could not read webhook body.' }, { status: 400 })
+  }
+
+  const signature = request.headers.get('x-zernio-signature') || request.headers.get('x-late-signature') || ''
+  const isValidSignature = await verifyZernioWebhookSignature(rawBody, signature, envConfig.webhookSecret)
+  if (!isValidSignature) {
+    return json({ error: 'Invalid webhook signature.' }, { status: 401 })
+  }
+
+  let payload = {}
+  try {
+    payload = JSON.parse(rawBody || '{}')
+  } catch {
+    return json({ error: 'Webhook payload was not valid JSON.' }, { status: 400 })
+  }
+
+  const eventName = String(
+    request.headers.get('x-zernio-event')
+    || request.headers.get('x-late-event')
+    || payload.event
+    || '',
+  ).trim()
+
+  if (eventName === 'webhook.test') {
+    return json({ success: true, message: 'Webhook test received.' })
+  }
+
+  const platform = normalizePlatform(payload.platform)
+  const accountId = String(payload.accountId || payload.id || '').trim()
+  const username = String(payload.username || payload.displayName || '').trim() || null
+
+  if (!platform) {
+    return json({ success: true, skipped: true, reason: 'Unsupported or missing platform.', event: eventName })
+  }
+
+  try {
+    if (eventName === 'account.connected') {
+      if (!accountId) {
+        return json({ error: 'Missing accountId in account.connected payload.' }, { status: 400 })
+      }
+
+      await replaceSocialConnection(envConfig, { platform, accountId, username })
+      return json({ success: true, event: eventName, platform, accountId, action: 'upserted' })
+    }
+
+    if (eventName === 'account.disconnected') {
+      await removeSocialConnection(envConfig, { platform, accountId })
+      return json({
+        success: true,
+        event: eventName,
+        platform,
+        accountId: accountId || null,
+        disconnectionType: payload.disconnectionType || null,
+        action: 'removed',
+      })
+    }
+  } catch (error) {
+    return json({ error: error.message || 'Webhook reconciliation failed.', event: eventName }, { status: 502 })
+  }
+
+  return json({ success: true, skipped: true, reason: 'Unhandled event.', event: eventName, platform })
 }
 
 function normalizePath(path) {
@@ -461,6 +760,23 @@ export { getIsoWeekFolder }
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
+    const canonicalRedirect = buildCanonicalRedirect(request, env)
+
+    if (canonicalRedirect) {
+      return canonicalRedirect
+    }
+
+    if (url.pathname === '/api/n8n/zernio-connect-url') {
+      return proxyN8nWebhook(request, env, 'zernio-connect-url')
+    }
+
+    if (url.pathname === '/api/n8n/zernio-sync-accounts') {
+      return proxyN8nWebhook(request, env, 'zernio-sync-accounts')
+    }
+
+    if (url.pathname === '/api/zernio/account-events') {
+      return handleZernioAccountWebhook(request, env)
+    }
 
     if (url.pathname === '/api/dropbox/week-media') {
       if (request.method === 'OPTIONS') {

@@ -1,6 +1,6 @@
-# Dancescapes Portal
+# MAP Portal Template
 
-React 19 + Vite client portal for Dancescapes. The app uses Supabase for auth and data access, deployed Supabase Edge Functions for signed document workflows, and Cloudflare Workers for static hosting.
+React 19 + Vite multi-tenant client portal template for My Automation Partner. The app uses Supabase for auth and data access, deployed Supabase Edge Functions for signed document workflows, and Cloudflare Workers for static hosting.
 
 ## Local Development
 
@@ -22,6 +22,15 @@ Required values:
 
 Optional:
 - `VITE_N8N_BASE_URL`
+- `VITE_PORTAL_DISPLAY_NAME`
+- `VITE_PORTAL_LABEL`
+- `VITE_PORTAL_SUPPORT_EMAIL`
+- `VITE_PORTAL_LOGO_URL`
+- `VITE_PORTAL_CANONICAL_HOST`
+- `VITE_PORTAL_WORKER_NAME`
+
+Worker/runtime env for domain cutover:
+- `PORTAL_CANONICAL_HOST`
 
 3. Start the app:
 
@@ -55,14 +64,20 @@ npm run build
 npx wrangler deploy
 ```
 
-Configured worker:
+Current pilot worker:
 - `dancescapes-portal`
 
-Configured custom domain:
-- `dancescapesportal.myautomationpartner.com`
+Recommended MAP-managed production pattern:
+- `<client-slug>.portal.myautomationpartner.com`
+
+Current cutover behavior:
+- if `PORTAL_CANONICAL_HOST` is set on the worker, non-API `GET`/`HEAD` requests hitting the technical `*.workers.dev` or `*.pages.dev` host will redirect to the canonical MAP-owned host
+- API routes stay on the technical host so internal webhook/proxy paths are not broken during rollout
+- document share links now prefer the tenant canonical host when one is configured
 
 ## Notes
 
 - Auth/session is handled entirely in the browser with Supabase Auth.
 - Document preview/upload/share flows rely on live Edge Functions instead of duplicating signing logic in the frontend.
 - The app is a SPA and depends on Worker asset routing for deep links like `/documents` and `/share/:token`.
+- Customer-facing branding, support contact, and canonical host should come from runtime/provisioning config, not hardcoded client literals.
