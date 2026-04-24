@@ -1096,6 +1096,41 @@ export default function CreatePost() {
     }
   }, [activeDraftId, activeSlot, activeDraft, angleChoices, selectedAngleId, generatedCaption, mediaSuggestion, queryClient, clientId, recordPlannerFeedbackSafely])
 
+  const loadScheduledPostForEditing = useCallback((post) => {
+    if (!post) return
+
+    const timezone = calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'
+    setEditingScheduledPostId(post.id)
+    setEditingScheduledPostRef(post.n8n_execution_id || '')
+    setContent(post.content || '')
+    setSelectedPlatforms({
+      facebook: Boolean(post.platforms?.includes('facebook')),
+      instagram: Boolean(post.platforms?.includes('instagram')),
+      google: Boolean(post.platforms?.includes('google')),
+      tiktok: Boolean(post.platforms?.includes('tiktok')),
+    })
+    setPreviewPlatform(post.platforms?.[0] || 'facebook')
+    setTimingMode('custom')
+    setScheduledFor(isoToLocalInputValue(post.scheduled_for, timezone))
+    setSelectedDay(post.localDate || selectedDay)
+    setExistingMediaUrl(post.media_url || '')
+    setImageFile(null)
+    setImagePreview(post.media_url || null)
+    setDropboxAttachments([])
+    setPreviewedDropboxAsset(null)
+    setActiveDraftId('')
+    setActiveSlotKey('')
+    setSelectedAngleId('')
+    setAngleChoices([])
+    setMediaSuggestion('')
+    setDraftStatus('Editing a scheduled post. Save changes to update the live schedule.')
+    setDraftError('')
+    setDraftDirty(false)
+    setErrorMsg('')
+    setSearchParams({ date: post.localDate || selectedDay || '', editPost: post.id })
+    composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [calendar?.policy?.timezone, profile?.clients?.timezone, selectedDay, setSearchParams])
+
   useEffect(() => {
     if (!calendar?.slots || !draftTargetDate || !draftTargetSlot || draftLoading) return
 
@@ -1272,41 +1307,6 @@ export default function CreatePost() {
     setEditingScheduledPostId('')
     setEditingScheduledPostRef('')
   }
-
-  const loadScheduledPostForEditing = useCallback((post) => {
-    if (!post) return
-
-    const timezone = calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'
-    setEditingScheduledPostId(post.id)
-    setEditingScheduledPostRef(post.n8n_execution_id || '')
-    setContent(post.content || '')
-    setSelectedPlatforms({
-      facebook: Boolean(post.platforms?.includes('facebook')),
-      instagram: Boolean(post.platforms?.includes('instagram')),
-      google: Boolean(post.platforms?.includes('google')),
-      tiktok: Boolean(post.platforms?.includes('tiktok')),
-    })
-    setPreviewPlatform(post.platforms?.[0] || 'facebook')
-    setTimingMode('custom')
-    setScheduledFor(isoToLocalInputValue(post.scheduled_for, timezone))
-    setSelectedDay(post.localDate || selectedDay)
-    setExistingMediaUrl(post.media_url || '')
-    setImageFile(null)
-    setImagePreview(post.media_url || null)
-    setDropboxAttachments([])
-    setPreviewedDropboxAsset(null)
-    setActiveDraftId('')
-    setActiveSlotKey('')
-    setSelectedAngleId('')
-    setAngleChoices([])
-    setMediaSuggestion('')
-    setDraftStatus('Editing a scheduled post. Save changes to update the live schedule.')
-    setDraftError('')
-    setDraftDirty(false)
-    setErrorMsg('')
-    setSearchParams({ date: post.localDate || selectedDay || '', editPost: post.id })
-    composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [calendar?.policy?.timezone, profile?.clients?.timezone, selectedDay, setSearchParams])
 
   async function handleDeleteDraft(slot) {
     if (!requireWriteAccess('delete drafts')) return
