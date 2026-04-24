@@ -5,10 +5,24 @@ import { buildTenantConfig } from '../lib/tenantConfig'
 
 export default function Login() {
   const tenant = useMemo(() => buildTenantConfig(), [])
-  const [email, setEmail] = useState('')
+  const loginContext = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return { email: '', setupMessage: '' }
+    }
+
+    const params = new URLSearchParams(window.location.search)
+    const seededEmail = params.get('email') || ''
+    const setupMessage = params.get('setup') === 'complete'
+      ? 'Your portal is ready. Sign in with the password you just created.'
+      : ''
+
+    return { email: seededEmail, setupMessage }
+  }, [])
+  const [email, setEmail] = useState(loginContext.email)
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [setupMessage] = useState(loginContext.setupMessage)
 
   async function handleLogin(e) {
     e.preventDefault()
@@ -107,6 +121,16 @@ export default function Login() {
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
+            {setupMessage && (
+              <div className="rounded-2xl px-4 py-3 text-sm" style={{
+                color: 'var(--portal-text)',
+                background: 'rgba(99, 214, 175, 0.14)',
+                border: '1px solid rgba(99, 214, 175, 0.28)',
+              }}>
+                {setupMessage}
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-medium uppercase tracking-wider mb-2"
                 style={{ color: 'var(--portal-text-soft)' }}>
