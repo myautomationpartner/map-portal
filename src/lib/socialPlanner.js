@@ -1,4 +1,9 @@
 import { plannerClientAliases, plannerContract } from './socialPlannerPolicy'
+import {
+  normalizePlannerBusinessType,
+  plannerBusinessTypeLabels,
+  plannerIndustryTemplates,
+} from './plannerIndustryCatalog'
 
 const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 const PRIORITY_SCORES = { high: 30, medium: 20, conditional: 10, low: 0 }
@@ -42,6 +47,21 @@ function hashString(value) {
     hash |= 0
   }
   return Math.abs(hash)
+}
+
+function normalizePlannerProfile(profile) {
+  const embedded = profile?.clients?.client_planner_profiles
+  if (Array.isArray(embedded)) return embedded[0] || null
+  return embedded || null
+}
+
+function chooseVariation(options, seed, fallback = []) {
+  if (!Array.isArray(options) || options.length === 0) return fallback
+  return options[seed % options.length] || fallback
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value))
 }
 
 function getWeekKey(dateString) {
@@ -102,8 +122,60 @@ function resolvePolicyKey(clientSlug, businessName) {
   return Object.keys(plannerContract.clients).find((key) => normalizedName.includes(key)) || null
 }
 
+function materializeIndustryPolicy(profile, plannerProfile) {
+  const dbClientSlug = profile?.clients?.slug || ''
+  const businessType = normalizePlannerBusinessType(
+    plannerProfile?.business_type || profile?.clients?.business_type,
+  )
+  const template = plannerIndustryTemplates[businessType]
+  if (!template) return null
+
+  const plannerSeed = Number.isInteger(plannerProfile?.variation_seed)
+    ? Math.abs(plannerProfile.variation_seed)
+    : hashString(`${dbClientSlug}:${profile?.clients?.business_name || businessType}`)
+
+  const plannerProfileJson =
+    plannerProfile?.profile_json && typeof plannerProfile.profile_json === 'object'
+      ? plannerProfile.profile_json
+      : {}
+
+  const preferredDays = Array.isArray(plannerProfileJson.preferred_days) && plannerProfileJson.preferred_days.length
+    ? plannerProfileJson.preferred_days
+    : chooseVariation(template.preferredDaySets, plannerSeed, template.cadence.preferred_days || [])
+
+  const preferredTimeWindows = Array.isArray(plannerProfileJson.preferred_time_windows) && plannerProfileJson.preferred_time_windows.length
+    ? plannerProfileJson.preferred_time_windows
+    : chooseVariation(template.preferredTimeWindowSets, plannerSeed, [])
+
+  return {
+    plannerClientKey: plannerProfile?.policy_template_key || `${businessType}_core`,
+    dbClientSlug,
+    policyVersion: plannerProfile?.policy_version || template.policyVersion,
+    timezone: profile?.clients?.timezone || template.timezone || plannerContract.global_defaults.timezone,
+    planningHorizonDays: template.planningHorizonDays || plannerContract.global_defaults.planning_horizon_days,
+    cadence: {
+      ...cloneJson(template.cadence),
+      preferred_days: preferredDays,
+      preferred_time_windows: cloneJson(preferredTimeWindows),
+    },
+    contentMixTargets: cloneJson(template.contentMixTargets),
+    seasonalModifiers: cloneJson(template.seasonalModifiers || []),
+    allowedPostTypes: cloneJson(template.allowedPostTypes),
+    businessType,
+    industryLabel: plannerBusinessTypeLabels[businessType] || template.label,
+    plannerProfile,
+  }
+}
+
 export function resolvePlannerPolicy(profile) {
   const dbClientSlug = profile?.clients?.slug || ''
+  const plannerProfile = normalizePlannerProfile(profile)
+  const industryPolicy = materializeIndustryPolicy(profile, plannerProfile)
+
+  if (industryPolicy) {
+    return industryPolicy
+  }
+
   const policyKey = resolvePolicyKey(dbClientSlug, profile?.clients?.business_name)
 
   if (!policyKey) {
@@ -123,6 +195,9 @@ export function resolvePlannerPolicy(profile) {
     contentMixTargets: clientPolicy.content_mix_targets,
     seasonalModifiers: clientPolicy.seasonal_modifiers || [],
     allowedPostTypes: clientPolicy.allowed_post_types,
+    businessType: normalizePlannerBusinessType(profile?.clients?.business_type || policyKey),
+    industryLabel: plannerBusinessTypeLabels[normalizePlannerBusinessType(profile?.clients?.business_type || policyKey)] || 'Small Business',
+    plannerProfile: plannerProfile || null,
   }
 }
 

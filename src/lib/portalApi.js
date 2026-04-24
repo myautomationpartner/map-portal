@@ -105,7 +105,7 @@ export function resolveUploadMimeType(file) {
 export async function fetchProfile() {
   const { data, error } = await supabase
     .from('users')
-    .select('id, client_id, role, name, email, clients(*)')
+    .select('id, client_id, role, name, email, clients(*, client_planner_profiles(*))')
     .single()
 
   if (error) throw error

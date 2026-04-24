@@ -8,6 +8,7 @@ export const plannerContract = {
     max_posts_per_day: 1,
     supported_post_types: [
       'promotional_offer',
+      'signature_highlight',
       'class_spotlight',
       'community_story',
       'testimonial_social_proof',
@@ -15,6 +16,7 @@ export const plannerContract = {
       'seasonal_campaign',
       'student_spotlight',
       'teacher_tip',
+      'expert_tip',
       'behind_the_scenes',
       'milestone_moment',
     ],

@@ -46,6 +46,41 @@ const POST_TYPE_LIBRARY = {
       },
     ],
   },
+  signature_highlight: {
+    subject: 'a signature offer or standout experience',
+    angles: [
+      {
+        id: 'signature_value',
+        label: 'Signature value',
+        shortLabel: 'Highlight the signature',
+        opening: 'One of the easiest ways to understand what makes this business special is to start with the thing people remember most.',
+        cta: 'Send us a message if you want help choosing the best place to start.',
+        topics: ['standout experience', 'best-known offering', 'why people come back'],
+        mediaType: 'signature_highlight',
+        mediaPrompt: ({ businessName }) => `A polished but real image that highlights the signature experience or best-known offering from ${businessName}.`,
+      },
+      {
+        id: 'outcome_first',
+        label: 'Outcome first',
+        shortLabel: 'Lead with the result',
+        opening: 'People respond quickly when they can picture the result before they even ask a question.',
+        cta: 'Reach out if you want help deciding whether this is the right fit for you.',
+        topics: ['clear outcome', 'customer benefit', 'practical result'],
+        mediaType: 'outcome_scene',
+        mediaPrompt: ({ businessName }) => `A results-focused image from ${businessName} that makes the end benefit feel obvious and desirable.`,
+      },
+      {
+        id: 'best_seller',
+        label: 'Best seller',
+        shortLabel: 'Feature a favorite',
+        opening: 'Sometimes the simplest post is just showing the thing customers already love and explaining why.',
+        cta: 'Ask us if you want the quick version of what makes this a favorite.',
+        topics: ['customer favorite', 'easy introduction', 'strong first impression'],
+        mediaType: 'best_seller',
+        mediaPrompt: ({ businessName }) => `A strong hero image from ${businessName} featuring a customer favorite, signature service, or flagship offering.`,
+      },
+    ],
+  },
   class_spotlight: {
     subject: 'one of this week\'s classes',
     angles: [
@@ -223,6 +258,41 @@ const POST_TYPE_LIBRARY = {
         topics: ['teacher perspective', 'supportive coaching', 'clear instruction'],
         mediaType: 'coach_moment',
         mediaPrompt: ({ businessName }) => `An expressive teacher moment at ${businessName} with clear eye contact, leadership, and warmth.`,
+      },
+    ],
+  },
+  expert_tip: {
+    subject: 'a helpful expert tip',
+    angles: [
+      {
+        id: 'quick_win_tip',
+        label: 'Quick win',
+        shortLabel: 'Share a quick win',
+        opening: 'A useful tip earns attention fast when it helps someone avoid a mistake or feel more confident right away.',
+        cta: 'Follow along for more practical advice like this.',
+        topics: ['simple improvement', 'avoidable mistake', 'easy confidence boost'],
+        mediaType: 'expert_tip_scene',
+        mediaPrompt: ({ businessName }) => `An approachable expert-led image from ${businessName} that fits a clear, practical tip-style post.`,
+      },
+      {
+        id: 'faq_answer',
+        label: 'FAQ answer',
+        shortLabel: 'Answer a common question',
+        opening: 'A lot of hesitation disappears when you answer the question people keep wondering about but do not always ask.',
+        cta: 'Message us if you want the fuller answer for your situation.',
+        topics: ['common question', 'clear explanation', 'trust through clarity'],
+        mediaType: 'faq_answer',
+        mediaPrompt: ({ businessName }) => `A calm and credible image from ${businessName} that supports an FAQ or myth-busting caption.`,
+      },
+      {
+        id: 'pro_perspective',
+        label: 'Pro perspective',
+        shortLabel: 'Use expert perspective',
+        opening: 'Sometimes what helps most is hearing how a pro thinks about the situation and what they notice first.',
+        cta: 'Reach out if you want help applying this to your own situation.',
+        topics: ['expert point of view', 'smart next step', 'what to watch for'],
+        mediaType: 'expert_perspective',
+        mediaPrompt: ({ businessName }) => `A professional, trustworthy image from ${businessName} that feels credible, modern, and human.`,
       },
     ],
   },
@@ -482,7 +552,14 @@ function pickFromList(items, seed, count = 1) {
 }
 
 function inferIndustry(profile, policy) {
-  const explicitIndustry = normalizeText(profile?.clients?.industry || profile?.clients?.business_type)
+  const embeddedPlannerProfile = Array.isArray(profile?.clients?.client_planner_profiles)
+    ? profile.clients.client_planner_profiles[0]
+    : profile?.clients?.client_planner_profiles
+  const explicitIndustry = normalizeText(
+    embeddedPlannerProfile?.business_type ||
+    profile?.clients?.industry ||
+    profile?.clients?.business_type,
+  )
   if (explicitIndustry) return explicitIndustry
 
   const businessName = normalizeText(profile?.clients?.business_name).toLowerCase()
@@ -582,10 +659,12 @@ function buildCaption({ businessName, industry, postType, angle, slot }) {
 
   const supportByPostType = {
     promotional_offer: `A simple next step with ${topicPoint}.`,
+    signature_highlight: `A standout highlight built around ${topicPoint}.`,
     class_spotlight: `A class built around ${topicPoint}.`,
     student_spotlight: `A student story shaped by ${topicPoint}.`,
     community_story: `A moment that reflects ${topicPoint}.`,
     teacher_tip: `A helpful reminder focused on ${topicPoint}.`,
+    expert_tip: `A clear expert tip centered on ${topicPoint}.`,
     testimonial_social_proof: `A real example of ${topicPoint}.`,
     behind_the_scenes: `A behind-the-scenes moment centered on ${topicPoint}.`,
     event_or_performance: `A good time to highlight ${topicPoint}.`,
