@@ -314,6 +314,27 @@ export async function updateSocialDraft(draftId, changes) {
   return data
 }
 
+export async function recordPlannerFeedbackEvent(event) {
+  const payload = {
+    client_id: event.clientId,
+    draft_id: event.draftId || null,
+    post_type: event.postType,
+    event_type: event.eventType,
+    angle_id: event.angleId || null,
+    edit_severity: event.editSeverity || null,
+    event_metadata: event.metadata && typeof event.metadata === 'object' ? event.metadata : {},
+  }
+
+  const { data, error } = await supabase
+    .from('client_planner_feedback_events')
+    .insert(payload)
+    .select('id, client_id, draft_id, post_type, event_type, angle_id, edit_severity, event_metadata, created_at')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
 export async function deleteSocialDraft(draftId) {
   const { error } = await supabase
     .from('social_drafts')

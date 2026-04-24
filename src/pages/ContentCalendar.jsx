@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarDays, CheckCircle2, Clock3, Loader2, Plus, RefreshCw, Sparkles } from 'lucide-react'
 import {
   fetchProfile,
+  recordPlannerFeedbackEvent,
   fetchScheduledPosts,
   fetchSocialDrafts,
   upsertSocialDraft,
@@ -214,12 +215,31 @@ export default function ContentCalendar() {
           asset_requirements_json: generated.assetRequirements,
         }
 
-        return upsertSocialDraft(row)
+        const savedDraft = await upsertSocialDraft(row)
+        try {
+          await recordPlannerFeedbackEvent({
+            clientId,
+            draftId: savedDraft.id,
+            postType: slot.post_type,
+            eventType: 'draft_generated',
+            angleId: generated.angle.id,
+            metadata: {
+              source: 'fill_my_week',
+              generationSignature: `${slot.slot_date_local}:${slot.slot_label}:${slot.post_type}:${generated.angle.id}`,
+              slotDateLocal: slot.slot_date_local,
+              slotLabel: slot.slot_label,
+            },
+          })
+        } catch (error) {
+          console.error('[PlannerFeedback]', error)
+        }
+        return savedDraft
       }))
     },
     onSuccess: async () => {
       setActionError('')
       await queryClient.invalidateQueries({ queryKey: ['social-drafts', clientId] })
+      await queryClient.invalidateQueries({ queryKey: ['profile'] })
     },
     onError: (error) => {
       setActionError(error.message || 'Could not save draft slots.')

@@ -8,6 +8,7 @@ import {
   deleteSocialDraft,
   fetchPostById,
   fetchProfile,
+  recordPlannerFeedbackEvent,
   reconcileScheduledPosts,
   fetchScheduledPosts,
   fetchSocialDrafts,
@@ -937,6 +938,23 @@ export default function CreatePost() {
     }, 0)
   }, [])
 
+  const recordPlannerFeedbackSafely = useCallback(async (event, options = {}) => {
+    if (!clientId || !event?.postType || !event?.eventType) return
+
+    try {
+      await recordPlannerFeedbackEvent({
+        clientId,
+        ...event,
+      })
+
+      if (options.invalidateProfile) {
+        await queryClient.invalidateQueries({ queryKey: ['profile'] })
+      }
+    } catch (error) {
+      console.error('[PlannerFeedback]', error)
+    }
+  }, [clientId, queryClient])
+
   const resolveDraftForSlot = useCallback(async (slot, options = {}) => {
     if (!profile || !calendar?.policy) return
 
@@ -999,6 +1017,20 @@ export default function CreatePost() {
       }
 
       const savedDraft = await upsertSocialDraft(row)
+      await recordPlannerFeedbackSafely({
+        draftId: savedDraft.id,
+        postType: slot.post_type,
+        eventType: preferredAngleId ? 'draft_regenerated' : 'draft_generated',
+        angleId: generated.angle.id,
+        metadata: {
+          source: options.source || (existingDraft ? 'regenerate_angle' : 'slot_click'),
+          generationSignature: nextMeta.generationSignature,
+          previousAngleId: existingMeta.angleId || null,
+          selectedAngleId: generated.angle.id,
+          slotDateLocal: slot.slot_date_local,
+          slotLabel: slot.slot_label,
+        },
+      }, { invalidateProfile: Boolean(preferredAngleId) })
       await queryClient.invalidateQueries({ queryKey: ['social-drafts', clientId] })
       applyDraftToComposer(savedDraft, slot)
       setDraftStatus(preferredAngleId ? 'Caption regenerated with a new angle.' : 'Draft created and loaded.')
@@ -1013,7 +1045,7 @@ export default function CreatePost() {
     } finally {
       setDraftLoading(false)
     }
-  }, [profile, calendar, drafts, queryClient, clientId, applyDraftToComposer, applyGeneratedDraftToComposer])
+  }, [profile, calendar, drafts, queryClient, clientId, applyDraftToComposer, applyGeneratedDraftToComposer, recordPlannerFeedbackSafely])
 
   const persistDraftEdits = useCallback(async (nextCaption) => {
     if (!activeDraftId || !activeSlot || hydratingDraftRef.current) return
@@ -1042,6 +1074,18 @@ export default function CreatePost() {
         }),
       })
 
+      await recordPlannerFeedbackSafely({
+        draftId: savedDraft.id,
+        postType: activeSlot.post_type,
+        eventType: 'draft_edited',
+        angleId: currentMeta.angleId || selectedAngleId || null,
+        editSeverity: deltaRatio >= 0.35 ? 'heavy' : 'light',
+        metadata: {
+          deltaRatio,
+          slotDateLocal: activeSlot.slot_date_local,
+          slotLabel: activeSlot.slot_label,
+        },
+      })
       setDraftStatus(deltaRatio >= 0.35 ? 'Draft edits saved. Future defaults will treat this as a heavier edit.' : 'Draft edits saved.')
       setGeneratedCaption(savedDraft.draft_caption || nextCaption.trim())
       setDraftDirty(false)
@@ -1050,7 +1094,7 @@ export default function CreatePost() {
       console.error('[SocialDraftAutosave]', error)
       setDraftError(error.message || 'Could not save draft edits.')
     }
-  }, [activeDraftId, activeSlot, activeDraft, angleChoices, selectedAngleId, generatedCaption, mediaSuggestion, queryClient, clientId])
+  }, [activeDraftId, activeSlot, activeDraft, angleChoices, selectedAngleId, generatedCaption, mediaSuggestion, queryClient, clientId, recordPlannerFeedbackSafely])
 
   useEffect(() => {
     if (!calendar?.slots || !draftTargetDate || !draftTargetSlot || draftLoading) return
@@ -1229,7 +1273,7 @@ export default function CreatePost() {
     setEditingScheduledPostRef('')
   }
 
-  function loadScheduledPostForEditing(post) {
+  const loadScheduledPostForEditing = useCallback((post) => {
     if (!post) return
 
     const timezone = calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'
@@ -1262,7 +1306,7 @@ export default function CreatePost() {
     setErrorMsg('')
     setSearchParams({ date: post.localDate || selectedDay || '', editPost: post.id })
     composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+  }, [calendar?.policy?.timezone, profile?.clients?.timezone, selectedDay, setSearchParams])
 
   async function handleDeleteDraft(slot) {
     if (!requireWriteAccess('delete drafts')) return
@@ -1273,6 +1317,17 @@ export default function CreatePost() {
 
     try {
       setDeleteBusyKey(`draft:${draft.id}`)
+      await recordPlannerFeedbackSafely({
+        draftId: draft.id,
+        postType: draft.post_type,
+        eventType: 'draft_deleted',
+        angleId: parseDraftMeta(draft.review_notes).angleId || null,
+        metadata: {
+          slotDateLocal: draft.slot_date_local,
+          slotLabel: draft.slot_label,
+          reviewState: draft.review_state,
+        },
+      }, { invalidateProfile: true })
       await deleteSocialDraft(draft.id)
       if (activeDraftId === draft.id) {
         hydratingDraftRef.current = true
@@ -1567,6 +1622,19 @@ export default function CreatePost() {
             lastPublishedAt: new Date().toISOString(),
           }),
         })
+
+        await recordPlannerFeedbackSafely({
+          draftId: activeDraftId,
+          postType: activeSlot?.post_type || currentMeta.postType || 'community_story',
+          eventType: 'draft_published',
+          angleId: currentMeta.angleId || selectedAngleId || null,
+          metadata: {
+            postId: post.id,
+            publishMode: timingMode === 'now' ? 'publish_now' : 'scheduled',
+            scheduledFor: scheduledForIso,
+            platforms: activePlatforms,
+          },
+        }, { invalidateProfile: true })
       }
 
       await queryClient.invalidateQueries({ queryKey: ['calendar-posts', clientId] })

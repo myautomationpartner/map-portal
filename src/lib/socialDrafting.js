@@ -568,6 +568,30 @@ function inferIndustry(profile, policy) {
   return FALLBACK_INDUSTRY
 }
 
+function getEmbeddedPlannerProfile(profile) {
+  return Array.isArray(profile?.clients?.client_planner_profiles)
+    ? profile.clients.client_planner_profiles[0] || null
+    : profile?.clients?.client_planner_profiles || null
+}
+
+function getLearningState(profile) {
+  const plannerProfile = getEmbeddedPlannerProfile(profile)
+  return plannerProfile?.learning_state_json && typeof plannerProfile.learning_state_json === 'object'
+    ? plannerProfile.learning_state_json
+    : {}
+}
+
+function getPlannerVoiceTraits(profile) {
+  const plannerProfile = getEmbeddedPlannerProfile(profile)
+  const voiceTraits = plannerProfile?.profile_json?.voice_traits
+  return Array.isArray(voiceTraits) ? voiceTraits.filter(Boolean) : []
+}
+
+function getPlannerVariationSeed(profile) {
+  const plannerProfile = getEmbeddedPlannerProfile(profile)
+  return Number.isInteger(plannerProfile?.variation_seed) ? plannerProfile.variation_seed : 0
+}
+
 function buildCaptionTitle(postType, angleLabel) {
   const readablePostType = postType.replace(/_/g, ' ')
   return `${readablePostType} · ${angleLabel}`
@@ -621,18 +645,47 @@ function buildAngleStats(drafts, postType) {
   return { stats, recent }
 }
 
-function chooseAngle(postType, drafts, preferredAngleId) {
+function mergeLearningStats(profile, postType, stats) {
+  const learningState = getLearningState(profile)
+  const angleScores = learningState?.angle_scores?.[postType]
+
+  if (!angleScores || typeof angleScores !== 'object') {
+    return stats
+  }
+
+  const merged = new Map(stats)
+
+  for (const [angleId, value] of Object.entries(angleScores)) {
+    if (!value || typeof value !== 'object') continue
+    const current = merged.get(angleId) || { total: 0, published: 0, regenerated: 0, edited: 0, deleted: 0, learnedScore: 0 }
+    current.deleted += Number(value.deleted || 0)
+    current.learnedScore += Number(value.score || 0)
+    merged.set(angleId, current)
+  }
+
+  return merged
+}
+
+function chooseAngle(profile, postType, drafts, preferredAngleId) {
   const config = getPostTypeConfig(postType)
   if (preferredAngleId) {
     return config.angles.find((angle) => angle.id === preferredAngleId) || config.angles[0]
   }
 
   const { stats, recent } = buildAngleStats(drafts, postType)
+  const mergedStats = mergeLearningStats(profile, postType, stats)
   const ranked = config.angles
     .map((angle) => {
-      const angleStats = stats.get(angle.id) || { total: 0, published: 0, regenerated: 0, edited: 0 }
+      const angleStats = mergedStats.get(angle.id) || { total: 0, published: 0, regenerated: 0, edited: 0, deleted: 0, learnedScore: 0 }
       const recentPenalty = recent.includes(angle.id) ? 6 : 0
-      const score = (angleStats.published * 4) + angleStats.total - recentPenalty - Math.min(angleStats.regenerated, 3)
+      const score = (
+        (angleStats.published * 4)
+        + angleStats.total
+        + (angleStats.learnedScore || 0)
+        - (angleStats.deleted || 0) * 3
+        - recentPenalty
+        - Math.min(angleStats.regenerated, 3)
+      )
       return { angle, score }
     })
     .sort((left, right) => {
@@ -673,6 +726,12 @@ function buildCaption({ businessName, industry, postType, angle, slot }) {
   }
 
   const supportSentence = supportByPostType[postType] || `A quick post focused on ${topicPoint}.`
+  const voiceTraits = getPlannerVoiceTraits(slot.profile)
+  const variationSeed = getPlannerVariationSeed(slot.profile)
+  const voicePrompt = pickFromList(voiceTraits, seed + variationSeed, 1)[0] || ''
+  const voiceSentence = voicePrompt
+    ? `Keep the tone ${voicePrompt.replace(/-/g, ' ')} and grounded in what people would actually want to hear right now.`
+    : ''
 
   const shortCta = angle.cta
     .replace(/^If you want to /i, '')
@@ -687,6 +746,7 @@ function buildCaption({ businessName, industry, postType, angle, slot }) {
     .trim()
 
   return [opening, supportSentence, shortCta]
+    .concat(voiceSentence ? [voiceSentence] : [])
     .filter(Boolean)
     .join(' ')
 }
@@ -721,14 +781,17 @@ function buildAssetRequirements({ mediaSuggestion, mediaType }) {
 export function generateDraftForSlot({ profile, policy, slot, drafts, preferredAngleId }) {
   const businessName = normalizeText(profile?.clients?.business_name) || 'Your business'
   const industry = inferIndustry(profile, policy)
-  const angle = chooseAngle(slot.post_type, drafts, preferredAngleId)
+  const angle = chooseAngle(profile, slot.post_type, drafts, preferredAngleId)
   const mediaSuggestion = buildMediaSuggestion({ businessName, angle })
   const caption = buildCaption({
     businessName,
     industry,
     postType: slot.post_type,
     angle,
-    slot,
+    slot: {
+      ...slot,
+      profile,
+    },
   })
   const title = buildCaptionTitle(slot.post_type, angle.label)
   const angleChoices = buildAngleChoices(slot.post_type, angle.id)
