@@ -60,7 +60,15 @@ function buildCanonicalRedirect(request, env) {
   if (!['GET', 'HEAD'].includes(request.method)) return null
 
   const url = new URL(request.url)
-  const currentHost = String(url.hostname || '').toLowerCase()
+  const currentHost = String(
+    request.headers.get('x-forwarded-host')
+    || request.headers.get('host')
+    || url.hostname
+    || '',
+  )
+    .split(':')[0]
+    .trim()
+    .toLowerCase()
 
   if (!currentHost || currentHost === canonicalHost) return null
   if (shouldBypassCanonicalRedirect(url)) return null

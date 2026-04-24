@@ -298,7 +298,7 @@ function buildSecretEnv(client) {
   }
 }
 
-function buildWranglerConfig(client) {
+function buildWranglerConfig(client, assetsDirectory) {
   return [
     `name = "${client.worker_name}"`,
     `main = "${join(PORTAL_ROOT, 'worker.js')}"`,
@@ -310,7 +310,7 @@ function buildWranglerConfig(client) {
     'custom_domain = true',
     '',
     '[assets]',
-    `directory = "${join(PORTAL_ROOT, 'dist')}"`,
+    `directory = "${assetsDirectory}"`,
     'binding = "ASSETS"',
     'not_found_handling = "single-page-application"',
     '',
@@ -433,18 +433,19 @@ async function main() {
   const accountId = await resolveCloudflareAccountId(cloudflareToken)
   const publicEnv = buildPublicEnv(client)
   const secretEnv = buildSecretEnv(client)
+  const tempDir = mkdtempSync(join(tmpdir(), 'map-portal-provision-'))
+  const distDir = join(tempDir, 'dist')
 
-  shell(['npm', 'run', 'build'], {
+  shell(['npx', 'vite', 'build', '--outDir', distDir], {
     cwd: PORTAL_ROOT,
     env: publicEnv,
     stdio: 'inherit',
   })
 
-  const tempDir = mkdtempSync(join(tmpdir(), 'map-portal-provision-'))
   const configPath = join(tempDir, 'wrangler.auto.toml')
   const secretsPath = join(tempDir, 'worker-secrets.env')
 
-  writeFileSync(configPath, buildWranglerConfig(client))
+  writeFileSync(configPath, buildWranglerConfig(client, distDir))
   writeFileSync(secretsPath, `${toEnvFile(secretEnv)}\n`)
 
   let webhookResult = {

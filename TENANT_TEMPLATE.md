@@ -85,13 +85,16 @@ Why this shape:
 Custom domains can be layered later as an optional path without changing the shared portal codebase.
 
 ## Canonical Redirect Behavior
-When a worker is still reachable on a technical host such as `*.workers.dev`, set:
+MAP-managed tenant workers currently keep `workers_dev = true` so the technical host remains available as a fallback while the MAP-owned custom domain stays official.
+
+If a worker is ever temporarily reachable on a technical host such as `*.workers.dev`, set:
 
 - `PORTAL_CANONICAL_HOST=<client-slug>.portal.myautomationpartner.com`
 
 Current shared-worker behavior:
 - non-API `GET` / `HEAD` requests on technical hosts redirect to `https://<client-slug>.portal.myautomationpartner.com`
-- `/api/*` routes stay on the technical host so signed webhook/proxy integrations are not interrupted during cutover
+- the app shell also performs an immediate browser redirect so technical-host visits do not linger on the wrong hostname even if edge caching serves HTML first
+- `/api/*` routes stay on the technical host so signed webhook/proxy integrations are not interrupted during temporary debugging
 - share-link generation in the portal app prefers the canonical host when present
 
 ## Billing Hold Template Behavior

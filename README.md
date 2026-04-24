@@ -71,8 +71,8 @@ Recommended MAP-managed production pattern:
 - `<client-slug>.portal.myautomationpartner.com`
 
 Current cutover behavior:
-- if `PORTAL_CANONICAL_HOST` is set on the worker, non-API `GET`/`HEAD` requests hitting the technical `*.workers.dev` or `*.pages.dev` host will redirect to the canonical MAP-owned host
-- API routes stay on the technical host so internal webhook/proxy paths are not broken during rollout
+- tenant workers keep `workers_dev = true` as a technical fallback while the MAP-managed custom domain remains the official customer-facing entry point
+- `PORTAL_CANONICAL_HOST` is used by both the worker and the browser shell to push non-API visits off technical hosts and onto the MAP-owned host
 - document share links now prefer the tenant canonical host when one is configured
 
 ## Provision A New Client Portal

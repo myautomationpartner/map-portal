@@ -7,6 +7,28 @@
     <title>map-portal</title>
     <script>
       (function () {
+        var canonicalHost = String('%VITE_PORTAL_CANONICAL_HOST%' || '').trim().toLowerCase()
+        if (!canonicalHost) return
+
+        var currentHost = String(window.location.hostname || '').trim().toLowerCase()
+        var isTechnicalHost =
+          currentHost.endsWith('.workers.dev') || currentHost.endsWith('.pages.dev')
+
+        if (!isTechnicalHost || currentHost === canonicalHost) return
+        if (window.location.pathname.startsWith('/api/')) return
+
+        var nextUrl =
+          'https://' +
+          canonicalHost +
+          window.location.pathname +
+          window.location.search +
+          window.location.hash
+
+        window.location.replace(nextUrl)
+      })()
+    </script>
+    <script>
+      (function () {
         function showBootError(message) {
           var root = document.getElementById('root')
           if (root && root.childNodes.length > 0) return
