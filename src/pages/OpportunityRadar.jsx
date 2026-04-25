@@ -35,6 +35,8 @@ const FILTERS = [
   { id: 'saved', label: 'Saved' },
 ]
 
+const HIDDEN_REVIEW_STATES = new Set(['dismissed', 'archived', 'converted_to_draft'])
+
 const TYPE_LABELS = {
   local_event: 'Event',
   local_trend: 'Trend',
@@ -47,10 +49,12 @@ const TYPE_LABELS = {
 
 const AD_NOTES = {
   organic_only: 'Post organically first. No paid spend needed yet.',
-  boost_worthy: 'Publish the post first. If it gets early engagement, boost it.',
-  dedicated_ad_candidate: 'Strong enough to turn into a small campaign after review.',
+  boost_worthy: 'Publish organically first. If it gets early engagement, boost it with a small budget.',
+  dedicated_ad_candidate: 'Strong enough to turn into a small ad test after review.',
   do_not_advertise: 'Keep this organic and avoid ad spend.',
 }
+
+const SUPPORTED_PUBLISH_PLATFORMS = new Set(['facebook', 'instagram', 'tiktok', 'google'])
 
 function formatDate(value, fallback = '') {
   if (!value) return fallback
@@ -277,7 +281,49 @@ function getSourceLabel(url, index) {
 
 function getSuggestedPlatforms(suggestion) {
   const platforms = Array.isArray(suggestion?.recommended_platforms) ? suggestion.recommended_platforms : []
-  return platforms.length ? platforms : ['facebook', 'instagram']
+  const publishablePlatforms = platforms
+    .map((platform) => String(platform || '').trim().toLowerCase())
+    .filter((platform) => SUPPORTED_PUBLISH_PLATFORMS.has(platform))
+  return publishablePlatforms.length ? publishablePlatforms : ['facebook', 'instagram']
+}
+
+function getSourceQuality(opportunity) {
+  const evidence = Array.isArray(opportunity?.evidence_json) ? opportunity.evidence_json : []
+  const urls = [
+    ...(Array.isArray(opportunity?.source_urls) ? opportunity.source_urls : []),
+    ...evidence.map((item) => item?.url),
+  ].filter(Boolean).map((url) => String(url).toLowerCase())
+  const text = [
+    opportunity?.opportunity_type,
+    opportunity?.title,
+    opportunity?.summary,
+    opportunity?.local_context,
+    opportunity?.why_it_matters,
+    ...evidence.map((item) => `${item?.title || ''} ${item?.short_reason || ''}`),
+  ].join(' ').toLowerCase()
+
+  if (!urls.length) return { label: 'Needs proof', tone: '#9b5c00' }
+  if (/(event|calendar|festival|registration|deadline|week|month|april|may|june)/.test(text)) {
+    if (urls.some((url) => /(eventbrite|chamber|county|city|town|school|edu|gov|calendar|business|facebook)/.test(url))) {
+      return { label: 'Date-backed', tone: '#188f6a' }
+    }
+  }
+  if (opportunity?.opportunity_type === 'competitor_gap') return { label: 'Competitor signal', tone: '#7a4fd4' }
+  if (urls.some((url) => /(linkedin|reddit|facebook|instagram|tiktok)/.test(url))) return { label: 'Social signal', tone: '#1765ff' }
+  return { label: 'Web-backed', tone: '#1765ff' }
+}
+
+function getAdDecision(opportunity) {
+  if (opportunity?.ad_worthiness === 'dedicated_ad_candidate') {
+    return { label: 'Build an ad', detail: AD_NOTES.dedicated_ad_candidate, tone: '#7a4fd4' }
+  }
+  if (opportunity?.ad_worthiness === 'boost_worthy') {
+    return { label: 'Boost if it works', detail: AD_NOTES.boost_worthy, tone: '#df4e22' }
+  }
+  if (opportunity?.ad_worthiness === 'do_not_advertise') {
+    return { label: 'Do not advertise', detail: AD_NOTES.do_not_advertise, tone: '#6b7280' }
+  }
+  return { label: 'Organic first', detail: AD_NOTES.organic_only, tone: '#188f6a' }
 }
 
 function EmptyState() {
@@ -325,6 +371,7 @@ function InsightQueue({ opportunities, selectedOpportunity, onSelect }) {
         {opportunities.map((opportunity) => {
           const isActive = opportunity.id === selectedOpportunity?.id
           const timingSignal = getTimingSignal(opportunity)
+          const sourceQuality = getSourceQuality(opportunity)
           return (
             <button
               key={opportunity.id}
@@ -356,6 +403,10 @@ function InsightQueue({ opportunities, selectedOpportunity, onSelect }) {
               <p className="mt-2 inline-flex items-center gap-1 text-xs font-semibold" style={{ color: timingSignal.tone }}>
                 <CalendarDays className="h-3.5 w-3.5" />
                 {timingSignal.label}
+              </p>
+              <p className="mt-1 inline-flex items-center gap-1 text-xs font-semibold" style={{ color: sourceQuality.tone }}>
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                {sourceQuality.label}
               </p>
             </button>
           )
@@ -477,6 +528,8 @@ function ProofRail({ opportunity, suggestion, onDismissSuggestion, busyAction })
   const platforms = getSuggestedPlatforms(suggestion)
   const sources = (opportunity.source_urls || []).filter(Boolean).slice(0, 4)
   const timingSignal = getTimingSignal(opportunity)
+  const sourceQuality = getSourceQuality(opportunity)
+  const adDecision = getAdDecision(opportunity)
   const why = [
     opportunity.why_it_matters,
     opportunity.local_context,
@@ -509,9 +562,12 @@ function ProofRail({ opportunity, suggestion, onDismissSuggestion, busyAction })
       </div>
 
       <div className="border-b p-5" style={{ borderColor: 'var(--portal-border)' }}>
-        <p className="text-xs font-bold uppercase" style={{ color: 'var(--portal-text)' }}>Ad note</p>
-        <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>
-          {AD_NOTES[opportunity.ad_worthiness] || AD_NOTES.organic_only}
+        <p className="text-xs font-bold uppercase" style={{ color: 'var(--portal-text)' }}>Ad decision</p>
+        <p className="mt-2 text-sm font-semibold" style={{ color: adDecision.tone }}>
+          {adDecision.label}
+        </p>
+        <p className="mt-1 text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>
+          {adDecision.detail}
         </p>
       </div>
 
@@ -528,6 +584,10 @@ function ProofRail({ opportunity, suggestion, onDismissSuggestion, busyAction })
 
       <div className="p-5">
         <p className="text-xs font-bold uppercase" style={{ color: 'var(--portal-text)' }}>Proof</p>
+        <p className="mt-2 inline-flex items-center gap-1 text-xs font-semibold" style={{ color: sourceQuality.tone }}>
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          {sourceQuality.label}
+        </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {sources.length ? sources.map((url, index) => <SourceLink key={url} url={url} index={index} />) : (
             <span className="text-sm" style={{ color: 'var(--portal-text-muted)' }}>No public source link attached.</span>
@@ -573,7 +633,10 @@ export default function OpportunityRadar() {
 
   const sortedOpportunities = useMemo(() => {
     const active = opportunities
-      .filter((opportunity) => !['dismissed', 'archived'].includes(opportunity.review_state))
+      .filter((opportunity) => !HIDDEN_REVIEW_STATES.has(opportunity.review_state))
+      .filter((opportunity) => !getActiveSuggestions(opportunity).some((suggestion) => (
+        suggestion.review_state === 'converted_to_draft' || suggestion.converted_draft_id
+      )))
       .sort((a, b) => {
         const scoreDelta = getPriorityScore(b) - getPriorityScore(a)
         if (Math.abs(scoreDelta) > 0.01) return scoreDelta
