@@ -11,6 +11,11 @@ on:
         description: Optional onboarding provisioning run id
         required: false
         type: string
+      dry_run:
+        description: Validate the provisioning path without deploying or sending email
+        required: false
+        type: boolean
+        default: false
   repository_dispatch:
     types:
       - provision-client-portal
@@ -31,9 +36,13 @@ jobs:
       N8N_BASE_URL: ${{ vars.N8N_BASE_URL || 'https://n8n.myautomationpartner.com' }}
       CLIENT_SLUG: ${{ github.event.inputs.client_slug || github.event.client_payload.client_slug }}
       RUN_ID: ${{ github.event.inputs.run_id || github.event.client_payload.run_id }}
+      DRY_RUN: ${{ github.event.inputs.dry_run || github.event.client_payload.dry_run || 'false' }}
+      PORTAL_TEMPLATE_REF: phase4-documents-share
     steps:
       - name: Checkout portal template
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PORTAL_TEMPLATE_REF }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -51,8 +60,14 @@ jobs:
             exit 1
           fi
 
+          args=(--client-slug "$CLIENT_SLUG")
+
           if [ -n "$RUN_ID" ]; then
-            npm run provision:client -- --client-slug "$CLIENT_SLUG" --run-id "$RUN_ID"
-          else
-            npm run provision:client -- --client-slug "$CLIENT_SLUG"
+            args+=(--run-id "$RUN_ID")
           fi
+
+          if [ "$DRY_RUN" = "true" ]; then
+            args+=(--dry-run --skip-webhook-config)
+          fi
+
+          npm run provision:client -- "${args[@]}"
