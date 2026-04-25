@@ -581,20 +581,37 @@ function getLearningState(profile) {
     : {}
 }
 
-function getPlannerVoiceTraits(profile) {
-  const plannerProfile = getEmbeddedPlannerProfile(profile)
-  const voiceTraits = plannerProfile?.profile_json?.voice_traits
-  return Array.isArray(voiceTraits) ? voiceTraits.filter(Boolean) : []
-}
-
 function getPlannerVariationSeed(profile) {
   const plannerProfile = getEmbeddedPlannerProfile(profile)
   return Number.isInteger(plannerProfile?.variation_seed) ? plannerProfile.variation_seed : 0
 }
 
-function buildCaptionTitle(postType, angleLabel) {
-  const readablePostType = postType.replace(/_/g, ' ')
-  return `${readablePostType} · ${angleLabel}`
+const TITLE_LIBRARY = {
+  promotional_offer: ['Easy Yes', 'This Week Only', 'Start Here', 'A Good Opening'],
+  signature_highlight: ['The Favorite', 'Best Foot Forward', 'Why It Works', 'Customer Magnet'],
+  class_spotlight: ['In The Room', 'Class Worth Noticing', 'Skill In Motion', 'What They Learn'],
+  student_spotlight: ['Small Win, Big Energy', 'Progress Spotted', 'Confidence Moment', 'Worth Celebrating'],
+  community_story: ['The Human Part', 'Good Room Energy', 'Why People Stay', 'Real Moments'],
+  teacher_tip: ['Quick Teaching Cue', 'Tiny Fix, Big Shift', 'Try This First', 'Coach Says'],
+  expert_tip: ['The Pro Take', 'What To Watch First', 'Save This Tip', 'Expert Shortcut'],
+  testimonial_social_proof: ['Proof It Works', 'Real Result', 'Trust Builder', 'A Win To Share'],
+  behind_the_scenes: ['Behind The Door', 'The Prep Work', 'Quiet Craft', 'Before It Goes Live'],
+  event_or_performance: ['Save The Date', 'Almost Showtime', 'What Is Coming', 'The Preview'],
+  milestone_moment: ['Milestone Moment', 'The Next Level', 'Win On The Board', 'Progress Marker'],
+  seasonal_campaign: ['Right Now Reminder', 'Seasonal Nudge', 'Fresh Timing', 'This Fits Now'],
+}
+
+function compactTitle(value, fallback = 'Post Idea') {
+  const normalized = normalizeText(value)
+  if (!normalized) return fallback
+  if (normalized.length <= 34) return normalized
+  return `${normalized.slice(0, 31).trim()}...`
+}
+
+function buildCaptionTitle(postType, angle, seed) {
+  const titles = TITLE_LIBRARY[postType] || ['Post Idea', 'Fresh Angle', 'Quick Share']
+  const title = pickFromList(titles, seed, 1)[0] || angle?.shortLabel || angle?.label
+  return compactTitle(title, angle?.shortLabel || 'Post Idea')
 }
 
 export function parseDraftMeta(reviewNotes) {
@@ -706,49 +723,90 @@ function buildAngleChoices(postType, selectedAngleId) {
 function buildCaption({ businessName, industry, postType, angle, slot }) {
   const seed = hashString(`${businessName}:${slot.slot_date_local}:${slot.slot_label}:${postType}:${angle.id}`)
   const topicPoint = pickFromList(angle.topics, seed, 1)[0] || industry
-  const opening = angle.opening
-    .replace(/^At\s+[^,]+,\s*/i, '')
-    .trim()
+  const variationSeed = getPlannerVariationSeed(slot.profile)
 
-  const supportByPostType = {
-    promotional_offer: `A simple next step with ${topicPoint}.`,
-    signature_highlight: `A standout highlight built around ${topicPoint}.`,
-    class_spotlight: `A class built around ${topicPoint}.`,
-    student_spotlight: `A student story shaped by ${topicPoint}.`,
-    community_story: `A moment that reflects ${topicPoint}.`,
-    teacher_tip: `A helpful reminder focused on ${topicPoint}.`,
-    expert_tip: `A clear expert tip centered on ${topicPoint}.`,
-    testimonial_social_proof: `A real example of ${topicPoint}.`,
-    behind_the_scenes: `A behind-the-scenes moment centered on ${topicPoint}.`,
-    event_or_performance: `A good time to highlight ${topicPoint}.`,
-    milestone_moment: `A milestone that reflects ${topicPoint}.`,
-    seasonal_campaign: `A timely reminder around ${topicPoint}.`,
+  const hooksByPostType = {
+    promotional_offer: [
+      `A simple reason to say yes this week: ${topicPoint}.`,
+      `Make the next step feel easy with one clear offer.`,
+      `Lead with the part that makes starting feel obvious.`,
+    ],
+    signature_highlight: [
+      `Show the thing people remember first.`,
+      `Put the favorite front and center.`,
+      `Make the signature offer impossible to miss.`,
+    ],
+    class_spotlight: [
+      `Show what the room feels like, not just what is on the schedule.`,
+      `Spotlight one useful reason this class is worth showing up for.`,
+      `Turn the class into a clear next step.`,
+    ],
+    student_spotlight: [
+      `Celebrate the kind of progress people can feel.`,
+      `Make the win small, specific, and easy to root for.`,
+      `Show confidence growing in real time.`,
+    ],
+    community_story: [
+      `Let people see the community before they ever walk in.`,
+      `Share one real moment that makes the room feel welcoming.`,
+      `Show the human side people actually remember.`,
+    ],
+    teacher_tip: [
+      `Share one cue people can use right away.`,
+      `Make the advice short enough to remember.`,
+      `Turn a teaching moment into a save-worthy tip.`,
+    ],
+    expert_tip: [
+      'Pro tip: start with one clear next step.',
+      'A smart first move: answer the question people already have.',
+      'One expert shortcut: show what to watch first.',
+    ],
+    testimonial_social_proof: [
+      `Let one real result do the talking.`,
+      `Make trust easier with a specific win.`,
+      `Show proof without overexplaining it.`,
+    ],
+    behind_the_scenes: [
+      `Show the prep people usually never see.`,
+      `A quiet detail can make the work feel real.`,
+      `Bring people behind the curtain for one honest moment.`,
+    ],
+    event_or_performance: [
+      `Give people a reason to mark the date.`,
+      `Build anticipation with one strong preview.`,
+      `Show the energy before the doors open.`,
+    ],
+    milestone_moment: [
+      `Name the win and make it feel earned.`,
+      `A milestone lands best when people can feel the work behind it.`,
+      `Mark the progress before moving to the next chapter.`,
+    ],
+    seasonal_campaign: [
+      `Tie the message to what people need right now.`,
+      `Use the season as a simple reason to act.`,
+      `Make the timing feel useful, not gimmicky.`,
+    ],
   }
 
-  const supportSentence = supportByPostType[postType] || `A quick post focused on ${topicPoint}.`
-  const voiceTraits = getPlannerVoiceTraits(slot.profile)
-  const variationSeed = getPlannerVariationSeed(slot.profile)
-  const voicePrompt = pickFromList(voiceTraits, seed + variationSeed, 1)[0] || ''
-  const voiceSentence = voicePrompt
-    ? `Keep the tone ${voicePrompt.replace(/-/g, ' ')} and grounded in what people would actually want to hear right now.`
-    : ''
+  const followUpsByPostType = {
+    promotional_offer: ['Keep the invitation clear and low-pressure.', 'Make the value obvious in the first line.'],
+    signature_highlight: ['Add one detail that explains why customers choose it.', 'Keep the focus on the outcome, not the menu.'],
+    class_spotlight: ['Use one real moment from class to make it believable.', 'End with the easiest way to ask about fit.'],
+    student_spotlight: ['Keep it warm, specific, and permission-safe.', 'Let the celebration feel human, not staged.'],
+    community_story: ['Use names or specifics only when you have permission.', 'Keep the caption warm and grounded.'],
+    teacher_tip: ['Make it practical enough to save.', 'One useful cue beats a long lesson.'],
+    expert_tip: ['Keep it direct, useful, and easy to save.', 'Skip the lecture; give them the useful takeaway.'],
+    testimonial_social_proof: ['Specific details make the proof stronger.', 'Keep the quote or result short enough to skim.'],
+    behind_the_scenes: ['Texture and process make this feel authentic.', 'One small detail can carry the whole post.'],
+    event_or_performance: ['Make the date, benefit, and next step easy to find.', 'A preview should create curiosity, not explain everything.'],
+    milestone_moment: ['Give credit to the effort behind the win.', 'Make the celebration feel earned and specific.'],
+    seasonal_campaign: ['Connect the timing to a real customer need.', 'Keep it useful before it gets promotional.'],
+  }
 
-  const shortCta = angle.cta
-    .replace(/^If you want to /i, '')
-    .replace(/^Reach out if you want to /i, '')
-    .replace(/^Reach out soon if you want us to /i, '')
-    .replace(/^Message us if you want to /i, '')
-    .replace(/^Send us a message if you want /i, '')
-    .replace(/^Ask us about /i, 'Ask about ')
-    .replace(/^Come talk with us if you want /i, '')
-    .replace(/^Keep following along /i, 'Follow along ')
-    .replace(/^Keep an eye out /i, 'Watch for ')
-    .trim()
+  const hook = pickFromList(hooksByPostType[postType], seed, 1)[0] || `Make the post about ${topicPoint}.`
+  const followUp = pickFromList(followUpsByPostType[postType], seed + variationSeed + 11, 1)[0] || 'Keep it short, useful, and easy to act on.'
 
-  return [opening, supportSentence, shortCta]
-    .concat(voiceSentence ? [voiceSentence] : [])
-    .filter(Boolean)
-    .join(' ')
+  return `${hook} ${followUp}`.replace(/\s+/g, ' ').trim()
 }
 
 function buildDraftBody({ businessName, postType, angle, mediaSuggestion }) {
@@ -793,7 +851,8 @@ export function generateDraftForSlot({ profile, policy, slot, drafts, preferredA
       profile,
     },
   })
-  const title = buildCaptionTitle(slot.post_type, angle.label)
+  const titleSeed = hashString(`${businessName}:${slot.slot_date_local}:${slot.slot_label}:${slot.post_type}:${angle.id}:title`)
+  const title = buildCaptionTitle(slot.post_type, angle, titleSeed)
   const angleChoices = buildAngleChoices(slot.post_type, angle.id)
 
   return {
@@ -814,7 +873,7 @@ export function generateDraftForSlot({ profile, policy, slot, drafts, preferredA
       mediaType: angle.mediaType,
     }),
     meta: {
-      version: 1,
+      version: 2,
       angleId: angle.id,
       angleLabel: angle.label,
       mediaIdeaType: angle.mediaType,
