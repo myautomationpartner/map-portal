@@ -298,70 +298,6 @@ function buildSecretEnv(client) {
   }
 }
 
-function buildPortalReadyEmail({ client, signup }) {
-  const portalUrl = `https://${client.portal_domain}`
-  const contactName = signup?.contact_name || 'there'
-  const email = signup?.contact_email || client.contact_email
-  const configuredFrom = envValue(['RESEND_FROM_EMAIL'], 'onboarding@myautomationpartner.com')
-  const from = configuredFrom.includes('<')
-    ? configuredFrom
-    : `My Automation Partner <${configuredFrom}>`
-
-  if (!email) {
-    return null
-  }
-
-  return {
-    from,
-    to: email,
-    bcc: ['billing@myautomationpartner.com'],
-    subject: 'Your MAP portal is ready',
-    html: [
-      '<h2>Your MAP portal is ready</h2>',
-      `<p>Hi ${contactName},</p>`,
-      '<p>Your private workspace is live. You can now log in, review your starter setup, and begin organizing the publishing work that keeps your business visible.</p>',
-      `<p><strong>Portal link:</strong> <a href="${portalUrl}">${portalUrl}</a></p>`,
-      `<p><strong>Login email:</strong> ${email}</p>`,
-      '<p>Your 30-day trial has started. No payment information was required today, and MAP is $25/month if you continue after the trial.</p>',
-      '<p>Suggested first steps:</p>',
-      '<ol>',
-      '<li>Log in and review your dashboard.</li>',
-      '<li>Open Documents and add any brand assets or reference files.</li>',
-      '<li>Visit Settings when you are ready to connect social accounts.</li>',
-      '</ol>',
-      '<p>My Automation Partner</p>',
-    ].join(''),
-  }
-}
-
-async function sendPortalReadyEmail({ client, signup }) {
-  const apiKey = envValue(['RESEND_API_KEY'])
-  const email = buildPortalReadyEmail({ client, signup })
-
-  if (!apiKey || !email) {
-    return {
-      skipped: true,
-      reason: !apiKey ? 'RESEND_API_KEY is not configured.' : 'No customer email found.',
-    }
-  }
-
-  const result = await fetchJson('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      ...jsonHeaders(),
-    },
-    body: JSON.stringify(email),
-  })
-
-  return {
-    skipped: false,
-    to: email.to,
-    subject: email.subject,
-    providerId: result?.id || null,
-  }
-}
-
 function buildWranglerConfig(client, assetsDirectory) {
   return [
     `name = "${client.worker_name}"`,
@@ -555,10 +491,6 @@ async function main() {
       webhookResult,
       dryRun,
     })
-    const readyEmail = !dryRun && deploymentState?.runStatus === 'completed'
-      ? await sendPortalReadyEmail({ client, signup })
-      : { skipped: true, reason: dryRun ? 'Dry run.' : 'Deployment did not complete.' }
-
     printSummary('Portal deployment summary', {
       dryRun,
       clientId: client.id,
@@ -568,7 +500,10 @@ async function main() {
       cloudflareAccountId: accountId,
       webhookResult,
       deploymentState,
-      readyEmail,
+      readyEmail: {
+        skipped: true,
+        reason: 'Ready email now sends after the customer completes password setup.',
+      },
     })
   } finally {
     rmSync(tempDir, { recursive: true, force: true })
