@@ -120,6 +120,18 @@ function getDropboxThumbSource(file) {
   return getDropboxRenderableImageUrl(file.thumbnail) || getDropboxRenderableImageUrl(file.link) || null
 }
 
+async function fetchConnections(clientId) {
+  if (!clientId) return []
+
+  const { data, error } = await supabase
+    .from('social_connections')
+    .select('platform, zernio_account_id, username, connected_at')
+    .eq('client_id', clientId)
+
+  if (error) throw error
+  return data || []
+}
+
 function isMissingRemoteDelete(payload, raw) {
   const message = [
     payload?.message,
@@ -780,6 +792,12 @@ export default function CreatePost() {
     enabled: !!clientId,
   })
 
+  const { data: connections = [] } = useQuery({
+    queryKey: ['social-connections', clientId],
+    queryFn: () => fetchConnections(clientId),
+    enabled: !!clientId,
+  })
+
   const calendar = useMemo(() => {
     if (!profile) return null
     try {
@@ -805,6 +823,12 @@ export default function CreatePost() {
   const activePlatforms = Object.entries(selectedPlatforms)
     .filter(([, enabled]) => enabled)
     .map(([platformId]) => platformId)
+  const connectedPlatformIds = useMemo(
+    () => new Set(connections.map((connection) => connection.platform).filter(Boolean)),
+    [connections],
+  )
+  const connectedActivePlatforms = activePlatforms.filter((platformId) => connectedPlatformIds.has(platformId))
+  const disconnectedActivePlatforms = activePlatforms.filter((platformId) => !connectedPlatformIds.has(platformId))
 
   const charLimit = selectedPlatforms.google ? 1500 : 2200
   const charOver = content.length > charLimit
@@ -1455,6 +1479,12 @@ export default function CreatePost() {
     if (!clientId) {
       return 'Unable to identify your client profile. Please refresh.'
     }
+    if (activePlatforms.length === 0) {
+      return 'Select at least one platform in the approval window.'
+    }
+    if (connectedActivePlatforms.length === 0) {
+      return 'Connect at least one social account in Settings before publishing.'
+    }
 
     if (timingMode !== 'now') {
       if (!scheduledFor) {
@@ -1500,11 +1530,6 @@ export default function CreatePost() {
       return
     }
 
-    if (activePlatforms.length === 0) {
-      setErrorMsg('Select at least one platform in the approval window.')
-      return
-    }
-
     let savedPostId = null
 
     try {
@@ -1520,6 +1545,7 @@ export default function CreatePost() {
       const effectiveMediaUrl = r2MediaUrl || (dropboxAttachments.length > 0 ? dropboxAttachments[0].link : null) || existingMediaUrl || null
       const scheduledForIso = timingMode === 'now' ? null : localDateTimeToIso(scheduledFor)
       const targetStatus = timingMode === 'now' ? 'published' : 'scheduled'
+      const targetPlatforms = connectedActivePlatforms
       let post = null
       const editCandidateId = editingScheduledPostId || editTargetPostId || ''
       let existingEditingPost = editingScheduledPost || scheduledPostsDetailed.find((item) => item.id === editCandidateId) || null
@@ -1535,7 +1561,7 @@ export default function CreatePost() {
           .update({
             content: content.trim(),
             media_url: effectiveMediaUrl,
-            platforms: activePlatforms,
+            platforms: targetPlatforms,
             status: 'draft',
             scheduled_for: scheduledForIso,
           })
@@ -1553,7 +1579,7 @@ export default function CreatePost() {
             client_id: clientId,
             content: content.trim(),
             media_url: effectiveMediaUrl,
-            platforms: activePlatforms,
+            platforms: targetPlatforms,
             status: 'draft',
             scheduled_for: scheduledForIso,
           })
@@ -1575,7 +1601,7 @@ export default function CreatePost() {
           content: content.trim(),
           mediaUrl: effectiveMediaUrl,
           dropboxLinks: dropboxAttachments.map(({ name, link, size }) => ({ name, link, size })),
-          platforms: activePlatforms,
+          platforms: targetPlatforms,
           scheduledFor: scheduledForIso,
         }),
       })
@@ -1588,7 +1614,15 @@ export default function CreatePost() {
           return {}
         }
       })()
-      const n8nSuccess = n8nResponse.ok && n8nData?.success !== false
+      const publishedPlatforms = Array.isArray(n8nData?.publishedPlatforms) ? n8nData.publishedPlatforms : []
+      const skippedPlatforms = [...new Set([
+        ...(Array.isArray(n8nData?.skippedPlatforms) ? n8nData.skippedPlatforms : []),
+        ...disconnectedActivePlatforms,
+      ])]
+      const effectivePublishedPlatforms = publishedPlatforms.length > 0
+        ? publishedPlatforms
+        : targetPlatforms.filter((platformId) => !skippedPlatforms.includes(platformId))
+      const n8nSuccess = n8nResponse.ok && n8nData?.success !== false && effectivePublishedPlatforms.length > 0
 
       await supabase
         .from('posts')
@@ -1607,8 +1641,8 @@ export default function CreatePost() {
 
       setPublishResult({
         requestedPlatforms: Array.isArray(n8nData?.requestedPlatforms) ? n8nData.requestedPlatforms : activePlatforms,
-        publishedPlatforms: Array.isArray(n8nData?.publishedPlatforms) ? n8nData.publishedPlatforms : [],
-        skippedPlatforms: Array.isArray(n8nData?.skippedPlatforms) ? n8nData.skippedPlatforms : [],
+        publishedPlatforms: effectivePublishedPlatforms,
+        skippedPlatforms,
       })
 
       if (activeDraftId) {
@@ -1632,7 +1666,7 @@ export default function CreatePost() {
             postId: post.id,
             publishMode: timingMode === 'now' ? 'publish_now' : 'scheduled',
             scheduledFor: scheduledForIso,
-            platforms: activePlatforms,
+            platforms: targetPlatforms,
           },
         }, { invalidateProfile: true })
       }

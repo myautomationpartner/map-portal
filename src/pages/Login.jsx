@@ -5,6 +5,25 @@ import { buildTenantConfig } from '../lib/tenantConfig'
 
 export default function Login() {
   const tenant = useMemo(() => buildTenantConfig(), [])
+  const handleLogoError = (event) => {
+    const image = event.currentTarget
+
+    if (!image.dataset.fallbackApplied && tenant.fallbackLogoUrl && image.src !== tenant.fallbackLogoUrl) {
+      image.dataset.fallbackApplied = 'true'
+      image.src = tenant.fallbackLogoUrl
+      return
+    }
+
+    image.style.display = 'none'
+    image.parentElement.style.display = 'flex'
+    image.parentElement.style.alignItems = 'center'
+    image.parentElement.style.justifyContent = 'center'
+    image.parentElement.textContent = tenant.logoInitials
+    image.parentElement.style.color = '#c9a84c'
+    image.parentElement.style.fontSize = '28px'
+    image.parentElement.style.fontFamily = 'Sora,Georgia,serif'
+    image.parentElement.style.fontWeight = '600'
+  }
   const loginContext = useMemo(() => {
     if (typeof window === 'undefined') {
       return { email: '', setupMessage: '' }
@@ -51,17 +70,7 @@ export default function Login() {
                   src={tenant.logoUrl}
                   alt={tenant.displayName}
                   className="h-full w-full object-cover"
-                  onError={e => {
-                    e.target.style.display = 'none'
-                    e.target.parentElement.style.display = 'flex'
-                    e.target.parentElement.style.alignItems = 'center'
-                    e.target.parentElement.style.justifyContent = 'center'
-                    e.target.parentElement.textContent = tenant.logoInitials
-                    e.target.parentElement.style.color = '#c9a84c'
-                    e.target.parentElement.style.fontSize = '28px'
-                    e.target.parentElement.style.fontFamily = 'Sora,Georgia,serif'
-                    e.target.parentElement.style.fontWeight = '600'
-                  }}
+                  onError={handleLogoError}
                 />
               </div>
               <div>
@@ -95,14 +104,7 @@ export default function Login() {
               src={tenant.logoUrl}
               alt={tenant.displayName}
               className="w-full h-full object-cover"
-              onError={e => {
-                e.target.style.display = 'none'
-                e.target.parentElement.style.display = 'flex'
-                e.target.parentElement.style.alignItems = 'center'
-                e.target.parentElement.style.justifyContent = 'center'
-                e.target.parentElement.style.background = '#ffffff'
-                e.target.parentElement.innerHTML = `<span style="color:#c9a84c;font-size:32px;font-family:Sora,Georgia,serif;font-weight:600">${tenant.logoInitials}</span>`
-              }}
+              onError={handleLogoError}
             />
           </div>
           <h1 className="font-display mb-1 text-3xl font-semibold" style={{ color: 'var(--portal-text)' }}>

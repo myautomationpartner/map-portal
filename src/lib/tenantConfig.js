@@ -2,6 +2,7 @@ const DEFAULT_DISPLAY_NAME = 'My Automation Partner'
 const DEFAULT_PORTAL_LABEL = 'Client Portal'
 const DEFAULT_SUPPORT_EMAIL = 'info@myautomationpartner.com'
 const DEFAULT_DOMAIN_PATTERN = '<client-slug>.portal.myautomationpartner.com'
+const DEFAULT_LOGO_URL = 'https://myautomationpartner.com/assets/MyAutomationPartner-Logo.png'
 
 function titleCaseFromSlug(value) {
   const normalized = String(value || '')
@@ -76,7 +77,7 @@ export function buildTenantConfig(input = {}) {
     import.meta.env.VITE_PORTAL_LOGO_URL ||
     client?.logo_url ||
     sharePayload.logo_url ||
-    null
+    DEFAULT_LOGO_URL
 
   const canonicalHost =
     import.meta.env.VITE_PORTAL_CANONICAL_HOST ||
@@ -121,6 +122,7 @@ export function buildTenantConfig(input = {}) {
     portalLabel,
     supportEmail,
     logoUrl,
+    fallbackLogoUrl: DEFAULT_LOGO_URL,
     logoInitials: initialsFromName(displayName),
     canonicalHost,
     workerName,

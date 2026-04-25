@@ -15,6 +15,18 @@ const navItems = [
 export default function Sidebar({ session, tenant: providedTenant, billingAccess, onBillingAction, billingActionPending = false }) {
   const claims = getSessionClaims(session)
   const tenant = providedTenant || buildTenantConfig({ claims })
+  const handleLogoError = (event) => {
+    const image = event.currentTarget
+
+    if (!image.dataset.fallbackApplied && tenant.fallbackLogoUrl && image.src !== tenant.fallbackLogoUrl) {
+      image.dataset.fallbackApplied = 'true'
+      image.src = tenant.fallbackLogoUrl
+      return
+    }
+
+    image.style.display = 'none'
+    image.parentElement.innerHTML = `<span style="color:#c9a84c;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;width:100%;height:100%">${tenant.logoInitials}</span>`
+  }
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -31,10 +43,7 @@ export default function Sidebar({ session, tenant: providedTenant, billingAccess
             src={tenant.logoUrl}
             alt={tenant.displayName}
             className="w-full h-full object-cover"
-            onError={e => {
-              e.target.style.display = 'none'
-              e.target.parentElement.innerHTML = `<span style="color:#c9a84c;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;width:100%;height:100%">${tenant.logoInitials}</span>`
-            }}
+            onError={handleLogoError}
           />
         </div>
         <div>

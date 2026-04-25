@@ -1,4 +1,3 @@
-import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams, useOutletContext } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
@@ -43,26 +42,6 @@ function calcNetChange(metrics, days) {
     ? Number(metrics[days]?.followers || 0)
     : Number(metrics[metrics.length - 1]?.followers || 0)
   return current - previous
-}
-
-function getDefaultFollowers(platform) {
-  if (platform === 'instagram') return 8312
-  if (platform === 'facebook')  return 5521
-  if (platform === 'tiktok')    return 12400
-  if (platform === 'google')    return 2148
-  return 1000
-}
-
-// Pre-computed fallback timestamps (module-level, no impure calls in render)
-function buildFallbackMetrics(base) {
-  const now = Date.now()
-  return [
-    { metric_date: new Date(now).toISOString(),               followers: base },
-    { metric_date: new Date(now - 86400000).toISOString(),    followers: base - 7 },
-    { metric_date: new Date(now - 604800000).toISOString(),   followers: base - 72 },
-    { metric_date: new Date(now - 2592000000).toISOString(),  followers: base - 212 },
-    { metric_date: new Date(now - 31536000000).toISOString(), followers: base - 1450 },
-  ]
 }
 
 // ─── Platform config ──────────────────────────────────────────────────────────
@@ -121,14 +100,10 @@ export default function PlatformStats() {
     enabled: !!clientId,
   })
 
-  // Use fallback data shape if no real metrics
-  const fallbackDefault = getDefaultFollowers(platform)
-  const metrics = useMemo(
-    () => rawMetrics.length > 0 ? rawMetrics : buildFallbackMetrics(fallbackDefault),
-    [rawMetrics, fallbackDefault]
-  )
+  const metrics = rawMetrics
+  const hasMetrics = metrics.length > 0
 
-  const totalLabel = Number(metrics[0]?.followers || 0).toLocaleString()
+  const totalLabel = hasMetrics ? Number(metrics[0]?.followers || 0).toLocaleString() : '—'
   const change24h  = calcNetChange(metrics, 1)
   const change7d   = calcNetChange(metrics, 7)
   const change30d  = calcNetChange(metrics, 30)
@@ -155,7 +130,9 @@ export default function PlatformStats() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Live Sync Connected</p>
+              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                {hasMetrics ? 'Live Sync Connected' : 'Waiting for connection'}
+              </p>
             </div>
             <h1 className="text-4xl md:text-5xl font-black text-white uppercase italic tracking-tighter leading-none">
               {config.label} <span className="text-zinc-800">Analytics</span>

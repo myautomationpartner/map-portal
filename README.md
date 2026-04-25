@@ -68,7 +68,7 @@ Current pilot worker:
 - `dancescapes-portal`
 
 Recommended MAP-managed production pattern:
-- `<client-slug>.portal.myautomationpartner.com`
+- `<client-slug>.myautomationpartner.com`
 
 Current cutover behavior:
 - tenant workers keep `workers_dev = true` as a technical fallback while the MAP-managed custom domain remains the official customer-facing entry point

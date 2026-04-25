@@ -74,13 +74,12 @@ That means future portal runtime reads do not need to depend only on onboarding 
 ## Domain Strategy
 Recommended MAP-managed default:
 
-- `<client-slug>.portal.myautomationpartner.com`
+- `<client-slug>.myautomationpartner.com`
 
-Why this shape:
+Current exception handling:
 
-- simpler wildcard DNS and certificate management than `portal.<client-slug>.myautomationpartner.com`
-- avoids personal `workers.dev` hostnames in customer-facing URLs
-- stays compatible with a shared platform plus per-tenant runtime config
+- older pilot and QA tenants can keep a legacy `*.portal.myautomationpartner.com` hostname until they are migrated
+- Dancescapes remains the known live exception because the cleaner root subdomain was not available during the first cutover
 
 Custom domains can be layered later as an optional path without changing the shared portal codebase.
 
@@ -89,10 +88,10 @@ MAP-managed tenant workers currently keep `workers_dev = true` so the technical 
 
 If a worker is ever temporarily reachable on a technical host such as `*.workers.dev`, set:
 
-- `PORTAL_CANONICAL_HOST=<client-slug>.portal.myautomationpartner.com`
+- `PORTAL_CANONICAL_HOST=<client-slug>.myautomationpartner.com`
 
 Current shared-worker behavior:
-- non-API `GET` / `HEAD` requests on technical hosts redirect to `https://<client-slug>.portal.myautomationpartner.com`
+- non-API `GET` / `HEAD` requests on technical hosts redirect to `https://<client-slug>.myautomationpartner.com`
 - the app shell also performs an immediate browser redirect so technical-host visits do not linger on the wrong hostname even if edge caching serves HTML first
 - `/api/*` routes stay on the technical host so signed webhook/proxy integrations are not interrupted during temporary debugging
 - share-link generation in the portal app prefers the canonical host when present

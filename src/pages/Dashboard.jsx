@@ -32,13 +32,6 @@ const PLATFORM_CONFIG = [
   { id: 'google', label: 'Google', icon: MapPin, color: '#37b58c', field: 'reach' },
 ]
 
-const DEFAULT_TOOLS = [
-  { id: 1, label: 'Jackrabbit', url: 'https://app.jackrabbitclass.com' },
-  { id: 2, label: 'Tidio', url: 'https://www.tidio.com/panel/' },
-  { id: 3, label: 'Meta Business Suite', url: 'https://business.facebook.com/latest/home' },
-  { id: 4, label: 'Google Business Profile', url: 'https://business.google.com' },
-]
-
 const QUICK_TOOL_PRESETS = [
   { id: 'gmail', label: 'Gmail', url: 'https://mail.google.com', accent: '#ea4335' },
   { id: 'outlook', label: 'Outlook', url: 'https://outlook.office.com/mail/', accent: '#0078d4' },
@@ -101,30 +94,8 @@ function getWorkspaceStorageKey(clientKey) {
 }
 
 function buildDefaultTools(client) {
-  const websiteUrl = normalizeToolUrl(client?.website_url || '')
-  const tidioUrl = normalizeToolUrl(client?.tidio_project_url || '') || 'https://www.tidio.com/panel/'
-  const next = [
-    ...(websiteUrl ? [{
-      id: 'client-website',
-      label: client?.business_name ? `${client.business_name} Website` : 'Client Website',
-      url: websiteUrl,
-      size: 'lg',
-    }] : []),
-    { ...DEFAULT_TOOLS[0] },
-    { ...DEFAULT_TOOLS[1], url: tidioUrl },
-    { ...DEFAULT_TOOLS[2] },
-    { ...DEFAULT_TOOLS[3] },
-  ]
-
-  const seen = new Set()
-  return next
-    .map(hydrateTool)
-    .filter((tool) => {
-      const key = `${tool.label.toLowerCase()}|${tool.url.toLowerCase()}`
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
+  void client
+  return []
 }
 
 function loadTools(storageKey, fallbackTools) {
@@ -132,10 +103,6 @@ function loadTools(storageKey, fallbackTools) {
     const stored = localStorage.getItem(storageKey)
     const parsed = stored ? JSON.parse(stored) : null
     if (Array.isArray(parsed)) return parsed.map(hydrateTool)
-
-    const legacyStored = localStorage.getItem('ds_tools')
-    const legacyParsed = legacyStored ? JSON.parse(legacyStored) : null
-    if (Array.isArray(legacyParsed)) return legacyParsed.map(hydrateTool)
 
     return fallbackTools.map(hydrateTool)
   } catch {
@@ -446,12 +413,7 @@ export default function Dashboard() {
     enabled: !!clientId && !!userId,
   })
 
-  const metrics = [
-    { platform: 'instagram', followers: 8312 },
-    { platform: 'facebook', followers: 5521 },
-    { platform: 'tiktok', followers: 12400 },
-    { platform: 'google', reach: 2148 },
-  ].map((fallback) => rawMetrics.find((metric) => metric.platform?.toLowerCase() === fallback.platform) || fallback)
+  const metrics = rawMetrics
 
   const [draftTools, setDraftTools] = useState(null)
   const [draftOwnerKey, setDraftOwnerKey] = useState('')
@@ -648,24 +610,36 @@ export default function Dashboard() {
           </span>
         </div>
 
-        <div className="grid auto-rows-[170px] gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {tools.map((tool) => (
-            <ToolTile
-              key={tool.id}
-              tool={tool}
-              editMode={editMode}
-              onOpen={openTool}
-              onRemove={removeTool}
-              onResize={resizeTool}
-              onDragStart={(id) => setDraggedToolId(id)}
-              onDragOver={(event) => {
-                if (!editMode) return
-                event.preventDefault()
-              }}
-              onDrop={handleToolDrop}
-            />
-          ))}
-        </div>
+        {tools.length > 0 ? (
+          <div className="grid auto-rows-[170px] gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {tools.map((tool) => (
+              <ToolTile
+                key={tool.id}
+                tool={tool}
+                editMode={editMode}
+                onOpen={openTool}
+                onRemove={removeTool}
+                onResize={resizeTool}
+                onDragStart={(id) => setDraggedToolId(id)}
+                onDragOver={(event) => {
+                  if (!editMode) return
+                  event.preventDefault()
+                }}
+                onDrop={handleToolDrop}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-[28px] border border-dashed px-6 py-10 text-center" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.72)' }}>
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary)' }}>
+              <Plus className="h-5 w-5" />
+            </div>
+            <h3 className="mt-4 text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Blank by design</h3>
+            <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+              This workspace starts empty for each new client. Add the inboxes, drives, and daily tools you actually use.
+            </p>
+          </div>
+        )}
       </section>
     </div>
   )
