@@ -226,16 +226,44 @@ function getPriorityLabel(opportunity) {
   return 'Review'
 }
 
-function getDaysLeft(opportunity) {
-  const raw = opportunity?.expires_at || opportunity?.ends_at
-  if (!raw) return opportunity?.suggested_timing ? 'Use this week' : 'Use anytime'
-  const diff = Math.ceil((new Date(raw).getTime() - Date.now()) / (24 * 60 * 60 * 1000))
-  if (!Number.isFinite(diff)) return 'Use anytime'
-  if (diff <= 0) return 'Use today'
-  if (diff <= 2) return 'Use now'
-  if (diff <= 7) return 'Use this week'
-  if (diff <= 21) return 'Good for later'
-  return 'Use anytime'
+function isFallbackExpiration(opportunity) {
+  if (!opportunity?.expires_at || opportunity?.starts_at || opportunity?.ends_at) return false
+  const createdAt = new Date(opportunity.created_at || Date.now()).getTime()
+  const expiresAt = new Date(opportunity.expires_at).getTime()
+  if (!Number.isFinite(createdAt) || !Number.isFinite(expiresAt)) return false
+  const diffDays = Math.round((expiresAt - createdAt) / (24 * 60 * 60 * 1000))
+  return diffDays >= 13 && diffDays <= 15
+}
+
+function getTimingSignal(opportunity) {
+  const timing = String(opportunity?.suggested_timing || '').toLowerCase()
+  const urgency = Number(opportunity?.urgency_score) || 0
+  const adWorthiness = opportunity?.ad_worthiness || ''
+
+  if (/(immediate|immediately|today|right now|use now|post now|late april|this week|during the week|just after april 22)/.test(timing)) {
+    return { label: 'Use now', tone: '#df4e22' }
+  }
+  if (/(early may|in may|next week|first week of may)/.test(timing)) {
+    return { label: 'Plan for May', tone: '#1765ff' }
+  }
+  if (/(evergreen|repeat|reuse|repurpose|website hero|service page|paid social test|lead generation)/.test(timing)) {
+    return { label: adWorthiness === 'dedicated_ad_candidate' ? 'Ad test idea' : 'Evergreen idea', tone: '#7a4fd4' }
+  }
+  if (urgency >= 0.78) return { label: 'Use now', tone: '#df4e22' }
+  if (urgency >= 0.64) return { label: 'Use this week', tone: '#188f6a' }
+
+  const raw = opportunity?.ends_at || opportunity?.expires_at
+  if (raw && !isFallbackExpiration(opportunity)) {
+    const diff = Math.ceil((new Date(raw).getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+    if (Number.isFinite(diff)) {
+      if (diff <= 0) return { label: 'Use today', tone: '#df4e22' }
+      if (diff <= 2) return { label: 'Use now', tone: '#df4e22' }
+      if (diff <= 7) return { label: 'Use this week', tone: '#188f6a' }
+      if (diff <= 21) return { label: 'Plan ahead', tone: '#1765ff' }
+    }
+  }
+
+  return { label: adWorthiness === 'dedicated_ad_candidate' ? 'Ad test idea' : 'Keep in queue', tone: '#6b7280' }
 }
 
 function getSourceLabel(url, index) {
@@ -296,6 +324,7 @@ function InsightQueue({ opportunities, selectedOpportunity, onSelect }) {
       <div>
         {opportunities.map((opportunity) => {
           const isActive = opportunity.id === selectedOpportunity?.id
+          const timingSignal = getTimingSignal(opportunity)
           return (
             <button
               key={opportunity.id}
@@ -324,9 +353,9 @@ function InsightQueue({ opportunities, selectedOpportunity, onSelect }) {
               <p className="mt-3 line-clamp-2 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
                 {opportunity.summary}
               </p>
-              <p className="mt-2 inline-flex items-center gap-1 text-xs font-semibold" style={{ color: '#df4e22' }}>
+              <p className="mt-2 inline-flex items-center gap-1 text-xs font-semibold" style={{ color: timingSignal.tone }}>
                 <CalendarDays className="h-3.5 w-3.5" />
-                {getDaysLeft(opportunity)}
+                {timingSignal.label}
               </p>
             </button>
           )
@@ -447,6 +476,7 @@ function ProofRail({ opportunity, suggestion, onDismissSuggestion, busyAction })
 
   const platforms = getSuggestedPlatforms(suggestion)
   const sources = (opportunity.source_urls || []).filter(Boolean).slice(0, 4)
+  const timingSignal = getTimingSignal(opportunity)
   const why = [
     opportunity.why_it_matters,
     opportunity.local_context,
@@ -471,10 +501,10 @@ function ProofRail({ opportunity, suggestion, onDismissSuggestion, busyAction })
       <div className="border-b p-5" style={{ borderColor: 'var(--portal-border)' }}>
         <p className="text-xs font-bold uppercase" style={{ color: 'var(--portal-text)' }}>Suggested timing</p>
         <p className="mt-2 text-sm font-semibold" style={{ color: '#188f6a' }}>
-          {formatDate(suggestion?.recommended_publish_at || opportunity.starts_at, 'This week')}
+          {formatDate(suggestion?.recommended_publish_at || opportunity.starts_at, timingSignal.label)}
         </p>
-        <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-          {getDaysLeft(opportunity)}
+        <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+          {opportunity.suggested_timing || 'Use when it fits your next available content slot.'}
         </p>
       </div>
 
