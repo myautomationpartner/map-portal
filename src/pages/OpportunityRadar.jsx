@@ -228,12 +228,14 @@ function getPriorityLabel(opportunity) {
 
 function getDaysLeft(opportunity) {
   const raw = opportunity?.expires_at || opportunity?.ends_at
-  if (!raw) return opportunity?.suggested_timing ? 'This week' : 'Review timing'
+  if (!raw) return opportunity?.suggested_timing ? 'Use this week' : 'Use anytime'
   const diff = Math.ceil((new Date(raw).getTime() - Date.now()) / (24 * 60 * 60 * 1000))
-  if (!Number.isFinite(diff)) return 'Review timing'
-  if (diff <= 0) return 'Today'
-  if (diff === 1) return '1 day left'
-  return `${diff} days left`
+  if (!Number.isFinite(diff)) return 'Use anytime'
+  if (diff <= 0) return 'Use today'
+  if (diff <= 2) return 'Use now'
+  if (diff <= 7) return 'Use this week'
+  if (diff <= 21) return 'Good for later'
+  return 'Use anytime'
 }
 
 function getSourceLabel(url, index) {
@@ -285,7 +287,10 @@ function InsightQueue({ opportunities, selectedOpportunity, onSelect }) {
   return (
     <aside className="overflow-hidden rounded-lg border bg-white shadow-sm" style={{ borderColor: 'var(--portal-border)' }}>
       <div className="border-b px-4 py-3" style={{ borderColor: 'var(--portal-border)' }}>
-        <p className="text-xs font-bold uppercase" style={{ color: 'var(--portal-text)' }}>Ideas to review</p>
+        <p className="text-xs font-bold uppercase" style={{ color: 'var(--portal-text)' }}>Choose a post idea</p>
+        <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+          Start with the top item, or save one for later.
+        </p>
       </div>
 
       <div>
