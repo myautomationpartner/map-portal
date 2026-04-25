@@ -126,6 +126,18 @@ export async function fetchWorkspacePreferences(clientId, userId) {
   return data ?? null
 }
 
+export async function fetchSocialConnections(clientId) {
+  if (!clientId) return []
+
+  const { data, error } = await supabase
+    .from('social_connections')
+    .select('platform, zernio_account_id, username, connected_at')
+    .eq('client_id', clientId)
+
+  if (error) throw error
+  return data || []
+}
+
 export async function upsertWorkspacePreferences({ clientId, userId, workspaceTools }) {
   if (!clientId || !userId) {
     throw new Error('Client and user are required to save workspace preferences.')

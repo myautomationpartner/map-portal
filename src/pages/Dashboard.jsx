@@ -1,21 +1,36 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useOutletContext } from 'react-router-dom'
-import { fetchMetrics, fetchProfile, fetchWorkspacePreferences, upsertWorkspacePreferences } from '../lib/portalApi'
+import {
+  fetchMetrics,
+  fetchProfile,
+  fetchSocialConnections,
+  fetchWorkspacePreferences,
+  upsertWorkspacePreferences,
+} from '../lib/portalApi'
 import {
   ArrowUpRight,
   Camera,
   CalendarDays,
+  Check,
+  Cloud,
+  CreditCard,
   FolderOpen,
   Globe,
   Grip,
+  Mail,
+  Megaphone,
   MapPin,
   Music2,
   Pencil,
   Plus,
+  Search,
   Send,
+  Server,
   Share2,
+  ShieldCheck,
   Shrink,
+  Sparkles,
 } from 'lucide-react'
 
 function getMetricValue(metrics, platform, field) {
@@ -32,13 +47,36 @@ const PLATFORM_CONFIG = [
   { id: 'google', label: 'Google', icon: MapPin, color: '#37b58c', field: 'reach' },
 ]
 
+const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
+
+const TOOL_CATEGORIES = [
+  { id: 'all', label: 'All' },
+  { id: 'email', label: 'Inbox' },
+  { id: 'files', label: 'Files' },
+  { id: 'social', label: 'Social' },
+  { id: 'business', label: 'Business' },
+  { id: 'website', label: 'Website' },
+]
+
 const QUICK_TOOL_PRESETS = [
-  { id: 'gmail', label: 'Gmail', url: 'https://mail.google.com', accent: '#ea4335' },
-  { id: 'outlook', label: 'Outlook', url: 'https://outlook.office.com/mail/', accent: '#0078d4' },
-  { id: 'yahoo-mail', label: 'Yahoo Mail', url: 'https://mail.yahoo.com', accent: '#5f01d1' },
-  { id: 'proton-mail', label: 'Proton Mail', url: 'https://mail.proton.me', accent: '#6d4aff' },
-  { id: 'icloud-mail', label: 'iCloud Mail', url: 'https://www.icloud.com/mail', accent: '#0a84ff' },
-  { id: 'google-drive', label: 'Google Drive', url: 'https://drive.google.com', accent: '#1a73e8' },
+  { id: 'gmail', label: 'Gmail', url: 'https://mail.google.com', accent: '#ea4335', category: 'email', description: 'Google inbox', Icon: Mail },
+  { id: 'outlook', label: 'Outlook', url: 'https://outlook.office.com/mail/', accent: '#0078d4', category: 'email', description: 'Microsoft mail', Icon: Mail },
+  { id: 'google-drive', label: 'Google Drive', url: 'https://drive.google.com', accent: '#1a73e8', category: 'files', description: 'Docs and files', Icon: Cloud },
+  { id: 'onedrive', label: 'OneDrive', url: 'https://onedrive.live.com', accent: '#0078d4', category: 'files', description: 'Microsoft files', Icon: Cloud },
+  { id: 'google-business', label: 'Google Business', url: 'https://business.google.com', accent: '#34a853', category: 'social', description: 'Local profile', Icon: MapPin },
+  { id: 'facebook', label: 'Facebook', url: 'https://business.facebook.com', accent: '#1877f2', category: 'social', description: 'Publishing auth', Icon: Share2, connectPlatform: 'facebook' },
+  { id: 'instagram', label: 'Instagram', url: 'https://business.instagram.com', accent: '#e4405f', category: 'social', description: 'Publishing auth', Icon: Camera, connectPlatform: 'instagram' },
+  { id: 'tiktok', label: 'TikTok', url: 'https://business.tiktok.com', accent: '#111111', category: 'social', description: 'Publishing auth', Icon: Music2, connectPlatform: 'tiktok' },
+  { id: 'stripe', label: 'Stripe', url: 'https://dashboard.stripe.com', accent: '#635bff', category: 'business', description: 'Payments', Icon: CreditCard },
+  { id: 'square', label: 'Square', url: 'https://app.squareup.com', accent: '#111111', category: 'business', description: 'POS and invoices', Icon: CreditCard },
+  { id: 'quickbooks', label: 'QuickBooks', url: 'https://app.qbo.intuit.com', accent: '#2ca01c', category: 'business', description: 'Accounting', Icon: ShieldCheck },
+  { id: 'shopify', label: 'Shopify', url: 'https://admin.shopify.com', accent: '#95bf47', category: 'business', description: 'Store admin', Icon: CreditCard },
+  { id: 'godaddy', label: 'GoDaddy', url: 'https://www.godaddy.com', accent: '#00a4a6', category: 'website', description: 'Domain hosting', Icon: Server },
+  { id: 'wix', label: 'Wix', url: 'https://manage.wix.com', accent: '#116dff', category: 'website', description: 'Website builder', Icon: Server },
+  { id: 'squarespace', label: 'Squarespace', url: 'https://account.squarespace.com', accent: '#111111', category: 'website', description: 'Website builder', Icon: Server },
+  { id: 'wordpress', label: 'WordPress', url: 'https://wordpress.com/log-in', accent: '#21759b', category: 'website', description: 'Site admin', Icon: Server },
+  { id: 'mailchimp', label: 'Mailchimp', url: 'https://login.mailchimp.com', accent: '#ffe01b', category: 'business', description: 'Email marketing', Icon: Megaphone },
+  { id: 'canva', label: 'Canva', url: 'https://www.canva.com', accent: '#00c4cc', category: 'business', description: 'Creative assets', Icon: Sparkles },
 ]
 
 function normalizeToolUrl(rawUrl) {
@@ -118,67 +156,184 @@ function saveTools(storageKey, tools) {
   }
 }
 
-function ToolForm({ onAdd, onClose }) {
+function formatPlatformLabel(platform) {
+  if (!platform) return 'Account'
+  return platform.charAt(0).toUpperCase() + platform.slice(1)
+}
+
+function ToolForm({
+  tools,
+  socialConnections,
+  connectingPlatform,
+  onAdd,
+  onConnect,
+  onClose,
+}) {
   const [label, setLabel] = useState('')
   const [url, setUrl] = useState('')
+  const [activeCategory, setActiveCategory] = useState('all')
+  const [searchTerm, setSearchTerm] = useState('')
   const normalizedUrl = normalizeToolUrl(url)
   const faviconPreview = getToolIconCandidates(normalizedUrl)[2] || getToolIconCandidates(normalizedUrl)[1]
+  const existingUrls = useMemo(() => new Set((tools || []).map((tool) => normalizeToolUrl(tool.url))), [tools])
+  const connectedPlatforms = useMemo(
+    () => new Set((socialConnections || []).map((connection) => connection.platform).filter(Boolean)),
+    [socialConnections],
+  )
+  const normalizedSearch = searchTerm.trim().toLowerCase()
+  const filteredPresets = QUICK_TOOL_PRESETS.filter((preset) => {
+    const categoryMatch = activeCategory === 'all' || preset.category === activeCategory
+    const searchMatch = !normalizedSearch || `${preset.label} ${preset.description} ${preset.category}`.toLowerCase().includes(normalizedSearch)
+    return categoryMatch && searchMatch
+  })
 
   function handleSubmit(event) {
     event.preventDefault()
     if (!label.trim() || !url.trim()) return
-    onAdd({ id: Date.now(), label: label.trim(), url: normalizedUrl })
+    onAdd({ id: crypto.randomUUID(), label: label.trim(), url: normalizedUrl })
     onClose()
   }
 
+  function addPreset(preset) {
+    onAdd({
+      id: crypto.randomUUID(),
+      label: preset.label,
+      url: normalizeToolUrl(preset.url),
+      accent: preset.accent,
+      category: preset.category,
+    })
+  }
+
   return (
-    <div className="portal-panel rounded-[28px] p-5">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h3 className="font-display text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Add a quick tool</h3>
-          <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>Pin the apps your team opens every day.</p>
+    <div className="overflow-hidden rounded-[34px] border" style={{ borderColor: 'rgba(26, 24, 20, 0.08)', background: 'linear-gradient(135deg, rgba(255,255,255,0.98), rgba(246,250,255,0.94))', boxShadow: '0 24px 60px rgba(26, 24, 20, 0.08)' }}>
+      <div className="relative border-b px-5 py-5 md:px-6" style={{ borderColor: 'rgba(26, 24, 20, 0.07)' }}>
+        <div className="absolute right-6 top-5 hidden h-24 w-24 rounded-full blur-2xl md:block" style={{ background: 'rgba(78, 149, 255, 0.18)' }} />
+        <div className="relative flex items-start justify-between gap-4">
+          <div>
+            <p className="mb-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary-strong)' }}>
+              <Sparkles className="h-3.5 w-3.5" />
+              Connector library
+            </p>
+            <h3 className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>Add daily tools</h3>
+            <p className="mt-1 max-w-2xl text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+              Known apps already include the correct login URL. Choose one to pin it instantly, or use custom shortcut for anything else.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full px-3 py-1.5 text-xs font-semibold transition-all"
+            style={{ background: 'rgba(26, 24, 20, 0.06)', color: 'var(--portal-text-muted)' }}
+          >
+            Close
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-full px-3 py-1.5 text-xs font-semibold transition-all"
-          style={{ background: 'rgba(201, 168, 76, 0.1)', color: 'var(--portal-primary)' }}
-        >
-          Close
-        </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>
-            Quick Add
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {QUICK_TOOL_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => onAdd({ id: Date.now(), label: preset.label, url: preset.url })}
-                className="inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold transition-all"
-                style={{
-                  borderColor: 'var(--portal-border)',
-                  background: 'rgba(255,255,255,0.9)',
-                  color: 'var(--portal-text)',
-                }}
-              >
-                <span className="flex h-7 w-7 items-center justify-center rounded-xl text-xs font-bold" style={{ background: `${preset.accent}18`, color: preset.accent }}>
-                  {getToolInitials(preset.label)}
-                </span>
-                {preset.label}
-              </button>
-            ))}
+      <div className="grid gap-0 lg:grid-cols-[1fr_380px]">
+        <div className="p-5 md:p-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="relative md:max-w-sm md:flex-1">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--portal-text-soft)' }} />
+              <input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                className="portal-input w-full py-3 pl-11 pr-4 text-sm"
+                placeholder="Search apps, hosting, payments..."
+              />
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1 md:justify-end">
+              {TOOL_CATEGORIES.map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => setActiveCategory(category.id)}
+                  className="shrink-0 rounded-full px-3 py-2 text-xs font-semibold transition-all"
+                  style={activeCategory === category.id
+                    ? { background: 'var(--portal-text)', color: 'white' }
+                    : { background: 'rgba(26, 24, 20, 0.06)', color: 'var(--portal-text-muted)' }}
+                >
+                  {category.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <p className="mt-2 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-            Adds common inbox shortcuts and Google Drive in one click.
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {filteredPresets.map((preset) => {
+              const Icon = preset.Icon || Globe
+              const presetUrl = normalizeToolUrl(preset.url)
+              const presetHost = getToolHostname(presetUrl)
+              const alreadyPinned = existingUrls.has(presetUrl)
+              const canConnect = Boolean(preset.connectPlatform)
+              const isConnected = canConnect && connectedPlatforms.has(preset.connectPlatform)
+              const isConnecting = connectingPlatform === preset.connectPlatform
+              const actionLabel = canConnect
+                ? isConnected
+                  ? 'Connected'
+                  : isConnecting
+                    ? 'Connecting...'
+                    : 'Connect'
+                : alreadyPinned
+                  ? 'Pinned'
+                  : 'Pin app'
+
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => {
+                    if (canConnect) {
+                      if (!isConnected && !isConnecting) onConnect(preset.connectPlatform)
+                      return
+                    }
+                    if (!alreadyPinned) addPreset(preset)
+                  }}
+                  disabled={isConnected || isConnecting || (!canConnect && alreadyPinned)}
+                  className="group flex min-h-[116px] items-start gap-3 rounded-[24px] border p-4 text-left transition-all enabled:hover:-translate-y-0.5 disabled:cursor-default"
+                  style={{
+                    borderColor: (alreadyPinned || isConnected) ? 'rgba(31, 169, 113, 0.22)' : 'rgba(26, 24, 20, 0.08)',
+                    background: (alreadyPinned || isConnected) ? 'rgba(31, 169, 113, 0.08)' : 'rgba(255,255,255,0.82)',
+                    boxShadow: '0 14px 28px rgba(26, 24, 20, 0.05)',
+                  }}
+                >
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] text-sm font-bold" style={{ background: `${preset.accent}18`, color: preset.accent }}>
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="font-semibold" style={{ color: 'var(--portal-text)' }}>{preset.label}</span>
+                      {(alreadyPinned || isConnected) ? <Check className="h-4 w-4" style={{ color: 'var(--portal-success)' }} /> : <Plus className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" style={{ color: 'var(--portal-primary)' }} />}
+                    </span>
+                    <span className="mt-1 block text-xs" style={{ color: 'var(--portal-text-muted)' }}>{preset.description}</span>
+                    <span className="mt-2 block truncate text-[11px] font-medium" style={{ color: 'var(--portal-text-soft)' }}>
+                      {canConnect ? `Uses secure ${formatPlatformLabel(preset.connectPlatform)} auth` : presetHost}
+                    </span>
+                    <span className="mt-3 inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-soft)' }}>
+                      {actionLabel}
+                    </span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          {filteredPresets.length === 0 && (
+            <div className="mt-5 rounded-[24px] border border-dashed p-8 text-center" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
+              No matching connectors yet. Add it as a custom tool and it will still work like a pinned app.
+            </div>
+          )}
+        </div>
+
+        <form onSubmit={handleSubmit} className="border-t p-5 md:p-6 lg:border-l lg:border-t-0" style={{ borderColor: 'rgba(26, 24, 20, 0.07)', background: 'rgba(250, 247, 241, 0.72)' }}>
+        <div>
+          <h4 className="font-display text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Custom shortcut</h4>
+          <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+            Only use this when the app is not in the connector library. Known apps above already have their URL built in.
           </p>
         </div>
 
-        <div>
+        <div className="mt-5">
           <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>
             Name
           </label>
@@ -186,11 +341,11 @@ function ToolForm({ onAdd, onClose }) {
             value={label}
             onChange={(event) => setLabel(event.target.value)}
             className="portal-input px-4 py-3 text-sm"
-            placeholder="Square invoices"
+            placeholder="Client booking dashboard"
           />
         </div>
 
-        <div>
+        <div className="mt-4">
           <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>
             URL
           </label>
@@ -198,11 +353,11 @@ function ToolForm({ onAdd, onClose }) {
             value={url}
             onChange={(event) => setUrl(event.target.value)}
             className="portal-input px-4 py-3 text-sm"
-            placeholder="app.squareup.com"
+            placeholder="booking.example.com"
           />
         </div>
 
-        <div className="rounded-[24px] border px-4 py-3" style={{ borderColor: 'var(--portal-border)', background: 'rgba(248, 244, 236, 0.72)' }}>
+        <div className="mt-5 rounded-[24px] border px-4 py-3" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.72)' }}>
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>
             Icon preview
           </p>
@@ -220,10 +375,11 @@ function ToolForm({ onAdd, onClose }) {
           </div>
         </div>
 
-        <button type="submit" className="portal-button-primary rounded-2xl px-4 py-3 text-sm font-semibold">
-          Save tool
+        <button type="submit" className="portal-button-primary mt-5 w-full rounded-2xl px-4 py-3 text-sm font-semibold">
+          Save custom tool
         </button>
       </form>
+      </div>
     </div>
   )
 }
@@ -391,7 +547,8 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onResize, onDragStart, onD
 }
 
 export default function Dashboard() {
-  useOutletContext()
+  const { requireWriteAccess } = useOutletContext()
+  const queryClient = useQueryClient()
 
   const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: fetchProfile })
   const clientId = profile?.client_id
@@ -412,6 +569,11 @@ export default function Dashboard() {
     queryFn: () => fetchWorkspacePreferences(clientId, userId),
     enabled: !!clientId && !!userId,
   })
+  const { data: socialConnections = [] } = useQuery({
+    queryKey: ['social_connections', clientId],
+    queryFn: () => fetchSocialConnections(clientId),
+    enabled: !!clientId,
+  })
 
   const metrics = rawMetrics
 
@@ -419,6 +581,8 @@ export default function Dashboard() {
   const [draftOwnerKey, setDraftOwnerKey] = useState('')
   const [showAddTool, setShowAddTool] = useState(false)
   const [editMode, setEditMode] = useState(false)
+  const [connectingPlatform, setConnectingPlatform] = useState(null)
+  const [connectorStatus, setConnectorStatus] = useState(null)
   const [draggedToolId, setDraggedToolId] = useState(null)
   const [workspaceState, setWorkspaceState] = useState('idle')
   const workspaceOwnerKey = `${clientId || 'unknown'}:${userId || 'unknown'}`
@@ -485,6 +649,76 @@ export default function Dashboard() {
 
   function openTool(tool) {
     window.open(tool.url, '_blank', 'noopener,noreferrer')
+  }
+
+  function buildSettingsRedirectUrl(platform) {
+    if (typeof window === 'undefined') return ''
+    const url = new URL('/settings', window.location.origin)
+    url.searchParams.set('connected', platform)
+    url.searchParams.set('cid', clientId)
+    url.searchParams.set('source', 'workspace')
+    return url.toString()
+  }
+
+  async function connectPlatform(platform) {
+    if (!clientId) return
+    if (!requireWriteAccess('connect social accounts')) return
+
+    const connectPopup = typeof window !== 'undefined'
+      ? window.open('', '_blank', 'width=600,height=700')
+      : null
+
+    if (connectPopup && !connectPopup.closed) {
+      connectPopup.document.write(`
+        <title>Opening ${formatPlatformLabel(platform)}...</title>
+        <body style="font-family: ui-sans-serif, system-ui, sans-serif; padding: 24px; color: #1f2937;">
+          <p style="margin: 0 0 8px; font-size: 15px; font-weight: 700;">Opening ${formatPlatformLabel(platform)} auth...</p>
+          <p style="margin: 0; font-size: 14px; color: #6b7280;">Finish the secure connection in this window, then return to MAP.</p>
+        </body>
+      `)
+    }
+
+    setConnectingPlatform(platform)
+    setConnectorStatus(null)
+
+    try {
+      const res = await fetch(SETTINGS_CONNECT_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId,
+          platform,
+          redirectUrl: buildSettingsRedirectUrl(platform),
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+
+      if (res.ok && data.authUrl) {
+        if (connectPopup && !connectPopup.closed) {
+          connectPopup.opener = null
+          connectPopup.location.href = data.authUrl
+          connectPopup.focus()
+        } else {
+          window.location.assign(data.authUrl)
+        }
+        setConnectorStatus({
+          type: 'info',
+          message: `Finish connecting ${formatPlatformLabel(platform)} in the auth window. Settings will confirm the connection when Zernio reports back.`,
+        })
+        await queryClient.invalidateQueries({ queryKey: ['social_connections', clientId] })
+      } else {
+        if (connectPopup && !connectPopup.closed) connectPopup.close()
+        setConnectorStatus({
+          type: 'error',
+          message: data?.error || data?.message || `Could not start ${formatPlatformLabel(platform)} auth. Try again from Settings.`,
+        })
+      }
+    } catch {
+      if (connectPopup && !connectPopup.closed) connectPopup.close()
+      setConnectorStatus({ type: 'error', message: 'Could not reach the connector service. Try again from Settings.' })
+    } finally {
+      setConnectingPlatform(null)
+    }
   }
 
   function handleToolDrop(targetId) {
@@ -582,7 +816,27 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {showAddTool && <ToolForm onAdd={addTool} onClose={() => setShowAddTool(false)} />}
+        {showAddTool && (
+          <ToolForm
+            tools={tools}
+            socialConnections={socialConnections}
+            connectingPlatform={connectingPlatform}
+            onAdd={addTool}
+            onConnect={connectPlatform}
+            onClose={() => setShowAddTool(false)}
+          />
+        )}
+
+        {connectorStatus && (
+          <div
+            className="mt-4 rounded-[20px] px-4 py-3 text-sm"
+            style={connectorStatus.type === 'error'
+              ? { background: 'rgba(216, 95, 152, 0.10)', color: 'var(--portal-danger)', border: '1px solid rgba(216, 95, 152, 0.18)' }
+              : { background: 'rgba(78, 149, 255, 0.10)', color: 'var(--portal-text)', border: '1px solid rgba(78, 149, 255, 0.18)' }}
+          >
+            {connectorStatus.message}
+          </div>
+        )}
 
         <div className="mb-5 flex flex-wrap items-center gap-2">
           <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-soft)' }}>
@@ -631,13 +885,26 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="rounded-[28px] border border-dashed px-6 py-10 text-center" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.72)' }}>
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary)' }}>
+            <button
+              type="button"
+              onClick={() => setShowAddTool(true)}
+              className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl transition-all hover:-translate-y-0.5"
+              style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary)' }}
+              aria-label="Add a workspace tool"
+            >
               <Plus className="h-5 w-5" />
-            </div>
+            </button>
             <h3 className="mt-4 text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Blank by design</h3>
             <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
               This workspace starts empty for each new client. Add the inboxes, drives, and daily tools you actually use.
             </p>
+            <button
+              type="button"
+              onClick={() => setShowAddTool(true)}
+              className="portal-button-primary mt-5 rounded-2xl px-4 py-3 text-sm font-semibold"
+            >
+              Browse connector library
+            </button>
           </div>
         )}
       </section>
