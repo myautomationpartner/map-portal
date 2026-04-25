@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Send, MessageSquare, Settings, LogOut, FolderOpen, CreditCard } from 'lucide-react'
+import { LayoutDashboard, Send, MessageSquare, Settings, LogOut, FolderOpen, CreditCard, Radar } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { getSessionClaims } from '../lib/portalApi'
 import { buildTenantConfig } from '../lib/tenantConfig'
@@ -7,6 +7,7 @@ import { buildTenantConfig } from '../lib/tenantConfig'
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/documents', icon: FolderOpen,      label: 'Documents'  },
+  { to: '/opportunities', icon: Radar,       label: 'Radar'      },
   { to: '/post',     icon: Send,            label: 'Publisher'  },
   { to: '/inbox',    icon: MessageSquare,   label: 'Inbox'      },
   { to: '/settings', icon: Settings,        label: 'Settings'   },
@@ -34,11 +35,11 @@ export default function Sidebar({ session, tenant: providedTenant, billingAccess
 
   return (
     <aside
-      className="hidden fixed left-0 top-0 z-40 h-full w-[280px] flex-col border-r md:flex"
+      className="hidden fixed left-0 top-0 z-40 h-full w-[232px] flex-col border-r md:flex"
       style={{ background: 'linear-gradient(180deg, var(--portal-nav) 0%, var(--portal-nav-strong) 100%)', borderColor: 'rgba(201, 168, 76, 0.18)' }}
     >
-      <div className="flex items-center gap-3 border-b px-7 py-8" style={{ borderColor: 'var(--portal-border)' }}>
-        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl border bg-white shadow-sm" style={{ borderColor: 'rgba(201, 168, 76, 0.24)' }}>
+      <div className="flex items-center gap-3 border-b px-5 py-7" style={{ borderColor: 'var(--portal-border)' }}>
+        <div className="h-11 w-11 shrink-0 overflow-hidden rounded-2xl border bg-white shadow-sm" style={{ borderColor: 'rgba(201, 168, 76, 0.24)' }}>
           <img
             src={tenant.logoUrl}
             alt={tenant.displayName}
@@ -47,7 +48,7 @@ export default function Sidebar({ session, tenant: providedTenant, billingAccess
           />
         </div>
         <div>
-          <p className="font-display text-lg font-semibold leading-tight" style={{ color: '#ffffff' }}>
+          <p className="font-display text-base font-semibold leading-tight" style={{ color: '#ffffff' }}>
             {tenant.displayName}
           </p>
           <p className="text-[10px] font-semibold uppercase tracking-[0.28em]" style={{ color: 'rgba(201, 168, 76, 0.9)' }}>
@@ -56,14 +57,14 @@ export default function Sidebar({ session, tenant: providedTenant, billingAccess
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1.5 px-4 py-6">
+      <nav className="flex-1 space-y-1.5 px-3 py-5">
         {navItems.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}
             end={to === '/'}
             className={({ isActive }) =>
-              `group flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition-all duration-200 ${
+              `group flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold transition-all duration-200 ${
                 isActive ? 'active-nav' : 'inactive-nav'
               }`
             }
@@ -117,7 +118,7 @@ export default function Sidebar({ session, tenant: providedTenant, billingAccess
         ) : null}
       </nav>
 
-      <div className="px-4 py-5" style={{ borderTop: '1px solid rgba(201, 168, 76, 0.15)' }}>
+      <div className="px-3 py-5" style={{ borderTop: '1px solid rgba(201, 168, 76, 0.15)' }}>
         <div className="mb-3 flex items-center gap-3 rounded-[22px] px-3 py-3" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(201, 168, 76, 0.16)' }}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
             style={{ background: 'linear-gradient(135deg, var(--portal-primary), #e8d5a0)', color: 'var(--portal-dark)' }}>

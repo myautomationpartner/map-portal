@@ -60,6 +60,122 @@ function buildSharedTemplate({
   }
 }
 
+export const onboardingBusinessCategories = [
+  {
+    value: 'sports_fitness',
+    label: 'Sports and Fitness',
+    options: [
+      { value: 'dance_studio', label: 'Dance Studio', plannerType: 'dance_studio' },
+      { value: 'gym', label: 'Gym', plannerType: 'gym_fitness' },
+      { value: 'yoga_studio', label: 'Yoga Studio', plannerType: 'gym_fitness' },
+      { value: 'pilates_studio', label: 'Pilates Studio', plannerType: 'gym_fitness' },
+      { value: 'martial_arts_school', label: 'Martial Arts School', plannerType: 'gym_fitness' },
+      { value: 'swim_school', label: 'Swim School', plannerType: 'gym_fitness' },
+      { value: 'personal_training', label: 'Personal Training', plannerType: 'gym_fitness' },
+    ],
+  },
+  {
+    value: 'beauty_personal_care',
+    label: 'Beauty and Personal Care',
+    options: [
+      { value: 'hair_salon', label: 'Hair Salon', plannerType: 'salon_spa' },
+      { value: 'nail_salon', label: 'Nail Salon', plannerType: 'salon_spa' },
+      { value: 'day_spa', label: 'Day Spa', plannerType: 'salon_spa' },
+      { value: 'med_spa', label: 'Med Spa', plannerType: 'medical_wellness' },
+      { value: 'esthetician', label: 'Esthetician', plannerType: 'salon_spa' },
+      { value: 'barber_shop', label: 'Barber Shop', plannerType: 'salon_spa' },
+    ],
+  },
+  {
+    value: 'food_beverage',
+    label: 'Food and Beverage',
+    options: [
+      { value: 'restaurant', label: 'Restaurant', plannerType: 'restaurant_cafe' },
+      { value: 'cafe', label: 'Cafe', plannerType: 'restaurant_cafe' },
+      { value: 'bakery', label: 'Bakery', plannerType: 'restaurant_cafe' },
+      { value: 'catering', label: 'Catering', plannerType: 'restaurant_cafe' },
+      { value: 'food_truck', label: 'Food Truck', plannerType: 'restaurant_cafe' },
+      { value: 'bar_lounge', label: 'Bar / Lounge', plannerType: 'restaurant_cafe' },
+    ],
+  },
+  {
+    value: 'professional_services',
+    label: 'Professional Services',
+    options: [
+      { value: 'law_firm', label: 'Law Firm', plannerType: 'professional_services' },
+      { value: 'accounting_bookkeeping', label: 'Accounting / Bookkeeping', plannerType: 'professional_services' },
+      { value: 'insurance_agency', label: 'Insurance Agency', plannerType: 'professional_services' },
+      { value: 'marketing_agency', label: 'Marketing Agency', plannerType: 'professional_services' },
+      { value: 'business_consulting', label: 'Business Consulting', plannerType: 'professional_services' },
+      { value: 'financial_advisor', label: 'Financial Advisor', plannerType: 'professional_services' },
+    ],
+  },
+  {
+    value: 'home_services',
+    label: 'Home Services',
+    options: [
+      { value: 'plumbing', label: 'Plumbing', plannerType: 'home_services' },
+      { value: 'hvac', label: 'HVAC', plannerType: 'home_services' },
+      { value: 'electrical', label: 'Electrical', plannerType: 'home_services' },
+      { value: 'roofing', label: 'Roofing', plannerType: 'home_services' },
+      { value: 'landscaping', label: 'Landscaping', plannerType: 'home_services' },
+      { value: 'cleaning_service', label: 'Cleaning Service', plannerType: 'home_services' },
+      { value: 'pest_control', label: 'Pest Control', plannerType: 'home_services' },
+    ],
+  },
+  {
+    value: 'real_estate_housing',
+    label: 'Real Estate and Housing',
+    options: [
+      { value: 'real_estate_agent', label: 'Real Estate Agent', plannerType: 'real_estate' },
+      { value: 'real_estate_brokerage', label: 'Real Estate Brokerage', plannerType: 'real_estate' },
+      { value: 'property_management', label: 'Property Management', plannerType: 'real_estate' },
+      { value: 'mortgage_broker', label: 'Mortgage Broker', plannerType: 'real_estate' },
+    ],
+  },
+  {
+    value: 'health_wellness',
+    label: 'Health and Wellness',
+    options: [
+      { value: 'dental_practice', label: 'Dental Practice', plannerType: 'medical_wellness' },
+      { value: 'orthodontics', label: 'Orthodontics', plannerType: 'medical_wellness' },
+      { value: 'chiropractic', label: 'Chiropractic', plannerType: 'medical_wellness' },
+      { value: 'physical_therapy', label: 'Physical Therapy', plannerType: 'medical_wellness' },
+      { value: 'counseling_practice', label: 'Counseling Practice', plannerType: 'medical_wellness' },
+      { value: 'wellness_clinic', label: 'Wellness Clinic', plannerType: 'medical_wellness' },
+    ],
+  },
+  {
+    value: 'retail_ecommerce',
+    label: 'Retail and Ecommerce',
+    options: [
+      { value: 'boutique', label: 'Boutique', plannerType: 'other_small_business' },
+      { value: 'gift_shop', label: 'Gift Shop', plannerType: 'other_small_business' },
+      { value: 'jewelry_store', label: 'Jewelry Store', plannerType: 'other_small_business' },
+      { value: 'home_decor_store', label: 'Home Decor Store', plannerType: 'other_small_business' },
+      { value: 'specialty_retail', label: 'Specialty Retail', plannerType: 'other_small_business' },
+      { value: 'ecommerce_brand', label: 'Ecommerce Brand', plannerType: 'other_small_business' },
+    ],
+  },
+  {
+    value: 'community_education_services',
+    label: 'Community, Education, and Local Services',
+    options: [
+      { value: 'child_care', label: 'Child Care / Daycare', plannerType: 'other_small_business' },
+      { value: 'tutoring_center', label: 'Tutoring Center', plannerType: 'other_small_business' },
+      { value: 'event_venue', label: 'Event Venue', plannerType: 'other_small_business' },
+      { value: 'photography_studio', label: 'Photography Studio', plannerType: 'other_small_business' },
+      { value: 'pet_grooming', label: 'Pet Grooming', plannerType: 'other_small_business' },
+      { value: 'other_small_business', label: 'Other Small Business', plannerType: 'other_small_business' },
+    ],
+  },
+]
+
+export const onboardingBusinessReachOptions = [
+  { value: 'local', label: 'Local' },
+  { value: 'national_global', label: 'National / Global' },
+]
+
 export const plannerBusinessTypeOptions = [
   { value: 'dance_studio', label: 'Dance Studio' },
   { value: 'gym_fitness', label: 'Gym / Fitness' },

@@ -12,6 +12,7 @@ import {
   reconcileScheduledPosts,
   fetchScheduledPosts,
   fetchSocialDrafts,
+  generatePublisherImage,
   updateSocialDraft,
   upsertSocialDraft,
 } from '../lib/portalApi'
@@ -118,6 +119,23 @@ function getDropboxPreviewSource(attachments) {
 function getDropboxThumbSource(file) {
   if (!file) return null
   return getDropboxRenderableImageUrl(file.thumbnail) || getDropboxRenderableImageUrl(file.link) || null
+}
+
+function base64ToImageFile(base64, mimeType = 'image/png', filename = 'generated-post-image.png') {
+  const binary = window.atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+  return new File([bytes], filename, { type: mimeType })
+}
+
+function getDraftMetaImagePrompt(draft) {
+  const meta = parseDraftMeta(draft?.review_notes)
+  if (typeof meta?.radarAction?.imagePrompt === 'string' && meta.radarAction.imagePrompt.trim()) {
+    return meta.radarAction.imagePrompt.trim()
+  }
+  return ''
 }
 
 async function fetchConnections(clientId) {
@@ -317,6 +335,22 @@ function getMinScheduleValue() {
 
 function getSlotKey(slot) {
   return slot ? `${slot.slot_date_local}::${slot.slot_label}` : ''
+}
+
+function buildSlotFromDraft(draft) {
+  if (!draft) return null
+
+  return {
+    slot_date_local: draft.slot_date_local,
+    slot_label: draft.slot_label,
+    slot_start_local: draft.slot_start_local,
+    slot_end_local: draft.slot_end_local,
+    timezone: draft.timezone,
+    scheduled_for: draft.scheduled_for,
+    post_type: draft.post_type,
+    state: 'occupied_draft',
+    explanation: 'Draft created from Opportunity Radar.',
+  }
 }
 
 function getDatePartsForZone(value, timeZone) {
@@ -733,6 +767,8 @@ export default function CreatePost() {
   const [content, setContent] = useState('')
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
+  const [imageGenerateState, setImageGenerateState] = useState('idle')
+  const [imageGenerateError, setImageGenerateError] = useState('')
   const [dropboxAttachments, setDropboxAttachments] = useState([])
   const [dropboxLoading, setDropboxLoading] = useState(false)
   const [dropboxSuggestedAssets, setDropboxSuggestedAssets] = useState([])
@@ -845,6 +881,11 @@ export default function CreatePost() {
     return calendar.slots.find((slot) => getSlotKey(slot) === activeSlotKey) || null
   }, [activeSlotKey, calendar])
   const activeDraft = useMemo(() => drafts.find((draft) => draft.id === activeDraftId) || findDraftForSlot(drafts, activeSlot), [activeDraftId, drafts, activeSlot])
+  const imageGenerationPrompt = useMemo(
+    () => getDraftMetaImagePrompt(activeDraft) || mediaSuggestion,
+    [activeDraft, mediaSuggestion],
+  )
+  const canGenerateImage = Boolean(clientId && content.trim() && imageGenerationPrompt)
   const scheduledPostsDetailed = useMemo(() => {
     const timezone = calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'
 
@@ -892,6 +933,7 @@ export default function CreatePost() {
 
   const draftTargetDate = searchParams.get('date') || ''
   const draftTargetSlot = searchParams.get('slot') || ''
+  const draftTargetId = searchParams.get('draftId') || ''
   const editTargetPostId = searchParams.get('editPost') || ''
 
   useEffect(() => {
@@ -1140,6 +1182,8 @@ export default function CreatePost() {
     setExistingMediaUrl(post.media_url || '')
     setImageFile(null)
     setImagePreview(post.media_url || null)
+    setImageGenerateState('idle')
+    setImageGenerateError('')
     setDropboxAttachments([])
     setPreviewedDropboxAsset(null)
     setActiveDraftId('')
@@ -1163,6 +1207,18 @@ export default function CreatePost() {
 
     resolveDraftForSlot(slot, { source: 'calendar_link' })
   }, [calendar, draftTargetDate, draftTargetSlot, draftLoading, activeSlotKey, drafts, resolveDraftForSlot])
+
+  useEffect(() => {
+    if (!draftTargetId || !drafts.length || draftLoading) return
+    if (activeDraftId === draftTargetId) return
+
+    const draft = drafts.find((entry) => entry.id === draftTargetId)
+    const slot = buildSlotFromDraft(draft)
+    if (!draft || !slot) return
+
+    applyDraftToComposer(draft, slot)
+    setDraftStatus('Opportunity Radar draft loaded.')
+  }, [draftTargetId, drafts, draftLoading, activeDraftId, applyDraftToComposer])
 
   useEffect(() => {
     if (!editTargetPostId || scheduledPostsDetailed.length === 0) return
@@ -1258,13 +1314,51 @@ export default function CreatePost() {
     const reader = new FileReader()
     reader.onload = (loadEvent) => setImagePreview(loadEvent.target?.result || null)
     reader.readAsDataURL(file)
+    setImageGenerateState('idle')
+    setImageGenerateError('')
     setErrorMsg('')
+  }
+
+  async function handleGenerateImage() {
+    if (!requireWriteAccess('generate images for posts')) return
+    if (!canGenerateImage) {
+      setImageGenerateError('Load a Radar draft or media idea before generating an image.')
+      return
+    }
+
+    setImageGenerateState('generating')
+    setImageGenerateError('')
+    setErrorMsg('')
+
+    try {
+      const payload = await generatePublisherImage({
+        client_id: clientId,
+        business_name: profile?.clients?.business_name || '',
+        prompt: imageGenerationPrompt,
+        caption: content,
+        size: '1024x1024',
+        quality: 'low',
+      })
+      const file = base64ToImageFile(payload.image_base64, payload.mime_type || 'image/png')
+      setImageFile(file)
+      setImagePreview(`data:${payload.mime_type || 'image/png'};base64,${payload.image_base64}`)
+      setExistingMediaUrl('')
+      setPreviewedDropboxAsset(null)
+      setImageGenerateState('ready')
+      setDraftStatus('Generated image added. You can replace it with an upload if you prefer.')
+    } catch (error) {
+      console.error('[GeneratePublisherImage]', error)
+      setImageGenerateError(error.message || 'Could not generate an image right now.')
+      setImageGenerateState('error')
+    }
   }
 
   function removeImage() {
     setImageFile(null)
     setImagePreview(null)
     setExistingMediaUrl('')
+    setImageGenerateState('idle')
+    setImageGenerateError('')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -1316,6 +1410,8 @@ export default function CreatePost() {
     setExistingMediaUrl('')
     setImageFile(null)
     setImagePreview(null)
+    setImageGenerateState('idle')
+    setImageGenerateError('')
     setDropboxAttachments([])
     setPreviewedDropboxAsset(null)
     setSearchParams({ date: slot.slot_date_local, slot: slot.slot_label })
@@ -1679,6 +1775,8 @@ export default function CreatePost() {
         setContent('')
         setImageFile(null)
         setImagePreview(null)
+        setImageGenerateState('idle')
+        setImageGenerateError('')
         setDropboxAttachments([])
         setDropboxSuggestedAssets([])
         setDropboxSuggestionStatus('idle')
@@ -1965,7 +2063,7 @@ export default function CreatePost() {
             </section>
 
             <section className="portal-panel rounded-[34px] p-5 md:p-6">
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 lg:grid-cols-3">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -1978,6 +2076,16 @@ export default function CreatePost() {
                 </button>
                 <button
                   type="button"
+                  onClick={handleGenerateImage}
+                  disabled={isSubmitting || imageGenerateState === 'generating' || !canGenerateImage}
+                  className="flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60"
+                  style={{ background: canGenerateImage ? 'rgba(93,120,255,0.12)' : 'rgba(26,24,20,0.05)', color: canGenerateImage ? '#4058c9' : 'var(--portal-text-soft)' }}
+                >
+                  {imageGenerateState === 'generating' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                  {imageGenerateState === 'generating' ? 'Generating image...' : 'Generate image'}
+                </button>
+                <button
+                  type="button"
                   onClick={handleDropboxAttach}
                   disabled={isSubmitting || dropboxLoading}
                   className="flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60"
@@ -1986,6 +2094,27 @@ export default function CreatePost() {
                   {dropboxLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                   {dropboxLoading ? 'Opening Dropbox…' : 'Choose from Dropbox'}
                 </button>
+              </div>
+
+              <div className="mt-4 rounded-[24px] px-4 py-4" style={{ background: 'rgba(255,255,255,0.78)', border: '1px solid var(--portal-border)' }}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                      Image option
+                    </p>
+                    <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>
+                      {imageGenerationPrompt || 'Load a Radar idea or calendar draft to unlock an AI image prompt.'}
+                    </p>
+                    {imageGenerateError && (
+                      <p className="mt-2 text-xs leading-relaxed" style={{ color: 'var(--portal-danger)' }}>
+                        {imageGenerateError}
+                      </p>
+                    )}
+                  </div>
+                  <div className="rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: 'rgba(245,240,235,0.92)', color: imageGenerateState === 'generating' ? '#4058c9' : 'var(--portal-text-soft)' }}>
+                    {imageGenerateState === 'ready' ? 'Generated image attached' : imageGenerateState === 'generating' ? 'Working on it...' : 'Upload or generate'}
+                  </div>
+                </div>
               </div>
 
               <div className="mt-4 rounded-[24px] px-4 py-4" style={{ background: 'rgba(255,255,255,0.78)', border: '1px solid var(--portal-border)' }}>

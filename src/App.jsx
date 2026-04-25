@@ -15,6 +15,7 @@ import ScheduledPosts from './pages/ScheduledPosts'
 import PlatformStats from './pages/PlatformStats'
 import Documents from './pages/Documents'
 import PublicShare from './pages/PublicShare'
+import OpportunityRadar from './pages/OpportunityRadar'
 import Sidebar from './components/Sidebar'
 import BottomNav from './components/BottomNav'
 import PortalBillingBanner from './components/PortalBillingBanner'
@@ -248,7 +249,7 @@ function ProtectedLayout({ session }) {
       />
 
       {/* Main content area */}
-      <div className="flex-1 flex flex-col min-h-screen md:ml-[280px]">
+      <div className="flex min-h-screen w-full flex-col md:ml-[232px] md:w-[calc(100%-232px)]">
         <main className="flex-1 overflow-auto pb-24 md:pb-0">
           <PortalBillingBanner
             billingAccess={billingAccess}
@@ -286,6 +287,7 @@ export default function App() {
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/calendar" element={<Navigate to="/post" replace />} />
                 <Route path="/documents" element={<Documents />} />
+                <Route path="/opportunities" element={<OpportunityRadar />} />
                 <Route path="/inbox" element={<Inbox />} />
                 <Route path="/post" element={<CreatePost />} />
                 <Route path="/post/scheduled" element={<ScheduledPosts />} />

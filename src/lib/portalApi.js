@@ -347,6 +347,82 @@ export async function recordPlannerFeedbackEvent(event) {
   return data
 }
 
+export async function fetchOpportunityRadar(clientId) {
+  if (!clientId) return []
+
+  const { data, error } = await supabase
+    .from('client_local_opportunities')
+    .select(`
+      id,
+      client_id,
+      research_run_id,
+      opportunity_type,
+      title,
+      summary,
+      why_it_matters,
+      local_context,
+      suggested_timing,
+      starts_at,
+      ends_at,
+      expires_at,
+      confidence_score,
+      urgency_score,
+      ad_worthiness,
+      review_state,
+      source_urls,
+      evidence_json,
+      created_at,
+      updated_at,
+      client_opportunity_suggestions (
+        id,
+        client_id,
+        opportunity_id,
+        suggestion_type,
+        title,
+        caption_starter,
+        creative_direction,
+        recommended_platforms,
+        recommended_publish_at,
+        ad_brief_json,
+        review_state,
+        converted_draft_id,
+        created_at,
+        updated_at
+      )
+    `)
+    .eq('client_id', clientId)
+    .neq('review_state', 'archived')
+    .order('created_at', { ascending: false })
+    .limit(40)
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function updateOpportunityState(opportunityId, reviewState) {
+  const { data, error } = await supabase
+    .from('client_local_opportunities')
+    .update({ review_state: reviewState })
+    .eq('id', opportunityId)
+    .select('id, client_id, review_state, updated_at')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function updateOpportunitySuggestionState(suggestionId, changes) {
+  const { data, error } = await supabase
+    .from('client_opportunity_suggestions')
+    .update(changes)
+    .eq('id', suggestionId)
+    .select('id, client_id, opportunity_id, review_state, converted_draft_id, updated_at')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
 export async function deleteSocialDraft(draftId) {
   const { error } = await supabase
     .from('social_drafts')
@@ -497,6 +573,10 @@ export async function createBillingCheckoutSession(input) {
 
 export async function createBillingPortalSession(input) {
   return callEdgeFunction('stripe-create-portal-session', input)
+}
+
+export async function generatePublisherImage(input) {
+  return callEdgeFunction('portal-generate-image', input)
 }
 
 export async function resolveShareLink(token) {

@@ -1,9 +1,9 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Send, MessageSquare, Settings, FolderOpen, CreditCard } from 'lucide-react'
+import { LayoutDashboard, Send, MessageSquare, Settings, CreditCard, Radar } from 'lucide-react'
 
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/documents', icon: FolderOpen,      label: 'Docs'      },
+  { to: '/opportunities', icon: Radar,       label: 'Radar'     },
   { to: '/post',     icon: Send,            label: 'Publisher'  },
   { to: '/inbox',    icon: MessageSquare,   label: 'Inbox'      },
   { to: '/settings', icon: Settings,        label: 'Settings'   },
