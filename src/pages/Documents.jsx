@@ -46,7 +46,7 @@ import {
 } from '../lib/portalApi'
 import { buildTenantConfig } from '../lib/tenantConfig'
 
-const LOCAL_FOLDERS_KEY = 'ds_document_folders'
+const LOCAL_FOLDERS_PREFIX = 'map_document_folders'
 const ALL_FILES_FOLDER = 'All Files'
 const SHARED_FILES_FOLDER = 'Shared files'
 const DESKTOP_PANE_BREAKPOINT = 1280
@@ -105,9 +105,13 @@ const GOOGLE_VIEWER_MIME = new Set([
   'application/rtf',
 ])
 
-function loadLocalFolders() {
+function getLocalFoldersKey(clientKey) {
+  return `${LOCAL_FOLDERS_PREFIX}:${clientKey || 'default'}`
+}
+
+function loadLocalFolders(clientKey) {
   try {
-    const stored = localStorage.getItem(LOCAL_FOLDERS_KEY)
+    const stored = localStorage.getItem(getLocalFoldersKey(clientKey))
     const parsed = stored ? JSON.parse(stored) : []
     return Array.isArray(parsed) ? parsed.filter(Boolean) : []
   } catch {
@@ -115,9 +119,9 @@ function loadLocalFolders() {
   }
 }
 
-function saveLocalFolders(folders) {
+function saveLocalFolders(clientKey, folders) {
   try {
-    localStorage.setItem(LOCAL_FOLDERS_KEY, JSON.stringify(folders))
+    localStorage.setItem(getLocalFoldersKey(clientKey), JSON.stringify(folders))
   } catch {
     return undefined
   }
@@ -878,7 +882,7 @@ export default function Documents() {
   const [selectedFolder, setSelectedFolder] = useState(ALL_FILES_FOLDER)
   const [libraryView, setLibraryView] = useState('list')
   const [folderDraft, setFolderDraft] = useState('')
-  const [localFolders, setLocalFolders] = useState(loadLocalFolders)
+  const [localFolders, setLocalFolders] = useState([])
   const [openActionMenuId, setOpenActionMenuId] = useState(null)
   const [shareDialogDocument, setShareDialogDocument] = useState(null)
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
@@ -894,6 +898,11 @@ export default function Documents() {
     () => buildTenantConfig({ client: profile?.clients || null, claims }),
     [profile, claims],
   )
+  const clientFolderKey = profile?.client_id || profile?.clients?.slug || tenant.clientSlug || ''
+
+  useEffect(() => {
+    setLocalFolders(loadLocalFolders(clientFolderKey))
+  }, [clientFolderKey])
 
   const {
     data: documents = [],
@@ -1026,7 +1035,7 @@ export default function Documents() {
         setLocalFolders((current) => {
           if (current.includes(payload.targetFolder.trim())) return current
           const next = [...current, payload.targetFolder.trim()].sort((a, b) => a.localeCompare(b))
-          saveLocalFolders(next)
+          saveLocalFolders(clientFolderKey, next)
           return next
         })
       }
@@ -1074,7 +1083,7 @@ export default function Documents() {
         setLocalFolders((current) => {
           if (current.includes(updatedDocument.category.trim())) return current
           const next = [...current, updatedDocument.category.trim()].sort((a, b) => a.localeCompare(b))
-          saveLocalFolders(next)
+          saveLocalFolders(clientFolderKey, next)
           return next
         })
       }
@@ -1171,7 +1180,7 @@ export default function Documents() {
     if (!folders.includes(nextFolder)) {
       const next = [...localFolders, nextFolder].sort((a, b) => a.localeCompare(b))
       setLocalFolders(next)
-      saveLocalFolders(next)
+      saveLocalFolders(clientFolderKey, next)
     }
 
     setFolderDraft('')

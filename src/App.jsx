@@ -30,6 +30,33 @@ const queryClient = new QueryClient({
   },
 })
 
+function normalizeHost(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '')
+    .split(':')[0]
+}
+
+function isRelaxedHost(value) {
+  const host = normalizeHost(value)
+  return !host ||
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.endsWith('.workers.dev') ||
+    host.endsWith('.pages.dev')
+}
+
+function resolveExpectedHost(profile) {
+  const client = profile?.clients
+  const portalDomain = normalizeHost(client?.portal_domain)
+  if (portalDomain) return portalDomain
+
+  const slug = String(client?.slug || '').trim().toLowerCase()
+  return slug ? `${slug}.myautomationpartner.com` : ''
+}
+
 function AuthProvider({ children }) {
   const [session, setSession] = useState(undefined) // undefined = loading
 
@@ -38,6 +65,14 @@ function AuthProvider({ children }) {
 
     async function bootstrapSession() {
       const url = new URL(window.location.href)
+      const shouldClearLoginSession = url.pathname.endsWith('/login') && url.searchParams.get('setup') === 'complete'
+
+      if (shouldClearLoginSession) {
+        await supabase.auth.signOut()
+        if (active) setSession(null)
+        return
+      }
+
       const hash = url.hash.startsWith('#') ? url.hash.slice(1) : ''
       const hashParams = new URLSearchParams(hash)
       const accessToken = hashParams.get('access_token')
@@ -103,6 +138,15 @@ function ProtectedLayout({ session }) {
     [profile, claims],
   )
   const billingAccess = useMemo(() => resolveBillingAccess(tenant), [tenant])
+  const currentHost = typeof window === 'undefined' ? '' : normalizeHost(window.location.hostname)
+  const expectedHost = useMemo(() => resolveExpectedHost(profile), [profile])
+  const tenantHostMismatch = Boolean(
+    session &&
+    profile?.clients &&
+    !isRelaxedHost(currentHost) &&
+    expectedHost &&
+    currentHost !== expectedHost,
+  )
 
   useEffect(() => {
     const url = new URL(window.location.href)
@@ -112,6 +156,13 @@ function ProtectedLayout({ session }) {
     url.searchParams.delete('billing')
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
   }, [queryClient])
+
+  useEffect(() => {
+    if (!tenantHostMismatch) return
+
+    queryClient.clear()
+    void supabase.auth.signOut()
+  }, [queryClient, tenantHostMismatch])
 
   function requireWriteAccess(actionLabel = 'make changes') {
     if (!billingAccess.readOnly) return true
@@ -163,6 +214,27 @@ function ProtectedLayout({ session }) {
   }
 
   if (!session) return <Navigate to="/login" replace />
+
+  if (tenantHostMismatch) {
+    return (
+      <div className="portal-shell flex min-h-screen items-center justify-center p-6">
+        <div className="portal-surface max-w-md rounded-[28px] p-6 text-center">
+          <h1 className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
+            This login belongs to another workspace.
+          </h1>
+          <p className="mt-3 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+            We signed out the stale browser session so this portal can load with the right customer account.
+          </p>
+          <a
+            href="/login"
+            className="portal-button-primary mt-5 inline-flex rounded-2xl px-5 py-3 text-sm font-semibold"
+          >
+            Continue to login
+          </a>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="portal-shell flex">
