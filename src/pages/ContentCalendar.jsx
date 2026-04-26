@@ -5,11 +5,14 @@ import {
   ArrowUpRight,
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Image,
   Loader2,
   Megaphone,
   PencilLine,
+  Plus,
   RefreshCw,
   Sparkles,
   Wand2,
@@ -51,6 +54,46 @@ function formatDate(value, options = {}) {
 
 function formatSlotDate(dateString) {
   return formatDate(`${dateString}T12:00:00`, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+function addDays(date, days) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function startOfWeek(date) {
+  const current = new Date(date)
+  current.setHours(12, 0, 0, 0)
+  const day = current.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  return addDays(current, diff)
+}
+
+function toDateString(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getWeekRangeLabel(weekStart) {
+  const weekEnd = addDays(weekStart, 6)
+  const startLabel = formatDate(weekStart, { month: 'short', day: 'numeric' })
+  const endLabel = formatDate(weekEnd, { month: 'short', day: 'numeric' })
+  return `${startLabel} - ${endLabel}`
+}
+
+function isDateInWeek(value, weekStart) {
+  if (!value) return false
+  const date = value instanceof Date
+    ? value
+    : new Date(String(value).includes('T') ? value : `${value}T12:00:00`)
+  if (Number.isNaN(date.getTime())) return false
+  const start = new Date(weekStart)
+  start.setHours(0, 0, 0, 0)
+  const end = addDays(start, 7)
+  return date >= start && date < end
 }
 
 function getActiveSuggestions(opportunity) {
@@ -252,6 +295,10 @@ export default function ContentCalendar() {
   const navigate = useNavigate()
   const [selectedItemId, setSelectedItemId] = useState('')
   const [actionError, setActionError] = useState('')
+  const [weekOffset, setWeekOffset] = useState(0)
+  const selectedWeekStart = useMemo(() => startOfWeek(addDays(new Date(), weekOffset * 7)), [weekOffset])
+  const selectedWeekStartString = toDateString(selectedWeekStart)
+  const selectedWeekLabel = weekOffset === 0 ? 'This week' : getWeekRangeLabel(selectedWeekStart)
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile'],
@@ -281,16 +328,26 @@ export default function ContentCalendar() {
   const calendar = useMemo(() => {
     if (!profile) return null
     try {
-      return buildCalendarModel(profile, scheduledPosts, drafts)
+      return buildCalendarModel(profile, scheduledPosts, drafts, {
+        startDate: selectedWeekStart,
+        horizonDays: 7,
+      })
     } catch (error) {
       return { error }
     }
-  }, [profile, scheduledPosts, drafts])
+  }, [profile, scheduledPosts, drafts, selectedWeekStart])
 
   const radarItems = useMemo(() => (
     opportunities
       .filter((opportunity) => !HIDDEN_RADAR_STATES.has(opportunity.review_state))
       .filter((opportunity) => getActiveSuggestions(opportunity).length > 0)
+      .filter((opportunity) => (
+        weekOffset === 0 ||
+        isDateInWeek(opportunity.expires_at, selectedWeekStart) ||
+        isDateInWeek(opportunity.starts_at, selectedWeekStart) ||
+        isDateInWeek(opportunity.ends_at, selectedWeekStart) ||
+        getActiveSuggestions(opportunity).some((suggestion) => isDateInWeek(suggestion.recommended_publish_at, selectedWeekStart))
+      ))
       .sort((a, b) => {
         const scoreDelta = getRadarPriority(b) - getRadarPriority(a)
         if (Math.abs(scoreDelta) > 0.01) return scoreDelta
@@ -319,13 +376,12 @@ export default function ContentCalendar() {
           suggestion,
         }
       })
-  ), [opportunities])
+  ), [opportunities, selectedWeekStart, weekOffset])
 
   const plannerItems = useMemo(() => {
     if (!calendar?.slots) return []
     return calendar.slots
       .filter((slot) => ['recommended_fill', 'occupied_draft'].includes(slot.state) && slot.post_type)
-      .slice(0, 5)
       .map((slot) => ({
         id: `planner:${slot.slot_date_local}:${slot.slot_label}`,
         source: slot.state === 'occupied_draft' ? 'draft' : 'recommended',
@@ -346,7 +402,7 @@ export default function ContentCalendar() {
   const draftItems = useMemo(() => (
     drafts
       .filter((draft) => draft.review_state !== 'published')
-      .slice(0, 3)
+      .filter((draft) => isDateInWeek(draft.slot_date_local, selectedWeekStart))
       .map((draft) => ({
         id: `draft:${draft.id}`,
         source: 'draft',
@@ -364,11 +420,11 @@ export default function ContentCalendar() {
         proof: ['Saved draft'],
         draft,
       }))
-  ), [drafts])
+  ), [drafts, selectedWeekStart])
 
   const scheduledItems = useMemo(() => (
     scheduledPosts
-      .slice(0, 3)
+      .filter((post) => isDateInWeek(post.scheduled_for || post.created_at, selectedWeekStart))
       .map((post) => ({
         id: `scheduled:${post.id}`,
         source: 'scheduled',
@@ -383,14 +439,20 @@ export default function ContentCalendar() {
         imagePrompt: 'Media was selected when the post was scheduled.',
         proof: ['Scheduled content'],
       }))
-  ), [scheduledPosts])
+  ), [scheduledPosts, selectedWeekStart])
 
   const planItems = useMemo(() => {
-    const merged = [...radarItems.slice(0, 3), ...plannerItems.slice(0, 4), ...draftItems.slice(0, 2), ...scheduledItems.slice(0, 1)]
-    return merged.slice(0, 7)
-  }, [draftItems, plannerItems, radarItems, scheduledItems])
+    const merged = weekOffset === 0
+      ? [...radarItems.slice(0, 3), ...plannerItems, ...draftItems, ...scheduledItems]
+      : [...plannerItems, ...draftItems, ...scheduledItems, ...radarItems]
+    return merged.slice(0, 9)
+  }, [draftItems, plannerItems, radarItems, scheduledItems, weekOffset])
 
   const selectedItem = planItems.find((item) => item.id === selectedItemId) || planItems[0] || null
+  const nextBestItem = planItems.find((item) => item.source === 'radar') || planItems[0] || null
+  const readyIdeaCount = radarItems.length + plannerItems.filter((item) => item.source === 'recommended').length
+  const boostCandidateCount = radarItems.filter((item) => item.adWorthiness && item.adWorthiness !== 'organic_only').length
+  const recommendedSlot = plannerItems.find((item) => item.source === 'recommended')?.slot
 
   const createRadarDraft = useMutation({
     mutationFn: async (item) => {
@@ -496,6 +558,14 @@ export default function ContentCalendar() {
     navigate('/post')
   }
 
+  function handleAddPost() {
+    if (recommendedSlot) {
+      navigate(`/post?date=${encodeURIComponent(recommendedSlot.slot_date_local)}&slot=${encodeURIComponent(recommendedSlot.slot_label)}`)
+      return
+    }
+    navigate(`/post?date=${encodeURIComponent(selectedWeekStartString)}`)
+  }
+
   const isLoading = profileLoading || postsLoading || draftsLoading || radarLoading
   const isRefreshing = isRefetchingPosts || isRefetchingDrafts || isRefetchingRadar
   const isCreating = createRadarDraft.isPending || createPlannerDraft.isPending
@@ -529,21 +599,61 @@ export default function ContentCalendar() {
     <div className="portal-page content-plan-page mx-auto max-w-[1500px] space-y-3 md:p-4 xl:p-5">
       <section className="content-plan-topbar">
         <div className="content-plan-topbar-inner">
-          <div>
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">
-                Publisher + Radar
-              </span>
-              <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">
-                Customer approved
-              </span>
+          <div className="content-plan-week-control">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+              Content Plan
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setWeekOffset((value) => Math.max(0, value - 1))}
+                disabled={weekOffset === 0}
+                className="portal-button-secondary inline-flex h-9 w-9 items-center justify-center disabled:opacity-40"
+                aria-label="Previous week"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <div>
+                <h1 className="content-plan-title font-display">{selectedWeekLabel}</h1>
+                <p className="content-plan-subtitle text-sm leading-relaxed">
+                  {getWeekRangeLabel(selectedWeekStart)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWeekOffset((value) => Math.min(8, value + 1))}
+                className="portal-button-secondary inline-flex h-9 w-9 items-center justify-center"
+                aria-label="Next week"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
-            <h1 className="content-plan-title font-display">Content Plan</h1>
-            <p className="content-plan-subtitle text-sm leading-relaxed">
-              One weekly workspace for recommended posts, AI-discovered opportunities, drafts, and scheduled content.
+          </div>
+          <div className="content-plan-command-summary">
+            <ProofChip>{readyIdeaCount} ready ideas</ProofChip>
+            <ProofChip>{boostCandidateCount} boost-worthy</ProofChip>
+            <ProofChip>{draftItems.length} drafts this week</ProofChip>
+          </div>
+          <div className="content-plan-next-best">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
+              Next best
+            </p>
+            <p className="mt-1 truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
+              {nextBestItem?.title || 'Add a post to this week'}
+            </p>
+            <p className="mt-0.5 line-clamp-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+              {nextBestItem?.subtitle || 'Choose a week and MAP will show the best open suggestions.'}
             </p>
           </div>
           <div className="content-plan-actions flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleAddPost}
+              className="portal-button-primary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold"
+            >
+              <Plus className="h-4 w-4" />
+              Add post
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -574,7 +684,7 @@ export default function ContentCalendar() {
           <div className="content-plan-list-header" style={{ borderColor: 'var(--portal-border)' }}>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                This week
+                {selectedWeekLabel}
               </p>
               <h2 className="mt-1 font-display text-xl font-semibold" style={{ color: 'var(--portal-text)' }}>
                 Plan queue
@@ -720,7 +830,7 @@ export default function ContentCalendar() {
         </div>
         <div className="portal-command-bar-group text-sm" style={{ color: 'var(--portal-text-muted)' }}>
           <Clock3 className="h-4 w-4" />
-          Next {calendar?.policy?.planningHorizonDays || 14} days
+          Viewing {getWeekRangeLabel(selectedWeekStart)}
           <Megaphone className="h-4 w-4" />
           {radarItems.filter((item) => item.adWorthiness && item.adWorthiness !== 'organic_only').length} boost candidates
           <ArrowUpRight className="h-4 w-4" />

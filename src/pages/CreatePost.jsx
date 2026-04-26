@@ -812,6 +812,10 @@ export default function CreatePost() {
   })
 
   const clientId = profile?.client_id
+  const draftTargetDate = searchParams.get('date') || ''
+  const draftTargetSlot = searchParams.get('slot') || ''
+  const draftTargetId = searchParams.get('draftId') || ''
+  const editTargetPostId = searchParams.get('editPost') || ''
 
   const { data: scheduledPosts = [], isLoading: postsLoading } = useQuery({
     queryKey: ['calendar-posts', clientId],
@@ -837,11 +841,13 @@ export default function CreatePost() {
   const calendar = useMemo(() => {
     if (!profile) return null
     try {
-      return buildCalendarModel(profile, scheduledPosts, drafts)
+      return buildCalendarModel(profile, scheduledPosts, drafts, draftTargetDate
+        ? { startDate: new Date(`${draftTargetDate}T12:00:00`), horizonDays: 7 }
+        : undefined)
     } catch (error) {
       return { error }
     }
-  }, [profile, scheduledPosts, drafts])
+  }, [profile, scheduledPosts, drafts, draftTargetDate])
 
   const groupedSlots = useMemo(() => {
     if (!calendar?.slots) return []
@@ -930,11 +936,6 @@ export default function CreatePost() {
       : timingMode === 'custom'
         ? 'Choose any date and time'
         : 'Pick a slot from the calendar'
-
-  const draftTargetDate = searchParams.get('date') || ''
-  const draftTargetSlot = searchParams.get('slot') || ''
-  const draftTargetId = searchParams.get('draftId') || ''
-  const editTargetPostId = searchParams.get('editPost') || ''
 
   useEffect(() => {
     if (!activePlatforms.includes(previewPlatform)) {

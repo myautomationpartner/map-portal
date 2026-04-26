@@ -306,15 +306,18 @@ function buildOccupiedSlotMap(policy, scheduledPosts, drafts) {
   return occupied
 }
 
-export function buildCalendarModel(profile, scheduledPosts, drafts) {
+export function buildCalendarModel(profile, scheduledPosts, drafts, options = {}) {
   const policy = resolvePlannerPolicy(profile)
-  const today = new Date()
+  const today = options.startDate ? new Date(options.startDate) : new Date()
+  const planningHorizonDays = Number.isFinite(Number(options.horizonDays))
+    ? Math.max(1, Math.min(Number(options.horizonDays), 90))
+    : policy.planningHorizonDays
   const slots = []
   const occupied = buildOccupiedSlotMap(policy, scheduledPosts, drafts)
   const weekCounts = {}
   let lastSelectedType = null
 
-  for (let dayOffset = 0; dayOffset < policy.planningHorizonDays; dayOffset += 1) {
+  for (let dayOffset = 0; dayOffset < planningHorizonDays; dayOffset += 1) {
     const date = addDays(today, dayOffset)
     const parts = getDateParts(date, policy.timezone)
 
