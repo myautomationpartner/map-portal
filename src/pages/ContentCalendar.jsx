@@ -5,29 +5,37 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { SiFacebook, SiGoogle, SiInstagram, SiTiktok } from 'react-icons/si'
 import {
   ArrowUpRight,
+  Brain,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock3,
   Image,
+  Link2,
   Loader2,
   Megaphone,
   MoreHorizontal,
   PencilLine,
   Plus,
   RefreshCw,
+  Save,
   Trash2,
   Wand2,
+  X,
 } from 'lucide-react'
 import {
+  createResearchSource,
+  deleteResearchSource,
   deletePost,
   deleteSocialDraft,
   fetchCalendarPosts,
   fetchOpportunityRadar,
   fetchProfile,
+  fetchResearchSources,
   fetchSocialDrafts,
   recordPlannerFeedbackEvent,
+  updateResearchSource,
   updateOpportunityState,
   updateOpportunitySuggestionState,
   upsertSocialDraft,
@@ -37,7 +45,7 @@ import { parseDraftMeta, stringifyDraftMeta } from '../lib/socialDrafting'
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 const HIDDEN_RADAR_STATES = new Set(['dismissed', 'archived', 'converted_to_draft'])
 const BADGE_STYLES = {
-  radar: { label: 'AI idea', background: 'rgba(53,104,166,0.1)', color: '#3568a6', border: 'rgba(53,104,166,0.18)' },
+  radar: { label: 'Partner Idea', background: 'rgba(53,104,166,0.1)', color: '#3568a6', border: 'rgba(53,104,166,0.18)' },
   open: { label: 'Open', background: 'rgba(201,168,76,0.12)', color: '#8c6d1c', border: 'rgba(201,168,76,0.24)' },
   draft: { label: 'Draft', background: 'rgba(93,121,104,0.12)', color: '#4d6c5b', border: 'rgba(93,121,104,0.2)' },
   scheduled: { label: 'Scheduled', background: 'rgba(31,169,113,0.1)', color: '#17875b', border: 'rgba(31,169,113,0.2)' },
@@ -46,7 +54,7 @@ const BADGE_STYLES = {
   ad: { label: 'Ad idea', background: 'rgba(216,95,152,0.1)', color: '#b5487b', border: 'rgba(216,95,152,0.2)' },
 }
 const STATUS_MARKERS = {
-  radar: { label: 'AI idea', color: '#3568a6' },
+  radar: { label: 'Partner Idea', color: '#3568a6' },
   draft: { label: 'Draft', color: '#c87628' },
   scheduled: { label: 'Scheduled', color: '#1fa971' },
   published: { label: 'Posted', color: '#c9a84c' },
@@ -57,6 +65,11 @@ const PLATFORM_MARKERS = {
   google: { label: 'Google Business', Icon: SiGoogle, color: '#34a853' },
   tiktok: { label: 'TikTok', Icon: SiTiktok, color: '#111111' },
 }
+const RESEARCH_SOURCE_TYPES = [
+  { value: 'local_event_calendar', label: 'Event calendar' },
+  { value: 'client_website', label: 'Website page' },
+  { value: 'manual_reference', label: 'Reference page' },
+]
 
 function isMissingRemoteDelete(payload, raw) {
   const message = [
@@ -75,6 +88,25 @@ function normalizeSentence(value, fallback = '') {
   const text = String(value || '').trim()
   if (!text) return fallback
   return /[.!?]$/.test(text) ? text : `${text}.`
+}
+
+function normalizeSourceUrl(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (/^https?:\/\//i.test(raw)) return raw
+  return `https://${raw}`
+}
+
+function getSourceHost(value) {
+  try {
+    return new URL(normalizeSourceUrl(value)).hostname.replace(/^www\./, '')
+  } catch {
+    return String(value || '').replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
+  }
+}
+
+function getResearchSourceTypeLabel(value) {
+  return RESEARCH_SOURCE_TYPES.find((option) => option.value === value)?.label || 'Source'
 }
 
 function formatDate(value, options = {}) {
@@ -556,6 +588,150 @@ function ProofChip({ children, onClick, title }) {
   )
 }
 
+function TrainPartnerModal({
+  sources,
+  label,
+  url,
+  sourceType,
+  isSaving,
+  busySourceId,
+  error,
+  notice,
+  onClose,
+  onLabelChange,
+  onUrlChange,
+  onSourceTypeChange,
+  onSave,
+  onToggleSource,
+  onDeleteSource,
+}) {
+  return createPortal(
+    <div className="assistant-train-overlay" role="presentation" onMouseDown={onClose}>
+      <div
+        className="assistant-train-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="assistant-train-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="assistant-train-header">
+          <div className="assistant-train-icon">
+            <Brain className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+              Train your Partner
+            </p>
+            <h2 id="assistant-train-title" className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
+              Add calendars MAP should watch
+            </h2>
+          </div>
+          <button type="button" className="assistant-train-close" onClick={onClose} aria-label="Close">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="assistant-train-grid">
+          <form className="assistant-train-form" onSubmit={onSave}>
+            <div>
+              <label htmlFor="assistant-source-label">Source name</label>
+              <input
+                id="assistant-source-label"
+                value={label}
+                onChange={(event) => onLabelChange(event.target.value)}
+                placeholder="Dancescapes event calendar"
+              />
+            </div>
+            <div>
+              <label htmlFor="assistant-source-url">Calendar or event page URL</label>
+              <input
+                id="assistant-source-url"
+                value={url}
+                onChange={(event) => onUrlChange(event.target.value)}
+                placeholder="https://example.com/events"
+              />
+            </div>
+            <div>
+              <label htmlFor="assistant-source-type">How should MAP use it?</label>
+              <select
+                id="assistant-source-type"
+                value={sourceType}
+                onChange={(event) => onSourceTypeChange(event.target.value)}
+              >
+                {RESEARCH_SOURCE_TYPES.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {(error || notice) && (
+              <div
+                className="assistant-train-message"
+                data-tone={error ? 'error' : 'success'}
+              >
+                {error || notice}
+              </div>
+            )}
+
+            <button type="submit" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" disabled={isSaving}>
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save source
+            </button>
+          </form>
+
+          <div className="assistant-train-sources">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                Current training sources
+              </p>
+              <p className="mt-1 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                Event calendars and approved pages help your Partner turn real dates into post ideas, reminders, and campaigns.
+              </p>
+            </div>
+            <div className="assistant-source-list">
+              {sources.length ? sources.map((source) => (
+                <div key={source.id} className="assistant-source-row" data-inactive={!source.is_active}>
+                  <div className="min-w-0">
+                    <p>{source.label}</p>
+                    <span>{getResearchSourceTypeLabel(source.source_type)} · {source.url ? getSourceHost(source.url) : source.handle}</span>
+                  </div>
+                  <div className="assistant-source-actions">
+                    {source.url ? (
+                      <a href={source.url} target="_blank" rel="noreferrer" aria-label={`Open ${source.label}`}>
+                        <Link2 className="h-4 w-4" />
+                      </a>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => onToggleSource(source)}
+                      disabled={busySourceId === source.id}
+                    >
+                      {source.is_active ? 'Active' : 'Paused'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteSource(source)}
+                      disabled={busySourceId === source.id}
+                      aria-label={`Delete ${source.label}`}
+                    >
+                      {busySourceId === source.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+              )) : (
+                <div className="assistant-source-empty">
+                  Add a public calendar, events page, or important schedule page so your Partner can use real dates in future AI runs.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 export default function ContentCalendar() {
   const { requireWriteAccess } = useOutletContext()
   const queryClient = useQueryClient()
@@ -565,6 +741,13 @@ export default function ContentCalendar() {
   const [actionError, setActionError] = useState('')
   const [actionNotice, setActionNotice] = useState('')
   const [actionBusyId, setActionBusyId] = useState('')
+  const [trainAssistantOpen, setTrainAssistantOpen] = useState(false)
+  const [sourceLabel, setSourceLabel] = useState('')
+  const [sourceUrl, setSourceUrl] = useState('')
+  const [sourceType, setSourceType] = useState('local_event_calendar')
+  const [sourceError, setSourceError] = useState('')
+  const [sourceNotice, setSourceNotice] = useState('')
+  const [busySourceId, setBusySourceId] = useState('')
   const [weekOffset, setWeekOffset] = useState(() => {
     const date = initialParams.get('date')
     return date ? getWeekOffsetFromDate(date) : 0
@@ -604,6 +787,12 @@ export default function ContentCalendar() {
   const { data: opportunities = [], isLoading: radarLoading, refetch: refetchRadar, isRefetching: isRefetchingRadar } = useQuery({
     queryKey: ['opportunity-radar', clientId],
     queryFn: () => fetchOpportunityRadar(clientId),
+    enabled: !!clientId,
+  })
+
+  const { data: researchSources = [], isLoading: researchSourcesLoading } = useQuery({
+    queryKey: ['research-sources', clientId],
+    queryFn: () => fetchResearchSources(clientId),
     enabled: !!clientId,
   })
 
@@ -911,6 +1100,76 @@ export default function ContentCalendar() {
     onError: (error) => setActionError(error.message || 'Could not create a Publisher draft.'),
   })
 
+  const createSource = useMutation({
+    mutationFn: async () => {
+      if (!requireWriteAccess('train your Partner')) return null
+      const normalizedUrl = normalizeSourceUrl(sourceUrl)
+      if (!sourceLabel.trim()) throw new Error('Give this source a short name.')
+      if (!normalizedUrl) throw new Error('Add a calendar or event page URL.')
+
+      return createResearchSource({
+        clientId,
+        sourceType,
+        label: sourceLabel,
+        url: normalizedUrl,
+        priority: sourceType === 'local_event_calendar' ? 1 : 2,
+      })
+    },
+    onSuccess: async (source) => {
+      if (!source) return
+      setSourceLabel('')
+      setSourceUrl('')
+      setSourceType('local_event_calendar')
+      setSourceError('')
+      setSourceNotice('Source saved. Future Radar runs will use it.')
+      await queryClient.invalidateQueries({ queryKey: ['research-sources', clientId] })
+    },
+    onError: (error) => {
+      setSourceNotice('')
+      setSourceError(error.message || 'Could not save this source.')
+    },
+  })
+
+  async function handleSaveSource(event) {
+    event.preventDefault()
+    setSourceError('')
+    setSourceNotice('')
+    createSource.mutate()
+  }
+
+  async function handleToggleSource(source) {
+    if (!requireWriteAccess('update Partner training sources')) return
+    try {
+      setBusySourceId(source.id)
+      setSourceError('')
+      setSourceNotice('')
+      await updateResearchSource(source.id, { is_active: !source.is_active })
+      await queryClient.invalidateQueries({ queryKey: ['research-sources', clientId] })
+      setSourceNotice(source.is_active ? 'Source paused.' : 'Source reactivated.')
+    } catch (error) {
+      setSourceError(error.message || 'Could not update this source.')
+    } finally {
+      setBusySourceId('')
+    }
+  }
+
+  async function handleDeleteSource(source) {
+    if (!requireWriteAccess('delete Partner training sources')) return
+    if (!window.confirm(`Delete ${source.label} from Partner training sources?`)) return
+    try {
+      setBusySourceId(source.id)
+      setSourceError('')
+      setSourceNotice('')
+      await deleteResearchSource(source.id)
+      await queryClient.invalidateQueries({ queryKey: ['research-sources', clientId] })
+      setSourceNotice('Source deleted.')
+    } catch (error) {
+      setSourceError(error.message || 'Could not delete this source.')
+    } finally {
+      setBusySourceId('')
+    }
+  }
+
   function handlePrimaryAction(item) {
     setActionError('')
     setActionNotice('')
@@ -1086,7 +1345,7 @@ export default function ContentCalendar() {
     setWeekOffset(getWeekOffsetFromDate(dateString))
   }
 
-  const isLoading = profileLoading || postsLoading || draftsLoading || radarLoading
+  const isLoading = profileLoading || postsLoading || draftsLoading || radarLoading || researchSourcesLoading
   const isRefreshing = isRefetchingPosts || isRefetchingDrafts || isRefetchingRadar
   const isCreating = createRadarDraft.isPending
 
@@ -1148,6 +1407,18 @@ export default function ContentCalendar() {
           <button
             type="button"
             onClick={() => {
+              setSourceError('')
+              setSourceNotice('')
+              setTrainAssistantOpen(true)
+            }}
+            className="portal-button-secondary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold"
+          >
+            <Brain className="h-4 w-4" />
+            Train your Partner
+          </button>
+          <button
+            type="button"
+            onClick={() => {
               refetchPosts()
               refetchDrafts()
               refetchRadar()
@@ -1200,7 +1471,7 @@ export default function ContentCalendar() {
               ))}
             </div>
             <div className="flex flex-wrap gap-2">
-              <ProofChip onClick={() => navigate('/opportunities')} title="Open Radar ideas">{studioCounts.ideas} AI ideas</ProofChip>
+              <ProofChip onClick={() => navigate('/opportunities')} title="Open Partner ideas">{studioCounts.ideas} Partner Ideas</ProofChip>
               <ProofChip onClick={() => setQueueMode('week')} title="Show drafts in Studio">{studioCounts.drafts} Drafts</ProofChip>
               <ProofChip onClick={() => navigate('/post/scheduled')} title="Manage scheduled posts">{studioCounts.scheduled} Scheduled</ProofChip>
               <ProofChip onClick={() => navigate('/post/history')} title="View post history">{studioCounts.posted} Posted</ProofChip>
@@ -1421,6 +1692,26 @@ export default function ContentCalendar() {
           <ArrowUpRight className="h-4 w-4" />
         </div>
       </section>
+
+      {trainAssistantOpen ? (
+        <TrainPartnerModal
+          sources={researchSources}
+          label={sourceLabel}
+          url={sourceUrl}
+          sourceType={sourceType}
+          isSaving={createSource.isPending}
+          busySourceId={busySourceId}
+          error={sourceError}
+          notice={sourceNotice}
+          onClose={() => setTrainAssistantOpen(false)}
+          onLabelChange={setSourceLabel}
+          onUrlChange={setSourceUrl}
+          onSourceTypeChange={setSourceType}
+          onSave={handleSaveSource}
+          onToggleSource={handleToggleSource}
+          onDeleteSource={handleDeleteSource}
+        />
+      ) : null}
     </div>
   )
 }

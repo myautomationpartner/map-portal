@@ -138,6 +138,70 @@ export async function fetchSocialConnections(clientId) {
   return data || []
 }
 
+export async function fetchResearchSources(clientId) {
+  if (!clientId) return []
+
+  const { data, error } = await supabase
+    .from('client_research_sources')
+    .select('id, client_id, source_type, label, url, handle, platform, priority, is_active, last_checked_at, created_at, updated_at')
+    .eq('client_id', clientId)
+    .order('priority', { ascending: true })
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
+
+export async function createResearchSource({ clientId, sourceType = 'local_event_calendar', label, url, handle = null, platform = null, priority = 1 }) {
+  if (!clientId) throw new Error('Client profile is still loading.')
+  if (!label?.trim()) throw new Error('Give this source a short name.')
+  if (!url?.trim() && !handle?.trim()) throw new Error('Add a calendar link, website URL, or handle.')
+
+  const { data, error } = await supabase
+    .from('client_research_sources')
+    .insert({
+      client_id: clientId,
+      source_type: sourceType,
+      label: label.trim(),
+      url: url?.trim() || null,
+      handle: handle?.trim() || null,
+      platform: platform?.trim() || null,
+      priority,
+      is_active: true,
+    })
+    .select('id, client_id, source_type, label, url, handle, platform, priority, is_active, last_checked_at, created_at, updated_at')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function updateResearchSource(sourceId, changes) {
+  if (!sourceId) throw new Error('Research source is required.')
+
+  const { data, error } = await supabase
+    .from('client_research_sources')
+    .update(changes)
+    .eq('id', sourceId)
+    .select('id, client_id, source_type, label, url, handle, platform, priority, is_active, last_checked_at, created_at, updated_at')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function deleteResearchSource(sourceId) {
+  if (!sourceId) throw new Error('Research source is required.')
+
+  const { error } = await supabase
+    .from('client_research_sources')
+    .delete()
+    .eq('id', sourceId)
+
+  if (error) throw error
+  return true
+}
+
 export async function upsertWorkspacePreferences({ clientId, userId, workspaceTools }) {
   if (!clientId || !userId) {
     throw new Error('Client and user are required to save workspace preferences.')
