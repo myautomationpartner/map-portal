@@ -53,12 +53,6 @@ const DAILY_PROMPTS = [
   'What can we publish, organize, or answer today that saves someone time?',
 ]
 
-const WORKSPACE_IDEAS = [
-  { title: 'Morning stack', copy: 'Pin the three tabs your team opens first: inbox, calendar, and drive.' },
-  { title: 'Social command', copy: 'Keep connected channels, Canva, and Business Suite one click from Publisher.' },
-  { title: 'Client ops lane', copy: 'Add billing, booking, forms, or class tools so the portal replaces bookmarks.' },
-]
-
 function getDailyPrompt() {
   const start = new Date(new Date().getFullYear(), 0, 0)
   const day = Math.floor((new Date() - start) / 86400000)
@@ -891,17 +885,11 @@ export default function Dashboard() {
 
       <section className="portal-panel overflow-hidden rounded-[30px] p-0">
         <div className="border-b p-4 md:p-5" style={{ borderColor: 'var(--portal-border)' }}>
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-3xl">
-              <span className="mb-2 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary-strong)' }}>
-                <Wand2 className="h-3.5 w-3.5" />
-                Workspace launcher
-              </span>
-              <h2 className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>Build your daily command center</h2>
-              <p className="mt-1 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                Make this the place your team starts the day: social channels, inboxes, design tools, drives, booking, billing, and the apps that usually hide in browser bookmarks.
-              </p>
-            </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary-strong)' }}>
+              <Wand2 className="h-3.5 w-3.5" />
+              Workspace
+            </span>
             <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -920,15 +908,6 @@ export default function Dashboard() {
               {showAddTool ? 'Hide tools' : 'Add tool'}
             </button>
             </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
-            {WORKSPACE_IDEAS.map((idea) => (
-              <div key={idea.title} className="rounded-2xl border px-4 py-3" style={{ borderColor: 'rgba(26, 24, 20, 0.07)', background: 'rgba(255,255,255,0.72)' }}>
-                <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{idea.title}</p>
-                <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>{idea.copy}</p>
-              </div>
-            ))}
           </div>
         </div>
 
