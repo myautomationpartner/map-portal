@@ -203,6 +203,67 @@ async function callSupabaseRpc(name, body) {
   })
 }
 
+async function countOpportunityRadarRuns(clientId) {
+  const rows = await fetchSupabaseRows(
+    `/rest/v1/client_research_runs?select=id&client_id=eq.${encodeURIComponent(clientId)}&limit=1`,
+  )
+  return Array.isArray(rows) ? rows.length : 0
+}
+
+async function triggerOpportunityRadar(client, mode, body = {}) {
+  const supabaseUrl = requiredValue(['SUPABASE_URL'], 'SUPABASE_URL', FALLBACK_SUPABASE_URL)
+  const serviceRoleKey = requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY')
+
+  return await fetchJson(`${supabaseUrl}/functions/v1/opportunity-radar-run`, {
+    method: 'POST',
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      ...jsonHeaders(),
+    },
+    body: JSON.stringify({
+      client_id: client.id,
+      client_slug: client.slug,
+      mode,
+      ...body,
+    }),
+  })
+}
+
+async function runInitialOpportunityRadar({ client, deploymentState, dryRun, skipInitialRadar }) {
+  if (dryRun || skipInitialRadar) {
+    return {
+      skipped: true,
+      reason: dryRun ? 'Dry run.' : 'Initial Opportunity Radar run skipped by flag.',
+    }
+  }
+
+  if (deploymentState?.skipped) {
+    return {
+      skipped: true,
+      reason: 'Only runs during real onboarding provisioning, not ad hoc tenant redeploys.',
+    }
+  }
+
+  const existingRunCount = await countOpportunityRadarRuns(client.id)
+  if (existingRunCount > 0) {
+    return {
+      skipped: true,
+      reason: 'Client already has Opportunity Radar run history.',
+      existingRunCount,
+    }
+  }
+
+  const monthlyFoundation = await triggerOpportunityRadar(client, 'monthly_foundation')
+  const weeklyDeep = await triggerOpportunityRadar(client, 'weekly_deep')
+
+  return {
+    skipped: false,
+    monthlyFoundation,
+    weeklyDeep,
+  }
+}
+
 function shell(command, options = {}) {
   const result = spawnSync(command[0], command.slice(1), {
     cwd: options.cwd || PORTAL_ROOT,
@@ -421,6 +482,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2))
   const dryRun = Boolean(args['dry-run'])
   const skipWebhookConfig = Boolean(args['skip-webhook-config'])
+  const skipInitialRadar = Boolean(args['skip-initial-radar'])
   const client = await loadClient(args)
 
   if (!client.portal_domain || !client.worker_name || !client.portal_subdomain) {
@@ -491,6 +553,12 @@ async function main() {
       webhookResult,
       dryRun,
     })
+    const initialOpportunityRadar = await runInitialOpportunityRadar({
+      client,
+      deploymentState,
+      dryRun,
+      skipInitialRadar,
+    })
     printSummary('Portal deployment summary', {
       dryRun,
       clientId: client.id,
@@ -500,6 +568,7 @@ async function main() {
       cloudflareAccountId: accountId,
       webhookResult,
       deploymentState,
+      initialOpportunityRadar,
       readyEmail: {
         skipped: true,
         reason: 'Ready email now sends after the customer completes password setup.',
