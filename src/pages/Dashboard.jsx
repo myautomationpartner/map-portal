@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useOutletContext } from 'react-router-dom'
 import {
@@ -577,9 +578,63 @@ function reorderTools(tools, fromId, toId) {
 function ToolTile({ tool, editMode, onOpen, onRemove, onUpdate, onMoveGroup, onDragStart, onDragOver, onDrop }) {
   const hostname = getToolHostname(tool.url)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [showGroupChooser, setShowGroupChooser] = useState(false)
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
+  const buttonRef = useRef(null)
+  const menuRef = useRef(null)
   const groupLabel = getWorkspaceGroupLabel(getToolGroup(tool))
   const preset = getToolPreset(tool)
   const accent = tool.accent || preset?.accent || 'var(--portal-primary)'
+
+  useEffect(() => {
+    if (!menuOpen) {
+      const timeoutId = window.setTimeout(() => setShowGroupChooser(false), 0)
+      return () => window.clearTimeout(timeoutId)
+    }
+
+    function updateMenuPosition() {
+      const buttonRect = buttonRef.current?.getBoundingClientRect()
+      const menuRect = menuRef.current?.getBoundingClientRect()
+      if (!buttonRect) return
+
+      const estimatedMenuWidth = menuRect?.width || 190
+      const estimatedMenuHeight = menuRect?.height || (showGroupChooser ? 300 : 250)
+      const horizontalPadding = 12
+      const verticalGap = 8
+      const spaceBelow = window.innerHeight - buttonRect.bottom
+      const spaceAbove = buttonRect.top
+      const direction = spaceBelow < estimatedMenuHeight + 20 && spaceAbove > spaceBelow ? 'up' : 'down'
+      const unclampedLeft = buttonRect.right - estimatedMenuWidth
+      const left = Math.min(
+        Math.max(horizontalPadding, unclampedLeft),
+        window.innerWidth - estimatedMenuWidth - horizontalPadding,
+      )
+      const top = direction === 'up'
+        ? Math.max(horizontalPadding, buttonRect.top - estimatedMenuHeight - verticalGap)
+        : Math.min(window.innerHeight - estimatedMenuHeight - horizontalPadding, buttonRect.bottom + verticalGap)
+
+      setMenuPosition({ top, left })
+    }
+
+    function handlePointerDown(event) {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target.closest('[data-workspace-action-menu="true"]')) return
+      setMenuOpen(false)
+    }
+
+    const frameId = window.requestAnimationFrame(updateMenuPosition)
+    window.addEventListener('resize', updateMenuPosition)
+    window.addEventListener('scroll', updateMenuPosition, true)
+    window.document.addEventListener('pointerdown', handlePointerDown)
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      window.removeEventListener('resize', updateMenuPosition)
+      window.removeEventListener('scroll', updateMenuPosition, true)
+      window.document.removeEventListener('pointerdown', handlePointerDown)
+    }
+  }, [menuOpen, showGroupChooser])
 
   function handleEdit() {
     const nextLabel = window.prompt('Shortcut name', tool.label)
@@ -653,9 +708,13 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onUpdate, onMoveGroup, onD
       </div>
 
       <button
+        ref={buttonRef}
         type="button"
+        data-workspace-action-menu="true"
+        onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation()
+          setShowGroupChooser(false)
           setMenuOpen((current) => !current)
         }}
         className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border transition-all hover:-translate-y-0.5"
@@ -665,73 +724,98 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onUpdate, onMoveGroup, onD
         <MoreHorizontal className="h-3.5 w-3.5" />
       </button>
 
-      {menuOpen && (
+      {menuOpen ? createPortal(
         <div
-          className="absolute right-3 top-14 z-30 w-64 rounded-[22px] border p-2"
-          style={{ borderColor: 'rgba(26, 24, 20, 0.08)', background: 'rgba(255,255,255,0.98)', boxShadow: '0 22px 46px rgba(26, 24, 20, 0.14)' }}
+          ref={menuRef}
+          data-workspace-action-menu="true"
+          className="fixed z-[120] min-w-[180px] rounded-[20px] border p-2 shadow-lg"
+          style={{
+            top: `${menuPosition.top}px`,
+            left: `${menuPosition.left}px`,
+            borderColor: 'var(--portal-border)',
+            background: 'rgba(255,255,255,0.98)',
+            boxShadow: '0 18px 40px rgba(26, 24, 20, 0.12)',
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
         >
-          <button
-            type="button"
-            onClick={() => {
-              setMenuOpen(false)
-              onOpen(tool)
-            }}
-            className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left text-sm font-semibold transition-all hover:bg-black/[0.04]"
-            style={{ color: 'var(--portal-text)' }}
-          >
-            Open app
-            <ArrowUpRight className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleEdit}
-            className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left text-sm font-semibold transition-all hover:bg-black/[0.04]"
-            style={{ color: 'var(--portal-text)' }}
-          >
-            Edit shortcut
-            <Pencil className="h-4 w-4" />
-          </button>
-
-          <div className="my-2 border-t" style={{ borderColor: 'rgba(26, 24, 20, 0.07)' }} />
-          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-            Move to group
-          </p>
-          <div className="grid grid-cols-2 gap-1">
-            {WORKSPACE_GROUPS.filter((group) => group.id !== 'all').map((group) => (
+          {showGroupChooser ? (
+            <div className="space-y-1">
               <button
-                key={group.id}
                 type="button"
                 onClick={() => {
-                  onMoveGroup(tool.id, group.id)
+                  setShowGroupChooser(false)
+                }}
+                className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-[0.18em] transition-all"
+                style={{ color: 'var(--portal-text-soft)' }}
+              >
+                Back
+              </button>
+              {WORKSPACE_GROUPS.filter((group) => group.id !== 'all').map((group) => (
+                <button
+                  key={group.id}
+                  type="button"
+                  onClick={() => {
+                    onMoveGroup(tool.id, group.id)
+                    setMenuOpen(false)
+                  }}
+                  className="flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                  style={getToolGroup(tool) === group.id
+                    ? { background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary)' }
+                    : { color: 'var(--portal-text)' }}
+                >
+                  <span className="truncate">{group.label}</span>
+                  {getToolGroup(tool) === group.id ? <span className="text-[11px] font-semibold">Current</span> : null}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false)
+                  onOpen(tool)
+                }}
+                className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                style={{ color: 'var(--portal-text)' }}
+              >
+                <ArrowUpRight className="h-4 w-4" />
+                Open app
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowGroupChooser(true)}
+                className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                style={{ color: 'var(--portal-text)' }}
+              >
+                Move to group
+              </button>
+              <button
+                type="button"
+                onClick={handleEdit}
+                className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                style={{ color: 'var(--portal-text)' }}
+              >
+                <Pencil className="h-4 w-4" />
+                Edit shortcut
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`Delete ${tool.label} from the workspace?`)) onRemove(tool.id)
                   setMenuOpen(false)
                 }}
-                className="rounded-xl px-2.5 py-2 text-left text-xs font-semibold transition-all hover:bg-black/[0.04]"
-                style={{
-                  background: getToolGroup(tool) === group.id ? 'rgba(201, 168, 76, 0.14)' : 'transparent',
-                  color: getToolGroup(tool) === group.id ? 'var(--portal-primary-strong)' : 'var(--portal-text-muted)',
-                }}
+                className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                style={{ color: 'var(--portal-danger)', background: 'rgba(223, 95, 143, 0.06)' }}
               >
-                {group.label}
+                <Trash2 className="h-4 w-4" />
+                Delete
               </button>
-            ))}
-          </div>
-
-          <div className="my-2 border-t" style={{ borderColor: 'rgba(26, 24, 20, 0.07)' }} />
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm(`Delete ${tool.label} from the workspace?`)) onRemove(tool.id)
-              setMenuOpen(false)
-            }}
-            className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left text-sm font-semibold transition-all hover:bg-pink-50"
-            style={{ color: 'var(--portal-danger)' }}
-          >
-            Delete
-            <Trash2 className="h-4 w-4" />
-          </button>
+            </div>
+          )}
         </div>
-      )}
+        , window.document.body) : null}
     </div>
   )
 }
@@ -974,15 +1058,15 @@ export default function Dashboard() {
         ))}
       </section>
 
-      <section className="portal-panel overflow-visible rounded-[30px] p-0">
-        <div className="border-b p-4 md:p-5" style={{ borderColor: 'var(--portal-border)' }}>
+      <section className="portal-panel overflow-visible rounded-[24px] p-0">
+        <div className="border-b px-3 py-2.5 md:px-4" style={{ borderColor: 'var(--portal-border)' }}>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary-strong)' }}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.16em]" style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary-strong)' }}>
                 <Wand2 className="h-3.5 w-3.5" />
                 Workspace
               </span>
-              <h2 className="mt-3 font-display text-xl font-semibold" style={{ color: 'var(--portal-text)' }}>
+              <h2 className="font-display text-base font-semibold" style={{ color: 'var(--portal-text)' }}>
                 App launcher
               </h2>
             </div>
@@ -990,7 +1074,7 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => setEditMode((current) => !current)}
-              className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+              className="portal-button-secondary inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold"
             >
               <Pencil className="h-4 w-4" />
               {editMode ? 'Done editing' : 'Edit layout'}
@@ -998,7 +1082,7 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => setShowAddTool((current) => !current)}
-              className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+              className="portal-button-secondary inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold"
             >
               <Plus className="h-4 w-4" />
               {showAddTool ? 'Hide tools' : 'Add tool'}
@@ -1007,7 +1091,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="p-4 md:p-5">
+        <div className="p-3 md:p-4">
         {showAddTool && (
           <ToolForm
             tools={tools}
@@ -1030,7 +1114,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
           {WORKSPACE_GROUPS.map((group) => {
             const groupCount = group.id === 'all'
               ? tools.length
@@ -1041,7 +1125,7 @@ export default function Dashboard() {
                 key={group.id}
                 type="button"
                 onClick={() => setActiveWorkspaceGroup(group.id)}
-                className="rounded-full px-3.5 py-2 text-xs font-semibold transition-all"
+                className="rounded-full px-2.5 py-1.5 text-[11px] font-semibold transition-all"
                 style={activeWorkspaceGroup === group.id
                   ? { background: 'var(--portal-text)', color: 'white', boxShadow: '0 10px 22px rgba(26, 24, 20, 0.12)' }
                   : { background: 'rgba(255,255,255,0.78)', color: 'var(--portal-text-muted)', border: '1px solid rgba(26, 24, 20, 0.07)' }}
@@ -1051,17 +1135,9 @@ export default function Dashboard() {
               </button>
             )
           })}
-          <button
-            type="button"
-            onClick={() => setShowAddTool(true)}
-            className="rounded-full px-3.5 py-2 text-xs font-semibold transition-all"
-            style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary-strong)', border: '1px solid rgba(201, 168, 76, 0.16)' }}
-          >
-            + New app
-          </button>
         </div>
 
-        <div className="mb-5 flex flex-wrap items-center gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
           <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-soft)' }}>
             {visibleTools.length} shown
           </span>
@@ -1081,9 +1157,6 @@ export default function Dashboard() {
                 : 'var(--portal-text-soft)',
           }}>
             {workspaceState === 'error' ? 'Save issue' : workspaceState === 'saving' ? 'Saving layout' : workspaceState === 'saved' ? 'Saved to portal' : 'Local fallback ready'}
-          </span>
-          <span className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-            {editMode ? 'Drag cards to reorder. Use the three-dot menu for edit, move, or delete.' : 'Open apps directly, or use the three-dot menu for shortcut controls.'}
           </span>
         </div>
 
