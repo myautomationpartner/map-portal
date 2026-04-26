@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -11,12 +12,16 @@ import {
   Image,
   Loader2,
   Megaphone,
+  MoreHorizontal,
   PencilLine,
   Plus,
   RefreshCw,
+  Trash2,
   Wand2,
 } from 'lucide-react'
 import {
+  deletePost,
+  deleteSocialDraft,
   fetchCalendarPosts,
   fetchOpportunityRadar,
   fetchProfile,
@@ -26,8 +31,9 @@ import {
   updateOpportunitySuggestionState,
   upsertSocialDraft,
 } from '../lib/portalApi'
-import { stringifyDraftMeta } from '../lib/socialDrafting'
+import { parseDraftMeta, stringifyDraftMeta } from '../lib/socialDrafting'
 
+const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 const HIDDEN_RADAR_STATES = new Set(['dismissed', 'archived', 'converted_to_draft'])
 const BADGE_STYLES = {
   radar: { label: 'AI idea', background: 'rgba(53,104,166,0.1)', color: '#3568a6', border: 'rgba(53,104,166,0.18)' },
@@ -43,6 +49,19 @@ const STATUS_MARKERS = {
   draft: { label: 'Draft', color: '#c87628' },
   scheduled: { label: 'Scheduled', color: '#1fa971' },
   published: { label: 'Posted', color: '#c9a84c' },
+}
+
+function isMissingRemoteDelete(payload, raw) {
+  const message = [
+    payload?.message,
+    payload?.error,
+    raw,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  return message.includes('404') && message.includes('post not found')
 }
 
 function normalizeSentence(value, fallback = '') {
@@ -304,12 +323,126 @@ function StatusMarker({ type }) {
   )
 }
 
-function PlanRow({ item, selected, onSelect }) {
+function RowActionMenu({ item, actions }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
+  const buttonRef = useRef(null)
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+
+    const updateMenuPosition = () => {
+      const buttonRect = buttonRef.current?.getBoundingClientRect()
+      if (!buttonRect) return
+      const estimatedMenuWidth = menuRef.current?.getBoundingClientRect().width || 188
+      const estimatedMenuHeight = menuRef.current?.getBoundingClientRect().height || 150
+      const padding = 12
+      const gap = 8
+      const spaceBelow = window.innerHeight - buttonRect.bottom
+      const top = spaceBelow < estimatedMenuHeight + 20
+        ? Math.max(padding, buttonRect.top - estimatedMenuHeight - gap)
+        : Math.min(window.innerHeight - estimatedMenuHeight - padding, buttonRect.bottom + gap)
+      const left = Math.min(
+        Math.max(padding, buttonRect.right - estimatedMenuWidth),
+        window.innerWidth - estimatedMenuWidth - padding,
+      )
+
+      setMenuPosition({ top, left })
+    }
+
+    const handlePointerDown = (event) => {
+      if (
+        buttonRef.current?.contains(event.target) ||
+        menuRef.current?.contains(event.target)
+      ) return
+      setIsOpen(false)
+    }
+
+    const frameId = window.requestAnimationFrame(updateMenuPosition)
+    window.addEventListener('resize', updateMenuPosition)
+    window.addEventListener('scroll', updateMenuPosition, true)
+    window.document.addEventListener('pointerdown', handlePointerDown)
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      window.removeEventListener('resize', updateMenuPosition)
+      window.removeEventListener('scroll', updateMenuPosition, true)
+      window.document.removeEventListener('pointerdown', handlePointerDown)
+    }
+  }, [isOpen])
+
+  if (!actions.length) return null
+
   return (
-    <button
-      type="button"
+    <div className="content-plan-row-actions">
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label={`Open actions for ${item.title}`}
+        className="content-plan-row-menu-button"
+        onClick={(event) => {
+          event.stopPropagation()
+          setIsOpen((value) => !value)
+        }}
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+
+      {isOpen ? createPortal(
+        <div
+          ref={menuRef}
+          className="content-plan-row-menu fixed z-[120] min-w-[188px] rounded-[18px] border p-2 shadow-lg"
+          style={{
+            top: `${menuPosition.top}px`,
+            left: `${menuPosition.left}px`,
+            borderColor: 'var(--portal-border)',
+            background: 'rgba(255,255,255,0.98)',
+            boxShadow: '0 18px 40px rgba(26, 24, 20, 0.12)',
+          }}
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div className="space-y-1">
+            {actions.map(({ label, Icon, onSelect, destructive }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setIsOpen(false)
+                  onSelect()
+                }}
+                className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                style={destructive
+                  ? { color: 'var(--portal-danger)', background: 'rgba(223, 95, 143, 0.06)' }
+                  : { color: 'var(--portal-text)' }}
+              >
+                {Icon ? <Icon className="h-4 w-4" /> : null}
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>,
+        window.document.body,
+      ) : null}
+    </div>
+  )
+}
+
+function PlanRow({ item, selected, onSelect, actions }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(item.id)}
-      className="content-plan-row grid w-full grid-cols-[82px_minmax(0,1fr)_auto] items-center gap-3 border-b px-4 py-3 text-left transition-all last:border-b-0 hover:bg-[rgba(245,235,214,0.42)]"
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onSelect(item.id)
+        }
+      }}
+      className="content-plan-row grid w-full grid-cols-[82px_minmax(0,1fr)_auto_auto] items-center gap-3 border-b px-4 py-3 text-left transition-all last:border-b-0 hover:bg-[rgba(245,235,214,0.42)]"
       data-status={item.badgeType}
       style={{
         borderColor: 'var(--portal-border)',
@@ -345,7 +478,8 @@ function PlanRow({ item, selected, onSelect }) {
         </div>
       </div>
       <StatusMarker type={item.badgeType} />
-    </button>
+      <RowActionMenu item={item} actions={actions} />
+    </div>
   )
 }
 
@@ -372,6 +506,8 @@ export default function ContentCalendar() {
   const initialParams = useMemo(() => new URLSearchParams(window.location.search), [])
   const [selectedItemId, setSelectedItemId] = useState('')
   const [actionError, setActionError] = useState('')
+  const [actionNotice, setActionNotice] = useState('')
+  const [actionBusyId, setActionBusyId] = useState('')
   const [weekOffset, setWeekOffset] = useState(() => {
     const date = initialParams.get('date')
     return date ? getWeekOffsetFromDate(date) : 0
@@ -714,6 +850,7 @@ export default function ContentCalendar() {
 
   function handlePrimaryAction(item) {
     setActionError('')
+    setActionNotice('')
     if (!item) return
     if (item.source === 'radar') {
       createRadarDraft.mutate(item)
@@ -728,6 +865,144 @@ export default function ContentCalendar() {
       return
     }
     navigate('/post')
+  }
+
+  async function handleHideIdea(item) {
+    if (!requireWriteAccess('hide Content Studio ideas')) return
+    if (!item?.opportunity?.id) return
+
+    try {
+      setActionBusyId(item.id)
+      setActionError('')
+      setActionNotice('')
+      if (item.suggestion?.id) {
+        await updateOpportunitySuggestionState(item.suggestion.id, { review_state: 'archived' })
+      }
+      await updateOpportunityState(item.opportunity.id, 'archived')
+      if (selectedItemId === item.id) setSelectedItemId('')
+      await queryClient.invalidateQueries({ queryKey: ['opportunity-radar', clientId] })
+      setActionNotice('Idea hidden from Studio.')
+    } catch (error) {
+      setActionError(error.message || 'Could not hide this idea.')
+    } finally {
+      setActionBusyId('')
+    }
+  }
+
+  async function handleDeleteDraftItem(item) {
+    if (!requireWriteAccess('delete drafts')) return
+    const draft = item?.draft
+    if (!draft?.id) return
+    if (!window.confirm('Delete this saved draft?')) return
+
+    try {
+      setActionBusyId(item.id)
+      setActionError('')
+      setActionNotice('')
+      try {
+        const meta = parseDraftMeta(draft.review_notes)
+        await recordPlannerFeedbackEvent({
+          clientId,
+          draftId: draft.id,
+          postType: draft.post_type,
+          eventType: 'draft_deleted',
+          angleId: meta.angleId || null,
+          metadata: {
+            source: 'content_studio',
+            slotDateLocal: draft.slot_date_local,
+            slotLabel: draft.slot_label,
+            reviewState: draft.review_state,
+          },
+        })
+      } catch (error) {
+        console.error('[ContentStudioFeedback]', error)
+      }
+      await deleteSocialDraft(draft.id)
+      if (selectedItemId === item.id) setSelectedItemId('')
+      await queryClient.invalidateQueries({ queryKey: ['social-drafts', clientId] })
+      setActionNotice('Draft deleted.')
+    } catch (error) {
+      setActionError(error.message || 'Could not delete this draft.')
+    } finally {
+      setActionBusyId('')
+    }
+  }
+
+  async function handleDeleteScheduledPostItem(item) {
+    if (!requireWriteAccess('delete scheduled posts')) return
+    const post = item?.post
+    if (!post?.id) return
+    if (!window.confirm('Delete this scheduled post? This will also try to cancel it in the publisher workflow.')) return
+
+    try {
+      setActionBusyId(item.id)
+      setActionError('')
+      setActionNotice('')
+      if (post.n8n_execution_id) {
+        const response = await fetch(`${N8N_BASE}/webhook/social-publish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'delete',
+            postId: post.id,
+            clientId,
+            zernioPostId: post.n8n_execution_id,
+          }),
+        })
+        const raw = await response.text()
+        let payload = {}
+        try {
+          payload = raw ? JSON.parse(raw) : {}
+        } catch {
+          payload = {}
+        }
+
+        if (!response.ok || payload?.success === false) {
+          if (!isMissingRemoteDelete(payload, raw)) {
+            throw new Error(payload?.message || raw || 'Could not delete this scheduled post.')
+          }
+        }
+      }
+
+      await deletePost(post.id)
+      if (selectedItemId === item.id) setSelectedItemId('')
+      await queryClient.invalidateQueries({ queryKey: ['calendar-posts', clientId] })
+      setActionNotice('Scheduled post deleted.')
+    } catch (error) {
+      setActionError(error.message || 'Could not delete this scheduled post.')
+    } finally {
+      setActionBusyId('')
+    }
+  }
+
+  function getRowActions(item) {
+    if (!item || actionBusyId === item.id) return []
+    if (item.source === 'radar') {
+      return [
+        { label: 'Make post', Icon: Wand2, onSelect: () => handlePrimaryAction(item) },
+        { label: 'Hide idea', Icon: Trash2, destructive: true, onSelect: () => handleHideIdea(item) },
+      ]
+    }
+    if (item.source === 'draft') {
+      return [
+        { label: 'Edit', Icon: PencilLine, onSelect: () => handlePrimaryAction(item) },
+        { label: 'Reschedule', Icon: CalendarDays, onSelect: () => handlePrimaryAction(item) },
+        { label: 'Delete', Icon: Trash2, destructive: true, onSelect: () => handleDeleteDraftItem(item) },
+      ]
+    }
+    if (item.source === 'post' && item.badgeType === 'scheduled') {
+      return [
+        { label: 'Edit', Icon: PencilLine, onSelect: () => handlePrimaryAction(item) },
+        { label: 'Reschedule', Icon: CalendarDays, onSelect: () => handlePrimaryAction(item) },
+        { label: 'Delete', Icon: Trash2, destructive: true, onSelect: () => handleDeleteScheduledPostItem(item) },
+      ]
+    }
+    if (item.source === 'post') {
+      return [
+        { label: 'View history', Icon: ArrowUpRight, onSelect: () => navigate('/post/history') },
+      ]
+    }
+    return []
   }
 
   function handleAddPost(dateString = selectedWeekStartString) {
@@ -822,6 +1097,17 @@ export default function ContentCalendar() {
           </button>
         </div>
       </section>
+
+      {(actionError || actionNotice) && (
+        <div
+          className="rounded-[14px] px-4 py-3 text-sm font-medium"
+          style={actionError
+            ? { background: 'rgba(216, 95, 152, 0.1)', color: '#b5487b' }
+            : { background: 'rgba(31,169,113,0.1)', color: '#17875b' }}
+        >
+          {actionError || actionNotice}
+        </div>
+      )}
 
       <section className="content-plan-workspace">
         <div className="content-plan-list">
@@ -928,6 +1214,7 @@ export default function ContentCalendar() {
                   item={item}
                   selected={selectedItem?.id === item.id}
                   onSelect={setSelectedItemId}
+                  actions={getRowActions(item)}
                 />
               ))}
             </div>
@@ -1008,12 +1295,6 @@ export default function ContentCalendar() {
                   </div>
                 </div>
               </div>
-
-              {actionError && (
-                <div className="mt-5 rounded-[14px] px-4 py-3 text-sm" style={{ background: 'rgba(216, 95, 152, 0.1)', color: '#b5487b' }}>
-                  {actionError}
-                </div>
-              )}
 
               <div className="mt-5 grid gap-2">
                 <button
