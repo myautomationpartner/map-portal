@@ -804,6 +804,10 @@ export async function generateCampaignPlan(input) {
   return callEdgeFunction('portal-generate-campaign', input)
 }
 
+export async function generatePublisherAssist(input) {
+  return callEdgeFunction('portal-ai-assist', input)
+}
+
 export async function resolveShareLink(token) {
   return callEdgeFunction('resolve-share-link', { token }, { public: true })
 }

@@ -12,6 +12,7 @@ import {
   reconcileScheduledPosts,
   fetchScheduledPosts,
   fetchSocialDrafts,
+  generatePublisherAssist,
   generatePublisherImage,
   updateSocialDraft,
   upsertSocialDraft,
@@ -27,9 +28,9 @@ import {
   stringifyDraftMeta,
 } from '../lib/socialDrafting'
 import {
-  AlertCircle, ArrowUpRight, Calendar, CalendarDays, Camera, CheckCircle2,
+  AlertCircle, ArrowUpRight, Calendar, CalendarDays, Camera, Check, CheckCircle2,
   Clock3, Globe, History, Loader2, Music2, Paperclip,
-  Send, Share2, UploadCloud, Wand2, X,
+  Send, Share2, Sparkles, UploadCloud, Wand2, X,
   Trash2,
 } from 'lucide-react'
 
@@ -64,6 +65,15 @@ const PLATFORMS = [
     accent: '#111111',
     soft: 'rgba(17, 17, 17, 0.08)',
   },
+]
+
+const ASSIST_ACTIONS = [
+  { id: 'improve', label: 'Improve', description: 'Clean up the caption and make it stronger.' },
+  { id: 'shorten', label: 'Shorten', description: 'Keep the idea, cut the extra words.' },
+  { id: 'engaging', label: 'More engaging', description: 'Add energy without sounding generic.' },
+  { id: 'cta', label: 'Add CTA', description: 'Give readers a clearer next step.' },
+  { id: 'variants', label: '3 versions', description: 'Create three different options.' },
+  { id: 'platform', label: 'Platform-aware', description: 'Tune it for the selected channels.' },
 ]
 
 const SLOT_STATE_STYLES = {
@@ -808,6 +818,10 @@ export default function CreatePost() {
   const [editingScheduledPostRef, setEditingScheduledPostRef] = useState('')
   const [existingMediaUrl, setExistingMediaUrl] = useState('')
   const [deleteBusyKey, setDeleteBusyKey] = useState('')
+  const [assistState, setAssistState] = useState('idle')
+  const [assistAction, setAssistAction] = useState('')
+  const [assistError, setAssistError] = useState('')
+  const [assistSuggestions, setAssistSuggestions] = useState([])
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile'],
@@ -895,6 +909,7 @@ export default function CreatePost() {
     [activeDraft, mediaSuggestion],
   )
   const canGenerateImage = Boolean(clientId && content.trim() && imageGenerationPrompt)
+  const canUseAssist = Boolean(clientId && content.trim() && !isSubmitting)
   const scheduledPostsDetailed = useMemo(() => {
     const timezone = calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'
 
@@ -1354,6 +1369,54 @@ export default function CreatePost() {
       console.error('[GeneratePublisherImage]', error)
       setImageGenerateError(error.message || 'Could not generate an image right now.')
       setImageGenerateState('error')
+    }
+  }
+
+  async function handlePartnerAssist(actionId) {
+    if (!requireWriteAccess('use Partner Assist')) return
+    if (!content.trim()) {
+      setAssistError('Write or load a caption before using Partner Assist.')
+      return
+    }
+
+    setAssistState('loading')
+    setAssistAction(actionId)
+    setAssistError('')
+    setErrorMsg('')
+
+    try {
+      const payload = await generatePublisherAssist({
+        client_id: clientId,
+        action: actionId,
+        caption: content,
+        platforms: activePlatforms,
+        max_chars: charLimit,
+        context: [
+          activeSlot?.post_type ? `Post type: ${activeSlot.post_type}` : '',
+          mediaSuggestion ? `Image idea: ${mediaSuggestion}` : '',
+          scheduledFor ? `Timing: ${formatDetailedLocalDateTime(scheduledFor)}` : '',
+        ].filter(Boolean).join('\n'),
+      })
+
+      setAssistSuggestions(Array.isArray(payload?.suggestions) ? payload.suggestions : [])
+      setAssistState('ready')
+    } catch (error) {
+      console.error('[PartnerAssist]', error)
+      setAssistSuggestions([])
+      setAssistError(error.message || 'Partner Assist could not improve this caption right now.')
+      setAssistState('error')
+    }
+  }
+
+  function applyAssistSuggestion(suggestion) {
+    if (!suggestion?.caption) return
+
+    setContent(suggestion.caption)
+    setErrorMsg('')
+    setAssistState('applied')
+    setDraftStatus('Partner Assist suggestion applied. Review it before approving the post.')
+    if (!hydratingDraftRef.current && activeDraftId) {
+      setDraftDirty(true)
     }
   }
 
@@ -2085,6 +2148,57 @@ export default function CreatePost() {
                       background: charOver ? 'var(--portal-danger)' : 'var(--portal-primary)',
                     }}
                   />
+                </div>
+
+                <div className="partner-assist-box">
+                  <div className="partner-assist-head">
+                    <div>
+                      <p>Partner Assist</p>
+                      <h2>Improve this caption</h2>
+                    </div>
+                    <span>1 credit</span>
+                  </div>
+                  <div className="partner-assist-actions">
+                    {ASSIST_ACTIONS.map((action) => (
+                      <button
+                        key={action.id}
+                        type="button"
+                        onClick={() => handlePartnerAssist(action.id)}
+                        disabled={!canUseAssist || assistState === 'loading'}
+                        title={action.description}
+                        data-active={assistAction === action.id && assistState === 'loading'}
+                      >
+                        {assistAction === action.id && assistState === 'loading' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                  {!content.trim() ? (
+                    <p className="partner-assist-note">Load or write a caption to unlock Partner Assist.</p>
+                  ) : assistError ? (
+                    <p className="partner-assist-error">{assistError}</p>
+                  ) : assistState === 'loading' ? (
+                    <p className="partner-assist-note">Partner is polishing the copy...</p>
+                  ) : assistSuggestions.length > 0 ? (
+                    <div className="partner-assist-suggestions">
+                      {assistSuggestions.map((suggestion) => (
+                        <button
+                          key={suggestion.id || suggestion.label || suggestion.caption}
+                          type="button"
+                          onClick={() => applyAssistSuggestion(suggestion)}
+                        >
+                          <span>
+                            <strong>{suggestion.label || 'Suggested caption'}</strong>
+                            <small>{suggestion.why || 'Click to use this version.'}</small>
+                          </span>
+                          <em>{suggestion.caption}</em>
+                          <i><Check className="h-3.5 w-3.5" /> Use</i>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="partner-assist-note">Try a quick improvement, shorter version, stronger CTA, or platform-aware caption before approval.</p>
+                  )}
                 </div>
 
                 <button
