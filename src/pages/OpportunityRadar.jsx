@@ -326,18 +326,30 @@ function getAdDecision(opportunity) {
   return { label: 'Organic first', detail: AD_NOTES.organic_only, tone: '#188f6a' }
 }
 
-function EmptyState() {
+function EmptyState({ filtered = false, onClearFilter }) {
   return (
     <section className="rounded-lg border bg-white px-6 py-14 text-center" style={{ borderColor: 'var(--portal-border)' }}>
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg" style={{ background: 'rgba(201, 168, 76, 0.14)' }}>
         <Search className="h-6 w-6" style={{ color: 'var(--portal-primary)' }} />
       </div>
       <h2 className="mt-4 font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-        No opportunities are ready yet.
+        {filtered ? 'No ideas match this filter.' : 'No opportunities are ready yet.'}
       </h2>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-        Once MAP runs the first research brief, this page will show post-ready ideas with source proof and a quick path into Publisher.
+        {filtered
+          ? 'Try All to see the current Radar queue, or wait for the next research run to add more ideas in this category.'
+          : 'Once MAP runs the first research brief, this page will show post-ready ideas with source proof and a quick path into Publisher.'}
       </p>
+      {filtered ? (
+        <button
+          type="button"
+          onClick={onClearFilter}
+          className="mt-5 rounded-lg px-4 py-3 text-sm font-semibold"
+          style={{ background: 'var(--portal-dark)', color: '#fff' }}
+        >
+          Show all ideas
+        </button>
+      ) : null}
     </section>
   )
 }
@@ -631,8 +643,8 @@ export default function OpportunityRadar() {
     enabled: !!clientId,
   })
 
-  const sortedOpportunities = useMemo(() => {
-    const active = opportunities
+  const activeOpportunities = useMemo(() => (
+    opportunities
       .filter((opportunity) => !HIDDEN_REVIEW_STATES.has(opportunity.review_state))
       .filter((opportunity) => !getActiveSuggestions(opportunity).some((suggestion) => (
         suggestion.review_state === 'converted_to_draft' || suggestion.converted_draft_id
@@ -642,14 +654,16 @@ export default function OpportunityRadar() {
         if (Math.abs(scoreDelta) > 0.01) return scoreDelta
         return new Date(b.created_at) - new Date(a.created_at)
       })
+  ), [opportunities])
 
-    if (activeFilter === 'all') return active
-    if (activeFilter === 'saved') return active.filter((opportunity) => opportunity.review_state === 'saved')
+  const sortedOpportunities = useMemo(() => {
+    if (activeFilter === 'all') return activeOpportunities
+    if (activeFilter === 'saved') return activeOpportunities.filter((opportunity) => opportunity.review_state === 'saved')
     if (activeFilter === 'ad_opportunity') {
-      return active.filter((opportunity) => opportunity.opportunity_type === 'ad_opportunity' || ['boost_worthy', 'dedicated_ad_candidate'].includes(opportunity.ad_worthiness))
+      return activeOpportunities.filter((opportunity) => opportunity.opportunity_type === 'ad_opportunity' || ['boost_worthy', 'dedicated_ad_candidate'].includes(opportunity.ad_worthiness))
     }
-    return active.filter((opportunity) => opportunity.opportunity_type === activeFilter)
-  }, [activeFilter, opportunities])
+    return activeOpportunities.filter((opportunity) => opportunity.opportunity_type === activeFilter)
+  }, [activeFilter, activeOpportunities])
 
   const activeOpportunityId = sortedOpportunities.some((opportunity) => opportunity.id === selectedOpportunityId)
     ? selectedOpportunityId
@@ -808,7 +822,7 @@ export default function OpportunityRadar() {
         <div className="flex min-h-[420px] items-center justify-center rounded-lg border bg-white" style={{ borderColor: 'var(--portal-border)' }}>
           <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--portal-primary)' }} />
         </div>
-      ) : sortedOpportunities.length ? (
+      ) : activeOpportunities.length ? (
         <>
           <div className="flex items-center justify-between gap-3">
             <div className="flex gap-2">
@@ -832,31 +846,35 @@ export default function OpportunityRadar() {
             </div>
           </div>
 
-          <div className="grid grid-cols-[minmax(210px,0.85fr)_minmax(360px,1.65fr)_minmax(220px,0.9fr)] gap-4">
-            <InsightQueue
-              opportunities={sortedOpportunities}
-              selectedOpportunity={selectedOpportunity}
-              onSelect={handleSelectOpportunity}
-            />
+          {sortedOpportunities.length ? (
+            <div className="grid grid-cols-[minmax(210px,0.85fr)_minmax(360px,1.65fr)_minmax(220px,0.9fr)] gap-4">
+              <InsightQueue
+                opportunities={sortedOpportunities}
+                selectedOpportunity={selectedOpportunity}
+                onSelect={handleSelectOpportunity}
+              />
 
-            <ActionWorkspace
-              opportunity={selectedOpportunity}
-              suggestion={selectedSuggestion}
-              selectedSuggestionId={activeSuggestionId}
-              onSelectSuggestion={setSelectedSuggestionId}
-              onUseSuggestion={handleUseSuggestion}
-              onSaveOpportunity={handleSaveOpportunity}
-              onDismissOpportunity={handleDismissOpportunity}
-              busyAction={busyAction}
-            />
+              <ActionWorkspace
+                opportunity={selectedOpportunity}
+                suggestion={selectedSuggestion}
+                selectedSuggestionId={activeSuggestionId}
+                onSelectSuggestion={setSelectedSuggestionId}
+                onUseSuggestion={handleUseSuggestion}
+                onSaveOpportunity={handleSaveOpportunity}
+                onDismissOpportunity={handleDismissOpportunity}
+                busyAction={busyAction}
+              />
 
-            <ProofRail
-              opportunity={selectedOpportunity}
-              suggestion={selectedSuggestion}
-              onDismissSuggestion={handleDismissSuggestion}
-              busyAction={busyAction}
-            />
-          </div>
+              <ProofRail
+                opportunity={selectedOpportunity}
+                suggestion={selectedSuggestion}
+                onDismissSuggestion={handleDismissSuggestion}
+                busyAction={busyAction}
+              />
+            </div>
+          ) : (
+            <EmptyState filtered onClearFilter={() => setActiveFilter('all')} />
+          )}
         </>
       ) : (
         <EmptyState />
