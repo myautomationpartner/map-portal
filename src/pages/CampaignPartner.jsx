@@ -850,7 +850,7 @@ export default function CampaignPartner() {
   }
 
   return (
-    <div className="portal-page campaign-partner-page mx-auto max-w-[1500px] space-y-3 md:p-4 xl:p-5">
+    <div className="portal-page campaign-partner-page w-full max-w-none space-y-3 px-2 py-3 md:px-3 xl:px-4">
       <section className="campaign-partner-tabs">
         <button type="button" data-active={mode === 'library'} onClick={() => setMode('library')}>Campaign library</button>
         <button type="button" data-active={mode === 'create'} onClick={() => setMode('create')}>Create campaign</button>
@@ -952,6 +952,10 @@ export default function CampaignPartner() {
               )}
             </section>
 
+            <section className="campaign-middle-schedule">
+              {renderCampaignPostDrafts(selectedProject)}
+            </section>
+
             <section className="campaign-detail-pane">
               {selectedProject ? (
                 <>
@@ -998,7 +1002,6 @@ export default function CampaignPartner() {
               )}
             </section>
           </div>
-          {renderCampaignPostDrafts(selectedProject)}
         </section>
       )}
     </div>
