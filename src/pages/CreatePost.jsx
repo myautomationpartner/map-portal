@@ -158,6 +158,37 @@ function readFileAsDataUrl(file) {
   })
 }
 
+function loadImageElement(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Could not prepare the selected image for Image Assist.'))
+    image.src = source
+  })
+}
+
+async function normalizeImageForAssist(source) {
+  const image = await loadImageElement(source)
+  const sourceWidth = image.naturalWidth || image.width
+  const sourceHeight = image.naturalHeight || image.height
+  if (!sourceWidth || !sourceHeight) {
+    throw new Error('Could not read the selected image size.')
+  }
+
+  const maxDimension = 2048
+  const scale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight))
+  const width = Math.max(1, Math.round(sourceWidth * scale))
+  const height = Math.max(1, Math.round(sourceHeight * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Could not prepare the selected image for Image Assist.')
+
+  context.drawImage(image, 0, 0, width, height)
+  return canvas.toDataURL('image/png')
+}
+
 function getDraftMetaImagePrompt(draft) {
   const meta = parseDraftMeta(draft?.review_notes)
   if (typeof meta?.radarAction?.imagePrompt === 'string' && meta.radarAction.imagePrompt.trim()) {
@@ -1413,11 +1444,12 @@ export default function CreatePost() {
       if (!/^image\/(png|jpe?g|webp)$/i.test(fileType)) {
         throw new Error('Image Assist supports JPG, PNG, and WebP images.')
       }
-      return { image_data_url: await readFileAsDataUrl(imageFile) }
+      const dataUrl = await readFileAsDataUrl(imageFile)
+      return { image_data_url: await normalizeImageForAssist(dataUrl) }
     }
 
     if (typeof imagePreview === 'string' && imagePreview.startsWith('data:image/')) {
-      return { image_data_url: imagePreview }
+      return { image_data_url: await normalizeImageForAssist(imagePreview) }
     }
 
     const imageUrl = existingMediaUrl || previewedDropboxSource || dropboxPreviewSource || ''
