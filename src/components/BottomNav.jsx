@@ -3,7 +3,7 @@ import { CalendarDays, LayoutDashboard, MessageSquare, Settings, CreditCard } fr
 
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/calendar', icon: CalendarDays,     label: 'Studio'    },
+  { to: '/calendar', icon: CalendarDays,     label: 'Publisher' },
   { to: '/inbox',    icon: MessageSquare,   label: 'Inbox'      },
   { to: '/settings', icon: Settings,        label: 'Settings'   },
 ]

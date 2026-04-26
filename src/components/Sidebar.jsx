@@ -7,7 +7,7 @@ import { buildTenantConfig } from '../lib/tenantConfig'
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/documents', icon: FolderOpen,      label: 'Documents'  },
-  { to: '/calendar', icon: CalendarDays,     label: 'Studio'     },
+  { to: '/calendar', icon: CalendarDays,     label: 'Publisher'  },
   { to: '/inbox',    icon: MessageSquare,   label: 'Inbox'      },
   { to: '/settings', icon: Settings,        label: 'Settings'   },
 ]
