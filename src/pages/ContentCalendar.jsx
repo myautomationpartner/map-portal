@@ -26,15 +26,16 @@ import {
   updateOpportunitySuggestionState,
   upsertSocialDraft,
 } from '../lib/portalApi'
-import { buildCalendarModel, buildDraftPayload } from '../lib/socialPlanner'
-import { generateDraftForSlot, stringifyDraftMeta } from '../lib/socialDrafting'
+import { stringifyDraftMeta } from '../lib/socialDrafting'
 
 const HIDDEN_RADAR_STATES = new Set(['dismissed', 'archived', 'converted_to_draft'])
 const BADGE_STYLES = {
   radar: { label: 'Radar', background: 'rgba(53,104,166,0.1)', color: '#3568a6', border: 'rgba(53,104,166,0.18)' },
-  recommended: { label: 'Recommended', background: 'rgba(201,168,76,0.12)', color: '#8c6d1c', border: 'rgba(201,168,76,0.24)' },
+  open: { label: 'Open', background: 'rgba(201,168,76,0.12)', color: '#8c6d1c', border: 'rgba(201,168,76,0.24)' },
   draft: { label: 'Draft', background: 'rgba(93,121,104,0.12)', color: '#4d6c5b', border: 'rgba(93,121,104,0.2)' },
   scheduled: { label: 'Scheduled', background: 'rgba(31,169,113,0.1)', color: '#17875b', border: 'rgba(31,169,113,0.2)' },
+  published: { label: 'Published', background: 'rgba(31,169,113,0.12)', color: '#17875b', border: 'rgba(31,169,113,0.22)' },
+  pending: { label: 'Pending', background: 'rgba(201,168,76,0.12)', color: '#8c6d1c', border: 'rgba(201,168,76,0.24)' },
   ad: { label: 'Ad idea', background: 'rgba(216,95,152,0.1)', color: '#b5487b', border: 'rgba(216,95,152,0.2)' },
 }
 
@@ -81,6 +82,27 @@ function getWeekRangeLabel(weekStart) {
   const startLabel = formatDate(weekStart, { month: 'short', day: 'numeric' })
   const endLabel = formatDate(weekEnd, { month: 'short', day: 'numeric' })
   return `${startLabel} - ${endLabel}`
+}
+
+function getMonthLabel(date) {
+  return formatDate(date, { month: 'long', year: 'numeric' })
+}
+
+function startOfMonth(date) {
+  const current = new Date(date)
+  current.setDate(1)
+  current.setHours(12, 0, 0, 0)
+  return current
+}
+
+function getMonthGridDays(date) {
+  const monthStart = startOfMonth(date)
+  const gridStart = startOfWeek(monthStart)
+  return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index))
+}
+
+function isSameMonth(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()
 }
 
 function isDateInWeek(value, weekStart) {
@@ -235,7 +257,7 @@ function buildRadarDraftRow({ profile, opportunity, suggestion }) {
 }
 
 function Badge({ type }) {
-  const style = BADGE_STYLES[type] || BADGE_STYLES.recommended
+  const style = BADGE_STYLES[type] || BADGE_STYLES.open
   return (
     <span
       className="content-plan-badge inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
@@ -264,14 +286,26 @@ function PlanRow({ item, selected, onSelect }) {
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <Badge type={item.badgeType} />
+          {item.statusType ? <Badge type={item.statusType} /> : null}
           {item.adWorthiness && item.adWorthiness !== 'organic_only' ? <Badge type="ad" /> : null}
         </div>
-        <p className="mt-2 truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
-          {item.title}
-        </p>
-        <p className="mt-1 line-clamp-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-          {item.subtitle}
-        </p>
+        <div className="mt-2 flex min-w-0 items-center gap-3">
+          {item.thumbnailUrl ? (
+            <img
+              src={item.thumbnailUrl}
+              alt=""
+              className="h-10 w-10 shrink-0 rounded-[10px] object-cover"
+            />
+          ) : null}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
+              {item.title}
+            </p>
+            <p className="mt-1 line-clamp-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+              {item.subtitle}
+            </p>
+          </div>
+        </div>
       </div>
       <span className="hidden text-xs font-semibold md:inline-flex" style={{ color: 'var(--portal-primary)' }}>
         Review
@@ -295,11 +329,12 @@ export default function ContentCalendar() {
   const [selectedItemId, setSelectedItemId] = useState('')
   const [actionError, setActionError] = useState('')
   const [weekOffset, setWeekOffset] = useState(0)
-  const [queueMode, setQueueMode] = useState('all')
+  const [queueMode, setQueueMode] = useState('posts')
   const [composerCaptions, setComposerCaptions] = useState({})
   const selectedWeekStart = useMemo(() => startOfWeek(addDays(new Date(), weekOffset * 7)), [weekOffset])
   const selectedWeekStartString = toDateString(selectedWeekStart)
   const selectedWeekLabel = weekOffset === 0 ? 'This week' : getWeekRangeLabel(selectedWeekStart)
+  const monthGridDate = startOfMonth(selectedWeekStart)
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile'],
@@ -326,18 +361,6 @@ export default function ContentCalendar() {
     enabled: !!clientId,
   })
 
-  const calendar = useMemo(() => {
-    if (!profile) return null
-    try {
-      return buildCalendarModel(profile, scheduledPosts, drafts, {
-        startDate: selectedWeekStart,
-        horizonDays: 7,
-      })
-    } catch (error) {
-      return { error }
-    }
-  }, [profile, scheduledPosts, drafts, selectedWeekStart])
-
   const radarItems = useMemo(() => (
     opportunities
       .filter((opportunity) => !HIDDEN_RADAR_STATES.has(opportunity.review_state))
@@ -358,11 +381,18 @@ export default function ContentCalendar() {
       .map((opportunity, index) => {
         const suggestion = getPrimarySuggestion(opportunity)
         const action = buildRadarAction(opportunity, suggestion)
+        const suggestedDate = suggestion?.recommended_publish_at ||
+          opportunity.starts_at ||
+          opportunity.ends_at ||
+          opportunity.expires_at ||
+          selectedWeekStartString
+        const dateString = toDateString(new Date(String(suggestedDate).includes('T') ? suggestedDate : `${suggestedDate}T12:00:00`))
         return {
           id: `radar:${opportunity.id}`,
           source: 'radar',
           badgeType: 'radar',
-          dayLabel: index === 0 ? 'Today' : 'This week',
+          dateString,
+          dayLabel: isDateInWeek(dateString, selectedWeekStart) ? formatSlotDate(dateString) : (index === 0 ? 'Today' : 'This week'),
           timeLabel: opportunity.expires_at ? `By ${formatDate(opportunity.expires_at, { month: 'short', day: 'numeric' })}` : 'Review',
           title: suggestion?.title || opportunity.title,
           subtitle: opportunity.title,
@@ -377,28 +407,7 @@ export default function ContentCalendar() {
           suggestion,
         }
       })
-  ), [opportunities, selectedWeekStart, weekOffset])
-
-  const plannerItems = useMemo(() => {
-    if (!calendar?.slots) return []
-    return calendar.slots
-      .filter((slot) => ['recommended_fill', 'occupied_draft'].includes(slot.state) && slot.post_type)
-      .map((slot) => ({
-        id: `planner:${slot.slot_date_local}:${slot.slot_label}`,
-        source: slot.state === 'occupied_draft' ? 'draft' : 'recommended',
-        badgeType: slot.state === 'occupied_draft' ? 'draft' : 'recommended',
-        dayLabel: formatSlotDate(slot.slot_date_local),
-        timeLabel: slot.slot_start_local,
-        title: slot.post_type.replace(/_/g, ' '),
-        subtitle: slot.explanation,
-        detailTitle: slot.post_type.replace(/_/g, ' '),
-        caption: 'MAP can generate a caption starter for this planner slot when you open it in Publisher.',
-        whyNow: 'This slot fits the posting cadence and content mix configured for this customer.',
-        imagePrompt: 'Use a clear, real image from the business that matches the post topic.',
-        proof: ['Planner cadence', 'Content mix'],
-        slot,
-      }))
-  }, [calendar])
+  ), [opportunities, selectedWeekStart, selectedWeekStartString, weekOffset])
 
   const draftItems = useMemo(() => (
     drafts
@@ -408,6 +417,7 @@ export default function ContentCalendar() {
         id: `draft:${draft.id}`,
         source: 'draft',
         badgeType: 'draft',
+        dateString: draft.slot_date_local,
         dayLabel: formatSlotDate(draft.slot_date_local),
         timeLabel: draft.slot_start_local || 'Draft',
         title: draft.draft_title || draft.post_type?.replace(/_/g, ' ') || 'Saved draft',
@@ -419,6 +429,7 @@ export default function ContentCalendar() {
           ? draft.asset_requirements_json.find((item) => item?.suggestion)?.suggestion || 'Review media needs in Publisher.'
           : 'Review media needs in Publisher.',
         proof: ['Saved draft'],
+        statusType: 'pending',
         draft,
       }))
   ), [drafts, selectedWeekStart])
@@ -430,38 +441,85 @@ export default function ContentCalendar() {
         id: `scheduled:${post.id}`,
         source: 'scheduled',
         badgeType: 'scheduled',
+        statusType: post.status === 'published' ? 'published' : 'pending',
+        dateString: toDateString(new Date(post.scheduled_for || post.created_at)),
         dayLabel: formatDate(post.scheduled_for || post.created_at, { weekday: 'short', month: 'short', day: 'numeric' }),
         timeLabel: formatDate(post.scheduled_for || post.created_at, { hour: 'numeric', minute: '2-digit' }),
         title: post.content?.slice(0, 72) || 'Scheduled post',
-        subtitle: post.status || 'Scheduled',
+        subtitle: post.status === 'published' ? 'Published' : 'Pending approval or publish time',
         detailTitle: 'Scheduled post',
         caption: post.content || 'This post is already on the schedule.',
         whyNow: 'This item is already planned and helps avoid overfilling the calendar.',
         imagePrompt: 'Media was selected when the post was scheduled.',
         proof: ['Scheduled content'],
+        thumbnailUrl: post.media_url || '',
+        post,
       }))
   ), [scheduledPosts, selectedWeekStart])
 
   const planItems = useMemo(() => {
     const merged = weekOffset === 0
-      ? [...radarItems.slice(0, 3), ...plannerItems, ...draftItems, ...scheduledItems]
-      : [...plannerItems, ...draftItems, ...scheduledItems, ...radarItems]
+      ? [...radarItems.slice(0, 5), ...scheduledItems]
+      : [...scheduledItems, ...radarItems]
     return merged.slice(0, 9)
-  }, [draftItems, plannerItems, radarItems, scheduledItems, weekOffset])
+  }, [radarItems, scheduledItems, weekOffset])
 
   const visiblePlanItems = useMemo(() => {
-    if (queueMode === 'suggestions') return planItems.filter((item) => ['radar', 'recommended'].includes(item.source))
-    if (queueMode === 'drafts') return planItems.filter((item) => item.source === 'draft')
-    if (queueMode === 'scheduled') return planItems.filter((item) => item.source === 'scheduled')
+    if (queueMode === 'posts') return planItems
+    if (queueMode === 'drafts') return draftItems
+    if (queueMode === 'schedule') return scheduledItems
     return planItems
-  }, [planItems, queueMode])
+  }, [draftItems, planItems, queueMode, scheduledItems])
 
   const selectedItem = visiblePlanItems.find((item) => item.id === selectedItemId) || visiblePlanItems[0] || null
   const composerCaption = selectedItem ? (composerCaptions[selectedItem.id] ?? selectedItem.caption ?? '') : ''
-  const nextBestItem = planItems.find((item) => item.source === 'radar') || planItems[0] || null
-  const readyIdeaCount = radarItems.length + plannerItems.filter((item) => item.source === 'recommended').length
-  const boostCandidateCount = radarItems.filter((item) => item.adWorthiness && item.adWorthiness !== 'organic_only').length
-  const recommendedSlot = plannerItems.find((item) => item.source === 'recommended')?.slot
+  const monthDays = useMemo(() => getMonthGridDays(monthGridDate), [monthGridDate])
+
+  const monthItemsByDate = useMemo(() => {
+    const groups = new Map()
+    const addItem = (dateString, item) => {
+      if (!dateString) return
+      if (!groups.has(dateString)) groups.set(dateString, [])
+      groups.get(dateString).push(item)
+    }
+    scheduledPosts.forEach((post) => {
+      addItem(toDateString(new Date(post.scheduled_for || post.created_at)), {
+        type: post.status === 'published' ? 'Published' : 'Pending',
+        title: post.content || 'Scheduled post',
+      })
+    })
+    drafts
+      .filter((draft) => draft.review_state !== 'published')
+      .forEach((draft) => {
+        addItem(draft.slot_date_local, {
+          type: 'Draft',
+          title: draft.draft_title || draft.draft_caption || 'Saved draft',
+        })
+      })
+    opportunities
+      .filter((opportunity) => !HIDDEN_RADAR_STATES.has(opportunity.review_state))
+      .forEach((opportunity) => {
+        getActiveSuggestions(opportunity).forEach((suggestion) => {
+          const suggestedDate = suggestion.recommended_publish_at || opportunity.starts_at || opportunity.expires_at
+          if (!suggestedDate) return
+          addItem(toDateString(new Date(String(suggestedDate).includes('T') ? suggestedDate : `${suggestedDate}T12:00:00`)), {
+            type: 'Idea',
+            title: suggestion.title || opportunity.title,
+          })
+        })
+      })
+    return groups
+  }, [drafts, opportunities, scheduledPosts])
+
+  const monthOpenCount = useMemo(() => {
+    const monthStart = startOfMonth(monthGridDate)
+    const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1)
+    return monthDays.filter((day) => {
+      const dateString = toDateString(day)
+      return day >= monthStart && day < monthEnd && !monthItemsByDate.has(dateString)
+    })
+      .length
+  }, [monthDays, monthGridDate, monthItemsByDate])
 
   const createRadarDraft = useMutation({
     mutationFn: async (item) => {
@@ -507,48 +565,6 @@ export default function ContentCalendar() {
     onError: (error) => setActionError(error.message || 'Could not create a Publisher draft.'),
   })
 
-  const createPlannerDraft = useMutation({
-    mutationFn: async (slot) => {
-      if (!requireWriteAccess('turn planner slots into drafts')) return null
-      if (!profile?.client_id || !calendar?.policy) throw new Error('Planner is still loading.')
-      const generated = generateDraftForSlot({ profile, policy: calendar.policy, slot, drafts })
-      const savedDraft = await upsertSocialDraft({
-        ...buildDraftPayload(profile, calendar.policy, slot),
-        draft_title: generated.title,
-        draft_body: generated.draftBody,
-        draft_caption: generated.caption,
-        review_state: 'draft_created',
-        review_notes: stringifyDraftMeta({
-          ...generated.meta,
-          generationSource: 'content_plan',
-          generationMode: 'deterministic',
-          generatedAt: new Date().toISOString(),
-        }),
-        asset_requirements_json: generated.assetRequirements,
-      })
-
-      try {
-        await recordPlannerFeedbackEvent({
-          clientId,
-          draftId: savedDraft.id,
-          postType: slot.post_type,
-          eventType: 'draft_generated',
-          angleId: generated.angle.id,
-          metadata: { source: 'content_plan', slotDateLocal: slot.slot_date_local, slotLabel: slot.slot_label },
-        })
-      } catch (error) {
-        console.error('[PlannerFeedback]', error)
-      }
-
-      return savedDraft
-    },
-    onSuccess: async (draft) => {
-      await queryClient.invalidateQueries({ queryKey: ['social-drafts', clientId] })
-      if (draft?.id) navigate(`/post?draftId=${draft.id}`)
-    },
-    onError: (error) => setActionError(error.message || 'Could not create a planner draft.'),
-  })
-
   function handlePrimaryAction(item) {
     setActionError('')
     if (!item) return
@@ -556,28 +572,24 @@ export default function ContentCalendar() {
       createRadarDraft.mutate(item)
       return
     }
-    if (item.source === 'recommended') {
-      createPlannerDraft.mutate(item.slot)
-      return
-    }
     if (item.draft?.id) {
       navigate(`/post?draftId=${item.draft.id}`)
+      return
+    }
+    if (item.post?.id) {
+      navigate(`/post?editPost=${item.post.id}`)
       return
     }
     navigate('/post')
   }
 
-  function handleAddPost() {
-    if (recommendedSlot) {
-      navigate(`/post?date=${encodeURIComponent(recommendedSlot.slot_date_local)}&slot=${encodeURIComponent(recommendedSlot.slot_label)}`)
-      return
-    }
-    navigate(`/post?date=${encodeURIComponent(selectedWeekStartString)}`)
+  function handleAddPost(dateString = selectedWeekStartString) {
+    navigate(`/post?date=${encodeURIComponent(dateString)}`)
   }
 
   const isLoading = profileLoading || postsLoading || draftsLoading || radarLoading
   const isRefreshing = isRefetchingPosts || isRefetchingDrafts || isRefetchingRadar
-  const isCreating = createRadarDraft.isPending || createPlannerDraft.isPending
+  const isCreating = createRadarDraft.isPending
 
   if (isLoading) {
     return (
@@ -589,94 +601,64 @@ export default function ContentCalendar() {
     )
   }
 
-  if (calendar?.error) {
-    return (
-      <div className="portal-page mx-auto max-w-[1100px] md:p-6 xl:p-8">
-        <div className="portal-surface p-6">
-          <p className="text-sm font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
-            Content Plan unavailable
-          </p>
-          <p className="mt-3 text-base" style={{ color: 'var(--portal-text)' }}>
-            {calendar.error.message}
-          </p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="portal-page content-plan-page mx-auto max-w-[1500px] space-y-3 md:p-4 xl:p-5">
-      <section className="content-plan-topbar">
-        <div className="content-plan-topbar-inner">
-          <div className="content-plan-week-control">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-              Content Plan
-            </p>
-            <div className="mt-2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setWeekOffset((value) => Math.max(0, value - 1))}
-                disabled={weekOffset === 0}
-                className="portal-button-secondary inline-flex h-9 w-9 items-center justify-center disabled:opacity-40"
-                aria-label="Previous week"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <div>
-                <h1 className="content-plan-title font-display">{selectedWeekLabel}</h1>
-                <p className="content-plan-subtitle text-sm leading-relaxed">
-                  {getWeekRangeLabel(selectedWeekStart)}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setWeekOffset((value) => Math.min(8, value + 1))}
-                className="portal-button-secondary inline-flex h-9 w-9 items-center justify-center"
-                aria-label="Next week"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-          <div className="content-plan-command-summary">
-            <ProofChip>{readyIdeaCount} ready ideas</ProofChip>
-            <ProofChip>{boostCandidateCount} boost-worthy</ProofChip>
-            <ProofChip>{draftItems.length} drafts this week</ProofChip>
-          </div>
-          <div className="content-plan-next-best">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
-              Next best
-            </p>
-            <p className="mt-1 truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
-              {nextBestItem?.title || 'Add a post to this week'}
-            </p>
-            <p className="mt-0.5 line-clamp-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-              {nextBestItem?.subtitle || 'Choose a week and MAP will show the best open suggestions.'}
+      <section className="content-plan-slimbar">
+        <div className="content-plan-week-inline">
+          <button
+            type="button"
+            onClick={() => setWeekOffset((value) => Math.max(0, value - 1))}
+            disabled={weekOffset === 0}
+            className="portal-button-secondary inline-flex h-9 w-9 items-center justify-center disabled:opacity-40"
+            aria-label="Previous week"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <div>
+            <h1 className="content-plan-title font-display">{selectedWeekLabel}</h1>
+            <p className="content-plan-subtitle text-sm leading-relaxed">
+              {getWeekRangeLabel(selectedWeekStart)}
             </p>
           </div>
-          <div className="content-plan-actions flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={handleAddPost}
-              className="portal-button-primary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold"
-            >
-              <Plus className="h-4 w-4" />
-              Add post
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                refetchPosts()
-                refetchDrafts()
-                refetchRadar()
-              }}
-              disabled={isRefreshing}
-              className="portal-button-secondary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold disabled:opacity-60"
-            >
-              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setWeekOffset((value) => Math.min(8, value + 1))}
+            className="portal-button-secondary inline-flex h-9 w-9 items-center justify-center"
+            aria-label="Next week"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="content-plan-actions flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setQueueMode('schedule')}
+            className="portal-button-secondary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold"
+          >
+            <CalendarDays className="h-4 w-4" />
+            Month view
+          </button>
+          <button
+            type="button"
+            onClick={() => handleAddPost()}
+            className="portal-button-primary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold"
+          >
+            <Plus className="h-4 w-4" />
+            New post
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              refetchPosts()
+              refetchDrafts()
+              refetchRadar()
+            }}
+            disabled={isRefreshing}
+            className="portal-button-secondary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold disabled:opacity-60"
+          >
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
         </div>
       </section>
 
@@ -693,10 +675,9 @@ export default function ContentCalendar() {
             </div>
             <div className="content-plan-filterbar">
               {[
-                ['all', 'Queue'],
-                ['suggestions', 'Ideas'],
+                ['posts', 'Posts'],
                 ['drafts', 'Drafts'],
-                ['scheduled', 'Scheduled'],
+                ['schedule', 'Schedule'],
               ].map(([value, label]) => (
                 <button
                   key={value}
@@ -716,7 +697,68 @@ export default function ContentCalendar() {
             </div>
           </div>
 
-          {visiblePlanItems.length > 0 ? (
+          {queueMode === 'schedule' ? (
+            <div className="content-plan-month">
+              <div className="content-plan-month-head">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                    Month view
+                  </p>
+                  <h3 className="mt-1 font-display text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>
+                    {getMonthLabel(monthGridDate)}
+                  </h3>
+                </div>
+                <ProofChip>{monthOpenCount} open days</ProofChip>
+              </div>
+              <div className="content-plan-month-weekdays">
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+                  <span key={day}>{day}</span>
+                ))}
+              </div>
+              <div className="content-plan-month-grid">
+                {monthDays.map((day) => {
+                  const dateString = toDateString(day)
+                  const dayItems = monthItemsByDate.get(dateString) || []
+                  return (
+                    <div
+                      key={dateString}
+                      className="content-plan-month-day"
+                      data-muted={!isSameMonth(day, monthGridDate)}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
+                          {day.getDate()}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleAddPost(dateString)}
+                          className="content-plan-make-post"
+                        >
+                          Make post
+                        </button>
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        {dayItems.slice(0, 2).map((item, index) => (
+                          <button
+                            key={`${item.type}-${index}`}
+                            type="button"
+                            className="content-plan-month-pill"
+                            onClick={() => handleAddPost(dateString)}
+                          >
+                            <span>{item.type}</span>
+                            {item.title}
+                          </button>
+                        ))}
+                        {dayItems.length > 2 ? (
+                          <span className="content-plan-month-more">+{dayItems.length - 2} more</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : visiblePlanItems.length > 0 ? (
             <div>
               {visiblePlanItems.map((item) => (
                 <PlanRow
