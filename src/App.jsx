@@ -249,7 +249,7 @@ function ProtectedLayout({ session }) {
       />
 
       {/* Main content area */}
-      <div className="flex min-h-screen w-full flex-col md:ml-[232px] md:w-[calc(100%-232px)]">
+      <div className="flex min-h-screen w-full flex-col md:ml-[188px] md:w-[calc(100%-188px)]">
         <main className="flex-1 overflow-auto pb-24 md:pb-0">
           <PortalBillingBanner
             billingAccess={billingAccess}
