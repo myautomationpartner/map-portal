@@ -138,14 +138,18 @@ The shared template now has a concrete provisioning helper for the current per-c
 
 Current automation coverage:
 - fetches the tenant runtime row from `public.clients`
+- provisions/reuses the tenant Chatwoot account, customer agent, Website Chat inbox, Social Inbox API inbox, and inbox memberships during non-dry-run onboarding deploys
 - builds the portal with tenant-facing branding env
 - deploys a dedicated Cloudflare Worker named from `worker_name`
 - attaches the MAP-managed custom domain from `portal_domain`
 - uploads/refreshes the current worker secret set
+- injects the tenant-specific Chatwoot account id, social inbox id, and webhook bridge secret into the Worker secret set
 - can register the Zernio account-events webhook through the live n8n helper
 - can mirror deployment completion/follow-up state back into onboarding tables
+- sends/requests the customer's Chatwoot password reset after Chatwoot tenant provisioning
 
 Current limitation:
+- Chatwoot automation requires a MAP-owned `CHATWOOT_PLATFORM_API_ACCESS_TOKEN` plus the MAP operator user id before live provisioning can create accounts/users in production
 - brand-new worker provisioning now expects one MAP-level `ZERNIO_WEBHOOK_SECRET` to be available to the provisioning helper at deploy time
 - the current durable source on the operator machine is the macOS Keychain service `MAP_ZERNIO_WEBHOOK_SECRET` (with `ZERNIO_WEBHOOK_SECRET` as a legacy alias), and the helper also accepts env / `credential.txt` overrides when needed
 - if the secret is truly missing, the portal can still be deployed, but onboarding should remain in follow-up mode until the signed webhook secret is added and the Zernio helper is run
