@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
+import { useNavigate, useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { fetchDropboxWeekSuggestions, openDropboxChooser } from '../lib/dropboxApi'
 import {
@@ -758,7 +758,10 @@ export default function CreatePost() {
   const { requireWriteAccess } = useOutletContext()
 
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+  const returnTo = searchParams.get('returnTo') || ''
+  const returnView = searchParams.get('returnView') || ''
   const fileInputRef = useRef(null)
   const composerRef = useRef(null)
   const autosaveTimerRef = useRef(null)
@@ -1773,6 +1776,15 @@ export default function CreatePost() {
       setSubmitState('success')
       setReviewOpen(false)
       setTimeout(() => {
+        if (returnTo === 'studio' && timingMode !== 'now') {
+          const returnParams = new URLSearchParams({
+            view: returnView === 'month' ? 'month' : 'week',
+            date: scheduledForIso ? scheduledForIso.slice(0, 10) : selectedDay || '',
+            scheduled: post.id,
+          })
+          navigate(`/calendar?${returnParams.toString()}`)
+          return
+        }
         setContent('')
         setImageFile(null)
         setImagePreview(null)

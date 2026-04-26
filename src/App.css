@@ -546,6 +546,18 @@
   white-space: nowrap;
 }
 
+.content-plan-proof-chip[data-clickable="true"] {
+  cursor: pointer;
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.content-plan-proof-chip[data-clickable="true"]:hover {
+  border-color: rgba(201, 168, 76, 0.36) !important;
+  color: var(--portal-text) !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  transform: translateY(-1px);
+}
+
 .content-plan-detail {
   min-width: 0;
   padding: 1rem 1.1rem 1.1rem;

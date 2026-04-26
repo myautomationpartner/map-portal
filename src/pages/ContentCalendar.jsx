@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -350,11 +350,19 @@ function PlanRow({ item, selected, onSelect }) {
   )
 }
 
-function ProofChip({ children }) {
+function ProofChip({ children, onClick, title }) {
+  const Component = onClick ? 'button' : 'span'
   return (
-    <span className="content-plan-proof-chip rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)', background: 'rgba(255,255,255,0.72)' }}>
+    <Component
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      title={title}
+      className="content-plan-proof-chip rounded-full border px-3 py-1 text-xs"
+      data-clickable={Boolean(onClick)}
+      style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)', background: 'rgba(255,255,255,0.72)' }}
+    >
       {children}
-    </span>
+    </Component>
   )
 }
 
@@ -362,15 +370,25 @@ export default function ContentCalendar() {
   const { requireWriteAccess } = useOutletContext()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const initialParams = useMemo(() => new URLSearchParams(window.location.search), [])
   const [selectedItemId, setSelectedItemId] = useState('')
   const [actionError, setActionError] = useState('')
-  const [weekOffset, setWeekOffset] = useState(0)
-  const [queueMode, setQueueMode] = useState('week')
+  const [weekOffset, setWeekOffset] = useState(() => {
+    const date = initialParams.get('date')
+    return date ? getWeekOffsetFromDate(date) : 0
+  })
+  const [queueMode, setQueueMode] = useState(() => initialParams.get('view') === 'month' ? 'month' : 'week')
   const [composerCaptions, setComposerCaptions] = useState({})
   const selectedWeekStart = useMemo(() => startOfWeek(addDays(new Date(), weekOffset * 7)), [weekOffset])
   const selectedWeekStartString = toDateString(selectedWeekStart)
   const selectedWeekLabel = weekOffset === 0 ? 'This week' : getWeekRangeLabel(selectedWeekStart)
   const monthGridDate = startOfMonth(selectedWeekStart)
+
+  useEffect(() => {
+    if (initialParams.get('view') || initialParams.get('date') || initialParams.get('scheduled')) {
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [initialParams])
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile'],
@@ -492,6 +510,16 @@ export default function ContentCalendar() {
         post,
       }))
   ), [calendarPosts, selectedWeekStart])
+
+  const studioCounts = useMemo(() => ({
+    ideas: opportunities
+      .filter((opportunity) => !HIDDEN_RADAR_STATES.has(opportunity.review_state))
+      .filter((opportunity) => getActiveSuggestions(opportunity).length > 0)
+      .length,
+    drafts: drafts.filter((draft) => draft.review_state !== 'published').length,
+    scheduled: calendarPosts.filter((post) => post.status === 'scheduled').length,
+    posted: calendarPosts.filter((post) => post.status === 'published').length,
+  }), [calendarPosts, drafts, opportunities])
 
   const allDetailItems = useMemo(() => {
     const radarDetailItems = opportunities
@@ -704,7 +732,12 @@ export default function ContentCalendar() {
   }
 
   function handleAddPost(dateString = selectedWeekStartString) {
-    navigate(`/post?date=${encodeURIComponent(dateString)}`)
+    const params = new URLSearchParams({
+      date: dateString,
+      returnTo: 'studio',
+      returnView: queueMode === 'month' ? 'month' : 'week',
+    })
+    navigate(`/post?${params.toString()}`)
   }
 
   function handleMonthItemClick(dateString, item) {
@@ -819,10 +852,10 @@ export default function ContentCalendar() {
               ))}
             </div>
             <div className="flex flex-wrap gap-2">
-              <ProofChip>{radarItems.length} AI ideas</ProofChip>
-              <ProofChip>{draftItems.length} Drafts</ProofChip>
-              <ProofChip>{postItems.filter((item) => item.badgeType === 'scheduled').length} Scheduled</ProofChip>
-              <ProofChip>{postItems.filter((item) => item.badgeType === 'published').length} Posted</ProofChip>
+              <ProofChip onClick={() => navigate('/opportunities')} title="Open Radar ideas">{studioCounts.ideas} AI ideas</ProofChip>
+              <ProofChip onClick={() => setQueueMode('week')} title="Show drafts in Studio">{studioCounts.drafts} Drafts</ProofChip>
+              <ProofChip onClick={() => navigate('/post/scheduled')} title="Manage scheduled posts">{studioCounts.scheduled} Scheduled</ProofChip>
+              <ProofChip onClick={() => navigate('/post/history')} title="View post history">{studioCounts.posted} Posted</ProofChip>
             </div>
           </div>
 
