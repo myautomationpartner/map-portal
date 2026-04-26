@@ -38,6 +38,12 @@ const BADGE_STYLES = {
   pending: { label: 'Pending', background: 'rgba(201,168,76,0.12)', color: '#8c6d1c', border: 'rgba(201,168,76,0.24)' },
   ad: { label: 'Ad idea', background: 'rgba(216,95,152,0.1)', color: '#b5487b', border: 'rgba(216,95,152,0.2)' },
 }
+const STATUS_MARKERS = {
+  radar: { label: 'AI idea', color: '#3568a6', Icon: Wand2 },
+  draft: { label: 'Draft', color: '#c87628', Icon: PencilLine },
+  scheduled: { label: 'Scheduled', color: '#1fa971', Icon: Clock3 },
+  published: { label: 'Posted', color: '#c9a84c', Icon: CheckCircle2 },
+}
 
 function normalizeSentence(value, fallback = '') {
   const text = String(value || '').trim()
@@ -119,6 +125,18 @@ function isDateInWeek(value, weekStart) {
 
 function getPostDisplayDate(post) {
   return post?.scheduled_for || post?.published_at || post?.created_at
+}
+
+function getWeekOffsetFromDate(value) {
+  const target = value instanceof Date
+    ? value
+    : new Date(String(value).includes('T') ? value : `${value}T12:00:00`)
+  if (Number.isNaN(target.getTime())) return 0
+
+  const currentWeekStart = startOfWeek(new Date())
+  const targetWeekStart = startOfWeek(target)
+  const diff = targetWeekStart.getTime() - currentWeekStart.getTime()
+  return Math.max(0, Math.min(8, Math.round(diff / (7 * 24 * 60 * 60 * 1000))))
 }
 
 function getActiveSuggestions(opportunity) {
@@ -272,6 +290,21 @@ function Badge({ type }) {
   )
 }
 
+function StatusMarker({ type }) {
+  const marker = STATUS_MARKERS[type] || STATUS_MARKERS.radar
+  const Icon = marker.Icon
+  return (
+    <span
+      className="content-plan-status-marker"
+      style={{ color: marker.color, borderColor: `${marker.color}40`, background: `${marker.color}14` }}
+      title={marker.label}
+      aria-label={marker.label}
+    >
+      <Icon className="h-4 w-4" />
+    </span>
+  )
+}
+
 function PlanRow({ item, selected, onSelect }) {
   return (
     <button
@@ -312,9 +345,7 @@ function PlanRow({ item, selected, onSelect }) {
           </div>
         </div>
       </div>
-      <span className="hidden text-xs font-semibold md:inline-flex" style={{ color: 'var(--portal-primary)' }}>
-        {item.actionLabel || 'Review'}
-      </span>
+      <StatusMarker type={item.badgeType} />
     </button>
   )
 }
@@ -408,7 +439,6 @@ export default function ContentCalendar() {
           proof: (opportunity.source_urls || []).slice(0, 2),
           adWorthiness: opportunity.ad_worthiness,
           platforms: suggestion?.recommended_platforms || [],
-          actionLabel: 'Make post',
           opportunity,
           suggestion,
         }
@@ -435,7 +465,6 @@ export default function ContentCalendar() {
           ? draft.asset_requirements_json.find((item) => item?.suggestion)?.suggestion || 'Review media needs in Publisher.'
           : 'Review media needs in Publisher.',
         proof: ['Saved draft'],
-        actionLabel: 'Edit',
         draft,
       }))
   ), [drafts, selectedWeekStart])
@@ -460,7 +489,6 @@ export default function ContentCalendar() {
         imagePrompt: post.media_url ? 'Media is attached to this post.' : 'No media is attached yet.',
         proof: [post.status === 'published' ? 'Posted content' : 'Scheduled content'],
         thumbnailUrl: post.media_url || '',
-        actionLabel: post.status === 'published' ? 'View' : 'Edit',
         post,
       }))
   ), [calendarPosts, selectedWeekStart])
@@ -493,6 +521,7 @@ export default function ContentCalendar() {
       addItem(toDateString(new Date(getPostDisplayDate(post))), {
         type: post.status === 'published' ? 'Posted' : 'Scheduled',
         status: post.status === 'published' ? 'published' : 'scheduled',
+        targetItemId: `post:${post.id}`,
         title: post.content || (post.status === 'published' ? 'Posted content' : 'Scheduled post'),
       })
     })
@@ -502,6 +531,7 @@ export default function ContentCalendar() {
         addItem(draft.slot_date_local, {
           type: 'Draft',
           status: 'draft',
+          targetItemId: `draft:${draft.id}`,
           title: draft.draft_title || draft.draft_caption || 'Saved draft',
         })
       })
@@ -514,6 +544,7 @@ export default function ContentCalendar() {
           addItem(toDateString(new Date(String(suggestedDate).includes('T') ? suggestedDate : `${suggestedDate}T12:00:00`)), {
             type: 'Idea',
             status: 'radar',
+            targetItemId: `radar:${opportunity.id}`,
             title: suggestion.title || opportunity.title,
           })
         })
@@ -586,7 +617,7 @@ export default function ContentCalendar() {
       navigate(`/post?draftId=${item.draft.id}`)
       return
     }
-    if (item.post?.id && item.post.status !== 'published') {
+    if (item.post?.id) {
       navigate(`/post?editPost=${item.post.id}`)
       return
     }
@@ -595,6 +626,16 @@ export default function ContentCalendar() {
 
   function handleAddPost(dateString = selectedWeekStartString) {
     navigate(`/post?date=${encodeURIComponent(dateString)}`)
+  }
+
+  function handleMonthItemClick(dateString, item) {
+    if (!item?.targetItemId) {
+      handleAddPost(dateString)
+      return
+    }
+    setSelectedItemId(item.targetItemId)
+    setWeekOffset(getWeekOffsetFromDate(dateString))
+    setQueueMode('week')
   }
 
   const isLoading = profileLoading || postsLoading || draftsLoading || radarLoading
@@ -754,7 +795,7 @@ export default function ContentCalendar() {
                             type="button"
                             className="content-plan-month-pill"
                             data-status={item.status}
-                            onClick={() => handleAddPost(dateString)}
+                            onClick={() => handleMonthItemClick(dateString, item)}
                           >
                             <span>{item.type}</span>
                             {item.title}
