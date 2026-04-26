@@ -82,7 +82,7 @@ function PlatformMetricCard({ platform, metrics, connectedPlatforms, connectingP
 
   return (
     <article
-      className="portal-card group flex min-h-[126px] flex-col justify-between p-3.5 transition-all duration-200 hover:-translate-y-0.5"
+      className="portal-card group flex min-h-[92px] flex-col justify-between p-2.5 transition-all duration-200 hover:-translate-y-0.5"
       style={{
         borderColor: isConnected ? `${platform.accent}30` : 'var(--portal-border)',
         background: isConnected
@@ -90,34 +90,34 @@ function PlatformMetricCard({ platform, metrics, connectedPlatforms, connectingP
           : 'rgba(255,255,255,0.92)',
       }}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <div
-            className="flex h-9 w-9 items-center justify-center rounded-2xl text-white shadow-sm"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
             style={{ background: platform.accent }}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="h-3.5 w-3.5" />
           </div>
-          <div>
-            <p className="text-sm font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
+          <div className="min-w-0">
+            <p className="truncate text-xs font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
               {platform.label}
             </p>
-            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: isConnected ? platform.accent : 'var(--portal-text-soft)' }}>
+            <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color: isConnected ? platform.accent : 'var(--portal-text-soft)' }}>
               {statusLabel}
             </p>
           </div>
         </div>
-        <span className="rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ background: platform.soft, color: platform.accent }}>
+        <span className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ background: platform.soft, color: platform.accent }}>
           {platform.shortLabel}
         </span>
       </div>
 
-      <div className="mt-3 flex items-end justify-between gap-3">
+      <div className="mt-2 flex items-end justify-between gap-2">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
+          <p className="text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--portal-text-soft)' }}>
             {platform.metricLabel}
           </p>
-          <p className="mt-0.5 text-2xl font-semibold tabular-nums tracking-[-0.04em]" style={{ color: 'var(--portal-text)' }}>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums tracking-[-0.04em]" style={{ color: 'var(--portal-text)' }}>
             {hasMetrics ? metricValue : '—'}
           </p>
         </div>
@@ -127,7 +127,7 @@ function PlatformMetricCard({ platform, metrics, connectedPlatforms, connectingP
             type="button"
             onClick={() => onConnect(platform.id)}
             disabled={isConnecting}
-            className="rounded-full px-3 py-1.5 text-xs font-semibold transition-all disabled:cursor-wait disabled:opacity-60"
+            className="rounded-full px-2 py-1 text-[10px] font-semibold transition-all disabled:cursor-wait disabled:opacity-60"
             style={{ background: platform.soft, color: platform.accent }}
           >
             {isConnecting ? 'Opening...' : 'Connect now'}
@@ -135,16 +135,16 @@ function PlatformMetricCard({ platform, metrics, connectedPlatforms, connectingP
         ) : isConnected || hasMetrics ? (
           <Link
             to={`/stats/${platform.id}`}
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all"
+            className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold transition-all"
             style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-muted)' }}
           >
             View
-            <ArrowUpRight className="h-3.5 w-3.5" />
+            <ArrowUpRight className="h-3 w-3" />
           </Link>
         ) : (
           <Link
             to="/settings"
-            className="rounded-full px-3 py-1.5 text-xs font-semibold transition-all"
+            className="rounded-full px-2 py-1 text-[10px] font-semibold transition-all"
             style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-muted)' }}
           >
             Connect now
@@ -528,7 +528,7 @@ function ToolIcon({ tool }) {
   const [showFallback, setShowFallback] = useState(Boolean(PresetIcon) || !sources.length)
 
   if (PresetIcon) {
-    return <PresetIcon className="h-4 w-4" />
+    return <PresetIcon className="h-3.5 w-3.5" />
   }
 
   if (!showFallback && sources[sourceIndex]) {
@@ -536,7 +536,7 @@ function ToolIcon({ tool }) {
       <img
         src={sources[sourceIndex]}
         alt=""
-        className="h-7 w-7 rounded-xl object-contain"
+        className="h-6 w-6 rounded-lg object-contain"
         onError={() => {
           if (sourceIndex < sources.length - 1) {
             setSourceIndex(sourceIndex + 1)
@@ -549,12 +549,12 @@ function ToolIcon({ tool }) {
   }
 
   if (tool.icon) {
-    return <span className="text-xl">{tool.icon}</span>
+    return <span className="text-lg">{tool.icon}</span>
   }
 
   return (
     <div
-      className="flex h-7 w-7 items-center justify-center rounded-xl text-xs font-bold"
+      className="flex h-6 w-6 items-center justify-center rounded-lg text-[10px] font-bold"
       style={{ background: 'rgba(201, 168, 76, 0.14)', color: 'var(--portal-primary-strong)' }}
     >
       {getToolInitials(tool.label)}
@@ -614,14 +614,14 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onUpdate, onMoveGroup, onD
           onOpen(tool)
         }
       }}
-      className="group relative rounded-[20px] border text-left transition-all duration-200 hover:-translate-y-0.5"
+      className="group relative w-full rounded-[18px] border text-left transition-all duration-200 hover:-translate-y-0.5 sm:w-[218px]"
       style={{
         borderColor: 'rgba(26, 24, 20, 0.08)',
         background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(250, 247, 241, 0.7))',
         boxShadow: '0 10px 24px rgba(26, 24, 20, 0.045)',
       }}
     >
-      <div className="flex min-h-[78px] items-center gap-2.5 p-2.5 pr-10">
+      <div className="flex min-h-[62px] items-center gap-2 p-2 pr-9">
         {editMode && (
           <div
             className="absolute left-1.5 top-1.5 rounded-full p-1"
@@ -633,20 +633,20 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onUpdate, onMoveGroup, onD
         )}
 
         <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-[13px]"
+          className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-xl"
           style={{ background: `${accent}13`, color: accent, border: '1px solid rgba(26, 24, 20, 0.06)' }}
         >
           <ToolIcon key={`${tool.id}:${tool.url}:${tool.presetId || ''}`} tool={tool} />
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
+          <p className="truncate text-xs font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
             {tool.label}
           </p>
-          <p className="mt-0.5 truncate text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>
+          <p className="mt-0.5 truncate text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>
             {hostname || 'External app'}
           </p>
-          <span className="mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ background: 'rgba(26, 24, 20, 0.045)', color: 'var(--portal-text-soft)' }}>
+          <span className="mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em]" style={{ background: 'rgba(26, 24, 20, 0.045)', color: 'var(--portal-text-soft)' }}>
             {groupLabel}
           </span>
         </div>
@@ -658,11 +658,11 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onUpdate, onMoveGroup, onD
           event.stopPropagation()
           setMenuOpen((current) => !current)
         }}
-        className="absolute right-2.5 top-2.5 flex h-8 w-8 items-center justify-center rounded-full border transition-all hover:-translate-y-0.5"
+        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border transition-all hover:-translate-y-0.5"
         style={{ borderColor: 'rgba(26, 24, 20, 0.08)', background: 'rgba(255,255,255,0.86)', color: 'var(--portal-text-muted)', boxShadow: '0 8px 18px rgba(26, 24, 20, 0.06)' }}
         aria-label={`${tool.label} options`}
       >
-        <MoreHorizontal className="h-4 w-4" />
+        <MoreHorizontal className="h-3.5 w-3.5" />
       </button>
 
       {menuOpen && (
@@ -961,7 +961,7 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+      <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {DASHBOARD_PLATFORMS.map((platform) => (
           <PlatformMetricCard
             key={platform.id}
@@ -1088,7 +1088,7 @@ export default function Dashboard() {
         </div>
 
         {visibleTools.length > 0 ? (
-          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+          <div className="flex flex-wrap gap-2">
             {visibleTools.map((tool) => (
               <ToolTile
                 key={tool.id}
