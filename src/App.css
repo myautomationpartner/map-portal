@@ -548,6 +548,29 @@
   white-space: nowrap;
 }
 
+.content-plan-row-status {
+  display: grid;
+  justify-items: center;
+  gap: 0.34rem;
+}
+
+.content-plan-platform-markers {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+}
+
+.content-plan-platform-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+}
+
 .content-plan-row-actions {
   display: inline-flex;
   align-items: center;

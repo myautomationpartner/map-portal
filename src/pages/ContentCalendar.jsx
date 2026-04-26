@@ -4,6 +4,7 @@ import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowUpRight,
+  Camera,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
@@ -11,11 +12,14 @@ import {
   Clock3,
   Image,
   Loader2,
+  MapPin,
   Megaphone,
   MoreHorizontal,
+  Music2,
   PencilLine,
   Plus,
   RefreshCw,
+  Share2,
   Trash2,
   Wand2,
 } from 'lucide-react'
@@ -49,6 +53,12 @@ const STATUS_MARKERS = {
   draft: { label: 'Draft', color: '#c87628' },
   scheduled: { label: 'Scheduled', color: '#1fa971' },
   published: { label: 'Posted', color: '#c9a84c' },
+}
+const PLATFORM_MARKERS = {
+  facebook: { label: 'Facebook', Icon: Share2, color: '#3568a6' },
+  instagram: { label: 'Instagram', Icon: Camera, color: '#d85f98' },
+  google: { label: 'Google Business', Icon: MapPin, color: '#1fa971' },
+  tiktok: { label: 'TikTok', Icon: Music2, color: '#168c8f' },
 }
 
 function isMissingRemoteDelete(payload, raw) {
@@ -323,6 +333,30 @@ function StatusMarker({ type }) {
   )
 }
 
+function PlatformMarkers({ platforms = [] }) {
+  const uniquePlatforms = [...new Set(platforms)].filter((platform) => PLATFORM_MARKERS[platform])
+  if (!uniquePlatforms.length) return null
+
+  return (
+    <div className="content-plan-platform-markers" aria-label={`Platforms: ${uniquePlatforms.map((platform) => PLATFORM_MARKERS[platform].label).join(', ')}`}>
+      {uniquePlatforms.map((platform) => {
+        const marker = PLATFORM_MARKERS[platform]
+        const Icon = marker.Icon
+        return (
+          <span
+            key={platform}
+            className="content-plan-platform-marker"
+            title={marker.label}
+            style={{ color: marker.color, background: `${marker.color}14`, borderColor: `${marker.color}38` }}
+          >
+            <Icon className="h-3 w-3" />
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
 function RowActionMenu({ item, actions }) {
   const [isOpen, setIsOpen] = useState(false)
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
@@ -454,12 +488,7 @@ function PlanRow({ item, selected, onSelect, actions }) {
         <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-soft)' }}>{item.timeLabel}</p>
       </div>
       <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge type={item.badgeType} />
-          {item.statusType ? <Badge type={item.statusType} /> : null}
-          {item.adWorthiness && item.adWorthiness !== 'organic_only' ? <Badge type="ad" /> : null}
-        </div>
-        <div className="mt-2 flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           {item.thumbnailUrl ? (
             <img
               src={item.thumbnailUrl}
@@ -477,7 +506,12 @@ function PlanRow({ item, selected, onSelect, actions }) {
           </div>
         </div>
       </div>
-      <StatusMarker type={item.badgeType} />
+      <div className="content-plan-row-status">
+        <StatusMarker type={item.badgeType} />
+        {(item.badgeType === 'scheduled' || item.badgeType === 'published') ? (
+          <PlatformMarkers platforms={item.platforms} />
+        ) : null}
+      </div>
       <RowActionMenu item={item} actions={actions} />
     </div>
   )
@@ -642,6 +676,7 @@ export default function ContentCalendar() {
         imagePrompt: post.media_url ? 'Media is attached to this post.' : 'No media is attached yet.',
         proof: [post.status === 'published' ? 'Posted content' : 'Scheduled content'],
         thumbnailUrl: post.media_url || '',
+        platforms: post.platforms || [],
         post,
       }))
   ), [calendarPosts, selectedWeekStart])
@@ -729,6 +764,7 @@ export default function ContentCalendar() {
         imagePrompt: post.media_url ? 'Media is attached to this post.' : 'No media is attached yet.',
         proof: [post.status === 'published' ? 'Posted content' : 'Scheduled content'],
         thumbnailUrl: post.media_url || '',
+        platforms: post.platforms || [],
         post,
       }))
 
