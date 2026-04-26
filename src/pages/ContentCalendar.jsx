@@ -903,7 +903,7 @@ export default function ContentCalendar() {
             Publish remains manual.
           </span>
           <span className="text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-            Radar and planner items become editable drafts before anything goes live.
+            Radar ideas and open calendar days become editable posts before anything goes live.
           </span>
         </div>
         <div className="portal-command-bar-group text-sm" style={{ color: 'var(--portal-text-muted)' }}>
