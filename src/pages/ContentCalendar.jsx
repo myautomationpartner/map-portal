@@ -196,7 +196,7 @@ function Badge({ type }) {
   const style = BADGE_STYLES[type] || BADGE_STYLES.recommended
   return (
     <span
-      className="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
+      className="content-plan-badge inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
       style={{ background: style.background, color: style.color, borderColor: style.border }}
     >
       {style.label}
@@ -209,7 +209,7 @@ function PlanRow({ item, selected, onSelect }) {
     <button
       type="button"
       onClick={() => onSelect(item.id)}
-      className="grid w-full grid-cols-[86px_minmax(0,1fr)_auto] items-center gap-4 border-b px-4 py-4 text-left transition-all last:border-b-0 hover:bg-[rgba(245,235,214,0.42)]"
+      className="content-plan-row grid w-full grid-cols-[82px_minmax(0,1fr)_auto] items-center gap-3 border-b px-4 py-3 text-left transition-all last:border-b-0 hover:bg-[rgba(245,235,214,0.42)]"
       style={{
         borderColor: 'var(--portal-border)',
         background: selected ? 'rgba(245, 235, 214, 0.58)' : 'transparent',
@@ -240,7 +240,7 @@ function PlanRow({ item, selected, onSelect }) {
 
 function ProofChip({ children }) {
   return (
-    <span className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)', background: 'rgba(255,255,255,0.72)' }}>
+    <span className="content-plan-proof-chip rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)', background: 'rgba(255,255,255,0.72)' }}>
       {children}
     </span>
   )
@@ -526,11 +526,11 @@ export default function ContentCalendar() {
   }
 
   return (
-    <div className="portal-page mx-auto max-w-[1480px] space-y-5 md:p-6 xl:p-8">
-      <section className="portal-surface p-5 md:p-6">
-        <div className="portal-page-header">
+    <div className="portal-page content-plan-page mx-auto max-w-[1500px] space-y-3 md:p-4 xl:p-5">
+      <section className="content-plan-topbar">
+        <div className="content-plan-topbar-inner">
           <div>
-            <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
               <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">
                 Publisher + Radar
               </span>
@@ -538,12 +538,12 @@ export default function ContentCalendar() {
                 Customer approved
               </span>
             </div>
-            <h1 className="portal-page-title font-display">Content Plan</h1>
-            <p className="portal-page-subtitle text-sm leading-relaxed">
+            <h1 className="content-plan-title font-display">Content Plan</h1>
+            <p className="content-plan-subtitle text-sm leading-relaxed">
               One weekly workspace for recommended posts, AI-discovered opportunities, drafts, and scheduled content.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="content-plan-actions flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => {
@@ -552,16 +552,16 @@ export default function ContentCalendar() {
                 refetchRadar()
               }}
               disabled={isRefreshing}
-              className="portal-button-secondary inline-flex items-center gap-2 px-4 py-3 text-sm font-semibold disabled:opacity-60"
+              className="portal-button-secondary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold disabled:opacity-60"
             >
               <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
               Refresh
             </button>
-            <Link to="/opportunities" className="portal-button-secondary inline-flex items-center gap-2 px-4 py-3 text-sm font-semibold">
+            <Link to="/opportunities" className="portal-button-secondary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold">
               <Sparkles className="h-4 w-4" />
               Radar
             </Link>
-            <Link to="/post" className="portal-button-primary inline-flex items-center gap-2 px-4 py-3 text-sm font-semibold">
+            <Link to="/post" className="portal-button-primary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold">
               <PencilLine className="h-4 w-4" />
               Publisher
             </Link>
@@ -569,9 +569,9 @@ export default function ContentCalendar() {
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
-        <div className="portal-panel overflow-hidden">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--portal-border)' }}>
+      <section className="content-plan-workspace">
+        <div className="content-plan-list">
+          <div className="content-plan-list-header" style={{ borderColor: 'var(--portal-border)' }}>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
                 This week
@@ -605,21 +605,21 @@ export default function ContentCalendar() {
           )}
         </div>
 
-        <aside className="portal-panel p-5">
+        <aside className="content-plan-detail">
           {selectedItem ? (
             <div className="flex h-full flex-col">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <Badge type={selectedItem.badgeType} />
-                  <h2 className="mt-3 font-display text-2xl font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
+                  <h2 className="content-plan-detail-title font-display" style={{ color: 'var(--portal-text)' }}>
                     {selectedItem.detailTitle}
                   </h2>
                 </div>
                 {selectedItem.adWorthiness && selectedItem.adWorthiness !== 'organic_only' ? <Badge type="ad" /> : null}
               </div>
 
-              <div className="mt-5 space-y-4">
-                <div>
+              <div className="content-plan-detail-sections">
+                <div className="content-plan-detail-section">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
                     Caption starter
                   </p>
@@ -627,7 +627,7 @@ export default function ContentCalendar() {
                     {selectedItem.caption}
                   </p>
                 </div>
-                <div>
+                <div className="content-plan-detail-section">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
                     Why now
                   </p>
@@ -635,7 +635,7 @@ export default function ContentCalendar() {
                     {selectedItem.whyNow}
                   </p>
                 </div>
-                <div>
+                <div className="content-plan-detail-section">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
                     Image idea
                   </p>
@@ -646,7 +646,7 @@ export default function ContentCalendar() {
                     </p>
                   </div>
                 </div>
-                <div>
+                <div className="content-plan-detail-section">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
                     Proof
                   </p>
@@ -668,22 +668,22 @@ export default function ContentCalendar() {
                 </div>
               )}
 
-              <div className="mt-6 grid gap-3">
+              <div className="mt-5 grid gap-2">
                 <button
                   type="button"
                   onClick={() => handlePrimaryAction(selectedItem)}
                   disabled={isCreating}
-                  className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold disabled:opacity-60"
+                  className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
                 >
                   {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <PencilLine className="h-4 w-4" />}
                   Edit in Publisher
                 </button>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => handlePrimaryAction(selectedItem)}
                     disabled={isCreating}
-                    className="portal-button-secondary inline-flex items-center justify-center gap-2 px-3 py-3 text-sm font-semibold disabled:opacity-60"
+                    className="portal-button-secondary inline-flex items-center justify-center gap-2 px-3 py-2.5 text-sm font-semibold disabled:opacity-60"
                   >
                     <Wand2 className="h-4 w-4" />
                     Generate
@@ -692,7 +692,7 @@ export default function ContentCalendar() {
                     type="button"
                     onClick={() => handlePrimaryAction(selectedItem)}
                     disabled={isCreating}
-                    className="portal-button-secondary inline-flex items-center justify-center gap-2 px-3 py-3 text-sm font-semibold disabled:opacity-60"
+                    className="portal-button-secondary inline-flex items-center justify-center gap-2 px-3 py-2.5 text-sm font-semibold disabled:opacity-60"
                   >
                     <CalendarDays className="h-4 w-4" />
                     Schedule
@@ -708,7 +708,7 @@ export default function ContentCalendar() {
         </aside>
       </section>
 
-      <section className="portal-command-bar">
+      <section className="content-plan-footer">
         <div className="portal-command-bar-group">
           <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--portal-success)' }} />
           <span className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
