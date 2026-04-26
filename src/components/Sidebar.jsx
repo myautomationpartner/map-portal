@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { CalendarDays, LayoutDashboard, MessageSquare, Settings, LogOut, FolderOpen, CreditCard } from 'lucide-react'
+import { CalendarDays, LayoutDashboard, Megaphone, MessageSquare, Settings, LogOut, FolderOpen, CreditCard } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { getSessionClaims } from '../lib/portalApi'
 import { buildTenantConfig } from '../lib/tenantConfig'
@@ -8,6 +8,7 @@ const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/documents', icon: FolderOpen,      label: 'Documents'  },
   { to: '/calendar', icon: CalendarDays,     label: 'Publisher'  },
+  { to: '/campaigns', icon: Megaphone,       label: 'Campaign Partner' },
   { to: '/inbox',    icon: MessageSquare,   label: 'Inbox'      },
   { to: '/settings', icon: Settings,        label: 'Settings'   },
 ]

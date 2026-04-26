@@ -278,6 +278,71 @@ export async function deleteResearchSource(sourceId) {
   return true
 }
 
+const CAMPAIGN_PROJECT_SELECT = 'id, client_id, title, campaign_type, goal, date_window, status, is_reusable, prompt_json, plan_json, source_project_id, created_by, created_at, updated_at'
+
+export async function fetchCampaignProjects(clientId) {
+  if (!clientId) return []
+
+  const { data, error } = await supabase
+    .from('client_campaign_projects')
+    .select(CAMPAIGN_PROJECT_SELECT)
+    .eq('client_id', clientId)
+    .neq('status', 'archived')
+    .order('updated_at', { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
+
+export async function createCampaignProject(row) {
+  if (!row?.client_id) throw new Error('Client profile is still loading.')
+  if (!row?.title?.trim()) throw new Error('Campaign name is required.')
+
+  const { data, error } = await supabase
+    .from('client_campaign_projects')
+    .insert({
+      ...row,
+      title: row.title.trim(),
+      goal: row.goal?.trim() || null,
+      date_window: row.date_window?.trim() || null,
+    })
+    .select(CAMPAIGN_PROJECT_SELECT)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function updateCampaignProject(projectId, changes) {
+  if (!projectId) throw new Error('Campaign project is required.')
+
+  const { data, error } = await supabase
+    .from('client_campaign_projects')
+    .update(changes)
+    .eq('id', projectId)
+    .select(CAMPAIGN_PROJECT_SELECT)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function archiveCampaignProject(projectId) {
+  return updateCampaignProject(projectId, { status: 'archived' })
+}
+
+export async function deleteCampaignProject(projectId) {
+  if (!projectId) throw new Error('Campaign project is required.')
+
+  const { error } = await supabase
+    .from('client_campaign_projects')
+    .delete()
+    .eq('id', projectId)
+
+  if (error) throw error
+  return true
+}
+
 export async function upsertWorkspacePreferences({ clientId, userId, workspaceTools }) {
   if (!clientId || !userId) {
     throw new Error('Client and user are required to save workspace preferences.')

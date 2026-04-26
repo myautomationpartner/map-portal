@@ -17,6 +17,7 @@ import Documents from './pages/Documents'
 import PublicShare from './pages/PublicShare'
 import OpportunityRadar from './pages/OpportunityRadar'
 import ContentCalendar from './pages/ContentCalendar'
+import CampaignPartner from './pages/CampaignPartner'
 import Sidebar from './components/Sidebar'
 import BottomNav from './components/BottomNav'
 import PortalBillingBanner from './components/PortalBillingBanner'
@@ -287,6 +288,7 @@ export default function App() {
               <Route element={<ProtectedLayout session={session} />}>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/calendar" element={<ContentCalendar />} />
+                <Route path="/campaigns" element={<CampaignPartner />} />
                 <Route path="/documents" element={<Documents />} />
                 <Route path="/opportunities" element={<OpportunityRadar />} />
                 <Route path="/inbox" element={<Inbox />} />
