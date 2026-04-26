@@ -3,7 +3,7 @@ import { Link, useParams, useOutletContext } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import {
   Camera, Share2, Music2, MapPin, Image,
-  ArrowLeft, ChevronRight, LoaderCircle
+  ArrowLeft, ChevronRight, Loader2
 } from 'lucide-react'
 
 // ─── Data fetchers ────────────────────────────────────────────────────────────
@@ -47,10 +47,10 @@ function calcNetChange(metrics, days) {
 // ─── Platform config ──────────────────────────────────────────────────────────
 
 const PLATFORM_CONFIG = {
-  instagram: { label: 'Instagram', icon: Camera,  color: 'text-pink-500',    bg: 'bg-pink-500/10',    border: 'border-pink-500/20',    metricLabel: 'Followers' },
-  facebook:  { label: 'Facebook',  icon: Share2,  color: 'text-blue-500',    bg: 'bg-blue-500/10',    border: 'border-blue-500/20',    metricLabel: 'Followers' },
-  tiktok:    { label: 'TikTok',    icon: Music2,  color: 'text-cyan-400',    bg: 'bg-cyan-400/10',    border: 'border-cyan-400/20',    metricLabel: 'Followers' },
-  google:    { label: 'Google',    icon: MapPin,  color: 'text-emerald-500', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', metricLabel: 'Business Reach' },
+  instagram: { label: 'Instagram', icon: Camera, color: '#d85f98', metricLabel: 'Followers' },
+  facebook: { label: 'Facebook', icon: Share2, color: '#3568a6', metricLabel: 'Followers' },
+  tiktok: { label: 'TikTok', icon: Music2, color: '#168c8f', metricLabel: 'Followers' },
+  google: { label: 'Google', icon: MapPin, color: '#1fa971', metricLabel: 'Business Reach' },
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -58,12 +58,12 @@ const PLATFORM_CONFIG = {
 function MomentumCard({ timeframe, label, value }) {
   const isPositive = value >= 0
   return (
-    <div className="bg-[#0a0a0a] border border-zinc-900 rounded-3xl p-6 flex flex-col items-center justify-center text-center group hover:border-brand-gold/20 transition-all">
-      <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mb-2">{timeframe}</p>
-      <div className={`text-2xl font-black tabular-nums tracking-tighter mb-1 ${isPositive ? 'text-emerald-500' : 'text-rose-500'}`}>
+    <div className="portal-stat-card flex flex-col items-center justify-center p-5 text-center transition-all hover:-translate-y-0.5">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>{timeframe}</p>
+      <div className="mb-1 text-2xl font-semibold tabular-nums" style={{ color: isPositive ? 'var(--portal-success)' : 'var(--portal-danger)' }}>
         {isPositive ? '+' : ''}{value.toLocaleString()}
       </div>
-      <p className="text-[9px] font-bold text-zinc-700 uppercase">{label}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--portal-text-muted)' }}>{label}</p>
     </div>
   )
 }
@@ -102,6 +102,7 @@ export default function PlatformStats() {
 
   const metrics = rawMetrics
   const hasMetrics = metrics.length > 0
+  const isLoading = !profile && !clientId
 
   const totalLabel = hasMetrics ? Number(metrics[0]?.followers || 0).toLocaleString() : '—'
   const change24h  = calcNetChange(metrics, 1)
@@ -110,134 +111,131 @@ export default function PlatformStats() {
   const changeYear = calcNetChange(metrics, 365)
 
   return (
-    <div className="p-6 md:p-12 max-w-5xl mx-auto space-y-12">
-
-      {/* Back */}
+    <div className="portal-page mx-auto max-w-[1280px] space-y-6 md:p-6 xl:p-8">
       <Link
         to="/"
-        className="inline-flex items-center gap-2 text-xs font-black text-zinc-500 uppercase tracking-widest hover:text-brand-gold transition-colors"
+        className="portal-button-secondary inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold"
       >
-        <ArrowLeft className="w-4 h-4" />
-        Back to Hub
+        <ArrowLeft className="h-4 w-4" />
+        Dashboard
       </Link>
 
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
-        <div className="flex items-center gap-6">
-          <div className={`w-20 h-20 rounded-[30px] ${config.bg} flex items-center justify-center border ${config.border} shadow-2xl`}>
-            <Icon className={`w-10 h-10 ${config.color}`} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
-                {hasMetrics ? 'Live Sync Connected' : 'Waiting for connection'}
-              </p>
+      <section className="portal-surface p-5 md:p-7">
+        <div className="portal-page-header">
+          <div className="flex items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center border bg-white" style={{ borderColor: 'var(--portal-border)', borderRadius: 'var(--portal-radius-lg)' }}>
+              <Icon className="h-7 w-7" style={{ color: config.color }} />
             </div>
-            <h1 className="text-4xl md:text-5xl font-black text-white uppercase italic tracking-tighter leading-none">
-              {config.label} <span className="text-zinc-800">Analytics</span>
-            </h1>
-          </div>
-        </div>
-
-        <div className="bg-[#050505] border border-zinc-900 rounded-[28px] px-10 py-6 flex flex-col items-center shadow-xl">
-          <p className="text-[11px] font-black text-zinc-600 uppercase tracking-[.3em] mb-1">
-            Total {config.metricLabel}
-          </p>
-          <p className="text-4xl font-black text-white tabular-nums tracking-tighter">{totalLabel}</p>
-        </div>
-      </div>
-
-      {/* Momentum */}
-      <section>
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-4 h-1 bg-brand-gold rounded-full" />
-          <h2 className="text-[11px] font-black text-zinc-500 uppercase tracking-[.3em]">Momentum Tracking</h2>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <MomentumCard timeframe="Past 24h"    label="Net Change" value={change24h} />
-          <MomentumCard timeframe="Past 7 Days" label="Net Change" value={change7d} />
-          <MomentumCard timeframe="Past 30 Days"label="Net Change" value={change30d} />
-          <MomentumCard timeframe="Active Year" label="Net Change" value={changeYear} />
-        </div>
-      </section>
-
-      {/* Recent Posts */}
-      <section>
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
-            <div className="w-4 h-1 bg-brand-gold rounded-full" />
-            <h2 className="text-[11px] font-black text-zinc-500 uppercase tracking-[.3em]">Recent Distributions</h2>
-          </div>
-          <Link
-            to="/post/history"
-            className="text-[10px] font-black text-brand-gold uppercase tracking-widest flex items-center gap-1.5 hover:brightness-110"
-          >
-            View All <ChevronRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-
-        {recentPosts.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {recentPosts.map(post => (
-              <div
-                key={post.id}
-                className="bg-[#050505] border border-zinc-900 rounded-[32px] overflow-hidden group hover:border-brand-gold/20 transition-all flex flex-col"
-              >
-                <div className="aspect-square relative overflow-hidden bg-zinc-950">
-                  {post.media_url ? (
-                    <img
-                      src={post.media_url}
-                      alt=""
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Image className="w-10 h-10 text-zinc-800" />
-                    </div>
-                  )}
-                  <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/5">
-                    <p className="text-[10px] font-black text-white uppercase tracking-widest">
-                      {new Date(post.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </p>
-                  </div>
-                </div>
-                <div className="p-6 flex-1 flex flex-col">
-                  <p className="text-zinc-400 text-xs leading-relaxed line-clamp-3 mb-6 flex-1">
-                    {post.content || 'No description provided.'}
-                  </p>
-                  <div className="flex items-center justify-between pt-6 border-t border-zinc-900">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-lg bg-zinc-900 flex items-center justify-center">
-                        <Icon className={`w-3.5 h-3.5 ${config.color}`} />
-                      </div>
-                      <p className="text-[10px] font-black text-zinc-500 uppercase tracking-tighter">Verified Post</p>
-                    </div>
-                  </div>
-                </div>
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full" style={{ background: hasMetrics ? 'var(--portal-success)' : 'var(--portal-primary)' }} />
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                  {hasMetrics ? 'Live sync connected' : 'Waiting for connection'}
+                </p>
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="bg-[#050505] border border-zinc-900 border-dashed rounded-[32px] p-16 text-center">
-            <div className="w-16 h-16 rounded-[24px] bg-zinc-900 flex items-center justify-center mx-auto mb-6">
-              <Image className="w-8 h-8 text-zinc-700" />
+              <h1 className="portal-page-title font-display">{config.label} Analytics</h1>
             </div>
-            <h3 className="text-xl font-black text-white uppercase italic tracking-tight mb-2">No Recent History</h3>
-            <p className="text-zinc-600 text-sm font-medium mb-8">
-              Publish your first content to see deep analysis here.
-            </p>
-            <Link
-              to="/post"
-              className="bg-brand-gold text-zinc-950 px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-[.2em] inline-flex items-center gap-3"
-            >
-              Start Drafting
-              <ArrowLeft className="w-4 h-4 rotate-180" />
-            </Link>
           </div>
-        )}
+
+          <div className="portal-stat-card min-w-[220px] px-5 py-4 text-left md:text-right">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+              Total {config.metricLabel}
+            </p>
+            <p className="mt-1 text-3xl font-semibold tabular-nums" style={{ color: 'var(--portal-text)' }}>{totalLabel}</p>
+          </div>
+        </div>
       </section>
 
+      {isLoading ? (
+        <div className="portal-panel flex min-h-[320px] items-center justify-center p-8">
+          <Loader2 className="h-7 w-7 animate-spin" style={{ color: 'var(--portal-primary)' }} />
+        </div>
+      ) : (
+        <>
+          <section>
+            <div className="mb-4 flex items-center gap-3">
+              <div className="h-1 w-5 rounded-full" style={{ background: 'var(--portal-primary)' }} />
+              <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Momentum</h2>
+            </div>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <MomentumCard timeframe="Past 24h" label="Net Change" value={change24h} />
+              <MomentumCard timeframe="Past 7 Days" label="Net Change" value={change7d} />
+              <MomentumCard timeframe="Past 30 Days" label="Net Change" value={change30d} />
+              <MomentumCard timeframe="Active Year" label="Net Change" value={changeYear} />
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="h-1 w-5 rounded-full" style={{ background: 'var(--portal-primary)' }} />
+                <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Recent Posts</h2>
+              </div>
+              <Link
+                to="/post/history"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold"
+                style={{ color: 'var(--portal-primary-strong)' }}
+              >
+                View all
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
+            {recentPosts.length > 0 ? (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                {recentPosts.map(post => (
+                  <article
+                    key={post.id}
+                    className="portal-panel flex overflow-hidden"
+                  >
+                    <div className="relative aspect-square w-28 shrink-0 overflow-hidden bg-[var(--portal-surface-muted)] md:w-32">
+                      {post.media_url ? (
+                        <img
+                          src={post.media_url}
+                          alt=""
+                          className="h-full w-full object-cover transition-transform duration-500 hover:scale-105"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <Image className="h-8 w-8" style={{ color: 'var(--portal-text-soft)' }} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex min-w-0 flex-1 flex-col p-4">
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
+                          {post.published_at ? new Date(post.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Published'}
+                        </span>
+                        <Icon className="h-4 w-4 shrink-0" style={{ color: config.color }} />
+                      </div>
+                      <p className="line-clamp-4 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                        {post.content || 'No description provided.'}
+                      </p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="portal-panel p-10 text-center">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center" style={{ background: 'rgba(201,168,76,0.1)', borderRadius: 'var(--portal-radius-lg)' }}>
+                  <Image className="h-6 w-6" style={{ color: 'var(--portal-primary)' }} />
+                </div>
+                <h3 className="font-display text-xl font-semibold" style={{ color: 'var(--portal-text)' }}>No recent history</h3>
+                <p className="mx-auto mt-2 max-w-sm text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+                  Published posts will appear here once this platform starts reporting activity.
+                </p>
+                <Link
+                  to="/post"
+                  className="portal-button-primary mt-5 inline-flex items-center gap-2 px-4 py-3 text-sm font-semibold"
+                >
+                  Start drafting
+                  <ArrowLeft className="h-4 w-4 rotate-180" />
+                </Link>
+              </div>
+            )}
+          </section>
+        </>
+      )}
     </div>
   )
 }

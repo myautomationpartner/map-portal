@@ -2,9 +2,8 @@
   min-height: 100svh;
   position: relative;
   background:
-    radial-gradient(circle at 0% 0%, rgba(232, 213, 160, 0.16), transparent 24%),
-    radial-gradient(circle at 100% 0%, rgba(201, 168, 76, 0.12), transparent 28%),
-    linear-gradient(180deg, rgba(250, 246, 241, 0.95), rgba(245, 240, 235, 0.98));
+    radial-gradient(circle at 50% -10%, rgba(255, 215, 0, 0.1), transparent 28%),
+    linear-gradient(180deg, rgba(251, 250, 246, 0.98), rgba(246, 243, 236, 0.98));
 }
 
 .portal-shell::before {
@@ -13,47 +12,52 @@
   inset: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(26, 24, 20, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(26, 24, 20, 0.025) 1px, transparent 1px);
+    linear-gradient(rgba(20, 19, 16, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 19, 16, 0.025) 1px, transparent 1px);
   background-size: 32px 32px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.32), transparent 88%);
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.22), transparent 82%);
 }
 
 .portal-surface {
   background: var(--portal-surface);
   border: 1px solid var(--portal-border);
   box-shadow: var(--portal-shadow);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(18px);
+  border-radius: var(--portal-radius-xl) !important;
 }
 
 .portal-surface-strong {
   background: var(--portal-surface-strong);
   border: 1px solid var(--portal-border);
   box-shadow: var(--portal-shadow-soft);
+  border-radius: var(--portal-radius-lg) !important;
 }
 
 .portal-panel {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 255, 0.96));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(253, 251, 247, 0.96));
   border: 1px solid var(--portal-border);
   box-shadow: var(--portal-shadow-soft);
+  border-radius: var(--portal-radius-lg) !important;
 }
 
 .portal-card {
-  background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(116, 129, 193, 0.12);
-  box-shadow: 0 12px 30px rgba(83, 95, 182, 0.08);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--portal-border);
+  box-shadow: var(--portal-shadow-soft);
+  border-radius: var(--portal-radius-md) !important;
 }
 
 .portal-chip {
-  border: 1px solid rgba(116, 129, 193, 0.14);
-  background: rgba(241, 245, 255, 0.95);
+  border: 1px solid rgba(201, 168, 76, 0.25);
+  background: rgba(201, 168, 76, 0.08);
   color: var(--portal-text-muted);
+  letter-spacing: 0.12em !important;
 }
 
 .portal-input {
   width: 100%;
-  border-radius: 1rem;
-  border: 1px solid rgba(116, 129, 193, 0.18);
+  border-radius: var(--portal-radius-md) !important;
+  border: 1px solid rgba(20, 19, 16, 0.14);
   background: rgba(255, 255, 255, 0.98);
   color: var(--portal-text);
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
@@ -70,19 +74,22 @@
 }
 
 .portal-button-primary {
-  background: linear-gradient(135deg, var(--portal-primary), #ddc275);
+  background: linear-gradient(135deg, #ffd700, var(--portal-primary));
   color: var(--portal-dark);
-  box-shadow: 0 16px 36px rgba(201, 168, 76, 0.24);
+  border: 1px solid rgba(20, 19, 16, 0.12);
+  border-radius: var(--portal-radius-md) !important;
+  box-shadow: 0 12px 26px rgba(201, 168, 76, 0.2);
 }
 
 .portal-button-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 18px 42px rgba(201, 168, 76, 0.3);
+  box-shadow: 0 14px 32px rgba(201, 168, 76, 0.26);
 }
 
 .portal-button-secondary {
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.96);
   border: 1px solid rgba(26, 24, 20, 0.12);
+  border-radius: var(--portal-radius-md) !important;
   color: var(--portal-text);
 }
 
@@ -104,18 +111,21 @@
 .portal-status-success {
   background: rgba(31, 169, 113, 0.09);
   border: 1px solid rgba(31, 169, 113, 0.2);
+  border-radius: var(--portal-radius-md) !important;
   color: var(--portal-success);
 }
 
 .portal-status-danger {
   background: rgba(223, 95, 143, 0.1);
   border: 1px solid rgba(223, 95, 143, 0.22);
+  border-radius: var(--portal-radius-md) !important;
   color: var(--portal-danger);
 }
 
 .portal-status-info {
   background: rgba(201, 168, 76, 0.1);
   border: 1px solid rgba(201, 168, 76, 0.2);
+  border-radius: var(--portal-radius-md) !important;
   color: #8c6d1c;
 }
 
@@ -133,9 +143,9 @@
 
 .portal-page-title {
   margin: 0;
-  font-size: clamp(1.7rem, 2vw, 2.5rem);
+  font-size: 1.9rem;
   line-height: 1.1;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   color: var(--portal-text);
 }
 
@@ -153,7 +163,8 @@
   gap: 0.75rem;
   padding: 0.9rem 1rem;
   border: 1px solid var(--portal-border);
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: var(--portal-radius-lg) !important;
   box-shadow: var(--portal-shadow-soft);
 }
 
@@ -166,7 +177,8 @@
 
 .portal-stat-card {
   border: 1px solid var(--portal-border);
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: var(--portal-radius-lg) !important;
   box-shadow: var(--portal-shadow-soft);
 }
 
@@ -189,4 +201,44 @@
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: padding-box;
+}
+
+.portal-page .rounded-\[24px\],
+.portal-page .rounded-\[26px\],
+.portal-page .rounded-\[28px\],
+.portal-page .rounded-\[30px\],
+.portal-page .rounded-\[32px\],
+.portal-page .rounded-\[34px\],
+.portal-page .rounded-\[36px\],
+.portal-page .rounded-2xl,
+.portal-page .rounded-3xl {
+  border-radius: var(--portal-radius-lg) !important;
+}
+
+.portal-page .rounded-full {
+  border-radius: 999px !important;
+}
+
+.portal-page .portal-button-primary,
+.portal-page .portal-button-secondary,
+.portal-page .portal-input {
+  border-radius: var(--portal-radius-md) !important;
+}
+
+.portal-page .portal-page-header {
+  align-items: center;
+}
+
+.portal-page > .portal-surface:first-child {
+  position: relative;
+  overflow: hidden;
+}
+
+.portal-page > .portal-surface:first-child::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, #ffd700, rgba(201, 168, 76, 0.18), transparent);
+  pointer-events: none;
 }
