@@ -149,6 +149,15 @@ function normalizePlatform(platform) {
     ig: 'instagram',
     tiktok: 'tiktok',
     tt: 'tiktok',
+    linkedin: 'linkedin',
+    linked_in: 'linkedin',
+    linkedin_page: 'linkedin',
+    linkedin_company: 'linkedin',
+    li: 'linkedin',
+    twitter: 'twitter',
+    x: 'twitter',
+    x_twitter: 'twitter',
+    xtwitter: 'twitter',
   }
 
   return platformMap[value] || null
