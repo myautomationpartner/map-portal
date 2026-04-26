@@ -381,7 +381,7 @@ export async function fetchScheduledPosts(clientId) {
 
   const { data, error } = await supabase
     .from('posts')
-    .select('id, client_id, content, media_url, platforms, status, scheduled_for, published_at, created_at, n8n_execution_id')
+    .select('id, client_id, content, media_url, platforms, status, scheduled_for, published_at, created_at, n8n_execution_id, platform_variants_json')
     .eq('client_id', clientId)
     .not('scheduled_for', 'is', null)
     .eq('status', 'scheduled')
@@ -396,7 +396,7 @@ export async function fetchCalendarPosts(clientId) {
 
   const { data, error } = await supabase
     .from('posts')
-    .select('id, client_id, content, media_url, platforms, status, scheduled_for, published_at, created_at, n8n_execution_id')
+    .select('id, client_id, content, media_url, platforms, status, scheduled_for, published_at, created_at, n8n_execution_id, platform_variants_json')
     .eq('client_id', clientId)
     .in('status', ['scheduled', 'published'])
     .or('scheduled_for.not.is.null,published_at.not.is.null')
@@ -412,7 +412,7 @@ export async function fetchPostById(postId) {
 
   const { data, error } = await supabase
     .from('posts')
-    .select('id, client_id, content, media_url, platforms, status, scheduled_for, published_at, created_at, n8n_execution_id')
+    .select('id, client_id, content, media_url, platforms, status, scheduled_for, published_at, created_at, n8n_execution_id, platform_variants_json')
     .eq('id', postId)
     .maybeSingle()
 

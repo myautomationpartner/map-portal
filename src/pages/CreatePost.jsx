@@ -1448,6 +1448,10 @@ export default function CreatePost() {
     setEditingScheduledPostId(post.id)
     setEditingScheduledPostRef(post.n8n_execution_id || '')
     setContent(post.content || '')
+    const savedPlatformVariants = post.platform_variants_json || {}
+    const hasSavedPlatformVariants = Object.keys(savedPlatformVariants).length > 0
+    setPlatformVariants(savedPlatformVariants)
+    setPlatformFormatStatus(hasSavedPlatformVariants ? 'Saved platform captions loaded.' : 'Run Partner Format to create platform captions for this edit.')
     setSelectedPlatforms({
       facebook: Boolean(post.platforms?.includes('facebook')),
       instagram: Boolean(post.platforms?.includes('instagram')),
@@ -1456,8 +1460,6 @@ export default function CreatePost() {
       linkedin: Boolean(post.platforms?.includes('linkedin')),
       twitter: Boolean(post.platforms?.includes('twitter')),
     })
-    setPlatformVariants({})
-    setPlatformFormatStatus('Run Partner Format to create platform captions for this edit.')
     setPreviewPlatform(post.platforms?.[0] || 'facebook')
     setTimingMode('custom')
     setScheduledFor(isoToLocalInputValue(post.scheduled_for, timezone))
@@ -2116,6 +2118,7 @@ export default function CreatePost() {
           .from('posts')
           .update({
             content: content.trim(),
+            platform_variants_json: targetPlatformVariants,
             media_url: effectiveMediaUrl,
             platforms: targetPlatforms,
             status: 'draft',
@@ -2134,6 +2137,7 @@ export default function CreatePost() {
           .insert({
             client_id: clientId,
             content: content.trim(),
+            platform_variants_json: targetPlatformVariants,
             media_url: effectiveMediaUrl,
             platforms: targetPlatforms,
             status: 'draft',
