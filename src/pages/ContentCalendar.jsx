@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link, useNavigate, useOutletContext } from 'react-router-dom'
+import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowUpRight,
@@ -14,7 +14,6 @@ import {
   PencilLine,
   Plus,
   RefreshCw,
-  Sparkles,
   Wand2,
 } from 'lucide-react'
 import {
@@ -296,6 +295,8 @@ export default function ContentCalendar() {
   const [selectedItemId, setSelectedItemId] = useState('')
   const [actionError, setActionError] = useState('')
   const [weekOffset, setWeekOffset] = useState(0)
+  const [queueMode, setQueueMode] = useState('all')
+  const [composerCaptions, setComposerCaptions] = useState({})
   const selectedWeekStart = useMemo(() => startOfWeek(addDays(new Date(), weekOffset * 7)), [weekOffset])
   const selectedWeekStartString = toDateString(selectedWeekStart)
   const selectedWeekLabel = weekOffset === 0 ? 'This week' : getWeekRangeLabel(selectedWeekStart)
@@ -448,7 +449,15 @@ export default function ContentCalendar() {
     return merged.slice(0, 9)
   }, [draftItems, plannerItems, radarItems, scheduledItems, weekOffset])
 
-  const selectedItem = planItems.find((item) => item.id === selectedItemId) || planItems[0] || null
+  const visiblePlanItems = useMemo(() => {
+    if (queueMode === 'suggestions') return planItems.filter((item) => ['radar', 'recommended'].includes(item.source))
+    if (queueMode === 'drafts') return planItems.filter((item) => item.source === 'draft')
+    if (queueMode === 'scheduled') return planItems.filter((item) => item.source === 'scheduled')
+    return planItems
+  }, [planItems, queueMode])
+
+  const selectedItem = visiblePlanItems.find((item) => item.id === selectedItemId) || visiblePlanItems[0] || null
+  const composerCaption = selectedItem ? (composerCaptions[selectedItem.id] ?? selectedItem.caption ?? '') : ''
   const nextBestItem = planItems.find((item) => item.source === 'radar') || planItems[0] || null
   const readyIdeaCount = radarItems.length + plannerItems.filter((item) => item.source === 'recommended').length
   const boostCandidateCount = radarItems.filter((item) => item.adWorthiness && item.adWorthiness !== 'organic_only').length
@@ -667,14 +676,6 @@ export default function ContentCalendar() {
               <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
               Refresh
             </button>
-            <Link to="/opportunities" className="portal-button-secondary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold">
-              <Sparkles className="h-4 w-4" />
-              Radar
-            </Link>
-            <Link to="/post" className="portal-button-primary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold">
-              <PencilLine className="h-4 w-4" />
-              Publisher
-            </Link>
           </div>
         </div>
       </section>
@@ -687,8 +688,26 @@ export default function ContentCalendar() {
                 {selectedWeekLabel}
               </p>
               <h2 className="mt-1 font-display text-xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-                Plan queue
+                Content Studio
               </h2>
+            </div>
+            <div className="content-plan-filterbar">
+              {[
+                ['all', 'All'],
+                ['suggestions', 'Suggestions'],
+                ['drafts', 'Drafts'],
+                ['scheduled', 'Scheduled'],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setQueueMode(value)}
+                  className="content-plan-filter"
+                  data-active={queueMode === value}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
             <div className="flex flex-wrap gap-2">
               <ProofChip>{radarItems.length} Radar</ProofChip>
@@ -697,9 +716,9 @@ export default function ContentCalendar() {
             </div>
           </div>
 
-          {planItems.length > 0 ? (
+          {visiblePlanItems.length > 0 ? (
             <div>
-              {planItems.map((item) => (
+              {visiblePlanItems.map((item) => (
                 <PlanRow
                   key={item.id}
                   item={item}
@@ -710,7 +729,7 @@ export default function ContentCalendar() {
             </div>
           ) : (
             <div className="p-6 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-              No plan items are ready yet. Run Radar or open Publisher to create the first draft.
+              No items match this view yet. Add a post or refresh the research and planner queue.
             </div>
           )}
         </div>
@@ -729,13 +748,27 @@ export default function ContentCalendar() {
               </div>
 
               <div className="content-plan-detail-sections">
-                <div className="content-plan-detail-section">
+                <div className="content-plan-detail-section content-plan-composer">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
-                    Caption starter
+                    Post copy
                   </p>
-                  <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>
-                    {selectedItem.caption}
-                  </p>
+                  <textarea
+                    value={composerCaption}
+                    onChange={(event) => {
+                      if (!selectedItem) return
+                      setComposerCaptions((captions) => ({
+                        ...captions,
+                        [selectedItem.id]: event.target.value,
+                      }))
+                    }}
+                    rows={7}
+                    className="content-plan-caption-input"
+                    placeholder="Review or adjust the caption before sending it into the publisher."
+                  />
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
+                    <span>{composerCaption.length} characters</span>
+                    <span>Manual approval before anything posts</span>
+                  </div>
                 </div>
                 <div className="content-plan-detail-section">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
@@ -786,7 +819,7 @@ export default function ContentCalendar() {
                   className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
                 >
                   {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <PencilLine className="h-4 w-4" />}
-                  Edit in Publisher
+                  Open full editor
                 </button>
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -808,6 +841,9 @@ export default function ContentCalendar() {
                     Schedule
                   </button>
                 </div>
+                <p className="text-center text-xs" style={{ color: 'var(--portal-text-soft)' }}>
+                  Radar proof, planner timing, image options, and final publishing now start from this workspace.
+                </p>
               </div>
             </div>
           ) : (
