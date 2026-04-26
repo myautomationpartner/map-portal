@@ -54,7 +54,7 @@ export const PLATFORM_CATALOG = {
     metricField: 'followers',
     accent: '#0a66c2',
     soft: 'rgba(10, 102, 194, 0.12)',
-    connectionEnabled: false,
+    connectionEnabled: true,
     Icon: FaLinkedinIn,
   },
   twitter: {
@@ -65,7 +65,7 @@ export const PLATFORM_CATALOG = {
     metricField: 'followers',
     accent: '#111111',
     soft: 'rgba(17, 17, 17, 0.08)',
-    connectionEnabled: false,
+    connectionEnabled: true,
     Icon: FaXTwitter,
   },
 }

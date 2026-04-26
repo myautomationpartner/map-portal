@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useOutletContext, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 
 const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
+const SETTINGS_SYNC_ENDPOINT = '/api/n8n/zernio-sync-accounts'
 
 const PLATFORMS = DASHBOARD_PLATFORMS
 
@@ -96,7 +97,28 @@ function formatConnectionDate(value) {
 
 function formatPlatformLabel(platform) {
   if (!platform) return 'Account'
+  if (platform === 'twitter' || platform === 'x') return 'X / Twitter'
+  if (platform === 'linkedin') return 'LinkedIn'
+  if (platform === 'tiktok') return 'TikTok'
   return platform.charAt(0).toUpperCase() + platform.slice(1)
+}
+
+function normalizeConnectionPlatform(platform) {
+  const value = String(platform || '').trim().toLowerCase()
+  const platformMap = {
+    fb: 'facebook',
+    facebook_page: 'facebook',
+    ig: 'instagram',
+    tt: 'tiktok',
+    linked_in: 'linkedin',
+    linkedin_page: 'linkedin',
+    linkedin_company: 'linkedin',
+    li: 'linkedin',
+    x: 'twitter',
+    x_twitter: 'twitter',
+    xtwitter: 'twitter',
+  }
+  return platformMap[value] || value
 }
 
 function normalizeWorkflowError(data, fallbackMessage) {
@@ -136,7 +158,10 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
     enabled: !!clientId,
   })
 
-  const connectedMap = Object.fromEntries(connections.map(c => [c.platform, c]))
+  const connectedMap = useMemo(
+    () => Object.fromEntries(connections.map(c => [normalizeConnectionPlatform(c.platform), c])),
+    [connections],
+  )
 
   function clearAutoSyncTimer() {
     if (autoSyncTimeoutRef.current) {
@@ -145,12 +170,35 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
     }
   }
 
+  async function syncZernioAccounts(platform = null) {
+    if (!clientId) return { success: false, skipped: true }
+
+    const res = await fetch(SETTINGS_SYNC_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId,
+        platform: platform ? normalizeConnectionPlatform(platform) : undefined,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+
+    if (!res.ok || data?.success === false) {
+      const details = normalizeWorkflowError(data, 'Zernio did not return the connected account yet.')
+      throw new Error(details)
+    }
+
+    return data
+  }
+
   async function checkConnectionStatus(platform = null, options = {}) {
     const {
       suppressNoAccountError = false,
       keepStatus = false,
       successPrefix = '',
+      syncFirst = true,
     } = options
+    const normalizedPlatform = platform ? normalizeConnectionPlatform(platform) : null
 
     if (!clientId) return { success: false, found: false }
 
@@ -159,19 +207,23 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
     }
 
     try {
+      if (syncFirst) {
+        await syncZernioAccounts(normalizedPlatform)
+      }
+
       const latestConnections = await queryClient.fetchQuery({
         queryKey: ['social_connections', clientId],
         queryFn: () => fetchConnections(clientId),
       })
 
-      const foundConnection = platform
-        ? latestConnections.find((entry) => entry.platform === platform)
+      const foundConnection = normalizedPlatform
+        ? latestConnections.find((entry) => normalizeConnectionPlatform(entry.platform) === normalizedPlatform)
         : latestConnections[0]
 
       if (foundConnection) {
         setSyncStatus({
           type: 'success',
-          message: `${successPrefix}${formatPlatformLabel(platform || foundConnection.platform)} is connected and ready for publishing and metrics.`,
+          message: `${successPrefix}${formatPlatformLabel(normalizedPlatform || foundConnection.platform)} is connected and ready for publishing and metrics.`,
         })
         return { success: true, found: true, connection: foundConnection }
       }
@@ -179,15 +231,20 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
       if (!suppressNoAccountError) {
         setSyncStatus({
           type: 'info',
-          message: platform
-            ? `We're still waiting for ${formatPlatformLabel(platform)} to finish connecting in Zernio.`
+          message: normalizedPlatform
+            ? `We're still waiting for ${formatPlatformLabel(normalizedPlatform)} to finish connecting in Zernio.`
             : 'We are still waiting for Zernio to finish connecting your account.',
         })
       }
 
       return { success: true, found: false }
-    } catch {
-      setSyncStatus({ type: 'error', message: 'Could not refresh connected accounts from Supabase. Please try again.' })
+    } catch (error) {
+      if (!suppressNoAccountError) {
+        setSyncStatus({
+          type: 'error',
+          message: error instanceof Error ? error.message : 'Could not refresh connected accounts from Zernio. Please try again.',
+        })
+      }
       return { success: false, found: false }
     }
   }
@@ -198,7 +255,8 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
 
     clearAutoSyncTimer()
     autoSyncTimeoutRef.current = setTimeout(async () => {
-      const result = await checkConnectionStatus(platform, {
+      const normalizedPlatform = normalizeConnectionPlatform(platform)
+      const result = await checkConnectionStatus(normalizedPlatform, {
         suppressNoAccountError: true,
         keepStatus: true,
         successPrefix: 'Connected. ',
@@ -214,7 +272,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
         setConnectingPlatform(null)
         setSyncStatus({
           type: 'info',
-          message: `${formatPlatformLabel(platform)} is still finishing in Zernio. This page will update automatically as soon as the connected account is available.`,
+          message: `${formatPlatformLabel(normalizedPlatform)} is still finishing in Zernio. This page will update automatically as soon as the connected account is available.`,
         })
         clearAutoSyncTimer()
         return
@@ -227,21 +285,22 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
   async function handleConnect(platform) {
     if (!requireWriteAccess('change social connections')) return
 
+    const normalizedPlatform = normalizeConnectionPlatform(platform)
     const connectPopup = typeof window !== 'undefined'
       ? window.open('', '_blank', 'width=600,height=700')
       : null
 
     if (connectPopup && !connectPopup.closed) {
       connectPopup.document.write(`
-        <title>Opening ${formatPlatformLabel(platform)}…</title>
+        <title>Opening ${formatPlatformLabel(normalizedPlatform)}…</title>
         <body style="font-family: ui-sans-serif, system-ui, sans-serif; padding: 24px; color: #1f2937;">
-          <p style="margin: 0 0 8px; font-size: 15px; font-weight: 600;">Opening ${formatPlatformLabel(platform)}…</p>
+          <p style="margin: 0 0 8px; font-size: 15px; font-weight: 600;">Opening ${formatPlatformLabel(normalizedPlatform)}…</p>
           <p style="margin: 0; font-size: 14px; color: #6b7280;">If nothing happens in a moment, return to the portal and try again.</p>
         </body>
       `)
     }
 
-    setConnectingPlatform(platform)
+    setConnectingPlatform(normalizedPlatform)
     setSyncStatus(null)
     clearAutoSyncTimer()
 
@@ -251,8 +310,8 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clientId,
-          platform,
-          redirectUrl: buildSettingsRedirectUrl(platform),
+          platform: normalizedPlatform,
+          redirectUrl: buildSettingsRedirectUrl(normalizedPlatform),
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -266,14 +325,14 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
         }
         setSyncStatus({
           type: 'info',
-          message: `Finish connecting ${formatPlatformLabel(platform)} in the new tab. We'll update this page automatically when Zernio confirms it.`,
+          message: `Finish connecting ${formatPlatformLabel(normalizedPlatform)} in the new tab. We'll sync with Zernio and update this page automatically.`,
         })
-        startAutoSync(platform)
+        startAutoSync(normalizedPlatform)
       } else {
         if (connectPopup && !connectPopup.closed) {
           connectPopup.close()
         }
-        const details = normalizeWorkflowError(data, `Could not get connect URL for ${formatPlatformLabel(platform)}. Try again.`)
+        const details = normalizeWorkflowError(data, `Could not get connect URL for ${formatPlatformLabel(normalizedPlatform)}. Try again.`)
         setSyncStatus({ type: 'error', message: details })
         setConnectingPlatform(null)
       }
@@ -288,12 +347,13 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
 
   useEffect(() => {
     if (!returnedPlatform || !clientId) return
+    const normalizedPlatform = normalizeConnectionPlatform(returnedPlatform)
 
-    if (connectedMap[returnedPlatform]) {
+    if (connectedMap[normalizedPlatform]) {
       const timer = window.setTimeout(() => {
         setSyncStatus({
           type: 'success',
-          message: `${formatPlatformLabel(returnedPlatform)} is connected and ready for publishing and metrics.`,
+          message: `${formatPlatformLabel(normalizedPlatform)} is connected and ready for publishing and metrics.`,
         })
         setConnectingPlatform(null)
       }, 0)
@@ -304,10 +364,10 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
     const timer = window.setTimeout(() => {
       setSyncStatus({
         type: 'info',
-        message: `${formatPlatformLabel(returnedPlatform)} returned from Zernio. Finalizing the connection…`,
+        message: `${formatPlatformLabel(normalizedPlatform)} returned from Zernio. Syncing the connected account…`,
       })
     }, 0)
-    startAutoSync(returnedPlatform)
+    startAutoSync(normalizedPlatform)
     return () => {
       window.clearTimeout(timer)
       clearAutoSyncTimer()
