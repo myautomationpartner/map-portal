@@ -11,25 +11,37 @@ import {
 import { DASHBOARD_PLATFORMS, PLATFORM_CATALOG } from '../lib/platformCatalog'
 import {
   ArrowUpRight,
-  CalendarDays,
   Check,
-  Cloud,
-  CreditCard,
-  FolderOpen,
   Globe,
   Grip,
-  Mail,
-  Megaphone,
+  MoreHorizontal,
   Pencil,
   Plus,
   Search,
-  Send,
-  Server,
-  ShieldCheck,
-  Shrink,
   Sparkles,
+  Trash2,
   Wand2,
 } from 'lucide-react'
+import {
+  SiCanva,
+  SiFacebook,
+  SiGmail,
+  SiGodaddy,
+  SiGoogle,
+  SiGoogledrive,
+  SiInstagram,
+  SiMailchimp,
+  SiQuickbooks,
+  SiShopify,
+  SiSquare,
+  SiSquarespace,
+  SiStripe,
+  SiTiktok,
+  SiWix,
+  SiWordpress,
+  SiX,
+} from 'react-icons/si'
+import { FaLinkedinIn, FaMicrosoft } from 'react-icons/fa'
 
 function getMetricRow(metrics, platform) {
   return metrics.find((entry) => entry.platform?.toLowerCase() === platform.toLowerCase()) || null
@@ -152,29 +164,32 @@ const TOOL_CATEGORIES = [
   { id: 'social', label: 'Social' },
   { id: 'business', label: 'Business' },
   { id: 'website', label: 'Website' },
+  { id: 'custom', label: 'Custom' },
 ]
 
+const WORKSPACE_GROUPS = TOOL_CATEGORIES
+
 const QUICK_TOOL_PRESETS = [
-  { id: 'gmail', label: 'Gmail', url: 'https://mail.google.com', accent: '#ea4335', category: 'email', description: 'Google inbox', Icon: Mail },
-  { id: 'outlook', label: 'Outlook', url: 'https://outlook.office.com/mail/', accent: '#0078d4', category: 'email', description: 'Microsoft mail', Icon: Mail },
-  { id: 'google-drive', label: 'Google Drive', url: 'https://drive.google.com', accent: '#1a73e8', category: 'files', description: 'Docs and files', Icon: Cloud },
-  { id: 'onedrive', label: 'OneDrive', url: 'https://onedrive.live.com', accent: '#0078d4', category: 'files', description: 'Microsoft files', Icon: Cloud },
-  { id: 'google-business', label: 'Google Business', url: 'https://business.google.com', accent: PLATFORM_CATALOG.google.accent, category: 'social', description: 'Local profile', Icon: PLATFORM_CATALOG.google.Icon },
-  { id: 'facebook', label: 'Facebook', url: 'https://business.facebook.com', accent: PLATFORM_CATALOG.facebook.accent, category: 'social', description: 'Publishing auth', Icon: PLATFORM_CATALOG.facebook.Icon, connectPlatform: 'facebook' },
-  { id: 'instagram', label: 'Instagram', url: 'https://business.instagram.com', accent: PLATFORM_CATALOG.instagram.accent, category: 'social', description: 'Publishing auth', Icon: PLATFORM_CATALOG.instagram.Icon, connectPlatform: 'instagram' },
-  { id: 'tiktok', label: 'TikTok', url: 'https://business.tiktok.com', accent: PLATFORM_CATALOG.tiktok.accent, category: 'social', description: 'Publishing auth', Icon: PLATFORM_CATALOG.tiktok.Icon, connectPlatform: 'tiktok' },
-  { id: 'linkedin', label: 'LinkedIn', url: 'https://www.linkedin.com/company/setup/new/', accent: PLATFORM_CATALOG.linkedin.accent, category: 'social', description: 'Publishing auth', Icon: PLATFORM_CATALOG.linkedin.Icon, connectPlatform: 'linkedin' },
-  { id: 'twitter', label: 'X / Twitter', url: 'https://x.com', accent: PLATFORM_CATALOG.twitter.accent, category: 'social', description: 'Publishing auth', Icon: PLATFORM_CATALOG.twitter.Icon, connectPlatform: 'twitter' },
-  { id: 'stripe', label: 'Stripe', url: 'https://dashboard.stripe.com', accent: '#635bff', category: 'business', description: 'Payments', Icon: CreditCard },
-  { id: 'square', label: 'Square', url: 'https://app.squareup.com', accent: '#111111', category: 'business', description: 'POS and invoices', Icon: CreditCard },
-  { id: 'quickbooks', label: 'QuickBooks', url: 'https://app.qbo.intuit.com', accent: '#2ca01c', category: 'business', description: 'Accounting', Icon: ShieldCheck },
-  { id: 'shopify', label: 'Shopify', url: 'https://admin.shopify.com', accent: '#95bf47', category: 'business', description: 'Store admin', Icon: CreditCard },
-  { id: 'godaddy', label: 'GoDaddy', url: 'https://www.godaddy.com', accent: '#00a4a6', category: 'website', description: 'Domain hosting', Icon: Server },
-  { id: 'wix', label: 'Wix', url: 'https://manage.wix.com', accent: '#116dff', category: 'website', description: 'Website builder', Icon: Server },
-  { id: 'squarespace', label: 'Squarespace', url: 'https://account.squarespace.com', accent: '#111111', category: 'website', description: 'Website builder', Icon: Server },
-  { id: 'wordpress', label: 'WordPress', url: 'https://wordpress.com/log-in', accent: '#21759b', category: 'website', description: 'Site admin', Icon: Server },
-  { id: 'mailchimp', label: 'Mailchimp', url: 'https://login.mailchimp.com', accent: '#ffe01b', category: 'business', description: 'Email marketing', Icon: Megaphone },
-  { id: 'canva', label: 'Canva', url: 'https://www.canva.com', accent: '#00c4cc', category: 'business', description: 'Creative assets', Icon: Sparkles },
+  { id: 'gmail', label: 'Gmail', url: 'https://mail.google.com', accent: '#ea4335', category: 'email', description: 'Google inbox', Icon: SiGmail },
+  { id: 'outlook', label: 'Outlook', url: 'https://outlook.office.com/mail/', accent: '#0078d4', category: 'email', description: 'Microsoft mail', Icon: FaMicrosoft },
+  { id: 'google-drive', label: 'Google Drive', url: 'https://drive.google.com', accent: '#1a73e8', category: 'files', description: 'Docs and files', Icon: SiGoogledrive },
+  { id: 'onedrive', label: 'OneDrive', url: 'https://onedrive.live.com', accent: '#0078d4', category: 'files', description: 'Microsoft files', Icon: FaMicrosoft },
+  { id: 'google-business', label: 'Google Business', url: 'https://business.google.com', accent: PLATFORM_CATALOG.google.accent, category: 'social', description: 'Local profile', Icon: SiGoogle },
+  { id: 'facebook', label: 'Facebook', url: 'https://business.facebook.com', accent: PLATFORM_CATALOG.facebook.accent, category: 'social', description: 'Publishing auth', Icon: SiFacebook, connectPlatform: 'facebook' },
+  { id: 'instagram', label: 'Instagram', url: 'https://business.instagram.com', accent: PLATFORM_CATALOG.instagram.accent, category: 'social', description: 'Publishing auth', Icon: SiInstagram, connectPlatform: 'instagram' },
+  { id: 'tiktok', label: 'TikTok', url: 'https://business.tiktok.com', accent: PLATFORM_CATALOG.tiktok.accent, category: 'social', description: 'Publishing auth', Icon: SiTiktok, connectPlatform: 'tiktok' },
+  { id: 'linkedin', label: 'LinkedIn', url: 'https://www.linkedin.com', accent: PLATFORM_CATALOG.linkedin.accent, category: 'social', description: 'Company network', Icon: FaLinkedinIn },
+  { id: 'twitter', label: 'X / Twitter', url: 'https://x.com', accent: PLATFORM_CATALOG.twitter.accent, category: 'social', description: 'Social channel', Icon: SiX },
+  { id: 'stripe', label: 'Stripe', url: 'https://dashboard.stripe.com', accent: '#635bff', category: 'business', description: 'Payments', Icon: SiStripe },
+  { id: 'square', label: 'Square', url: 'https://app.squareup.com', accent: '#111111', category: 'business', description: 'POS and invoices', Icon: SiSquare },
+  { id: 'quickbooks', label: 'QuickBooks', url: 'https://app.qbo.intuit.com', accent: '#2ca01c', category: 'business', description: 'Accounting', Icon: SiQuickbooks },
+  { id: 'shopify', label: 'Shopify', url: 'https://admin.shopify.com', accent: '#95bf47', category: 'business', description: 'Store admin', Icon: SiShopify },
+  { id: 'godaddy', label: 'GoDaddy', url: 'https://www.godaddy.com', accent: '#00a4a6', category: 'website', description: 'Domain hosting', Icon: SiGodaddy },
+  { id: 'wix', label: 'Wix', url: 'https://manage.wix.com', accent: '#116dff', category: 'website', description: 'Website builder', Icon: SiWix },
+  { id: 'squarespace', label: 'Squarespace', url: 'https://account.squarespace.com', accent: '#111111', category: 'website', description: 'Website builder', Icon: SiSquarespace },
+  { id: 'wordpress', label: 'WordPress', url: 'https://wordpress.com/log-in', accent: '#21759b', category: 'website', description: 'Site admin', Icon: SiWordpress },
+  { id: 'mailchimp', label: 'Mailchimp', url: 'https://login.mailchimp.com', accent: '#ffe01b', category: 'business', description: 'Email marketing', Icon: SiMailchimp },
+  { id: 'canva', label: 'Canva', url: 'https://www.canva.com', accent: '#00c4cc', category: 'business', description: 'Creative assets', Icon: SiCanva },
 ]
 
 function normalizeToolUrl(rawUrl) {
@@ -221,8 +236,27 @@ function hydrateTool(tool) {
     ...tool,
     url: normalizeToolUrl(tool.url),
     icon: tool.icon ?? null,
+    category: tool.category || tool.group || 'custom',
+    group: tool.group || tool.category || 'custom',
     size: ['sm', 'lg'].includes(tool.size) ? tool.size : 'sm',
   }
+}
+
+function getToolPreset(tool) {
+  const normalizedUrl = normalizeToolUrl(tool?.url || '')
+  return QUICK_TOOL_PRESETS.find((preset) => (
+    preset.id === tool?.presetId ||
+    normalizeToolUrl(preset.url) === normalizedUrl ||
+    preset.label.toLowerCase() === tool?.label?.toLowerCase()
+  )) || null
+}
+
+function getToolGroup(tool) {
+  return tool.group || tool.category || getToolPreset(tool)?.category || 'custom'
+}
+
+function getWorkspaceGroupLabel(groupId) {
+  return WORKSPACE_GROUPS.find((group) => group.id === groupId)?.label || groupId
 }
 
 function getWorkspaceStorageKey(clientKey) {
@@ -288,7 +322,7 @@ function ToolForm({
   function handleSubmit(event) {
     event.preventDefault()
     if (!label.trim() || !url.trim()) return
-    onAdd({ id: crypto.randomUUID(), label: label.trim(), url: normalizedUrl })
+    onAdd({ id: crypto.randomUUID(), label: label.trim(), url: normalizedUrl, category: 'custom', group: 'custom' })
     onClose()
   }
 
@@ -299,6 +333,8 @@ function ToolForm({
       url: normalizeToolUrl(preset.url),
       accent: preset.accent,
       category: preset.category,
+      group: preset.category,
+      presetId: preset.id,
     })
   }
 
@@ -483,9 +519,15 @@ function ToolForm({
 }
 
 function ToolIcon({ tool }) {
+  const preset = getToolPreset(tool)
+  const PresetIcon = preset?.Icon
   const sources = useMemo(() => getToolIconCandidates(tool.url), [tool.url])
   const [sourceIndex, setSourceIndex] = useState(0)
-  const [showFallback, setShowFallback] = useState(!sources.length)
+  const [showFallback, setShowFallback] = useState(Boolean(PresetIcon) || !sources.length)
+
+  if (PresetIcon) {
+    return <PresetIcon className="h-5 w-5" />
+  }
 
   if (!showFallback && sources[sourceIndex]) {
     return (
@@ -518,10 +560,6 @@ function ToolIcon({ tool }) {
   )
 }
 
-function getNextToolSize(size) {
-  return size === 'sm' ? 'lg' : 'sm'
-}
-
 function reorderTools(tools, fromId, toId) {
   const fromIndex = tools.findIndex((tool) => tool.id === fromId)
   const toIndex = tools.findIndex((tool) => tool.id === toId)
@@ -534,9 +572,30 @@ function reorderTools(tools, fromId, toId) {
   return next
 }
 
-function ToolTile({ tool, editMode, onOpen, onRemove, onResize, onDragStart, onDragOver, onDrop }) {
+function ToolTile({ tool, editMode, onOpen, onRemove, onUpdate, onMoveGroup, onDragStart, onDragOver, onDrop }) {
   const hostname = getToolHostname(tool.url)
-  const isLarge = tool.size === 'lg'
+  const [menuOpen, setMenuOpen] = useState(false)
+  const groupLabel = getWorkspaceGroupLabel(getToolGroup(tool))
+  const preset = getToolPreset(tool)
+  const accent = tool.accent || preset?.accent || 'var(--portal-primary)'
+
+  function handleEdit() {
+    const nextLabel = window.prompt('Shortcut name', tool.label)
+    if (nextLabel === null) return
+    const nextUrl = window.prompt('Shortcut URL', tool.url)
+    if (nextUrl === null) return
+
+    const trimmedLabel = nextLabel.trim()
+    const normalizedUrl = normalizeToolUrl(nextUrl)
+    if (!trimmedLabel || !normalizedUrl) return
+
+    onUpdate(tool.id, {
+      label: trimmedLabel,
+      url: normalizedUrl,
+      presetId: null,
+    })
+    setMenuOpen(false)
+  }
 
   return (
     <div
@@ -553,93 +612,124 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onResize, onDragStart, onD
           onOpen(tool)
         }
       }}
-      className={`group relative overflow-hidden rounded-[30px] border text-left transition-all duration-200 hover:-translate-y-1 ${isLarge ? 'sm:col-span-2' : ''}`}
+      className="group relative rounded-[24px] border text-left transition-all duration-200 hover:-translate-y-0.5"
       style={{
         borderColor: 'rgba(26, 24, 20, 0.08)',
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248, 250, 255, 0.92))',
-        boxShadow: '0 14px 28px rgba(26, 24, 20, 0.06)',
+        background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(250, 247, 241, 0.7))',
+        boxShadow: '0 16px 34px rgba(26, 24, 20, 0.055)',
       }}
     >
-      <div
-        className="absolute inset-x-0 top-0 h-24"
-        style={{
-          background: 'linear-gradient(180deg, rgba(201, 168, 76, 0.08), transparent)',
-        }}
-      />
-
-      <div className={`relative flex h-full flex-col ${isLarge ? 'min-h-[220px] p-5' : 'min-h-[170px] p-4'}`}>
-        <div className="flex items-start justify-between gap-3">
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation()
-              if (editMode) onRemove(tool.id)
-            }}
-            className="rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all"
-            style={editMode
-              ? { background: 'rgba(216, 95, 152, 0.08)', color: 'var(--portal-danger)', opacity: 1 }
-              : { background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-soft)', opacity: 0 }}
-            aria-hidden={!editMode}
-            tabIndex={editMode ? 0 : -1}
+      <div className="flex min-h-[116px] items-center gap-3 p-3.5 pr-12">
+        {editMode && (
+          <div
+            className="absolute left-2 top-2 rounded-full p-1.5"
+            style={{ background: 'rgba(255,255,255,0.8)', color: 'var(--portal-text-soft)' }}
+            aria-hidden="true"
           >
-            Remove
-          </button>
-
-          <div className="flex items-center gap-2">
-            {editMode && (
-              <>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onResize(tool.id)
-                  }}
-                  className="rounded-full p-2 transition-all"
-                  style={{ background: 'rgba(255,255,255,0.9)', color: 'var(--portal-text-soft)' }}
-                  aria-label={`Resize ${tool.label}`}
-                >
-                  <Shrink className="h-4 w-4" />
-                </button>
-                <div
-                  className="rounded-full p-2"
-                  style={{ background: 'rgba(255,255,255,0.9)', color: 'var(--portal-text-soft)' }}
-                  aria-hidden="true"
-                >
-                  <Grip className="h-4 w-4" />
-                </div>
-              </>
-            )}
+            <Grip className="h-3.5 w-3.5" />
           </div>
+        )}
+
+        <div
+          className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[16px]"
+          style={{ background: `${accent}13`, color: accent, border: '1px solid rgba(26, 24, 20, 0.06)' }}
+        >
+          <ToolIcon key={`${tool.id}:${tool.url}:${tool.presetId || ''}`} tool={tool} />
         </div>
 
-        <div className={`mt-auto flex flex-col items-center text-center ${isLarge ? 'gap-4' : 'gap-3'}`}>
-          <div
-            className={`flex items-center justify-center overflow-hidden rounded-[28px] bg-white shadow-sm ${isLarge ? 'h-24 w-24' : 'h-18 w-18'}`}
-            style={{
-              border: '1px solid rgba(26, 24, 20, 0.07)',
-              boxShadow: '0 14px 24px rgba(26, 24, 20, 0.08)',
-              width: isLarge ? '6rem' : '4.5rem',
-              height: isLarge ? '6rem' : '4.5rem',
-            }}
-          >
-            <ToolIcon key={`${tool.id}:${tool.url}`} tool={tool} />
-          </div>
-
-          <div>
-            <p className={`font-semibold ${isLarge ? 'text-base' : 'text-sm'}`} style={{ color: 'var(--portal-text)' }}>
-              {tool.label}
-            </p>
-            <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
-              {hostname || 'External app'}
-            </p>
-          </div>
-
-          <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ background: 'rgba(201, 168, 76, 0.1)', color: 'var(--portal-primary-strong)' }}>
-            {editMode ? 'Drag to move' : 'Tap to open'}
-            {!editMode && <ArrowUpRight className="h-3.5 w-3.5" />}
-          </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
+            {tool.label}
+          </p>
+          <p className="mt-1 truncate text-xs" style={{ color: 'var(--portal-text-soft)' }}>
+            {hostname || 'External app'}
+          </p>
+          <span className="mt-2 inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ background: 'rgba(26, 24, 20, 0.045)', color: 'var(--portal-text-soft)' }}>
+            {groupLabel}
+          </span>
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation()
+          setMenuOpen((current) => !current)
+        }}
+        className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full border transition-all hover:-translate-y-0.5"
+        style={{ borderColor: 'rgba(26, 24, 20, 0.08)', background: 'rgba(255,255,255,0.86)', color: 'var(--portal-text-muted)', boxShadow: '0 8px 18px rgba(26, 24, 20, 0.06)' }}
+        aria-label={`${tool.label} options`}
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+
+      {menuOpen && (
+        <div
+          className="absolute right-3 top-14 z-30 w-64 rounded-[22px] border p-2"
+          style={{ borderColor: 'rgba(26, 24, 20, 0.08)', background: 'rgba(255,255,255,0.98)', boxShadow: '0 22px 46px rgba(26, 24, 20, 0.14)' }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setMenuOpen(false)
+              onOpen(tool)
+            }}
+            className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left text-sm font-semibold transition-all hover:bg-black/[0.04]"
+            style={{ color: 'var(--portal-text)' }}
+          >
+            Open app
+            <ArrowUpRight className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={handleEdit}
+            className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left text-sm font-semibold transition-all hover:bg-black/[0.04]"
+            style={{ color: 'var(--portal-text)' }}
+          >
+            Edit shortcut
+            <Pencil className="h-4 w-4" />
+          </button>
+
+          <div className="my-2 border-t" style={{ borderColor: 'rgba(26, 24, 20, 0.07)' }} />
+          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+            Move to group
+          </p>
+          <div className="grid grid-cols-2 gap-1">
+            {WORKSPACE_GROUPS.filter((group) => group.id !== 'all').map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                onClick={() => {
+                  onMoveGroup(tool.id, group.id)
+                  setMenuOpen(false)
+                }}
+                className="rounded-xl px-2.5 py-2 text-left text-xs font-semibold transition-all hover:bg-black/[0.04]"
+                style={{
+                  background: getToolGroup(tool) === group.id ? 'rgba(201, 168, 76, 0.14)' : 'transparent',
+                  color: getToolGroup(tool) === group.id ? 'var(--portal-primary-strong)' : 'var(--portal-text-muted)',
+                }}
+              >
+                {group.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="my-2 border-t" style={{ borderColor: 'rgba(26, 24, 20, 0.07)' }} />
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm(`Delete ${tool.label} from the workspace?`)) onRemove(tool.id)
+              setMenuOpen(false)
+            }}
+            className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left text-sm font-semibold transition-all hover:bg-pink-50"
+            style={{ color: 'var(--portal-danger)' }}
+          >
+            Delete
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -683,6 +773,7 @@ export default function Dashboard() {
   const [draftOwnerKey, setDraftOwnerKey] = useState('')
   const [showAddTool, setShowAddTool] = useState(false)
   const [editMode, setEditMode] = useState(false)
+  const [activeWorkspaceGroup, setActiveWorkspaceGroup] = useState('all')
   const [connectingPlatform, setConnectingPlatform] = useState(null)
   const [connectorStatus, setConnectorStatus] = useState(null)
   const [draggedToolId, setDraggedToolId] = useState(null)
@@ -706,6 +797,11 @@ export default function Dashboard() {
   const tools = draftOwnerKey === workspaceOwnerKey && draftTools !== null
     ? draftTools
     : resolvedTools
+
+  const visibleTools = useMemo(() => {
+    if (activeWorkspaceGroup === 'all') return tools
+    return tools.filter((tool) => getToolGroup(tool) === activeWorkspaceGroup)
+  }, [activeWorkspaceGroup, tools])
 
   async function persistTools(next, options = {}) {
     setDraftOwnerKey(workspaceOwnerKey)
@@ -741,13 +837,17 @@ export default function Dashboard() {
     void persistTools(next)
   }
 
-  function resizeTool(id) {
+  function updateTool(id, updates) {
     const next = tools.map((tool) => (
       tool.id === id
-        ? { ...tool, size: getNextToolSize(tool.size) }
+        ? hydrateTool({ ...tool, ...updates })
         : tool
     ))
     void persistTools(next)
+  }
+
+  function moveToolToGroup(id, groupId) {
+    updateTool(id, { category: groupId, group: groupId })
   }
 
   function openTool(tool) {
@@ -853,19 +953,8 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Link to="/post" className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3.5 py-2.5 text-sm font-semibold">
-              <CalendarDays className="h-4 w-4" />
-              Planner
-            </Link>
-            <Link to="/documents" className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3.5 py-2.5 text-sm font-semibold">
-              <FolderOpen className="h-4 w-4" />
-              Documents
-            </Link>
-            <Link to="/post" className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-3.5 py-2.5 text-sm font-semibold">
-              <Send className="h-4 w-4" />
-              Create Post
-            </Link>
+          <div className="hidden lg:block">
+            <div className="h-24 w-24 rounded-full blur-3xl" style={{ background: 'rgba(201, 168, 76, 0.18)' }} />
           </div>
         </div>
       </section>
@@ -883,13 +972,18 @@ export default function Dashboard() {
         ))}
       </section>
 
-      <section className="portal-panel overflow-hidden rounded-[30px] p-0">
+      <section className="portal-panel overflow-visible rounded-[30px] p-0">
         <div className="border-b p-4 md:p-5" style={{ borderColor: 'var(--portal-border)' }}>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary-strong)' }}>
-              <Wand2 className="h-3.5 w-3.5" />
-              Workspace
-            </span>
+            <div>
+              <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary-strong)' }}>
+                <Wand2 className="h-3.5 w-3.5" />
+                Workspace
+              </span>
+              <h2 className="mt-3 font-display text-xl font-semibold" style={{ color: 'var(--portal-text)' }}>
+                App launcher
+              </h2>
+            </div>
             <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -934,9 +1028,40 @@ export default function Dashboard() {
           </div>
         )}
 
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {WORKSPACE_GROUPS.map((group) => {
+            const groupCount = group.id === 'all'
+              ? tools.length
+              : tools.filter((tool) => getToolGroup(tool) === group.id).length
+
+            return (
+              <button
+                key={group.id}
+                type="button"
+                onClick={() => setActiveWorkspaceGroup(group.id)}
+                className="rounded-full px-3.5 py-2 text-xs font-semibold transition-all"
+                style={activeWorkspaceGroup === group.id
+                  ? { background: 'var(--portal-text)', color: 'white', boxShadow: '0 10px 22px rgba(26, 24, 20, 0.12)' }
+                  : { background: 'rgba(255,255,255,0.78)', color: 'var(--portal-text-muted)', border: '1px solid rgba(26, 24, 20, 0.07)' }}
+              >
+                {group.label}
+                <span className="ml-2 opacity-70">{groupCount}</span>
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            onClick={() => setShowAddTool(true)}
+            className="rounded-full px-3.5 py-2 text-xs font-semibold transition-all"
+            style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary-strong)', border: '1px solid rgba(201, 168, 76, 0.16)' }}
+          >
+            + New app
+          </button>
+        </div>
+
         <div className="mb-5 flex flex-wrap items-center gap-2">
           <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-soft)' }}>
-            {tools.length} apps pinned
+            {visibleTools.length} shown
           </span>
           <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ background: editMode ? 'rgba(201, 168, 76, 0.14)' : 'rgba(31, 169, 113, 0.1)', color: editMode ? 'var(--portal-primary-strong)' : 'var(--portal-success)' }}>
             {editMode ? 'Edit mode on' : 'Launcher ready'}
@@ -956,20 +1081,21 @@ export default function Dashboard() {
             {workspaceState === 'error' ? 'Save issue' : workspaceState === 'saving' ? 'Saving layout' : workspaceState === 'saved' ? 'Saved to portal' : 'Local fallback ready'}
           </span>
           <span className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-            {editMode ? 'Drag icons to move them and use the resize control to change their footprint.' : 'Tap any icon to open the app directly.'}
+            {editMode ? 'Drag cards to reorder. Use the three-dot menu for edit, move, or delete.' : 'Open apps directly, or use the three-dot menu for shortcut controls.'}
           </span>
         </div>
 
-        {tools.length > 0 ? (
-          <div className="grid auto-rows-[170px] gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {tools.map((tool) => (
+        {visibleTools.length > 0 ? (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {visibleTools.map((tool) => (
               <ToolTile
                 key={tool.id}
                 tool={tool}
                 editMode={editMode}
                 onOpen={openTool}
                 onRemove={removeTool}
-                onResize={resizeTool}
+                onUpdate={updateTool}
+                onMoveGroup={moveToolToGroup}
                 onDragStart={(id) => setDraggedToolId(id)}
                 onDragOver={(event) => {
                   if (!editMode) return
@@ -990,9 +1116,13 @@ export default function Dashboard() {
             >
               <Plus className="h-5 w-5" />
             </button>
-            <h3 className="mt-4 text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Blank by design</h3>
+            <h3 className="mt-4 text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>
+              {tools.length > 0 ? `No ${getWorkspaceGroupLabel(activeWorkspaceGroup).toLowerCase()} apps yet` : 'Blank by design'}
+            </h3>
             <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-              This workspace starts empty for each new client. Add the inboxes, drives, and daily tools you actually use.
+              {tools.length > 0
+                ? 'Add a matching app or move an existing shortcut into this group from its three-dot menu.'
+                : 'This workspace starts empty for each new client. Add the inboxes, drives, and daily tools you actually use.'}
             </p>
             <button
               type="button"

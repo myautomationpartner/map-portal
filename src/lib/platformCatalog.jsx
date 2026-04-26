@@ -1,5 +1,5 @@
-import { FaFacebookF, FaGoogle, FaInstagram, FaLinkedinIn, FaTiktok } from 'react-icons/fa'
-import { FaXTwitter } from 'react-icons/fa6'
+import { FaLinkedinIn } from 'react-icons/fa'
+import { SiFacebook, SiGoogle, SiInstagram, SiTiktok, SiX } from 'react-icons/si'
 
 export const PLATFORM_CATALOG = {
   instagram: {
@@ -11,7 +11,7 @@ export const PLATFORM_CATALOG = {
     accent: '#d85f98',
     soft: 'rgba(216, 95, 152, 0.12)',
     connectionEnabled: true,
-    Icon: FaInstagram,
+    Icon: SiInstagram,
   },
   facebook: {
     id: 'facebook',
@@ -22,7 +22,7 @@ export const PLATFORM_CATALOG = {
     accent: '#3568a6',
     soft: 'rgba(53, 104, 166, 0.12)',
     connectionEnabled: true,
-    Icon: FaFacebookF,
+    Icon: SiFacebook,
   },
   tiktok: {
     id: 'tiktok',
@@ -33,7 +33,7 @@ export const PLATFORM_CATALOG = {
     accent: '#111111',
     soft: 'rgba(17, 17, 17, 0.08)',
     connectionEnabled: true,
-    Icon: FaTiktok,
+    Icon: SiTiktok,
   },
   google: {
     id: 'google',
@@ -44,7 +44,7 @@ export const PLATFORM_CATALOG = {
     accent: '#1fa971',
     soft: 'rgba(31, 169, 113, 0.12)',
     connectionEnabled: false,
-    Icon: FaGoogle,
+    Icon: SiGoogle,
   },
   linkedin: {
     id: 'linkedin',
@@ -66,7 +66,7 @@ export const PLATFORM_CATALOG = {
     accent: '#111111',
     soft: 'rgba(17, 17, 17, 0.08)',
     connectionEnabled: true,
-    Icon: FaXTwitter,
+    Icon: SiX,
   },
 }
 
