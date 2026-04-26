@@ -14,6 +14,10 @@ const CREDENTIAL_PATH = resolve(PROJECT_ROOT, 'credential.txt')
 const FALLBACK_SUPABASE_URL = 'https://zgkxrlednyovuytaejok.supabase.co'
 const FALLBACK_SUPABASE_ANON_KEY = 'sb_publishable_xwASGbwUsZhX5CFNizTAmg_U50hkD7o'
 const DEFAULT_N8N_BASE_URL = 'https://n8n.myautomationpartner.com'
+const DEFAULT_CHATWOOT_APP_URL = 'https://chatwoot.myautomationpartner.com/app'
+const DEFAULT_CHATWOOT_MOBILE_APPS_URL = 'https://www.chatwoot.com/mobile-apps'
+const DEFAULT_CHATWOOT_IOS_URL = 'https://apps.apple.com/us/app/chatwoot/id1495796682'
+const DEFAULT_CHATWOOT_ANDROID_URL = 'https://play.google.com/store/apps/details?id=com.chatwoot.app'
 const DEFAULT_PORTAL_LABEL = 'Client Portal'
 const DEFAULT_SUPPORT_EMAIL = 'info@myautomationpartner.com'
 
@@ -339,6 +343,10 @@ function buildPublicEnv(client) {
     VITE_PORTAL_WORKER_NAME: client.worker_name || '',
     VITE_PORTAL_BILLING_STATUS: client.billing_status || '',
     VITE_N8N_BASE_URL: envValue(['VITE_N8N_BASE_URL', 'N8N_BASE_URL'], DEFAULT_N8N_BASE_URL),
+    VITE_CHATWOOT_APP_URL: envValue(['VITE_CHATWOOT_APP_URL', 'CHATWOOT_APP_URL'], DEFAULT_CHATWOOT_APP_URL),
+    VITE_CHATWOOT_MOBILE_APPS_URL: envValue(['VITE_CHATWOOT_MOBILE_APPS_URL'], DEFAULT_CHATWOOT_MOBILE_APPS_URL),
+    VITE_CHATWOOT_IOS_URL: envValue(['VITE_CHATWOOT_IOS_URL'], DEFAULT_CHATWOOT_IOS_URL),
+    VITE_CHATWOOT_ANDROID_URL: envValue(['VITE_CHATWOOT_ANDROID_URL'], DEFAULT_CHATWOOT_ANDROID_URL),
   }
 }
 

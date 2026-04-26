@@ -1,7 +1,40 @@
 import { useQuery } from '@tanstack/react-query'
 import { useOutletContext } from 'react-router-dom'
+import {
+  ArrowUpRight,
+  CheckCircle2,
+  Clock3,
+  ExternalLink,
+  Inbox as InboxIcon,
+  Loader2,
+  MessageCircle,
+  MessagesSquare,
+  MonitorSmartphone,
+  ShieldCheck,
+  Smartphone,
+} from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { MessageSquare, Smartphone, ArrowUpRight, ShieldCheck, Loader2 } from 'lucide-react'
+
+const DEFAULT_CHATWOOT_APP_URL = 'https://chatwoot.myautomationpartner.com/app'
+const CHATWOOT_APP_URL = stripTrailingSlash(import.meta.env.VITE_CHATWOOT_APP_URL || DEFAULT_CHATWOOT_APP_URL)
+const CHATWOOT_LOGIN_URL = `${CHATWOOT_APP_URL}/login`
+const CHATWOOT_MOBILE_APPS_URL = import.meta.env.VITE_CHATWOOT_MOBILE_APPS_URL || 'https://www.chatwoot.com/mobile-apps'
+const CHATWOOT_IOS_URL = import.meta.env.VITE_CHATWOOT_IOS_URL || 'https://apps.apple.com/us/app/chatwoot/id1495796682'
+const CHATWOOT_ANDROID_URL = import.meta.env.VITE_CHATWOOT_ANDROID_URL || 'https://play.google.com/store/apps/details?id=com.chatwoot.app'
+
+const CORE_CHANNELS = [
+  { label: 'Website chat', detail: 'Live widget and contact capture', status: 'Ready' },
+  { label: 'Facebook Messenger', detail: 'Meta inbox once connected', status: 'Phase 1' },
+  { label: 'Instagram Direct', detail: 'DMs and customer replies', status: 'Phase 1' },
+  { label: 'TikTok messaging', detail: 'Business messaging when approved', status: 'Approval' },
+]
+
+const CUSTOMER_WORKFLOW = [
+  'Open the inbox on desktop for longer replies and team review',
+  'Use the mobile app for same-day customer service and notifications',
+  'Keep publishing, campaigns, and content approval inside the MAP portal',
+  'LinkedIn replies stay in LinkedIn until direct inbox access is approved',
+]
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
@@ -14,7 +47,11 @@ async function fetchClientProfile() {
   return data
 }
 
-// ── Platform detection & deep-link logic ─────────────────────────────────────
+// ── Runtime helpers ──────────────────────────────────────────────────────────
+
+function stripTrailingSlash(value) {
+  return String(value || '').replace(/\/+$/, '')
+}
 
 function isMobile() {
   return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
@@ -24,61 +61,76 @@ function isIOS() {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent)
 }
 
-function openTidio(tidioUrl) {
-  if (!isMobile()) {
-    window.open(tidioUrl, '_blank', 'noopener,noreferrer')
-    return
+function resolveInboxConfig(client) {
+  const legacyUrl = stripTrailingSlash(client?.tidio_project_url || '')
+  const legacyIsTidio = /tidio\.com/i.test(legacyUrl)
+  const workspaceUrl = legacyUrl && !legacyIsTidio ? legacyUrl : CHATWOOT_APP_URL
+
+  return {
+    workspaceUrl,
+    loginUrl: workspaceUrl.endsWith('/app') ? `${workspaceUrl}/login` : CHATWOOT_LOGIN_URL,
+    hasClientOverride: Boolean(legacyUrl && !legacyIsTidio),
+    ignoredLegacyTidioUrl: Boolean(legacyUrl && legacyIsTidio),
   }
+}
 
-  const appStoreUrl = isIOS()
-    ? 'https://apps.apple.com/app/tidio-live-chat/id1024407395'
-    : 'https://play.google.com/store/apps/details?id=com.tidio.tidio'
+function openInbox(url) {
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
 
-  const deepLink = 'tidio://'
-  const fallbackTimer = setTimeout(() => {
-    window.location.href = appStoreUrl
-  }, 1500)
-
-  window.addEventListener('blur', () => clearTimeout(fallbackTimer), { once: true })
-  window.location.href = deepLink
+function mobileStoreUrl() {
+  if (!isMobile()) return CHATWOOT_MOBILE_APPS_URL
+  return isIOS() ? CHATWOOT_IOS_URL : CHATWOOT_ANDROID_URL
 }
 
 // ── Mobile nudge banner ──────────────────────────────────────────────────────
 
-function MobileAppBanner() {
+function MobileAppBanner({ workspaceUrl }) {
   if (!isMobile()) return null
-
-  const storeUrl = isIOS()
-    ? 'https://apps.apple.com/app/tidio-live-chat/id1024407395'
-    : 'https://play.google.com/store/apps/details?id=com.tidio.tidio'
 
   return (
     <div className="portal-status-info mb-6 flex items-start gap-4 rounded-2xl px-5 py-4">
-      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
-        style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.2)' }}>
-        <Smartphone className="w-4 h-4" style={{ color: 'var(--portal-primary)' }} />
+      <div
+        className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
+        style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.2)' }}
+      >
+        <Smartphone className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="mb-0.5 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Tidio Mobile App</p>
+      <div className="min-w-0 flex-1">
+        <p className="mb-0.5 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
+          Mobile customer service
+        </p>
         <p className="text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-          For the best experience, reply to messages directly from the Tidio app.
+          Install the Chatwoot app, then sign in with this workspace URL: {workspaceUrl}
         </p>
       </div>
       <a
-        href={storeUrl}
+        href={mobileStoreUrl()}
         target="_blank"
         rel="noopener noreferrer"
-        className="shrink-0 flex items-center gap-1 text-xs font-semibold transition-colors"
+        className="flex shrink-0 items-center gap-1 text-xs font-semibold transition-colors"
         style={{ color: 'var(--portal-primary)' }}
       >
         Get App
-        <ArrowUpRight className="w-3.5 h-3.5" />
+        <ArrowUpRight className="h-3.5 w-3.5" />
       </a>
     </div>
   )
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+function StatusPill({ children, tone = 'ready' }) {
+  const styles = tone === 'ready'
+    ? { background: 'rgba(107,193,142,0.12)', border: '1px solid rgba(107,193,142,0.22)', color: '#2f8f57' }
+    : { background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.22)', color: 'var(--portal-primary)' }
+
+  return (
+    <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold" style={styles}>
+      {children}
+    </span>
+  )
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Inbox() {
   useOutletContext()
@@ -89,8 +141,7 @@ export default function Inbox() {
   })
 
   const client = profile?.clients
-  const tidioUrl = client?.tidio_project_url || 'https://www.tidio.com/panel/'
-  const tidioConnected = !!client?.tidio_project_url
+  const inboxConfig = resolveInboxConfig(client)
 
   return (
     <div className="portal-page mx-auto max-w-[1180px] space-y-6 md:p-6 xl:p-8">
@@ -99,76 +150,96 @@ export default function Inbox() {
           <div>
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
-                Inbox
+                Partner Inbox
               </span>
+              <StatusPill>Mobile ready</StatusPill>
             </div>
             <h1 className="portal-page-title font-display">Inbox</h1>
           </div>
         </div>
       </section>
 
-      {/* Mobile nudge */}
-      <MobileAppBanner />
+      <MobileAppBanner workspaceUrl={inboxConfig.workspaceUrl} />
 
-      {/* Main card */}
       {isLoading ? (
         <div className="portal-panel flex h-72 items-center justify-center rounded-[32px] p-8">
-          <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--portal-primary)' }} />
+          <Loader2 className="h-6 w-6 animate-spin" style={{ color: 'var(--portal-primary)' }} />
         </div>
       ) : (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_340px]">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_360px]">
           <div className="portal-panel overflow-hidden rounded-[34px]">
             <div className="border-b px-6 py-5" style={{ borderColor: 'var(--portal-border)' }}>
-              <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Unified conversations</h2>
-              <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                Open Tidio to manage website, Facebook, and Instagram messages in one place.
+              <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>
+                Customer conversations
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+                Website, Facebook, Instagram, and approved TikTok customer messages move through the MAP inbox workspace.
               </p>
             </div>
 
-            <div className="p-8 md:p-10 flex flex-col md:flex-row items-center gap-10">
-
-              {/* Icon side */}
-              <div className="flex-1 flex justify-center">
-                <div className="relative w-40 h-40 flex items-center justify-center">
-                  <div className="w-28 h-28 rounded-3xl flex items-center justify-center -rotate-3"
-                    style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.25)' }}>
-                    <MessageSquare className="w-14 h-14" style={{ color: 'var(--portal-primary)' }} strokeWidth={1.5} />
-                  </div>
+            <div className="grid gap-8 p-6 md:grid-cols-[220px_minmax(0,1fr)] md:p-8">
+              <div className="flex items-center justify-center">
+                <div
+                  className="flex h-40 w-40 items-center justify-center rounded-[32px]"
+                  style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.25)' }}
+                >
+                  <MessagesSquare className="h-16 w-16" style={{ color: 'var(--portal-primary)' }} strokeWidth={1.5} />
                 </div>
               </div>
 
-              {/* Content side */}
-              <div className="flex-[1.5] flex flex-col items-center md:items-start text-center md:text-left w-full">
-                <h2 className="font-display text-2xl font-semibold mb-4" style={{ color: 'var(--portal-text)' }}>
-                  All Channels, One View
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full mb-8">
-                  {['Website Visitors', 'Facebook Messenger', 'Instagram Direct'].map((label, i) => (
-                    <div key={i} className="flex items-center gap-3 text-sm rounded-xl py-2 px-3"
-                      style={{ background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
-                      <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
-                        style={{ background: 'rgba(107,193,142,0.12)', border: '1px solid rgba(107,193,142,0.2)' }}>
-                        <ShieldCheck className="w-3 h-3" style={{ color: '#2f8f57' }} />
+              <div className="min-w-0">
+                <div className="mb-6 grid gap-3 sm:grid-cols-2">
+                  {CORE_CHANNELS.map((channel) => (
+                    <div
+                      key={channel.label}
+                      className="rounded-[24px] border p-4"
+                      style={{ background: 'rgba(255,255,255,0.86)', borderColor: 'var(--portal-border)' }}
+                    >
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <MessageCircle className="h-4 w-4 shrink-0" style={{ color: 'var(--portal-primary)' }} />
+                        <StatusPill tone={channel.status === 'Ready' || channel.status === 'Phase 1' ? 'ready' : 'pending'}>
+                          {channel.status}
+                        </StatusPill>
                       </div>
-                      <span className="truncate">{label}</span>
+                      <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
+                        {channel.label}
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                        {channel.detail}
+                      </p>
                     </div>
                   ))}
                 </div>
 
-                <button
-                  onClick={() => openTidio(tidioUrl)}
-                  className="inline-flex items-center justify-center gap-3 px-8 py-4 rounded-2xl text-sm font-semibold transition-all duration-200 hover:-translate-y-px hover:shadow-lg w-full sm:w-auto"
-                  style={{ background: 'linear-gradient(135deg, var(--portal-primary), #ddc275)', color: 'var(--portal-dark)' }}
-                >
-                  Open Inbox
-                  <ArrowUpRight className="w-4 h-4" />
-                </button>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => openInbox(inboxConfig.workspaceUrl)}
+                    className="inline-flex w-full items-center justify-center gap-3 rounded-2xl px-7 py-4 text-sm font-semibold transition-all duration-200 hover:-translate-y-px hover:shadow-lg sm:w-auto"
+                    style={{ background: 'linear-gradient(135deg, var(--portal-primary), #ddc275)', color: 'var(--portal-dark)' }}
+                  >
+                    Open Inbox
+                    <ArrowUpRight className="h-4 w-4" />
+                  </button>
+                  <a
+                    href={mobileStoreUrl()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex w-full items-center justify-center gap-3 rounded-2xl border px-7 py-4 text-sm font-semibold transition-colors sm:w-auto"
+                    style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)', background: 'rgba(255,255,255,0.84)' }}
+                  >
+                    Mobile App
+                    <Smartphone className="h-4 w-4" />
+                  </a>
+                </div>
 
-                {!tidioConnected && (
-                  <p className="mt-4 text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-full"
-                    style={{ color: 'var(--portal-primary)', background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)' }}>
-                    <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--portal-primary)' }} />
-                    Tidio configuration needed
+                {inboxConfig.ignoredLegacyTidioUrl && (
+                  <p
+                    className="mt-4 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs"
+                    style={{ color: 'var(--portal-primary)', background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)' }}
+                  >
+                    <Clock3 className="h-3.5 w-3.5" />
+                    Legacy Tidio URL detected; MAP is using the Chatwoot workspace.
                   </p>
                 )}
               </div>
@@ -176,34 +247,72 @@ export default function Inbox() {
           </div>
 
           <aside className="space-y-6">
-            <section className="portal-panel rounded-[34px] overflow-hidden">
+            <section className="portal-panel overflow-hidden rounded-[34px]">
               <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
-                <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Connection</h2>
+                <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>
+                  Workspace
+                </h2>
               </div>
               <div className="space-y-4 p-5">
-                <div className="rounded-[24px] border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Status</p>
-                  <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
-                    {tidioConnected ? 'Connected' : 'Needs configuration'}
+                <div
+                  className="rounded-[24px] border p-4"
+                  style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}
+                >
+                  <div className="flex items-center gap-3">
+                    <InboxIcon className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
+                    <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
+                      MAP support inbox
+                    </p>
+                  </div>
+                  <p className="mt-2 break-all text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                    {inboxConfig.workspaceUrl}
                   </p>
-                  <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                    {tidioConnected ? 'Your team can open the linked Tidio workspace.' : 'A project URL has not been saved yet for this client.'}
-                  </p>
-                </div>
-
-                <div className="rounded-[24px] border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Workspace URL</p>
                   <a
-                    href={tidioUrl}
+                    href={inboxConfig.loginUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-2 inline-flex items-center gap-2 text-sm font-semibold"
+                    className="mt-4 inline-flex items-center gap-2 text-sm font-semibold"
                     style={{ color: 'var(--portal-primary)' }}
                   >
-                    Open Tidio
-                    <ArrowUpRight className="w-3.5 h-3.5" />
+                    Sign in
+                    <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                 </div>
+
+                <div
+                  className="rounded-[24px] border p-4"
+                  style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}
+                >
+                  <div className="mb-3 flex items-center gap-3">
+                    <MonitorSmartphone className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
+                    <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
+                      Mobile priority
+                    </p>
+                  </div>
+                  <p className="text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                    Customer service is the daily mobile workflow. Publishing and campaign planning can stay desktop-first.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section className="portal-panel overflow-hidden rounded-[34px]">
+              <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
+                <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>
+                  Workflow
+                </h2>
+              </div>
+              <div className="space-y-3 p-5">
+                {CUSTOMER_WORKFLOW.map((item) => (
+                  <div key={item} className="flex items-start gap-3 text-sm">
+                    {item.startsWith('LinkedIn') ? (
+                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--portal-primary)' }} />
+                    ) : (
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" style={{ color: '#2f8f57' }} />
+                    )}
+                    <span style={{ color: 'var(--portal-text-muted)' }}>{item}</span>
+                  </div>
+                ))}
               </div>
             </section>
           </aside>
