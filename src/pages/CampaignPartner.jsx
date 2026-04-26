@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useOutletContext } from 'react-router-dom'
+import { SiFacebook, SiGoogle, SiInstagram, SiTiktok } from 'react-icons/si'
 import {
   Archive,
   CalendarDays,
@@ -24,8 +26,10 @@ import {
   archiveCampaignProject,
   createCampaignProject,
   deleteCampaignProject,
+  deleteSocialDraft,
   fetchCampaignProjects,
   generateCampaignPlan,
+  updateSocialDraft,
   upsertSocialDraft,
   updateCampaignProject,
 } from '../lib/portalApi'
@@ -64,6 +68,19 @@ const STATUS_LABELS = {
   draft: 'Draft',
   completed: 'Completed',
   archived: 'Archived',
+}
+const POST_STATUS_MARKERS = {
+  planned: { label: 'Draft', color: '#c87628' },
+  draft: { label: 'Draft', color: '#c87628' },
+  added_to_calendar: { label: 'Draft', color: '#c87628' },
+  scheduled: { label: 'Scheduled', color: '#1fa971' },
+  published: { label: 'Posted', color: '#c9a84c' },
+}
+const PLATFORM_MARKERS = {
+  facebook: { label: 'Facebook', Icon: SiFacebook, color: '#1877f2' },
+  instagram: { label: 'Instagram', Icon: SiInstagram, color: '#e4405f' },
+  google: { label: 'Google Business', Icon: SiGoogle, color: '#34a853' },
+  tiktok: { label: 'TikTok', Icon: SiTiktok, color: '#111111' },
 }
 
 const DEFAULT_FORM = {
@@ -244,6 +261,128 @@ function getProjectCounts(projects) {
   }
 }
 
+function PostStatusPill({ status }) {
+  const marker = POST_STATUS_MARKERS[status] || POST_STATUS_MARKERS.planned
+  return (
+    <span
+      className="campaign-post-status-pill"
+      style={{ color: marker.color, borderColor: `${marker.color}40`, background: `${marker.color}14` }}
+    >
+      {marker.label}
+    </span>
+  )
+}
+
+function CampaignPlatformMarkers({ platforms = [] }) {
+  const uniquePlatforms = [...new Set(platforms)].filter((platform) => PLATFORM_MARKERS[platform])
+  if (!uniquePlatforms.length) return null
+
+  return (
+    <div className="campaign-post-platforms">
+      {uniquePlatforms.map((platform) => {
+        const marker = PLATFORM_MARKERS[platform]
+        const Icon = marker.Icon
+        return (
+          <span
+            key={platform}
+            className="campaign-post-platform"
+            title={marker.label}
+            style={{ color: marker.color, background: `${marker.color}14`, borderColor: `${marker.color}38` }}
+          >
+            <Icon className="h-3 w-3" />
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+function CampaignPostMenu({ post, actions }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
+  const buttonRef = useRef(null)
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+
+    const updateMenuPosition = () => {
+      const buttonRect = buttonRef.current?.getBoundingClientRect()
+      if (!buttonRect) return
+      const menuWidth = menuRef.current?.getBoundingClientRect().width || 190
+      const menuHeight = menuRef.current?.getBoundingClientRect().height || 150
+      const padding = 12
+      const gap = 8
+      const spaceBelow = window.innerHeight - buttonRect.bottom
+      const top = spaceBelow < menuHeight + 20
+        ? Math.max(padding, buttonRect.top - menuHeight - gap)
+        : Math.min(window.innerHeight - menuHeight - padding, buttonRect.bottom + gap)
+      const left = Math.min(Math.max(padding, buttonRect.right - menuWidth), window.innerWidth - menuWidth - padding)
+      setMenuPosition({ top, left })
+    }
+
+    const handlePointerDown = (event) => {
+      if (buttonRef.current?.contains(event.target) || menuRef.current?.contains(event.target)) return
+      setIsOpen(false)
+    }
+
+    const frameId = window.requestAnimationFrame(updateMenuPosition)
+    window.addEventListener('resize', updateMenuPosition)
+    window.addEventListener('scroll', updateMenuPosition, true)
+    window.document.addEventListener('pointerdown', handlePointerDown)
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      window.removeEventListener('resize', updateMenuPosition)
+      window.removeEventListener('scroll', updateMenuPosition, true)
+      window.document.removeEventListener('pointerdown', handlePointerDown)
+    }
+  }, [isOpen])
+
+  return (
+    <div className="campaign-post-menu-wrap">
+      <button
+        ref={buttonRef}
+        type="button"
+        className="campaign-kebab"
+        aria-label={`Open actions for ${post.title}`}
+        onClick={(event) => {
+          event.stopPropagation()
+          setIsOpen((value) => !value)
+        }}
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+
+      {isOpen ? createPortal(
+        <div
+          ref={menuRef}
+          className="campaign-row-menu campaign-post-menu-popover"
+          style={{ top: `${menuPosition.top}px`, left: `${menuPosition.left}px` }}
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {actions.map(({ label, Icon, onSelect, destructive }) => (
+            <span
+              key={label}
+              data-danger={destructive || undefined}
+              onClick={(event) => {
+                event.stopPropagation()
+                setIsOpen(false)
+                onSelect()
+              }}
+            >
+              {Icon ? <Icon className="h-4 w-4" /> : null}
+              {label}
+            </span>
+          ))}
+        </div>,
+        window.document.body,
+      ) : null}
+    </div>
+  )
+}
+
 export default function CampaignPartner() {
   const { profile, requireWriteAccess } = useOutletContext()
   const queryClient = useQueryClient()
@@ -377,12 +516,15 @@ export default function CampaignPartner() {
     try {
       setError('')
       setNotice('')
-      const rows = posts.map((post) => buildDraftRow({ project, post, profile }))
-      const savedDrafts = []
-      for (const row of rows) {
-        savedDrafts.push(await upsertSocialDraft(row))
+      const nextPosts = []
+      for (const post of posts) {
+        const draft = await upsertSocialDraft(buildDraftRow({ project, post, profile }))
+        nextPosts.push({
+          ...post,
+          status: 'added_to_calendar',
+          campaignDraftId: draft.id,
+        })
       }
-      const nextPosts = posts.map((post) => ({ ...post, status: 'added_to_calendar' }))
       await updateCampaignProject(project.id, {
         status: 'active',
         plan_json: { ...project.plan_json, posts: nextPosts, lastAddedToCalendarAt: new Date().toISOString() },
@@ -391,9 +533,97 @@ export default function CampaignPartner() {
         queryClient.invalidateQueries({ queryKey: ['campaign-projects', clientId] }),
         queryClient.invalidateQueries({ queryKey: ['social-drafts', clientId] }),
       ])
-      setNotice(`${savedDrafts.length} campaign drafts added to Publisher.`)
+      setNotice(`${nextPosts.length} campaign drafts added to Publisher.`)
     } catch (err) {
       setError(err.message || 'Could not add campaign drafts.')
+    }
+  }
+
+  async function saveProjectPosts(project, posts, successMessage) {
+    await updateCampaignProject(project.id, {
+      plan_json: { ...project.plan_json, posts, updatedFromCampaignPartnerAt: new Date().toISOString() },
+    })
+    await queryClient.invalidateQueries({ queryKey: ['campaign-projects', clientId] })
+    if (successMessage) setNotice(successMessage)
+  }
+
+  async function ensureCampaignPostDraft(project, post) {
+    const draft = await upsertSocialDraft(buildDraftRow({ project, post, profile }))
+    const posts = normalizeList(project.plan_json?.posts)
+    const nextPosts = posts.map((item) => item.id === post.id
+      ? { ...item, status: 'added_to_calendar', campaignDraftId: draft.id }
+      : item)
+    await updateCampaignProject(project.id, {
+      status: project.status === 'draft' ? 'active' : project.status,
+      plan_json: { ...project.plan_json, posts: nextPosts, lastDraftOpenedAt: new Date().toISOString() },
+    })
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['campaign-projects', clientId] }),
+      queryClient.invalidateQueries({ queryKey: ['social-drafts', clientId] }),
+    ])
+    return draft
+  }
+
+  async function handleEditCampaignPost(project, post) {
+    if (!requireWriteAccess('edit Campaign Partner drafts')) return
+    try {
+      setError('')
+      setNotice('')
+      const draft = await ensureCampaignPostDraft(project, post)
+      navigate(`/post?draftId=${draft.id}`)
+    } catch (err) {
+      setError(err.message || 'Could not open this campaign post in Publisher.')
+    }
+  }
+
+  async function handleRescheduleCampaignPost(project, post) {
+    if (!requireWriteAccess('reschedule Campaign Partner drafts')) return
+    const current = `${post.date || ''} ${post.time || '10:00'}`.trim()
+    const nextValue = window.prompt('Enter a new date and time like 2026-05-02 10:00', current)
+    if (!nextValue) return
+
+    const match = nextValue.trim().match(/^(\d{4}-\d{2}-\d{2})(?:\s+(\d{1,2}:\d{2}))?$/)
+    if (!match) {
+      setError('Use the format YYYY-MM-DD HH:MM.')
+      return
+    }
+
+    const [, nextDate, nextTime = post.time || '10:00'] = match
+    const posts = normalizeList(project.plan_json?.posts)
+    const nextPosts = posts.map((item) => item.id === post.id ? { ...item, date: nextDate, time: nextTime } : item)
+
+    try {
+      setError('')
+      setNotice('')
+      await saveProjectPosts(project, nextPosts, 'Campaign post rescheduled.')
+      if (post.campaignDraftId) {
+        await updateSocialDraft(post.campaignDraftId, {
+          slot_date_local: nextDate,
+          slot_start_local: nextTime,
+          scheduled_for: toIsoAt(nextDate, nextTime),
+        })
+        await queryClient.invalidateQueries({ queryKey: ['social-drafts', clientId] })
+      }
+    } catch (err) {
+      setError(err.message || 'Could not reschedule this campaign post.')
+    }
+  }
+
+  async function handleDeleteCampaignPost(project, post) {
+    if (!requireWriteAccess('delete Campaign Partner drafts')) return
+    if (!window.confirm(`Delete "${post.title}" from this campaign?`)) return
+    const posts = normalizeList(project.plan_json?.posts).filter((item) => item.id !== post.id)
+
+    try {
+      setError('')
+      setNotice('')
+      if (post.campaignDraftId) {
+        await deleteSocialDraft(post.campaignDraftId).catch(() => null)
+        await queryClient.invalidateQueries({ queryKey: ['social-drafts', clientId] })
+      }
+      await saveProjectPosts(project, posts, 'Campaign post deleted.')
+    } catch (err) {
+      setError(err.message || 'Could not delete this campaign post.')
     }
   }
 
@@ -559,6 +789,66 @@ export default function CampaignPartner() {
     )
   }
 
+  function renderCampaignPostDrafts(project) {
+    const posts = normalizeList(project?.plan_json?.posts)
+    if (!project || !posts.length) return null
+
+    return (
+      <section className="campaign-post-drafts-section">
+        <div className="campaign-post-drafts-head">
+          <div>
+            <p className="campaign-eyebrow">Publisher drafts</p>
+            <h2>Suggested schedule</h2>
+          </div>
+          <button type="button" className="portal-button-primary" onClick={() => handleAddDrafts(project)}>
+            <CalendarDays className="h-4 w-4" />
+            Add all to Publisher
+          </button>
+        </div>
+
+        <div className="campaign-post-draft-list">
+          {posts.map((post) => (
+            <div
+              key={post.id}
+              role="button"
+              tabIndex={0}
+              className="campaign-post-draft-row"
+              onClick={() => handleEditCampaignPost(project, post)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  handleEditCampaignPost(project, post)
+                }
+              }}
+            >
+              <div className="campaign-post-date">
+                <b>{formatDate(post.date)}</b>
+                <span>{post.time || '10:00'}</span>
+              </div>
+              <div className="campaign-post-copy">
+                <strong>{post.title}</strong>
+                <p>{post.caption || 'Open in Publisher to finish this campaign draft.'}</p>
+                {post.whyNow ? <small>{post.whyNow}</small> : null}
+              </div>
+              <div className="campaign-post-status-stack">
+                <PostStatusPill status={post.status} />
+                <CampaignPlatformMarkers platforms={post.platforms} />
+              </div>
+              <CampaignPostMenu
+                post={post}
+                actions={[
+                  { label: 'Edit in Publisher', Icon: Edit3, onSelect: () => handleEditCampaignPost(project, post) },
+                  { label: 'Reschedule', Icon: CalendarDays, onSelect: () => handleRescheduleCampaignPost(project, post) },
+                  { label: 'Delete', Icon: Trash2, destructive: true, onSelect: () => handleDeleteCampaignPost(project, post) },
+                ]}
+              />
+            </div>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
   return (
     <div className="portal-page campaign-partner-page mx-auto max-w-[1500px] space-y-3 md:p-4 xl:p-5">
       <section className="campaign-partner-tabs">
@@ -699,19 +989,6 @@ export default function CampaignPartner() {
                     </div>
                   ) : null}
 
-                  <p className="campaign-eyebrow">Suggested schedule</p>
-                  <div className="campaign-timeline">
-                    {normalizeList(selectedProject.plan_json?.posts).map((post) => (
-                      <div key={post.id} className="campaign-timeline-row">
-                        <b>{formatDate(post.date)}</b>
-                        <div>
-                          <strong>{post.title}</strong>
-                          <small>{post.platforms?.join(' + ') || 'Review platforms'} · {post.status === 'added_to_calendar' ? 'added to Publisher' : 'draft ready'}</small>
-                        </div>
-                        <button type="button" onClick={() => navigate('/calendar')}>{post.status === 'added_to_calendar' ? 'View' : 'Edit'}</button>
-                      </div>
-                    ))}
-                  </div>
                 </>
               ) : (
                 <div className="campaign-empty">
@@ -721,6 +998,7 @@ export default function CampaignPartner() {
               )}
             </section>
           </div>
+          {renderCampaignPostDrafts(selectedProject)}
         </section>
       )}
     </div>
