@@ -3,39 +3,15 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useOutletContext, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { buildTenantConfig } from '../lib/tenantConfig'
+import { DASHBOARD_PLATFORMS } from '../lib/platformCatalog'
 import {
   User, Lock, Building2, CheckCircle2, Loader2, AlertCircle,
-  Share2, Camera, Music2, Link2, ExternalLink, Wifi, WifiOff
+  Link2, ExternalLink, Wifi, WifiOff
 } from 'lucide-react'
 
 const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
 
-const PLATFORMS = [
-  {
-    id: 'facebook',
-    label: 'Facebook',
-    Icon: Share2,
-    accent: '#4267B2',
-    connectedBg: 'rgba(66,103,178,0.08)',
-    connectedBorder: 'rgba(66,103,178,0.18)',
-  },
-  {
-    id: 'instagram',
-    label: 'Instagram',
-    Icon: Camera,
-    accent: '#C13584',
-    connectedBg: 'rgba(193,53,132,0.08)',
-    connectedBorder: 'rgba(193,53,132,0.18)',
-  },
-  {
-    id: 'tiktok',
-    label: 'TikTok',
-    Icon: Music2,
-    accent: '#111111',
-    connectedBg: 'rgba(17,17,17,0.06)',
-    connectedBorder: 'rgba(17,17,17,0.14)',
-  },
-]
+const PLATFORMS = DASHBOARD_PLATFORMS
 
 async function fetchUserProfile() {
   const { data, error } = await supabase
@@ -355,7 +331,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
         </div>
       ) : (
         <div className="space-y-3">
-          {PLATFORMS.map(({ id, label, Icon, accent, connectedBg, connectedBorder }) => {
+          {PLATFORMS.map(({ id, label, Icon, accent, soft, connectionEnabled }) => {
             const conn = connectedMap[id]
             const isConnecting = connectingPlatform === id
 
@@ -364,12 +340,12 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
                 key={id}
                 className="flex items-center gap-4 p-4 rounded-xl transition-all"
                 style={conn
-                  ? { background: connectedBg, border: `1px solid ${connectedBorder}` }
+                  ? { background: soft, border: `1px solid ${accent}30` }
                   : { background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)' }
                 }>
                 {/* Platform icon */}
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl shrink-0" style={{ background: accent }}>
-                  <Icon className="w-4 h-4 text-white" strokeWidth={2} />
+                  <Icon className="w-4 h-4 text-white" />
                 </div>
 
                 {/* Info */}
@@ -406,8 +382,8 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
                     </div>
                   ) : (
                     <button
-                      onClick={() => handleConnect(id)}
-                      disabled={!!connectingPlatform || billingAccess?.readOnly}
+                      onClick={() => connectionEnabled && handleConnect(id)}
+                      disabled={!connectionEnabled || !!connectingPlatform || billingAccess?.readOnly}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.25)', color: 'var(--portal-primary)' }}>
                       {isConnecting ? (
@@ -415,7 +391,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
                       ) : (
                         <ExternalLink className="w-3 h-3" />
                       )}
-                      {isConnecting ? 'Connecting…' : 'Connect'}
+                      {isConnecting ? 'Connecting…' : connectionEnabled ? 'Connect' : 'Coming soon'}
                     </button>
                   )}
                 </div>

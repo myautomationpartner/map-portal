@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams, useOutletContext } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { getPlatformConfig, normalizePlatformId } from '../lib/platformCatalog'
 import {
-  Camera, Share2, Music2, MapPin, Image,
+  Image,
   ArrowLeft, ChevronRight, Loader2
 } from 'lucide-react'
 
@@ -15,6 +16,7 @@ async function fetchMetricsByPlatform(clientId, platform) {
     .eq('client_id', clientId)
     .ilike('platform', platform)
     .order('metric_date', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(365)
   if (error) throw error
   return data ?? []
@@ -35,22 +37,13 @@ async function fetchRecentPosts(clientId, platform) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function calcNetChange(metrics, days) {
+function calcNetChange(metrics, days, field = 'followers') {
   if (!metrics || metrics.length === 0) return 0
-  const current = Number(metrics[0]?.followers || 0)
+  const current = Number(metrics[0]?.[field] || 0)
   const previous = metrics.length > days
-    ? Number(metrics[days]?.followers || 0)
-    : Number(metrics[metrics.length - 1]?.followers || 0)
+    ? Number(metrics[days]?.[field] || 0)
+    : Number(metrics[metrics.length - 1]?.[field] || 0)
   return current - previous
-}
-
-// ─── Platform config ──────────────────────────────────────────────────────────
-
-const PLATFORM_CONFIG = {
-  instagram: { label: 'Instagram', icon: Camera, color: '#d85f98', metricLabel: 'Followers' },
-  facebook: { label: 'Facebook', icon: Share2, color: '#3568a6', metricLabel: 'Followers' },
-  tiktok: { label: 'TikTok', icon: Music2, color: '#168c8f', metricLabel: 'Followers' },
-  google: { label: 'Google', icon: MapPin, color: '#1fa971', metricLabel: 'Business Reach' },
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -71,11 +64,12 @@ function MomentumCard({ timeframe, label, value }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PlatformStats() {
-  const { platform } = useParams()
+  const { platform: routePlatform } = useParams()
   useOutletContext()
 
-  const config = PLATFORM_CONFIG[platform] || PLATFORM_CONFIG.instagram
-  const Icon = config.icon
+  const platform = normalizePlatformId(routePlatform)
+  const config = getPlatformConfig(platform)
+  const Icon = config.Icon
 
   const { data: profile } = useQuery({
     queryKey: ['profile'],
@@ -104,11 +98,12 @@ export default function PlatformStats() {
   const hasMetrics = metrics.length > 0
   const isLoading = !profile && !clientId
 
-  const totalLabel = hasMetrics ? Number(metrics[0]?.followers || 0).toLocaleString() : '—'
-  const change24h  = calcNetChange(metrics, 1)
-  const change7d   = calcNetChange(metrics, 7)
-  const change30d  = calcNetChange(metrics, 30)
-  const changeYear = calcNetChange(metrics, 365)
+  const metricValue = hasMetrics ? Number(metrics[0]?.[config.metricField] || 0) : null
+  const totalLabel = hasMetrics ? metricValue.toLocaleString() : '—'
+  const change24h  = calcNetChange(metrics, 1, config.metricField)
+  const change7d   = calcNetChange(metrics, 7, config.metricField)
+  const change30d  = calcNetChange(metrics, 30, config.metricField)
+  const changeYear = calcNetChange(metrics, 365, config.metricField)
 
   return (
     <div className="portal-page mx-auto max-w-[1280px] space-y-6 md:p-6 xl:p-8">
@@ -124,7 +119,7 @@ export default function PlatformStats() {
         <div className="portal-page-header">
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 items-center justify-center border bg-white" style={{ borderColor: 'var(--portal-border)', borderRadius: 'var(--portal-radius-lg)' }}>
-              <Icon className="h-7 w-7" style={{ color: config.color }} />
+              <Icon className="h-7 w-7" style={{ color: config.accent }} />
             </div>
             <div>
               <div className="mb-2 flex items-center gap-2">
@@ -206,7 +201,7 @@ export default function PlatformStats() {
                         <span className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
                           {post.published_at ? new Date(post.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Published'}
                         </span>
-                        <Icon className="h-4 w-4 shrink-0" style={{ color: config.color }} />
+                        <Icon className="h-4 w-4 shrink-0" style={{ color: config.accent }} />
                       </div>
                       <p className="line-clamp-4 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
                         {post.content || 'No description provided.'}

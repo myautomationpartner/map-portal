@@ -370,7 +370,8 @@ export async function fetchMetrics(clientId) {
     .select('*')
     .eq('client_id', clientId)
     .order('metric_date', { ascending: false })
-    .limit(90)
+    .order('created_at', { ascending: false })
+    .limit(365)
 
   if (error) throw error
   return data ?? []

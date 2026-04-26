@@ -8,9 +8,9 @@ import {
   fetchWorkspacePreferences,
   upsertWorkspacePreferences,
 } from '../lib/portalApi'
+import { DASHBOARD_PLATFORMS, PLATFORM_CATALOG } from '../lib/platformCatalog'
 import {
   ArrowUpRight,
-  Camera,
   CalendarDays,
   Check,
   Cloud,
@@ -20,32 +20,134 @@ import {
   Grip,
   Mail,
   Megaphone,
-  MapPin,
-  Music2,
   Pencil,
   Plus,
   Search,
   Send,
   Server,
-  Share2,
   ShieldCheck,
   Shrink,
   Sparkles,
+  Wand2,
 } from 'lucide-react'
 
-function getMetricValue(metrics, platform, field) {
-  const row = metrics.find((entry) => entry.platform?.toLowerCase() === platform.toLowerCase())
-  if (!row) return null
-  const value = row[field]
-  return value ? Number(value).toLocaleString() : null
+function getMetricRow(metrics, platform) {
+  return metrics.find((entry) => entry.platform?.toLowerCase() === platform.toLowerCase()) || null
 }
 
-const PLATFORM_CONFIG = [
-  { id: 'instagram', label: 'Instagram', icon: Camera, color: '#ee6aa7', field: 'followers' },
-  { id: 'facebook', label: 'Facebook', icon: Share2, color: '#c9a84c', field: 'followers' },
-  { id: 'tiktok', label: 'TikTok', icon: Music2, color: '#8a8278', field: 'followers' },
-  { id: 'google', label: 'Google', icon: MapPin, color: '#37b58c', field: 'reach' },
+function getMetricValue(metrics, platform, field) {
+  const row = getMetricRow(metrics, platform)
+  if (!row) return null
+  const value = row[field]
+  if (value === null || value === undefined) return null
+  return Number(value).toLocaleString()
+}
+
+const DAILY_PROMPTS = [
+  'What are we doing today to provide more value to your customers?',
+  'What small customer moment can we make easier before lunch?',
+  'What useful post, answer, or reminder would help someone choose you today?',
+  'Where can we remove friction for a parent, client, or prospect today?',
+  'What proof can we share today that makes the next step feel simple?',
+  'What would make your best customer say, "I am glad they reminded me"?',
+  'What can we publish, organize, or answer today that saves someone time?',
 ]
+
+const WORKSPACE_IDEAS = [
+  { title: 'Morning stack', copy: 'Pin the three tabs your team opens first: inbox, calendar, and drive.' },
+  { title: 'Social command', copy: 'Keep connected channels, Canva, and Business Suite one click from Publisher.' },
+  { title: 'Client ops lane', copy: 'Add billing, booking, forms, or class tools so the portal replaces bookmarks.' },
+]
+
+function getDailyPrompt() {
+  const start = new Date(new Date().getFullYear(), 0, 0)
+  const day = Math.floor((new Date() - start) / 86400000)
+  return DAILY_PROMPTS[day % DAILY_PROMPTS.length]
+}
+
+function PlatformMetricCard({ platform, metrics, connectedPlatforms, connectingPlatform, onConnect }) {
+  const Icon = platform.Icon
+  const metricValue = getMetricValue(metrics, platform.id, platform.metricField)
+  const hasMetrics = metricValue !== null
+  const isConnected = connectedPlatforms.has(platform.id)
+  const isConnecting = connectingPlatform === platform.id
+  const statusLabel = isConnected ? 'Connected' : 'Not connected'
+  const canConnectNow = platform.connectionEnabled && !isConnected
+
+  return (
+    <article
+      className="portal-card group flex min-h-[126px] flex-col justify-between p-3.5 transition-all duration-200 hover:-translate-y-0.5"
+      style={{
+        borderColor: isConnected ? `${platform.accent}30` : 'var(--portal-border)',
+        background: isConnected
+          ? `linear-gradient(180deg, ${platform.soft}, rgba(255,255,255,0.95))`
+          : 'rgba(255,255,255,0.92)',
+      }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div
+            className="flex h-9 w-9 items-center justify-center rounded-2xl text-white shadow-sm"
+            style={{ background: platform.accent }}
+          >
+            <Icon className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
+              {platform.label}
+            </p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: isConnected ? platform.accent : 'var(--portal-text-soft)' }}>
+              {statusLabel}
+            </p>
+          </div>
+        </div>
+        <span className="rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ background: platform.soft, color: platform.accent }}>
+          {platform.shortLabel}
+        </span>
+      </div>
+
+      <div className="mt-3 flex items-end justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
+            {platform.metricLabel}
+          </p>
+          <p className="mt-0.5 text-2xl font-semibold tabular-nums tracking-[-0.04em]" style={{ color: 'var(--portal-text)' }}>
+            {hasMetrics ? metricValue : '—'}
+          </p>
+        </div>
+
+        {canConnectNow ? (
+          <button
+            type="button"
+            onClick={() => onConnect(platform.id)}
+            disabled={isConnecting}
+            className="rounded-full px-3 py-1.5 text-xs font-semibold transition-all disabled:cursor-wait disabled:opacity-60"
+            style={{ background: platform.soft, color: platform.accent }}
+          >
+            {isConnecting ? 'Opening...' : 'Connect now'}
+          </button>
+        ) : isConnected || hasMetrics ? (
+          <Link
+            to={`/stats/${platform.id}`}
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all"
+            style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-muted)' }}
+          >
+            View
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </Link>
+        ) : (
+          <Link
+            to="/settings"
+            className="rounded-full px-3 py-1.5 text-xs font-semibold transition-all"
+            style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-muted)' }}
+          >
+            Connect now
+          </Link>
+        )}
+      </div>
+    </article>
+  )
+}
 
 const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
 
@@ -63,10 +165,12 @@ const QUICK_TOOL_PRESETS = [
   { id: 'outlook', label: 'Outlook', url: 'https://outlook.office.com/mail/', accent: '#0078d4', category: 'email', description: 'Microsoft mail', Icon: Mail },
   { id: 'google-drive', label: 'Google Drive', url: 'https://drive.google.com', accent: '#1a73e8', category: 'files', description: 'Docs and files', Icon: Cloud },
   { id: 'onedrive', label: 'OneDrive', url: 'https://onedrive.live.com', accent: '#0078d4', category: 'files', description: 'Microsoft files', Icon: Cloud },
-  { id: 'google-business', label: 'Google Business', url: 'https://business.google.com', accent: '#34a853', category: 'social', description: 'Local profile', Icon: MapPin },
-  { id: 'facebook', label: 'Facebook', url: 'https://business.facebook.com', accent: '#1877f2', category: 'social', description: 'Publishing auth', Icon: Share2, connectPlatform: 'facebook' },
-  { id: 'instagram', label: 'Instagram', url: 'https://business.instagram.com', accent: '#e4405f', category: 'social', description: 'Publishing auth', Icon: Camera, connectPlatform: 'instagram' },
-  { id: 'tiktok', label: 'TikTok', url: 'https://business.tiktok.com', accent: '#111111', category: 'social', description: 'Publishing auth', Icon: Music2, connectPlatform: 'tiktok' },
+  { id: 'google-business', label: 'Google Business', url: 'https://business.google.com', accent: PLATFORM_CATALOG.google.accent, category: 'social', description: 'Local profile', Icon: PLATFORM_CATALOG.google.Icon },
+  { id: 'facebook', label: 'Facebook', url: 'https://business.facebook.com', accent: PLATFORM_CATALOG.facebook.accent, category: 'social', description: 'Publishing auth', Icon: PLATFORM_CATALOG.facebook.Icon, connectPlatform: 'facebook' },
+  { id: 'instagram', label: 'Instagram', url: 'https://business.instagram.com', accent: PLATFORM_CATALOG.instagram.accent, category: 'social', description: 'Publishing auth', Icon: PLATFORM_CATALOG.instagram.Icon, connectPlatform: 'instagram' },
+  { id: 'tiktok', label: 'TikTok', url: 'https://business.tiktok.com', accent: PLATFORM_CATALOG.tiktok.accent, category: 'social', description: 'Publishing auth', Icon: PLATFORM_CATALOG.tiktok.Icon, connectPlatform: 'tiktok' },
+  { id: 'linkedin', label: 'LinkedIn', url: 'https://www.linkedin.com/company/setup/new/', accent: PLATFORM_CATALOG.linkedin.accent, category: 'social', description: 'Company presence', Icon: PLATFORM_CATALOG.linkedin.Icon },
+  { id: 'twitter', label: 'X / Twitter', url: 'https://x.com', accent: PLATFORM_CATALOG.twitter.accent, category: 'social', description: 'Social updates', Icon: PLATFORM_CATALOG.twitter.Icon },
   { id: 'stripe', label: 'Stripe', url: 'https://dashboard.stripe.com', accent: '#635bff', category: 'business', description: 'Payments', Icon: CreditCard },
   { id: 'square', label: 'Square', url: 'https://app.squareup.com', accent: '#111111', category: 'business', description: 'POS and invoices', Icon: CreditCard },
   { id: 'quickbooks', label: 'QuickBooks', url: 'https://app.qbo.intuit.com', accent: '#2ca01c', category: 'business', description: 'Accounting', Icon: ShieldCheck },
@@ -576,6 +680,10 @@ export default function Dashboard() {
   })
 
   const metrics = rawMetrics
+  const connectedPlatformIds = useMemo(
+    () => new Set((socialConnections || []).map((connection) => connection.platform).filter(Boolean)),
+    [socialConnections],
+  )
 
   const [draftTools, setDraftTools] = useState(null)
   const [draftOwnerKey, setDraftOwnerKey] = useState('')
@@ -592,6 +700,7 @@ export default function Dashboard() {
     month: 'long',
     day: 'numeric',
   })
+  const dailyPrompt = getDailyPrompt()
 
   const resolvedTools = useMemo(() => {
     const persistedTools = Array.isArray(workspacePreference?.workspace_tools_json)
@@ -729,28 +838,37 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="portal-page mx-auto max-w-[1480px] space-y-6 md:p-6 xl:p-8">
-      <section className="portal-surface rounded-[36px] p-5 md:p-7">
-        <div className="portal-page-header">
-          <div className="max-w-3xl">
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
+    <div className="portal-page mx-auto max-w-[1560px] space-y-5 md:p-6 xl:p-8">
+      <section className="portal-surface overflow-hidden rounded-[30px] p-4 md:p-5">
+        <div className="portal-page-header items-center">
+          <div className="max-w-4xl">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="portal-chip rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]">
                 {today}
               </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(31, 169, 113, 0.1)', color: 'var(--portal-success)' }}>
+                <Sparkles className="h-3.5 w-3.5" />
+                Daily focus
+              </span>
             </div>
-            <h1 className="portal-page-title font-display">Dashboard</h1>
+            <h1 className="font-display text-2xl font-semibold leading-tight md:text-[2rem]" style={{ color: 'var(--portal-text)' }}>
+              {dailyPrompt}
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+              Use the workspace below as the launchpad: publish something helpful, check the channels that matter, and keep the team moving from one clean portal.
+            </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Link to="/post" className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
+          <div className="flex flex-wrap gap-2">
+            <Link to="/post" className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3.5 py-2.5 text-sm font-semibold">
               <CalendarDays className="h-4 w-4" />
-              Open Planner
+              Planner
             </Link>
-            <Link to="/documents" className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
+            <Link to="/documents" className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3.5 py-2.5 text-sm font-semibold">
               <FolderOpen className="h-4 w-4" />
-              Open Documents
+              Documents
             </Link>
-            <Link to="/post" className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
+            <Link to="/post" className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-3.5 py-2.5 text-sm font-semibold">
               <Send className="h-4 w-4" />
               Create Post
             </Link>
@@ -758,45 +876,33 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {PLATFORM_CONFIG.map((platform) => {
-          const value = getMetricValue(metrics, platform.id, platform.field)
-          const Icon = platform.icon
-
-          return (
-            <Link
-              key={platform.id}
-              to={`/stats/${platform.id}`}
-              className="portal-stat-card rounded-[28px] p-5 transition-all duration-200 hover:-translate-y-0.5"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-[18px]" style={{ background: `${platform.color}18` }}>
-                  <Icon className="h-5 w-5" style={{ color: platform.color }} />
-                </div>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                  Live
-                </span>
-              </div>
-              <p className="mt-5 text-sm font-semibold" style={{ color: 'var(--portal-text-muted)' }}>{platform.label}</p>
-              <p className="mt-1 text-3xl font-semibold tracking-[-0.04em]" style={{ color: 'var(--portal-text)' }}>{value || '—'}</p>
-              <div className="mt-4 inline-flex items-center gap-2 text-xs font-semibold" style={{ color: 'var(--portal-primary)' }}>
-                View stats
-                <ArrowUpRight className="h-3.5 w-3.5" />
-              </div>
-            </Link>
-          )
-        })}
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        {DASHBOARD_PLATFORMS.map((platform) => (
+          <PlatformMetricCard
+            key={platform.id}
+            platform={platform}
+            metrics={metrics}
+            connectedPlatforms={connectedPlatformIds}
+            connectingPlatform={connectingPlatform}
+            onConnect={connectPlatform}
+          />
+        ))}
       </section>
 
-      <section className="portal-panel rounded-[32px] p-5 md:p-6">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>Daily workspace</h2>
-            <p className="text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-              Pinned apps, inboxes, and drives for the client team.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+      <section className="portal-panel overflow-hidden rounded-[30px] p-0">
+        <div className="border-b p-4 md:p-5" style={{ borderColor: 'var(--portal-border)' }}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-3xl">
+              <span className="mb-2 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary-strong)' }}>
+                <Wand2 className="h-3.5 w-3.5" />
+                Workspace launcher
+              </span>
+              <h2 className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>Build your daily command center</h2>
+              <p className="mt-1 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                Make this the place your team starts the day: social channels, inboxes, design tools, drives, booking, billing, and the apps that usually hide in browser bookmarks.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setEditMode((current) => !current)}
@@ -813,9 +919,20 @@ export default function Dashboard() {
               <Plus className="h-4 w-4" />
               {showAddTool ? 'Hide tools' : 'Add tool'}
             </button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            {WORKSPACE_IDEAS.map((idea) => (
+              <div key={idea.title} className="rounded-2xl border px-4 py-3" style={{ borderColor: 'rgba(26, 24, 20, 0.07)', background: 'rgba(255,255,255,0.72)' }}>
+                <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{idea.title}</p>
+                <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>{idea.copy}</p>
+              </div>
+            ))}
           </div>
         </div>
 
+        <div className="p-4 md:p-5">
         {showAddTool && (
           <ToolForm
             tools={tools}
@@ -907,6 +1024,7 @@ export default function Dashboard() {
             </button>
           </div>
         )}
+        </div>
       </section>
     </div>
   )
