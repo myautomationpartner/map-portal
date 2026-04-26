@@ -534,10 +534,17 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
+  min-width: 4.7rem;
+  height: 1.95rem;
+  padding: 0 0.72rem;
   border: 1px solid currentColor;
   border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .content-plan-proof-chip {
@@ -684,14 +691,6 @@
   }
 
   .content-plan-row {
-    grid-template-columns: 70px minmax(0, 1fr);
-  }
-
-  .content-plan-row > span {
-    display: none;
-  }
-
-  .content-plan-row > .content-plan-status-marker {
-    display: inline-flex;
+    grid-template-columns: 70px minmax(0, 1fr) auto;
   }
 }

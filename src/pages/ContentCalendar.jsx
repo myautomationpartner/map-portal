@@ -39,10 +39,10 @@ const BADGE_STYLES = {
   ad: { label: 'Ad idea', background: 'rgba(216,95,152,0.1)', color: '#b5487b', border: 'rgba(216,95,152,0.2)' },
 }
 const STATUS_MARKERS = {
-  radar: { label: 'AI idea', color: '#3568a6', Icon: Wand2 },
-  draft: { label: 'Draft', color: '#c87628', Icon: PencilLine },
-  scheduled: { label: 'Scheduled', color: '#1fa971', Icon: Clock3 },
-  published: { label: 'Posted', color: '#c9a84c', Icon: CheckCircle2 },
+  radar: { label: 'AI idea', color: '#3568a6' },
+  draft: { label: 'Draft', color: '#c87628' },
+  scheduled: { label: 'Scheduled', color: '#1fa971' },
+  published: { label: 'Posted', color: '#c9a84c' },
 }
 
 function normalizeSentence(value, fallback = '') {
@@ -292,7 +292,6 @@ function Badge({ type }) {
 
 function StatusMarker({ type }) {
   const marker = STATUS_MARKERS[type] || STATUS_MARKERS.radar
-  const Icon = marker.Icon
   return (
     <span
       className="content-plan-status-marker"
@@ -300,7 +299,7 @@ function StatusMarker({ type }) {
       title={marker.label}
       aria-label={marker.label}
     >
-      <Icon className="h-4 w-4" />
+      {marker.label}
     </span>
   )
 }
