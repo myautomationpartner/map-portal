@@ -186,6 +186,22 @@ export async function fetchScheduledPosts(clientId) {
   return data ?? []
 }
 
+export async function fetchCalendarPosts(clientId) {
+  if (!clientId) return []
+
+  const { data, error } = await supabase
+    .from('posts')
+    .select('id, client_id, content, media_url, platforms, status, scheduled_for, published_at, created_at, n8n_execution_id')
+    .eq('client_id', clientId)
+    .in('status', ['scheduled', 'published'])
+    .or('scheduled_for.not.is.null,published_at.not.is.null')
+    .order('created_at', { ascending: false })
+    .limit(120)
+
+  if (error) throw error
+  return data ?? []
+}
+
 export async function fetchPostById(postId) {
   if (!postId) return null
 

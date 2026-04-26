@@ -456,6 +456,26 @@
   white-space: nowrap;
 }
 
+.content-plan-month-pill[data-status="radar"] {
+  border-color: rgba(53, 104, 166, 0.2);
+  background: rgba(53, 104, 166, 0.08);
+}
+
+.content-plan-month-pill[data-status="draft"] {
+  border-color: rgba(93, 121, 104, 0.22);
+  background: rgba(93, 121, 104, 0.1);
+}
+
+.content-plan-month-pill[data-status="scheduled"] {
+  border-color: rgba(31, 169, 113, 0.2);
+  background: rgba(31, 169, 113, 0.09);
+}
+
+.content-plan-month-pill[data-status="published"] {
+  border-color: rgba(20, 19, 16, 0.14);
+  background: rgba(20, 19, 16, 0.06);
+}
+
 .content-plan-month-pill span {
   margin-right: 0.35rem;
   color: var(--portal-primary-strong);
@@ -471,7 +491,33 @@
 }
 
 .content-plan-row {
+  position: relative;
   min-height: 86px;
+  overflow: hidden;
+}
+
+.content-plan-row::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: rgba(201, 168, 76, 0.5);
+}
+
+.content-plan-row[data-status="radar"]::before {
+  background: #3568a6;
+}
+
+.content-plan-row[data-status="draft"]::before {
+  background: #5d7968;
+}
+
+.content-plan-row[data-status="scheduled"]::before {
+  background: #1fa971;
+}
+
+.content-plan-row[data-status="published"]::before {
+  background: #3f3b33;
 }
 
 .content-plan-row p {

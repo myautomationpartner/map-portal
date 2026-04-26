@@ -17,9 +17,9 @@ import {
   Wand2,
 } from 'lucide-react'
 import {
+  fetchCalendarPosts,
   fetchOpportunityRadar,
   fetchProfile,
-  fetchScheduledPosts,
   fetchSocialDrafts,
   recordPlannerFeedbackEvent,
   updateOpportunityState,
@@ -30,11 +30,11 @@ import { stringifyDraftMeta } from '../lib/socialDrafting'
 
 const HIDDEN_RADAR_STATES = new Set(['dismissed', 'archived', 'converted_to_draft'])
 const BADGE_STYLES = {
-  radar: { label: 'Radar', background: 'rgba(53,104,166,0.1)', color: '#3568a6', border: 'rgba(53,104,166,0.18)' },
+  radar: { label: 'AI idea', background: 'rgba(53,104,166,0.1)', color: '#3568a6', border: 'rgba(53,104,166,0.18)' },
   open: { label: 'Open', background: 'rgba(201,168,76,0.12)', color: '#8c6d1c', border: 'rgba(201,168,76,0.24)' },
   draft: { label: 'Draft', background: 'rgba(93,121,104,0.12)', color: '#4d6c5b', border: 'rgba(93,121,104,0.2)' },
   scheduled: { label: 'Scheduled', background: 'rgba(31,169,113,0.1)', color: '#17875b', border: 'rgba(31,169,113,0.2)' },
-  published: { label: 'Published', background: 'rgba(31,169,113,0.12)', color: '#17875b', border: 'rgba(31,169,113,0.22)' },
+  published: { label: 'Posted', background: 'rgba(31,169,113,0.12)', color: '#17875b', border: 'rgba(31,169,113,0.22)' },
   pending: { label: 'Pending', background: 'rgba(201,168,76,0.12)', color: '#8c6d1c', border: 'rgba(201,168,76,0.24)' },
   ad: { label: 'Ad idea', background: 'rgba(216,95,152,0.1)', color: '#b5487b', border: 'rgba(216,95,152,0.2)' },
 }
@@ -115,6 +115,10 @@ function isDateInWeek(value, weekStart) {
   start.setHours(0, 0, 0, 0)
   const end = addDays(start, 7)
   return date >= start && date < end
+}
+
+function getPostDisplayDate(post) {
+  return post?.scheduled_for || post?.published_at || post?.created_at
 }
 
 function getActiveSuggestions(opportunity) {
@@ -274,6 +278,7 @@ function PlanRow({ item, selected, onSelect }) {
       type="button"
       onClick={() => onSelect(item.id)}
       className="content-plan-row grid w-full grid-cols-[82px_minmax(0,1fr)_auto] items-center gap-3 border-b px-4 py-3 text-left transition-all last:border-b-0 hover:bg-[rgba(245,235,214,0.42)]"
+      data-status={item.badgeType}
       style={{
         borderColor: 'var(--portal-border)',
         background: selected ? 'rgba(245, 235, 214, 0.58)' : 'transparent',
@@ -308,7 +313,7 @@ function PlanRow({ item, selected, onSelect }) {
         </div>
       </div>
       <span className="hidden text-xs font-semibold md:inline-flex" style={{ color: 'var(--portal-primary)' }}>
-        Review
+        {item.actionLabel || 'Review'}
       </span>
     </button>
   )
@@ -329,7 +334,7 @@ export default function ContentCalendar() {
   const [selectedItemId, setSelectedItemId] = useState('')
   const [actionError, setActionError] = useState('')
   const [weekOffset, setWeekOffset] = useState(0)
-  const [queueMode, setQueueMode] = useState('posts')
+  const [queueMode, setQueueMode] = useState('week')
   const [composerCaptions, setComposerCaptions] = useState({})
   const selectedWeekStart = useMemo(() => startOfWeek(addDays(new Date(), weekOffset * 7)), [weekOffset])
   const selectedWeekStartString = toDateString(selectedWeekStart)
@@ -343,9 +348,9 @@ export default function ContentCalendar() {
 
   const clientId = profile?.client_id
 
-  const { data: scheduledPosts = [], isLoading: postsLoading, refetch: refetchPosts, isRefetching: isRefetchingPosts } = useQuery({
+  const { data: calendarPosts = [], isLoading: postsLoading, refetch: refetchPosts, isRefetching: isRefetchingPosts } = useQuery({
     queryKey: ['calendar-posts', clientId],
-    queryFn: () => fetchScheduledPosts(clientId),
+    queryFn: () => fetchCalendarPosts(clientId),
     enabled: !!clientId,
   })
 
@@ -403,6 +408,7 @@ export default function ContentCalendar() {
           proof: (opportunity.source_urls || []).slice(0, 2),
           adWorthiness: opportunity.ad_worthiness,
           platforms: suggestion?.recommended_platforms || [],
+          actionLabel: 'Make post',
           opportunity,
           suggestion,
         }
@@ -429,47 +435,48 @@ export default function ContentCalendar() {
           ? draft.asset_requirements_json.find((item) => item?.suggestion)?.suggestion || 'Review media needs in Publisher.'
           : 'Review media needs in Publisher.',
         proof: ['Saved draft'],
-        statusType: 'pending',
+        actionLabel: 'Edit',
         draft,
       }))
   ), [drafts, selectedWeekStart])
 
-  const scheduledItems = useMemo(() => (
-    scheduledPosts
-      .filter((post) => isDateInWeek(post.scheduled_for || post.created_at, selectedWeekStart))
+  const postItems = useMemo(() => (
+    calendarPosts
+      .filter((post) => isDateInWeek(getPostDisplayDate(post), selectedWeekStart))
       .map((post) => ({
-        id: `scheduled:${post.id}`,
-        source: 'scheduled',
-        badgeType: 'scheduled',
-        statusType: post.status === 'published' ? 'published' : 'pending',
-        dateString: toDateString(new Date(post.scheduled_for || post.created_at)),
-        dayLabel: formatDate(post.scheduled_for || post.created_at, { weekday: 'short', month: 'short', day: 'numeric' }),
-        timeLabel: formatDate(post.scheduled_for || post.created_at, { hour: 'numeric', minute: '2-digit' }),
-        title: post.content?.slice(0, 72) || 'Scheduled post',
-        subtitle: post.status === 'published' ? 'Published' : 'Pending approval or publish time',
-        detailTitle: 'Scheduled post',
-        caption: post.content || 'This post is already on the schedule.',
-        whyNow: 'This item is already planned and helps avoid overfilling the calendar.',
-        imagePrompt: 'Media was selected when the post was scheduled.',
-        proof: ['Scheduled content'],
+        id: `post:${post.id}`,
+        source: 'post',
+        badgeType: post.status === 'published' ? 'published' : 'scheduled',
+        dateString: toDateString(new Date(getPostDisplayDate(post))),
+        dayLabel: formatDate(getPostDisplayDate(post), { weekday: 'short', month: 'short', day: 'numeric' }),
+        timeLabel: formatDate(getPostDisplayDate(post), { hour: 'numeric', minute: '2-digit' }),
+        title: post.content?.slice(0, 72) || (post.status === 'published' ? 'Posted content' : 'Scheduled post'),
+        subtitle: post.status === 'published' ? 'Already posted' : 'Scheduled and waiting for publish time',
+        detailTitle: post.status === 'published' ? 'Posted content' : 'Scheduled post',
+        caption: post.content || 'This post is already on the calendar.',
+        whyNow: post.status === 'published'
+          ? 'This content has already gone out and stays visible here for context.'
+          : 'This item is already planned and helps avoid overfilling the calendar.',
+        imagePrompt: post.media_url ? 'Media is attached to this post.' : 'No media is attached yet.',
+        proof: [post.status === 'published' ? 'Posted content' : 'Scheduled content'],
         thumbnailUrl: post.media_url || '',
+        actionLabel: post.status === 'published' ? 'View' : 'Edit',
         post,
       }))
-  ), [scheduledPosts, selectedWeekStart])
+  ), [calendarPosts, selectedWeekStart])
 
   const planItems = useMemo(() => {
-    const merged = weekOffset === 0
-      ? [...radarItems.slice(0, 5), ...scheduledItems]
-      : [...scheduledItems, ...radarItems]
-    return merged.slice(0, 9)
-  }, [radarItems, scheduledItems, weekOffset])
+    const merged = [...radarItems, ...draftItems, ...postItems]
+    return merged
+      .sort((a, b) => new Date(`${a.dateString}T12:00:00`) - new Date(`${b.dateString}T12:00:00`))
+      .slice(0, 12)
+  }, [draftItems, postItems, radarItems])
 
   const visiblePlanItems = useMemo(() => {
-    if (queueMode === 'posts') return planItems
-    if (queueMode === 'drafts') return draftItems
-    if (queueMode === 'schedule') return scheduledItems
+    if (queueMode === 'week') return planItems
+    if (queueMode === 'month') return []
     return planItems
-  }, [draftItems, planItems, queueMode, scheduledItems])
+  }, [planItems, queueMode])
 
   const selectedItem = visiblePlanItems.find((item) => item.id === selectedItemId) || visiblePlanItems[0] || null
   const composerCaption = selectedItem ? (composerCaptions[selectedItem.id] ?? selectedItem.caption ?? '') : ''
@@ -482,10 +489,11 @@ export default function ContentCalendar() {
       if (!groups.has(dateString)) groups.set(dateString, [])
       groups.get(dateString).push(item)
     }
-    scheduledPosts.forEach((post) => {
-      addItem(toDateString(new Date(post.scheduled_for || post.created_at)), {
-        type: post.status === 'published' ? 'Published' : 'Pending',
-        title: post.content || 'Scheduled post',
+    calendarPosts.forEach((post) => {
+      addItem(toDateString(new Date(getPostDisplayDate(post))), {
+        type: post.status === 'published' ? 'Posted' : 'Scheduled',
+        status: post.status === 'published' ? 'published' : 'scheduled',
+        title: post.content || (post.status === 'published' ? 'Posted content' : 'Scheduled post'),
       })
     })
     drafts
@@ -493,6 +501,7 @@ export default function ContentCalendar() {
       .forEach((draft) => {
         addItem(draft.slot_date_local, {
           type: 'Draft',
+          status: 'draft',
           title: draft.draft_title || draft.draft_caption || 'Saved draft',
         })
       })
@@ -504,12 +513,13 @@ export default function ContentCalendar() {
           if (!suggestedDate) return
           addItem(toDateString(new Date(String(suggestedDate).includes('T') ? suggestedDate : `${suggestedDate}T12:00:00`)), {
             type: 'Idea',
+            status: 'radar',
             title: suggestion.title || opportunity.title,
           })
         })
       })
     return groups
-  }, [drafts, opportunities, scheduledPosts])
+  }, [calendarPosts, drafts, opportunities])
 
   const monthOpenCount = useMemo(() => {
     const monthStart = startOfMonth(monthGridDate)
@@ -576,7 +586,7 @@ export default function ContentCalendar() {
       navigate(`/post?draftId=${item.draft.id}`)
       return
     }
-    if (item.post?.id) {
+    if (item.post?.id && item.post.status !== 'published') {
       navigate(`/post?editPost=${item.post.id}`)
       return
     }
@@ -632,7 +642,7 @@ export default function ContentCalendar() {
         <div className="content-plan-actions flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => setQueueMode('schedule')}
+            onClick={() => setQueueMode('month')}
             className="portal-button-secondary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold"
           >
             <CalendarDays className="h-4 w-4" />
@@ -675,9 +685,8 @@ export default function ContentCalendar() {
             </div>
             <div className="content-plan-filterbar">
               {[
-                ['posts', 'Posts'],
-                ['drafts', 'Drafts'],
-                ['schedule', 'Schedule'],
+                ['week', 'Week'],
+                ['month', 'Month'],
               ].map(([value, label]) => (
                 <button
                   key={value}
@@ -691,13 +700,14 @@ export default function ContentCalendar() {
               ))}
             </div>
             <div className="flex flex-wrap gap-2">
-              <ProofChip>{radarItems.length} Radar</ProofChip>
-              <ProofChip>{drafts.length} Drafts</ProofChip>
-              <ProofChip>{scheduledPosts.length} Scheduled</ProofChip>
+              <ProofChip>{radarItems.length} AI ideas</ProofChip>
+              <ProofChip>{draftItems.length} Drafts</ProofChip>
+              <ProofChip>{postItems.filter((item) => item.badgeType === 'scheduled').length} Scheduled</ProofChip>
+              <ProofChip>{postItems.filter((item) => item.badgeType === 'published').length} Posted</ProofChip>
             </div>
           </div>
 
-          {queueMode === 'schedule' ? (
+          {queueMode === 'month' ? (
             <div className="content-plan-month">
               <div className="content-plan-month-head">
                 <div>
@@ -743,6 +753,7 @@ export default function ContentCalendar() {
                             key={`${item.type}-${index}`}
                             type="button"
                             className="content-plan-month-pill"
+                            data-status={item.status}
                             onClick={() => handleAddPost(dateString)}
                           >
                             <span>{item.type}</span>
