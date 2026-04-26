@@ -252,7 +252,9 @@ function getToolPreset(tool) {
 }
 
 function getToolGroup(tool) {
-  return tool.group || tool.category || getToolPreset(tool)?.category || 'custom'
+  const presetGroup = getToolPreset(tool)?.category
+  const savedGroup = tool.group || tool.category
+  return savedGroup && savedGroup !== 'custom' ? savedGroup : presetGroup || savedGroup || 'custom'
 }
 
 function getWorkspaceGroupLabel(groupId) {
@@ -526,7 +528,7 @@ function ToolIcon({ tool }) {
   const [showFallback, setShowFallback] = useState(Boolean(PresetIcon) || !sources.length)
 
   if (PresetIcon) {
-    return <PresetIcon className="h-5 w-5" />
+    return <PresetIcon className="h-4 w-4" />
   }
 
   if (!showFallback && sources[sourceIndex]) {
@@ -534,7 +536,7 @@ function ToolIcon({ tool }) {
       <img
         src={sources[sourceIndex]}
         alt=""
-        className="h-10 w-10 rounded-2xl object-contain"
+        className="h-7 w-7 rounded-xl object-contain"
         onError={() => {
           if (sourceIndex < sources.length - 1) {
             setSourceIndex(sourceIndex + 1)
@@ -547,12 +549,12 @@ function ToolIcon({ tool }) {
   }
 
   if (tool.icon) {
-    return <span className="text-3xl">{tool.icon}</span>
+    return <span className="text-xl">{tool.icon}</span>
   }
 
   return (
     <div
-      className="flex h-10 w-10 items-center justify-center rounded-2xl text-sm font-bold"
+      className="flex h-7 w-7 items-center justify-center rounded-xl text-xs font-bold"
       style={{ background: 'rgba(201, 168, 76, 0.14)', color: 'var(--portal-primary-strong)' }}
     >
       {getToolInitials(tool.label)}
@@ -612,17 +614,17 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onUpdate, onMoveGroup, onD
           onOpen(tool)
         }
       }}
-      className="group relative rounded-[24px] border text-left transition-all duration-200 hover:-translate-y-0.5"
+      className="group relative rounded-[20px] border text-left transition-all duration-200 hover:-translate-y-0.5"
       style={{
         borderColor: 'rgba(26, 24, 20, 0.08)',
         background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(250, 247, 241, 0.7))',
-        boxShadow: '0 16px 34px rgba(26, 24, 20, 0.055)',
+        boxShadow: '0 10px 24px rgba(26, 24, 20, 0.045)',
       }}
     >
-      <div className="flex min-h-[116px] items-center gap-3 p-3.5 pr-12">
+      <div className="flex min-h-[78px] items-center gap-2.5 p-2.5 pr-10">
         {editMode && (
           <div
-            className="absolute left-2 top-2 rounded-full p-1.5"
+            className="absolute left-1.5 top-1.5 rounded-full p-1"
             style={{ background: 'rgba(255,255,255,0.8)', color: 'var(--portal-text-soft)' }}
             aria-hidden="true"
           >
@@ -631,20 +633,20 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onUpdate, onMoveGroup, onD
         )}
 
         <div
-          className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[16px]"
+          className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-[13px]"
           style={{ background: `${accent}13`, color: accent, border: '1px solid rgba(26, 24, 20, 0.06)' }}
         >
           <ToolIcon key={`${tool.id}:${tool.url}:${tool.presetId || ''}`} tool={tool} />
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
+          <p className="truncate text-[13px] font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
             {tool.label}
           </p>
-          <p className="mt-1 truncate text-xs" style={{ color: 'var(--portal-text-soft)' }}>
+          <p className="mt-0.5 truncate text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>
             {hostname || 'External app'}
           </p>
-          <span className="mt-2 inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ background: 'rgba(26, 24, 20, 0.045)', color: 'var(--portal-text-soft)' }}>
+          <span className="mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ background: 'rgba(26, 24, 20, 0.045)', color: 'var(--portal-text-soft)' }}>
             {groupLabel}
           </span>
         </div>
@@ -656,7 +658,7 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onUpdate, onMoveGroup, onD
           event.stopPropagation()
           setMenuOpen((current) => !current)
         }}
-        className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full border transition-all hover:-translate-y-0.5"
+        className="absolute right-2.5 top-2.5 flex h-8 w-8 items-center justify-center rounded-full border transition-all hover:-translate-y-0.5"
         style={{ borderColor: 'rgba(26, 24, 20, 0.08)', background: 'rgba(255,255,255,0.86)', color: 'var(--portal-text-muted)', boxShadow: '0 8px 18px rgba(26, 24, 20, 0.06)' }}
         aria-label={`${tool.label} options`}
       >
@@ -1086,7 +1088,7 @@ export default function Dashboard() {
         </div>
 
         {visibleTools.length > 0 ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {visibleTools.map((tool) => (
               <ToolTile
                 key={tool.id}
