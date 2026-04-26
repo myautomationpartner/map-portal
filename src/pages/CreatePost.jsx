@@ -14,6 +14,7 @@ import {
   fetchSocialDrafts,
   generatePublisherAssist,
   generatePublisherImage,
+  improvePublisherImage,
   updateSocialDraft,
   upsertSocialDraft,
 } from '../lib/portalApi'
@@ -74,6 +75,14 @@ const ASSIST_ACTIONS = [
   { id: 'cta', label: 'Add CTA', description: 'Give readers a clearer next step.' },
   { id: 'variants', label: '3 versions', description: 'Create three different options.' },
   { id: 'platform', label: 'Platform-aware', description: 'Tune it for the selected channels.' },
+]
+
+const IMAGE_ASSIST_ACTIONS = [
+  { id: 'cleanup', label: 'Clean up', description: 'Improve light, crop, contrast, and sharpness.' },
+  { id: 'social', label: 'Make social-ready', description: 'Polish it into a stronger post creative.' },
+  { id: 'branded', label: 'Brand polish', description: 'Add a subtle professional MAP-style finish.' },
+  { id: 'square', label: 'Square crop', description: 'Create a 1:1 social post version.' },
+  { id: 'story', label: 'Story crop', description: 'Create a vertical story/reel-friendly version.' },
 ]
 
 const SLOT_STATE_STYLES = {
@@ -138,6 +147,15 @@ function base64ToImageFile(base64, mimeType = 'image/png', filename = 'generated
     bytes[index] = binary.charCodeAt(index)
   }
   return new File([bytes], filename, { type: mimeType })
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (event) => resolve(event.target?.result || '')
+    reader.onerror = () => reject(new Error('Could not read the selected image.'))
+    reader.readAsDataURL(file)
+  })
 }
 
 function getDraftMetaImagePrompt(draft) {
@@ -782,6 +800,9 @@ export default function CreatePost() {
   const [imagePreview, setImagePreview] = useState(null)
   const [imageGenerateState, setImageGenerateState] = useState('idle')
   const [imageGenerateError, setImageGenerateError] = useState('')
+  const [imageImproveState, setImageImproveState] = useState('idle')
+  const [imageImproveMode, setImageImproveMode] = useState('')
+  const [imageImproveError, setImageImproveError] = useState('')
   const [dropboxAttachments, setDropboxAttachments] = useState([])
   const [dropboxLoading, setDropboxLoading] = useState(false)
   const [dropboxSuggestedAssets, setDropboxSuggestedAssets] = useState([])
@@ -897,6 +918,7 @@ export default function CreatePost() {
   const dropboxPreviewSource = getDropboxPreviewSource(dropboxAttachments)
   const previewedDropboxSource = getDropboxThumbSource(previewedDropboxAsset)
   const mediaPreviewSource = imagePreview || previewedDropboxSource || dropboxPreviewSource
+  const canImproveImage = Boolean(clientId && mediaPreviewSource && !isSubmitting)
   const selectedDaySlots = selectedDay ? (slotsByDate.get(selectedDay) || []) : []
   const selectableDaySlots = selectedDaySlots.filter((slot) => ['recommended_fill', 'occupied_draft'].includes(slot.state))
   const activeSlot = useMemo(() => {
@@ -1203,6 +1225,9 @@ export default function CreatePost() {
     setImagePreview(post.media_url || null)
     setImageGenerateState('idle')
     setImageGenerateError('')
+    setImageImproveState('idle')
+    setImageImproveMode('')
+    setImageImproveError('')
     setDropboxAttachments([])
     setPreviewedDropboxAsset(null)
     setActiveDraftId('')
@@ -1335,6 +1360,9 @@ export default function CreatePost() {
     reader.readAsDataURL(file)
     setImageGenerateState('idle')
     setImageGenerateError('')
+    setImageImproveState('idle')
+    setImageImproveMode('')
+    setImageImproveError('')
     setErrorMsg('')
   }
 
@@ -1361,14 +1389,76 @@ export default function CreatePost() {
       const file = base64ToImageFile(payload.image_base64, payload.mime_type || 'image/png')
       setImageFile(file)
       setImagePreview(`data:${payload.mime_type || 'image/png'};base64,${payload.image_base64}`)
-      setExistingMediaUrl('')
-      setPreviewedDropboxAsset(null)
-      setImageGenerateState('ready')
-      setDraftStatus('Generated image added. You can replace it with an upload if you prefer.')
+    setExistingMediaUrl('')
+    setPreviewedDropboxAsset(null)
+    setImageGenerateState('ready')
+    setImageImproveState('idle')
+    setImageImproveMode('')
+    setImageImproveError('')
+    setDraftStatus('Generated image added. You can replace it with an upload if you prefer.')
     } catch (error) {
       console.error('[GeneratePublisherImage]', error)
       setImageGenerateError(error.message || 'Could not generate an image right now.')
       setImageGenerateState('error')
+    }
+  }
+
+  async function getImageImproveInput() {
+    if (imageFile) {
+      const fileType = String(imageFile.type || '').toLowerCase()
+      const fileName = String(imageFile.name || '').toLowerCase()
+      if (fileType.includes('heic') || fileType.includes('heif') || /\.(heic|heif)$/.test(fileName)) {
+        throw new Error('iPhone HEIC photos need to be saved or exported as JPG before Image Assist can improve them.')
+      }
+      if (!/^image\/(png|jpe?g|webp)$/i.test(fileType)) {
+        throw new Error('Image Assist supports JPG, PNG, and WebP images.')
+      }
+      return { image_data_url: await readFileAsDataUrl(imageFile) }
+    }
+
+    if (typeof imagePreview === 'string' && imagePreview.startsWith('data:image/')) {
+      return { image_data_url: imagePreview }
+    }
+
+    const imageUrl = existingMediaUrl || previewedDropboxSource || dropboxPreviewSource || ''
+    if (imageUrl && /^https?:\/\//i.test(imageUrl)) {
+      return { image_url: imageUrl }
+    }
+
+    throw new Error('Add or select an image before using Image Assist.')
+  }
+
+  async function handleImproveImage(mode) {
+    if (!requireWriteAccess('improve images with Partner')) return
+
+    setImageImproveState('improving')
+    setImageImproveMode(mode)
+    setImageImproveError('')
+    setImageGenerateError('')
+    setErrorMsg('')
+
+    try {
+      const imageInput = await getImageImproveInput()
+      const payload = await improvePublisherImage({
+        client_id: clientId,
+        business_name: profile?.clients?.business_name || '',
+        caption: content,
+        platforms: activePlatforms,
+        mode,
+        quality: 'low',
+        ...imageInput,
+      })
+      const file = base64ToImageFile(payload.image_base64, payload.mime_type || 'image/png', `partner-improved-${mode || 'image'}.png`)
+      setImageFile(file)
+      setImagePreview(`data:${payload.mime_type || 'image/png'};base64,${payload.image_base64}`)
+      setExistingMediaUrl('')
+      setPreviewedDropboxAsset(null)
+      setImageImproveState('ready')
+      setDraftStatus('Improved image attached. Review it before approving the post.')
+    } catch (error) {
+      console.error('[ImprovePublisherImage]', error)
+      setImageImproveError(error.message || 'Could not improve this image right now.')
+      setImageImproveState('error')
     }
   }
 
@@ -1426,6 +1516,9 @@ export default function CreatePost() {
     setExistingMediaUrl('')
     setImageGenerateState('idle')
     setImageGenerateError('')
+    setImageImproveState('idle')
+    setImageImproveMode('')
+    setImageImproveError('')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -1479,6 +1572,9 @@ export default function CreatePost() {
     setImagePreview(null)
     setImageGenerateState('idle')
     setImageGenerateError('')
+    setImageImproveState('idle')
+    setImageImproveMode('')
+    setImageImproveError('')
     setDropboxAttachments([])
     setPreviewedDropboxAsset(null)
     setSearchParams({ date: slot.slot_date_local, slot: slot.slot_label })
@@ -1853,6 +1949,9 @@ export default function CreatePost() {
         setImagePreview(null)
         setImageGenerateState('idle')
         setImageGenerateError('')
+        setImageImproveState('idle')
+        setImageImproveMode('')
+        setImageImproveError('')
         setDropboxAttachments([])
         setDropboxSuggestedAssets([])
         setDropboxSuggestionStatus('idle')
@@ -2275,6 +2374,40 @@ export default function CreatePost() {
                     {imageGenerateState === 'ready' ? 'Generated image attached' : imageGenerateState === 'generating' ? 'Working on it...' : 'Upload or generate'}
                   </div>
                 </div>
+              </div>
+
+              <div className="image-assist-box">
+                <div className="partner-assist-head">
+                  <div>
+                    <p>Image Assist</p>
+                    <h2>Improve with Partner</h2>
+                  </div>
+                  <span>2 credits</span>
+                </div>
+                <div className="partner-assist-actions">
+                  {IMAGE_ASSIST_ACTIONS.map((action) => (
+                    <button
+                      key={action.id}
+                      type="button"
+                      onClick={() => handleImproveImage(action.id)}
+                      disabled={!canImproveImage || imageImproveState === 'improving' || imageGenerateState === 'generating'}
+                      title={action.description}
+                      data-active={imageImproveMode === action.id && imageImproveState === 'improving'}
+                    >
+                      {imageImproveMode === action.id && imageImproveState === 'improving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
+                {imageImproveError ? (
+                  <p className="partner-assist-error">{imageImproveError}</p>
+                ) : imageImproveState === 'improving' ? (
+                  <p className="partner-assist-note">Partner is improving the selected image...</p>
+                ) : canImproveImage ? (
+                  <p className="partner-assist-note">Works best with JPG, PNG, or WebP. iPhone HEIC photos should be saved as JPG first.</p>
+                ) : (
+                  <p className="partner-assist-note">Upload, generate, or select an image to unlock Image Assist.</p>
+                )}
               </div>
 
               <div className="mt-4 rounded-[24px] px-4 py-4" style={{ background: 'rgba(255,255,255,0.78)', border: '1px solid var(--portal-border)' }}>

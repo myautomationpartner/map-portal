@@ -2005,6 +2005,16 @@
   padding: 0.9rem;
 }
 
+.image-assist-box {
+  margin-top: 1rem;
+  border: 1px solid rgba(93, 120, 255, 0.18);
+  border-radius: var(--portal-radius-lg);
+  background:
+    linear-gradient(135deg, rgba(93, 120, 255, 0.09), rgba(255, 255, 255, 0.8) 52%),
+    rgba(255, 253, 248, 0.86);
+  padding: 0.9rem;
+}
+
 .partner-assist-head {
   display: flex;
   align-items: flex-start;

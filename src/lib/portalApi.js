@@ -800,6 +800,10 @@ export async function generatePublisherImage(input) {
   return callEdgeFunction('portal-generate-image', input)
 }
 
+export async function improvePublisherImage(input) {
+  return callEdgeFunction('portal-improve-image', input)
+}
+
 export async function generateCampaignPlan(input) {
   return callEdgeFunction('portal-generate-campaign', input)
 }
