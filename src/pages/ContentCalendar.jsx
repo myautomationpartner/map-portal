@@ -461,7 +461,7 @@ function RowActionMenu({ item, actions }) {
   )
 }
 
-function PlanRow({ item, selected, onSelect, actions }) {
+function PlanItemChip({ item, selected, onSelect, actions }) {
   return (
     <div
       role="button"
@@ -473,17 +473,10 @@ function PlanRow({ item, selected, onSelect, actions }) {
           onSelect(item.id)
         }
       }}
-      className="content-plan-row grid w-full grid-cols-[82px_minmax(0,1fr)_auto_auto] items-center gap-3 border-b px-4 py-3 text-left transition-all last:border-b-0 hover:bg-[rgba(245,235,214,0.42)]"
+      className="content-plan-post-chip grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 text-left transition-all"
       data-status={item.badgeType}
-      style={{
-        borderColor: 'var(--portal-border)',
-        background: selected ? 'rgba(245, 235, 214, 0.58)' : 'transparent',
-      }}
+      style={selected ? { borderColor: 'rgba(201, 168, 76, 0.42)', background: 'rgba(245, 235, 214, 0.64)' } : undefined}
     >
-      <div>
-        <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{item.dayLabel}</p>
-        <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-soft)' }}>{item.timeLabel}</p>
-      </div>
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-3">
           {item.thumbnailUrl ? (
@@ -510,6 +503,39 @@ function PlanRow({ item, selected, onSelect, actions }) {
         ) : null}
       </div>
       <RowActionMenu item={item} actions={actions} />
+    </div>
+  )
+}
+
+function WeekDayLane({ day, items, selectedItemId, onSelect, onAddPost, getActions }) {
+  return (
+    <div className="content-plan-day-lane">
+      <div className="content-plan-day-stamp">
+        <p>{formatDate(day, { weekday: 'short' })}</p>
+        <span>{formatDate(day, { month: 'short', day: 'numeric' })}</span>
+      </div>
+      <div className="content-plan-day-body">
+        {items.length > 0 ? (
+          <div className="content-plan-day-items">
+            {items.map((item) => (
+              <PlanItemChip
+                key={item.id}
+                item={item}
+                selected={selectedItemId === item.id}
+                onSelect={onSelect}
+                actions={getActions(item)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="content-plan-empty-day">
+            <span>Nothing for today</span>
+            <button type="button" onClick={() => onAddPost(toDateString(day))}>
+              Create post now
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -772,16 +798,20 @@ export default function ContentCalendar() {
     const merged = [...radarItems, ...draftItems, ...postItems]
     return merged
       .sort((a, b) => new Date(`${a.dateString}T12:00:00`) - new Date(`${b.dateString}T12:00:00`))
-      .slice(0, 12)
   }, [draftItems, postItems, radarItems])
 
-  const visiblePlanItems = useMemo(() => {
-    if (queueMode === 'week') return planItems
-    if (queueMode === 'month') return []
-    return planItems
-  }, [planItems, queueMode])
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(selectedWeekStart, index)), [selectedWeekStart])
+  const weekItemsByDate = useMemo(() => {
+    const groups = new Map()
+    for (const day of weekDays) groups.set(toDateString(day), [])
+    for (const item of planItems) {
+      if (!groups.has(item.dateString)) groups.set(item.dateString, [])
+      groups.get(item.dateString).push(item)
+    }
+    return groups
+  }, [planItems, weekDays])
 
-  const selectedItem = allDetailItems.find((item) => item.id === selectedItemId) || (queueMode === 'month' ? null : visiblePlanItems[0]) || null
+  const selectedItem = allDetailItems.find((item) => item.id === selectedItemId) || (queueMode === 'month' ? null : planItems[0]) || null
   const composerCaption = selectedItem ? (composerCaptions[selectedItem.id] ?? selectedItem.caption ?? '') : ''
   const monthDays = useMemo(() => getMonthGridDays(monthGridDate), [monthGridDate])
 
@@ -1150,7 +1180,7 @@ export default function ContentCalendar() {
                 {selectedWeekLabel}
               </p>
               <h2 className="mt-1 font-display text-xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-                Content Studio
+                Publisher
               </h2>
             </div>
             <div className="content-plan-filterbar">
@@ -1239,21 +1269,22 @@ export default function ContentCalendar() {
                 })}
               </div>
             </div>
-          ) : visiblePlanItems.length > 0 ? (
-            <div>
-              {visiblePlanItems.map((item) => (
-                <PlanRow
-                  key={item.id}
-                  item={item}
-                  selected={selectedItem?.id === item.id}
-                  onSelect={setSelectedItemId}
-                  actions={getRowActions(item)}
-                />
-              ))}
-            </div>
           ) : (
-            <div className="p-6 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-              No items match this view yet. Add a post or refresh the research and planner queue.
+            <div className="content-plan-week-lanes">
+              {weekDays.map((day) => {
+                const dateString = toDateString(day)
+                return (
+                  <WeekDayLane
+                    key={dateString}
+                    day={day}
+                    items={weekItemsByDate.get(dateString) || []}
+                    selectedItemId={selectedItem?.id || ''}
+                    onSelect={setSelectedItemId}
+                    onAddPost={handleAddPost}
+                    getActions={getRowActions}
+                  />
+                )
+              })}
             </div>
           )}
         </div>

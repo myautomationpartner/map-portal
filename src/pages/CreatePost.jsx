@@ -1894,8 +1894,8 @@ export default function CreatePost() {
           </section>
         )}
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.95fr)]">
-          <div className="space-y-5">
+        <div className="space-y-5">
+          <div className="create-post-compose-grid">
             <section className="portal-panel rounded-[34px] p-5 md:p-6">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -1986,6 +1986,39 @@ export default function CreatePost() {
               )}
 
               <div className="mt-5">
+                <div className="mb-4">
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                    Publishing to
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {PLATFORMS.map(({ id, label, Icon, accent, soft }) => {
+                      const active = selectedPlatforms[id]
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => {
+                            const nextValue = !selectedPlatforms[id]
+                            const next = { ...selectedPlatforms, [id]: nextValue }
+                            setSelectedPlatforms(next)
+                            if (nextValue) {
+                              setPreviewPlatform(id)
+                            } else if (previewPlatform === id) {
+                              setPreviewPlatform(Object.entries(next).find(([, enabled]) => enabled)?.[0] || '')
+                            }
+                          }}
+                          className="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-all"
+                          style={active
+                            ? { background: soft, borderColor: `${accent}44`, color: accent }
+                            : { background: 'rgba(255,255,255,0.82)', borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
                 {timingMode !== 'now' && scheduledFor && (
                   <div
                     className="mb-4 rounded-2xl px-4 py-3 text-sm"
@@ -2316,6 +2349,58 @@ export default function CreatePost() {
               />
             </section>
           </div>
+
+          <section className="portal-panel rounded-[34px] p-5 md:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                  Platform previews
+                </p>
+                <h2 className="mt-1 font-display text-xl font-semibold" style={{ color: 'var(--portal-text)' }}>
+                  Review every selected channel
+                </h2>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {activePlatforms.map((platformId) => {
+                  const platform = PLATFORMS.find((item) => item.id === platformId)
+                  if (!platform) return null
+                  return (
+                    <button
+                      key={platformId}
+                      type="button"
+                      onClick={() => setPreviewPlatform(platformId)}
+                      className="rounded-full border px-3 py-2 text-xs font-semibold"
+                      style={previewPlatform === platformId
+                        ? { background: platform.soft, color: platform.accent, borderColor: `${platform.accent}44` }
+                        : { background: 'rgba(255,255,255,0.82)', color: 'var(--portal-text-muted)', borderColor: 'var(--portal-border)' }}
+                    >
+                      {platform.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {activePlatforms.length > 0 ? (
+              <div className="create-post-preview-grid mt-5">
+                {activePlatforms.map((platformId) => (
+                  <PlatformPreview
+                    key={platformId}
+                    platformId={platformId}
+                    profile={profile}
+                    content={content}
+                    imagePreview={imagePreview || existingMediaUrl}
+                    dropboxAttachments={dropboxAttachments}
+                    scheduledFor={scheduledFor}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="mt-5 rounded-[22px] p-4 text-sm" style={{ background: 'rgba(255,255,255,0.74)', color: 'var(--portal-text-muted)', border: '1px solid var(--portal-border)' }}>
+                Select at least one platform above to preview the post.
+              </div>
+            )}
+          </section>
 
           <div className="space-y-5">
             <section className="rounded-[34px] p-5 md:p-6" style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}>
