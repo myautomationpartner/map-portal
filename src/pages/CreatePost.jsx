@@ -30,9 +30,9 @@ import {
 } from '../lib/socialDrafting'
 import {
   AlertCircle, ArrowUpRight, Calendar, CalendarDays, Camera, Check, CheckCircle2,
-  Clock3, Globe, History, Loader2, Music2, Paperclip,
+  Clock3, Globe, History, Linkedin, Loader2, Music2, Paperclip,
   Send, Share2, Sparkles, UploadCloud, Wand2, X,
-  Trash2,
+  Trash2, Twitter,
 } from 'lucide-react'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
@@ -66,7 +66,60 @@ const PLATFORMS = [
     accent: '#111111',
     soft: 'rgba(17, 17, 17, 0.08)',
   },
+  {
+    id: 'linkedin',
+    label: 'LinkedIn',
+    Icon: Linkedin,
+    accent: '#0A66C2',
+    soft: 'rgba(10, 102, 194, 0.10)',
+  },
+  {
+    id: 'twitter',
+    label: 'X / Twitter',
+    Icon: Twitter,
+    accent: '#111111',
+    soft: 'rgba(17, 17, 17, 0.08)',
+  },
 ]
+
+const PLATFORM_FORMAT_RULES = {
+  facebook: {
+    label: 'Facebook',
+    maxChars: 63206,
+    guidance: 'Community-first copy, 1-3 short paragraphs, clear CTA.',
+    media: '1:1 or 4:5 image works well.',
+  },
+  instagram: {
+    label: 'Instagram',
+    maxChars: 2200,
+    guidance: 'Strong first line, visual-first wording, light hashtags.',
+    media: '1:1 safest; 4:5 gets more feed space.',
+  },
+  google: {
+    label: 'Google Business',
+    maxChars: 1500,
+    guidance: 'Direct local update with booking or learn-more CTA.',
+    media: 'Clean image with no heavy text overlay.',
+  },
+  tiktok: {
+    label: 'TikTok',
+    maxChars: 2200,
+    guidance: 'Short caption, video/slideshow mindset, few hashtags.',
+    media: '9:16 video or slideshow is preferred.',
+  },
+  linkedin: {
+    label: 'LinkedIn',
+    maxChars: 3000,
+    guidance: 'Professional credibility angle, community or business impact.',
+    media: '1.91:1 or 1:1 image works well.',
+  },
+  twitter: {
+    label: 'X / Twitter',
+    maxChars: 280,
+    guidance: 'Punchy, link-aware, one clear thought.',
+    media: 'Image optional; keep copy under 280 characters.',
+  },
+}
 
 const ASSIST_ACTIONS = [
   { id: 'improve', label: 'Improve', description: 'Clean up the caption and make it stronger.' },
@@ -511,6 +564,98 @@ function getCaptionDeltaRatio(originalCaption, nextCaption) {
   return Math.abs(before.length - after.length) / baseline
 }
 
+function normalizeCaption(value) {
+  return String(value || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function stripHashtags(value) {
+  return normalizeCaption(value).replace(/(^|\s)#[\w-]+/g, '').replace(/\s{2,}/g, ' ').trim()
+}
+
+function truncateCaption(value, maxChars) {
+  const text = normalizeCaption(value)
+  if (!maxChars || text.length <= maxChars) return text
+  const limit = Math.max(0, maxChars - 1)
+  const slice = text.slice(0, limit)
+  const boundary = Math.max(slice.lastIndexOf(' '), slice.lastIndexOf('\n'))
+  return `${slice.slice(0, boundary > limit * 0.72 ? boundary : limit).trim()}…`
+}
+
+function sentenceParts(value) {
+  return normalizeCaption(value)
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+function buildLocalHashtags(profile) {
+  const client = profile?.clients || {}
+  const tags = []
+  const businessType = String(client.business_type || client.business_subtype || '').toLowerCase()
+  const cityOrArea = String(client.county || client.state_code || '').replace(/[^a-z0-9]/gi, '')
+
+  if (businessType.includes('dance')) tags.push('#DanceStudio', '#DanceLife')
+  if (cityOrArea) tags.push(`#${cityOrArea}`)
+  if (!tags.length) tags.push('#LocalBusiness')
+
+  return [...new Set(tags)].slice(0, 4)
+}
+
+function formatCaptionForPlatform(platformId, caption, profile) {
+  const base = normalizeCaption(caption)
+  const noTags = stripHashtags(base)
+  const firstSentence = sentenceParts(noTags)[0] || noTags
+  const businessName = profile?.clients?.business_name || 'our team'
+
+  if (!base) return ''
+
+  switch (platformId) {
+    case 'instagram': {
+      const hashtags = buildLocalHashtags(profile)
+      const captionWithTags = /#[\w-]+/.test(base)
+        ? base
+        : `${base}\n\n${hashtags.join(' ')}`
+      return truncateCaption(captionWithTags, PLATFORM_FORMAT_RULES.instagram.maxChars)
+    }
+    case 'google':
+      return truncateCaption(noTags, PLATFORM_FORMAT_RULES.google.maxChars)
+    case 'tiktok': {
+      const short = truncateCaption(firstSentence || noTags, 180)
+      const tags = buildLocalHashtags(profile).slice(0, 2)
+      return truncateCaption(`${short} ${tags.join(' ')}`.trim(), PLATFORM_FORMAT_RULES.tiktok.maxChars)
+    }
+    case 'linkedin': {
+      const intro = noTags.toLowerCase().includes(String(businessName).toLowerCase())
+        ? noTags
+        : `${businessName} update: ${noTags}`
+      return truncateCaption(intro, PLATFORM_FORMAT_RULES.linkedin.maxChars)
+    }
+    case 'twitter':
+      return truncateCaption(noTags, PLATFORM_FORMAT_RULES.twitter.maxChars)
+    case 'facebook':
+    default:
+      return truncateCaption(base, PLATFORM_FORMAT_RULES.facebook.maxChars)
+  }
+}
+
+function buildPlatformVariants(platformIds, caption, profile, existingVariants = {}) {
+  return platformIds.reduce((variants, platformId) => {
+    const existing = existingVariants?.[platformId] || {}
+    variants[platformId] = {
+      ...existing,
+      caption: existing.caption || formatCaptionForPlatform(platformId, caption, profile),
+      format: platformId,
+      rules: PLATFORM_FORMAT_RULES[platformId] || null,
+      generated_at: existing.generated_at || new Date().toISOString(),
+    }
+    return variants
+  }, {})
+}
+
 function PlatformPreview({ platformId, profile, content, imagePreview, dropboxAttachments, scheduledFor }) {
   const platform = PLATFORMS.find((item) => item.id === platformId)
   if (!platform) return null
@@ -604,6 +749,49 @@ function PlatformPreview({ platformId, profile, content, imagePreview, dropboxAt
     )
   }
 
+  if (platformId === 'linkedin') {
+    return (
+      <div className="overflow-hidden rounded-[28px]" style={{ background: '#fff', border: '1px solid var(--portal-border)' }}>
+        <div className="flex items-center gap-3 px-4 py-4" style={{ borderBottom: '1px solid var(--portal-border)' }}>
+          <div className="flex h-10 w-10 items-center justify-center rounded-md text-white" style={{ background: platform.accent }}>
+            <platform.Icon className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{businessName}</p>
+            <p className="text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>{previewTime}</p>
+          </div>
+        </div>
+        {visualPreview && <img src={visualPreview} alt="LinkedIn preview" className="max-h-80 w-full object-cover" />}
+        <div className="px-4 py-4">
+          <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--portal-text)' }}>{content}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (platformId === 'twitter') {
+    return (
+      <div className="rounded-[28px] p-4" style={{ background: '#fff', border: '1px solid var(--portal-border)' }}>
+        <div className="flex gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full text-white" style={{ background: platform.accent }}>
+            <platform.Icon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{businessName}</p>
+              <p className="text-xs" style={{ color: 'var(--portal-text-soft)' }}>@{businessName.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 18) || 'business'}</p>
+            </div>
+            <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--portal-text)' }}>{content}</p>
+            {visualPreview && (
+              <img src={visualPreview} alt="X preview" className="mt-3 max-h-72 w-full rounded-2xl object-cover" style={{ border: '1px solid var(--portal-border)' }} />
+            )}
+            <p className="mt-2 text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>{previewTime}</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-[28px] p-5" style={{ background: '#111', color: '#fff', border: '1px solid rgba(255,255,255,0.08)' }}>
       <div className="flex items-center justify-between gap-3">
@@ -638,6 +826,7 @@ function ReviewModal({
   setPreviewPlatform,
   timingMode,
   scheduledFor,
+  platformCaptions,
 }) {
   if (!open) return null
 
@@ -764,7 +953,7 @@ function ReviewModal({
                 <PlatformPreview
                   platformId={previewPlatform}
                   profile={profile}
-                  content={content}
+                  content={platformCaptions?.[previewPlatform] || content}
                   imagePreview={imagePreview}
                   dropboxAttachments={dropboxAttachments}
                   scheduledFor={scheduledFor}
@@ -847,6 +1036,8 @@ export default function CreatePost() {
     instagram: true,
     google: false,
     tiktok: false,
+    linkedin: false,
+    twitter: false,
   })
   const [scheduledFor, setScheduledFor] = useState('')
   const [submitState, setSubmitState] = useState('idle')
@@ -874,6 +1065,8 @@ export default function CreatePost() {
   const [assistAction, setAssistAction] = useState('')
   const [assistError, setAssistError] = useState('')
   const [assistSuggestions, setAssistSuggestions] = useState([])
+  const [platformVariants, setPlatformVariants] = useState({})
+  const [platformFormatStatus, setPlatformFormatStatus] = useState('')
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile'],
@@ -1007,6 +1200,14 @@ export default function CreatePost() {
       : timingMode === 'custom'
         ? 'Choose any date and time'
         : 'Pick a slot from the calendar'
+  const platformCaptions = useMemo(() => {
+    return Object.fromEntries(
+      activePlatforms.map((platformId) => [
+        platformId,
+        platformVariants?.[platformId]?.caption || formatCaptionForPlatform(platformId, content, profile),
+      ]),
+    )
+  }, [activePlatforms, platformVariants, content, profile])
 
   useEffect(() => {
     if (!activePlatforms.includes(previewPlatform)) {
@@ -1028,6 +1229,7 @@ export default function CreatePost() {
   }, [selectedDay])
 
   const applyDraftToComposer = useCallback((draft, slot) => {
+    const meta = parseDraftMeta(draft?.review_notes)
     hydratingDraftRef.current = true
     setActiveDraftId(draft.id || '')
     setActiveSlotKey(getSlotKey(slot))
@@ -1036,6 +1238,8 @@ export default function CreatePost() {
     setMediaSuggestion(extractMediaSuggestion(draft))
     setGeneratedCaption(draft.draft_caption || '')
     setContent(draft.draft_caption || '')
+    setPlatformVariants(meta.platformVariants || {})
+    setPlatformFormatStatus(meta.platformVariants ? 'Saved platform captions loaded.' : '')
     setDraftDirty(false)
     setDraftStatus(draft.draft_caption ? 'Draft loaded.' : 'Draft ready.')
     setDraftError('')
@@ -1063,6 +1267,8 @@ export default function CreatePost() {
     setMediaSuggestion(generated.mediaSuggestion)
     setGeneratedCaption(generated.caption)
     setContent(generated.caption)
+    setPlatformVariants({})
+    setPlatformFormatStatus('')
     setDraftDirty(false)
     setDraftError('')
     setTimingMode('slot')
@@ -1206,6 +1412,7 @@ export default function CreatePost() {
           ...currentMeta,
           angleChoices,
           mediaSuggestion,
+          platformVariants: buildPlatformVariants(activePlatforms, nextCaption, profile, platformVariants),
           editCount: (currentMeta.editCount || 0) + 1,
           lastEditedAt: new Date().toISOString(),
           editSeverity: deltaRatio >= 0.35 ? 'heavy' : 'light',
@@ -1232,7 +1439,7 @@ export default function CreatePost() {
       console.error('[SocialDraftAutosave]', error)
       setDraftError(error.message || 'Could not save draft edits.')
     }
-  }, [activeDraftId, activeSlot, activeDraft, angleChoices, selectedAngleId, generatedCaption, mediaSuggestion, queryClient, clientId, recordPlannerFeedbackSafely])
+  }, [activeDraftId, activeSlot, activeDraft, angleChoices, selectedAngleId, generatedCaption, mediaSuggestion, platformVariants, activePlatforms, profile, queryClient, clientId, recordPlannerFeedbackSafely])
 
   const loadScheduledPostForEditing = useCallback((post) => {
     if (!post) return
@@ -1246,7 +1453,11 @@ export default function CreatePost() {
       instagram: Boolean(post.platforms?.includes('instagram')),
       google: Boolean(post.platforms?.includes('google')),
       tiktok: Boolean(post.platforms?.includes('tiktok')),
+      linkedin: Boolean(post.platforms?.includes('linkedin')),
+      twitter: Boolean(post.platforms?.includes('twitter')),
     })
+    setPlatformVariants({})
+    setPlatformFormatStatus('Run Partner Format to create platform captions for this edit.')
     setPreviewPlatform(post.platforms?.[0] || 'facebook')
     setTimingMode('custom')
     setScheduledFor(isoToLocalInputValue(post.scheduled_for, timezone))
@@ -1259,6 +1470,8 @@ export default function CreatePost() {
     setImageImproveState('idle')
     setImageImproveMode('')
     setImageImproveError('')
+    setPlatformVariants({})
+    setPlatformFormatStatus('')
     setDropboxAttachments([])
     setPreviewedDropboxAsset(null)
     setActiveDraftId('')
@@ -1534,12 +1747,46 @@ export default function CreatePost() {
     if (!suggestion?.caption) return
 
     setContent(suggestion.caption)
+    setPlatformVariants({})
+    setPlatformFormatStatus('Caption updated. Run Partner Format again to refresh platform captions.')
     setErrorMsg('')
     setAssistState('applied')
     setDraftStatus('Partner Assist suggestion applied. Review it before approving the post.')
     if (!hydratingDraftRef.current && activeDraftId) {
       setDraftDirty(true)
     }
+  }
+
+  function handleGeneratePlatformVariants() {
+    if (!content.trim()) {
+      setPlatformFormatStatus('Write or load a caption before formatting by platform.')
+      return
+    }
+    if (!activePlatforms.length) {
+      setPlatformFormatStatus('Select at least one platform before formatting.')
+      return
+    }
+
+    setPlatformVariants(buildPlatformVariants(activePlatforms, content, profile))
+    setPlatformFormatStatus('Platform captions formatted. Review and edit each one before approval.')
+  }
+
+  function handlePlatformCaptionChange(platformId, nextCaption) {
+    setPlatformVariants((current) => ({
+      ...current,
+      [platformId]: {
+        ...(current?.[platformId] || {}),
+        caption: nextCaption,
+        format: platformId,
+        rules: PLATFORM_FORMAT_RULES[platformId] || null,
+        edited_at: new Date().toISOString(),
+      },
+    }))
+    setPlatformFormatStatus('Platform caption edits saved in this post.')
+  }
+
+  function getResolvedPlatformVariants(platformIds = activePlatforms) {
+    return buildPlatformVariants(platformIds, content, profile, platformVariants)
   }
 
   function removeImage() {
@@ -1653,6 +1900,8 @@ export default function CreatePost() {
         setMediaSuggestion('')
         setGeneratedCaption('')
         setContent('')
+        setPlatformVariants({})
+        setPlatformFormatStatus('')
         setDraftDirty(false)
         setDraftStatus('')
         setDraftError('')
@@ -1712,6 +1961,8 @@ export default function CreatePost() {
         setDropboxAttachments([])
         setPreviewedDropboxAsset(null)
         setContent('')
+        setPlatformVariants({})
+        setPlatformFormatStatus('')
         setScheduledFor('')
         setErrorMsg('')
         setDraftStatus('')
@@ -1776,6 +2027,15 @@ export default function CreatePost() {
     if (connectedActivePlatforms.length === 0) {
       return 'Connect at least one social account in Settings before publishing.'
     }
+    const overLimitPlatform = activePlatforms.find((platformId) => {
+      const rules = PLATFORM_FORMAT_RULES[platformId]
+      const caption = platformCaptions[platformId] || ''
+      return rules?.maxChars && caption.length > rules.maxChars
+    })
+    if (overLimitPlatform) {
+      const rules = PLATFORM_FORMAT_RULES[overLimitPlatform]
+      return `${rules.label} caption exceeds the ${rules.maxChars}-character platform limit.`
+    }
 
     if (timingMode !== 'now') {
       if (!scheduledFor) {
@@ -1804,6 +2064,10 @@ export default function CreatePost() {
       return
     }
 
+    if (content.trim() && activePlatforms.some((platformId) => !platformVariants?.[platformId]?.caption)) {
+      setPlatformVariants((current) => buildPlatformVariants(activePlatforms, content, profile, current))
+      setPlatformFormatStatus('Platform captions formatted for final review.')
+    }
     setErrorMsg('')
     setReviewOpen(true)
   }
@@ -1837,6 +2101,7 @@ export default function CreatePost() {
       const scheduledForIso = timingMode === 'now' ? null : localDateTimeToIso(scheduledFor)
       const targetStatus = timingMode === 'now' ? 'published' : 'scheduled'
       const targetPlatforms = connectedActivePlatforms
+      const targetPlatformVariants = getResolvedPlatformVariants(targetPlatforms)
       let post = null
       const editCandidateId = editingScheduledPostId || editTargetPostId || ''
       let existingEditingPost = editingScheduledPost || scheduledPostsDetailed.find((item) => item.id === editCandidateId) || null
@@ -1890,6 +2155,7 @@ export default function CreatePost() {
           clientId,
           zernioPostId: resolvedEditingRef || null,
           content: content.trim(),
+          platformVariants: targetPlatformVariants,
           mediaUrl: effectiveMediaUrl,
           dropboxLinks: dropboxAttachments.map(({ name, link, size }) => ({ name, link, size })),
           platforms: targetPlatforms,
@@ -1943,6 +2209,7 @@ export default function CreatePost() {
           published_reference: post.id,
           review_notes: stringifyDraftMeta({
             ...currentMeta,
+            platformVariants: targetPlatformVariants,
             publishCount: (currentMeta.publishCount || 0) + 1,
             lastPublishedAt: new Date().toISOString(),
           }),
@@ -1996,6 +2263,8 @@ export default function CreatePost() {
         setSubmitState('idle')
         setErrorMsg('')
         setPublishResult(null)
+        setPlatformVariants({})
+        setPlatformFormatStatus('')
         setEditingScheduledPostId('')
         setEditingScheduledPostRef('')
         setActiveDraftId('')
@@ -2258,6 +2527,8 @@ export default function CreatePost() {
                   value={content}
                   onChange={(event) => {
                     setContent(event.target.value)
+                    setPlatformVariants({})
+                    setPlatformFormatStatus('Base caption changed. Run Partner Format to refresh platform captions.')
                     setErrorMsg('')
                     if (!hydratingDraftRef.current && activeDraftId) {
                       setDraftDirty(true)
@@ -2329,6 +2600,70 @@ export default function CreatePost() {
                     </div>
                   ) : (
                     <p className="partner-assist-note">Try a quick improvement, shorter version, stronger CTA, or platform-aware caption before approval.</p>
+                  )}
+                </div>
+
+                <div className="partner-assist-box">
+                  <div className="partner-assist-head">
+                    <div>
+                      <p>Platform formatting</p>
+                      <h2>Partner Format</h2>
+                    </div>
+                    <span>{activePlatforms.length || 0} channels</span>
+                  </div>
+                  <div className="partner-assist-actions">
+                    <button
+                      type="button"
+                      onClick={handleGeneratePlatformVariants}
+                      disabled={!content.trim() || !activePlatforms.length || isSubmitting}
+                      title="Create editable platform-specific captions from the base caption."
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Format for platforms
+                    </button>
+                  </div>
+                  {platformFormatStatus ? (
+                    <p className="partner-assist-note">{platformFormatStatus}</p>
+                  ) : (
+                    <p className="partner-assist-note">Creates native captions for Facebook, Instagram, Google Business, TikTok, LinkedIn, and X/Twitter based on each platform&apos;s format.</p>
+                  )}
+
+                  {activePlatforms.length > 0 && (
+                    <div className="mt-4 space-y-3">
+                      {activePlatforms.map((platformId) => {
+                        const platform = PLATFORMS.find((item) => item.id === platformId)
+                        const rules = PLATFORM_FORMAT_RULES[platformId] || {}
+                        const caption = platformCaptions[platformId] || ''
+                        if (!platform) return null
+
+                        return (
+                          <div key={platformId} className="rounded-[20px] p-3" style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid var(--portal-border)' }}>
+                            <div className="mb-2 flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2">
+                                <span className="flex h-7 w-7 items-center justify-center rounded-full text-white" style={{ background: platform.accent }}>
+                                  <platform.Icon className="h-3.5 w-3.5" />
+                                </span>
+                                <div>
+                                  <p className="text-xs font-semibold" style={{ color: 'var(--portal-text)' }}>{platform.label}</p>
+                                  <p className="text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>{rules.guidance}</p>
+                                </div>
+                              </div>
+                              <span className="text-[10px] font-semibold" style={{ color: caption.length > rules.maxChars ? 'var(--portal-danger)' : 'var(--portal-text-soft)' }}>
+                                {caption.length}/{rules.maxChars}
+                              </span>
+                            </div>
+                            <textarea
+                              value={caption}
+                              onChange={(event) => handlePlatformCaptionChange(platformId, event.target.value)}
+                              rows={platformId === 'twitter' ? 2 : 3}
+                              className="w-full resize-none rounded-2xl bg-white px-3 py-2 text-xs leading-relaxed focus:outline-none"
+                              style={{ color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
+                            />
+                            <p className="mt-2 text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>{rules.media}</p>
+                          </div>
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
 
@@ -2667,7 +3002,7 @@ export default function CreatePost() {
                     key={platformId}
                     platformId={platformId}
                     profile={profile}
-                    content={content}
+                    content={platformCaptions[platformId] || content}
                     imagePreview={imagePreview || existingMediaUrl}
                     dropboxAttachments={dropboxAttachments}
                     scheduledFor={scheduledFor}
@@ -2956,6 +3291,7 @@ export default function CreatePost() {
         setPreviewPlatform={setPreviewPlatform}
         timingMode={timingMode}
         scheduledFor={scheduledFor}
+        platformCaptions={platformCaptions}
       />
     </>
   )
