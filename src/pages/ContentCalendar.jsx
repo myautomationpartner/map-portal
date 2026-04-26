@@ -693,8 +693,8 @@ export default function ContentCalendar() {
             </div>
             <div className="content-plan-filterbar">
               {[
-                ['all', 'All'],
-                ['suggestions', 'Suggestions'],
+                ['all', 'Queue'],
+                ['suggestions', 'Ideas'],
                 ['drafts', 'Drafts'],
                 ['scheduled', 'Scheduled'],
               ].map(([value, label]) => (
