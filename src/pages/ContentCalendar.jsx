@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { SiFacebook, SiGoogle, SiInstagram, SiTiktok } from 'react-icons/si'
 import {
   ArrowUpRight,
-  Camera,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
@@ -12,14 +12,11 @@ import {
   Clock3,
   Image,
   Loader2,
-  MapPin,
   Megaphone,
   MoreHorizontal,
-  Music2,
   PencilLine,
   Plus,
   RefreshCw,
-  Share2,
   Trash2,
   Wand2,
 } from 'lucide-react'
@@ -55,10 +52,10 @@ const STATUS_MARKERS = {
   published: { label: 'Posted', color: '#c9a84c' },
 }
 const PLATFORM_MARKERS = {
-  facebook: { label: 'Facebook', Icon: Share2, color: '#3568a6' },
-  instagram: { label: 'Instagram', Icon: Camera, color: '#d85f98' },
-  google: { label: 'Google Business', Icon: MapPin, color: '#1fa971' },
-  tiktok: { label: 'TikTok', Icon: Music2, color: '#168c8f' },
+  facebook: { label: 'Facebook', Icon: SiFacebook, color: '#1877f2' },
+  instagram: { label: 'Instagram', Icon: SiInstagram, color: '#e4405f' },
+  google: { label: 'Google Business', Icon: SiGoogle, color: '#34a853' },
+  tiktok: { label: 'TikTok', Icon: SiTiktok, color: '#111111' },
 }
 
 function isMissingRemoteDelete(payload, raw) {
