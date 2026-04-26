@@ -32,12 +32,15 @@ import {
   fetchCalendarPosts,
   fetchOpportunityRadar,
   fetchProfile,
+  fetchResearchProfile,
   fetchResearchSources,
   fetchSocialDrafts,
   recordPlannerFeedbackEvent,
+  updateClientPartnerProfile,
   updateResearchSource,
   updateOpportunityState,
   updateOpportunitySuggestionState,
+  upsertResearchProfile,
   upsertSocialDraft,
 } from '../lib/portalApi'
 import { parseDraftMeta, stringifyDraftMeta } from '../lib/socialDrafting'
@@ -68,6 +71,10 @@ const PLATFORM_MARKERS = {
 const RESEARCH_SOURCE_TYPES = [
   { value: 'local_event_calendar', label: 'Event calendar' },
   { value: 'client_website', label: 'Website page' },
+  { value: 'local_news', label: 'Local news' },
+  { value: 'chamber', label: 'Chamber / city page' },
+  { value: 'competitor_website', label: 'Competitor website' },
+  { value: 'competitor_social', label: 'Competitor social' },
   { value: 'manual_reference', label: 'Reference page' },
 ]
 
@@ -95,6 +102,36 @@ function normalizeSourceUrl(value) {
   if (!raw) return ''
   if (/^https?:\/\//i.test(raw)) return raw
   return `https://${raw}`
+}
+
+function listToText(value) {
+  return Array.isArray(value) ? value.filter(Boolean).join('\n') : ''
+}
+
+function textToList(value) {
+  return String(value || '')
+    .split(/\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 24)
+}
+
+function buildPartnerProfileForm(client, researchProfile) {
+  return {
+    businessCategory: client?.business_category || client?.business_type || '',
+    businessSubtype: client?.business_subtype || '',
+    businessReach: client?.business_reach || 'local',
+    countryCode: client?.country_code || 'US',
+    stateCode: client?.state_code || '',
+    postalCode: client?.postal_code || '',
+    county: client?.county || '',
+    websiteUrl: client?.website_url || '',
+    serviceArea: researchProfile?.service_area || '',
+    audienceSummary: researchProfile?.audience_summary || '',
+    offerFocusText: listToText(researchProfile?.offer_focus_json),
+    blockedTopicsText: listToText(researchProfile?.blocked_topics_json),
+    researchNotes: researchProfile?.research_notes || '',
+  }
 }
 
 function getSourceHost(value) {
@@ -589,15 +626,19 @@ function ProofChip({ children, onClick, title }) {
 }
 
 function TrainPartnerModal({
+  form,
   sources,
   label,
   url,
   sourceType,
   isSaving,
+  isSavingProfile,
   busySourceId,
   error,
   notice,
   onClose,
+  onFormChange,
+  onSaveProfile,
   onLabelChange,
   onUrlChange,
   onSourceTypeChange,
@@ -623,7 +664,7 @@ function TrainPartnerModal({
               Train your Partner
             </p>
             <h2 id="assistant-train-title" className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-              Add calendars MAP should watch
+              Teach MAP what changed
             </h2>
           </div>
           <button type="button" className="assistant-train-close" onClick={onClose} aria-label="Close">
@@ -631,7 +672,99 @@ function TrainPartnerModal({
           </button>
         </div>
 
-        <div className="assistant-train-grid">
+        <div className="assistant-train-body">
+          <form className="assistant-profile-form" onSubmit={onSaveProfile}>
+            <div className="assistant-profile-section">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                  Business profile
+                </p>
+                <p className="mt-1 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                  Update this when you move, expand your service area, or change what you offer.
+                </p>
+              </div>
+              <div className="assistant-profile-grid">
+                <div>
+                  <label htmlFor="partner-category">Business category</label>
+                  <input id="partner-category" value={form.businessCategory} onChange={(event) => onFormChange('businessCategory', event.target.value)} placeholder="Arts, fitness, local services..." />
+                </div>
+                <div>
+                  <label htmlFor="partner-subtype">Specific offering type</label>
+                  <input id="partner-subtype" value={form.businessSubtype} onChange={(event) => onFormChange('businessSubtype', event.target.value)} placeholder="Dance studio, kids classes..." />
+                </div>
+                <div>
+                  <label htmlFor="partner-reach">Market reach</label>
+                  <select id="partner-reach" value={form.businessReach} onChange={(event) => onFormChange('businessReach', event.target.value)}>
+                    <option value="local">Local</option>
+                    <option value="national_global">National / online</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="partner-website">Website</label>
+                  <input id="partner-website" value={form.websiteUrl} onChange={(event) => onFormChange('websiteUrl', event.target.value)} placeholder="https://example.com" />
+                </div>
+                <div>
+                  <label htmlFor="partner-country">Country</label>
+                  <input id="partner-country" value={form.countryCode} onChange={(event) => onFormChange('countryCode', event.target.value.toUpperCase())} placeholder="US" />
+                </div>
+                <div>
+                  <label htmlFor="partner-state">State</label>
+                  <input id="partner-state" value={form.stateCode} onChange={(event) => onFormChange('stateCode', event.target.value.toUpperCase())} placeholder="NY" />
+                </div>
+                <div>
+                  <label htmlFor="partner-zip">ZIP / postal code</label>
+                  <input id="partner-zip" value={form.postalCode} onChange={(event) => onFormChange('postalCode', event.target.value)} placeholder="13901" />
+                </div>
+                <div>
+                  <label htmlFor="partner-county">County</label>
+                  <input id="partner-county" value={form.county} onChange={(event) => onFormChange('county', event.target.value)} placeholder="Broome County" />
+                </div>
+              </div>
+            </div>
+
+            <div className="assistant-profile-section">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                  Offerings and guidance
+                </p>
+              </div>
+              <div className="assistant-profile-grid">
+                <div>
+                  <label htmlFor="partner-service-area">Service area</label>
+                  <input id="partner-service-area" value={form.serviceArea} onChange={(event) => onFormChange('serviceArea', event.target.value)} placeholder="Binghamton, Vestal, Johnson City..." />
+                </div>
+                <div>
+                  <label htmlFor="partner-audience">Best audience</label>
+                  <input id="partner-audience" value={form.audienceSummary} onChange={(event) => onFormChange('audienceSummary', event.target.value)} placeholder="Families, adult beginners, competitive dancers..." />
+                </div>
+                <div>
+                  <label htmlFor="partner-offers">Current offerings to promote</label>
+                  <textarea id="partner-offers" value={form.offerFocusText} onChange={(event) => onFormChange('offerFocusText', event.target.value)} placeholder={'Summer camp\nRecital tickets\nAdult beginner classes'} />
+                </div>
+                <div>
+                  <label htmlFor="partner-blocked">Avoid or downplay</label>
+                  <textarea id="partner-blocked" value={form.blockedTopicsText} onChange={(event) => onFormChange('blockedTopicsText', event.target.value)} placeholder={'Old location\nSold-out classes\nOffers no longer available'} />
+                </div>
+                <div className="assistant-profile-wide">
+                  <label htmlFor="partner-notes">Partner notes</label>
+                  <textarea id="partner-notes" value={form.researchNotes} onChange={(event) => onFormChange('researchNotes', event.target.value)} placeholder="Tell MAP about seasonal priorities, new services, a location move, tone preferences, or anything that should steer future ideas." />
+                </div>
+              </div>
+            </div>
+
+            {(error || notice) && (
+              <div className="assistant-train-message" data-tone={error ? 'error' : 'success'}>
+                {error || notice}
+              </div>
+            )}
+
+            <button type="submit" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" disabled={isSavingProfile}>
+              {isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save Partner profile
+            </button>
+          </form>
+
+          <div className="assistant-train-grid">
           <form className="assistant-train-form" onSubmit={onSave}>
             <div>
               <label htmlFor="assistant-source-label">Source name</label>
@@ -663,15 +796,6 @@ function TrainPartnerModal({
                 ))}
               </select>
             </div>
-
-            {(error || notice) && (
-              <div
-                className="assistant-train-message"
-                data-tone={error ? 'error' : 'success'}
-              >
-                {error || notice}
-              </div>
-            )}
 
             <button type="submit" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" disabled={isSaving}>
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -725,6 +849,7 @@ function TrainPartnerModal({
               )}
             </div>
           </div>
+          </div>
         </div>
       </div>
     </div>,
@@ -748,6 +873,7 @@ export default function ContentCalendar() {
   const [sourceError, setSourceError] = useState('')
   const [sourceNotice, setSourceNotice] = useState('')
   const [busySourceId, setBusySourceId] = useState('')
+  const [partnerProfileForm, setPartnerProfileForm] = useState(() => buildPartnerProfileForm(null, null))
   const [weekOffset, setWeekOffset] = useState(() => {
     const date = initialParams.get('date')
     return date ? getWeekOffsetFromDate(date) : 0
@@ -795,6 +921,17 @@ export default function ContentCalendar() {
     queryFn: () => fetchResearchSources(clientId),
     enabled: !!clientId,
   })
+
+  const { data: researchProfile = null, isLoading: researchProfileLoading } = useQuery({
+    queryKey: ['research-profile', clientId],
+    queryFn: () => fetchResearchProfile(clientId),
+    enabled: !!clientId,
+  })
+
+  useEffect(() => {
+    if (!trainAssistantOpen) return
+    setPartnerProfileForm(buildPartnerProfileForm(profile?.clients, researchProfile))
+  }, [trainAssistantOpen, profile?.clients, researchProfile])
 
   const radarItems = useMemo(() => (
     opportunities
@@ -1130,11 +1267,60 @@ export default function ContentCalendar() {
     },
   })
 
+  const savePartnerProfile = useMutation({
+    mutationFn: async () => {
+      if (!requireWriteAccess('update your Partner profile')) return null
+      const websiteUrl = partnerProfileForm.websiteUrl ? normalizeSourceUrl(partnerProfileForm.websiteUrl) : null
+
+      await updateClientPartnerProfile(clientId, {
+        business_type: partnerProfileForm.businessSubtype || partnerProfileForm.businessCategory,
+        business_category: partnerProfileForm.businessCategory,
+        business_subtype: partnerProfileForm.businessSubtype,
+        business_reach: partnerProfileForm.businessReach,
+        country_code: partnerProfileForm.countryCode,
+        state_code: partnerProfileForm.stateCode,
+        postal_code: partnerProfileForm.postalCode,
+        county: partnerProfileForm.county,
+        website_url: websiteUrl,
+      })
+
+      return upsertResearchProfile({
+        clientId,
+        serviceArea: partnerProfileForm.serviceArea,
+        audienceSummary: partnerProfileForm.audienceSummary,
+        offerFocus: textToList(partnerProfileForm.offerFocusText),
+        blockedTopics: textToList(partnerProfileForm.blockedTopicsText),
+        researchNotes: partnerProfileForm.researchNotes,
+        cadence: researchProfile?.cadence || 'weekly',
+      })
+    },
+    onSuccess: async (savedProfile) => {
+      if (!savedProfile) return
+      setSourceError('')
+      setSourceNotice('Partner profile saved. Future ideas will use the updated location, offerings, and guidance.')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['profile'] }),
+        queryClient.invalidateQueries({ queryKey: ['research-profile', clientId] }),
+      ])
+    },
+    onError: (error) => {
+      setSourceNotice('')
+      setSourceError(error.message || 'Could not save the Partner profile.')
+    },
+  })
+
   async function handleSaveSource(event) {
     event.preventDefault()
     setSourceError('')
     setSourceNotice('')
     createSource.mutate()
+  }
+
+  async function handleSavePartnerProfile(event) {
+    event.preventDefault()
+    setSourceError('')
+    setSourceNotice('')
+    savePartnerProfile.mutate()
   }
 
   async function handleToggleSource(source) {
@@ -1345,7 +1531,7 @@ export default function ContentCalendar() {
     setWeekOffset(getWeekOffsetFromDate(dateString))
   }
 
-  const isLoading = profileLoading || postsLoading || draftsLoading || radarLoading || researchSourcesLoading
+  const isLoading = profileLoading || postsLoading || draftsLoading || radarLoading || researchSourcesLoading || researchProfileLoading
   const isRefreshing = isRefetchingPosts || isRefetchingDrafts || isRefetchingRadar
   const isCreating = createRadarDraft.isPending
 
@@ -1695,15 +1881,19 @@ export default function ContentCalendar() {
 
       {trainAssistantOpen ? (
         <TrainPartnerModal
+          form={partnerProfileForm}
           sources={researchSources}
           label={sourceLabel}
           url={sourceUrl}
           sourceType={sourceType}
           isSaving={createSource.isPending}
+          isSavingProfile={savePartnerProfile.isPending}
           busySourceId={busySourceId}
           error={sourceError}
           notice={sourceNotice}
           onClose={() => setTrainAssistantOpen(false)}
+          onFormChange={(field, value) => setPartnerProfileForm((current) => ({ ...current, [field]: value }))}
+          onSaveProfile={handleSavePartnerProfile}
           onLabelChange={setSourceLabel}
           onUrlChange={setSourceUrl}
           onSourceTypeChange={setSourceType}

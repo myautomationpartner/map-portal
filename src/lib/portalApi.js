@@ -152,6 +152,82 @@ export async function fetchResearchSources(clientId) {
   return data || []
 }
 
+export async function fetchResearchProfile(clientId) {
+  if (!clientId) return null
+
+  const { data, error } = await supabase
+    .from('client_research_profiles')
+    .select('id, client_id, service_area, audience_summary, offer_focus_json, preferred_platforms, blocked_topics_json, research_notes, cadence, is_active, created_at, updated_at')
+    .eq('client_id', clientId)
+    .maybeSingle()
+
+  if (error) throw error
+  return data ?? null
+}
+
+export async function updateClientPartnerProfile(clientId, changes) {
+  if (!clientId) throw new Error('Client profile is still loading.')
+
+  const allowedFields = [
+    'business_type',
+    'business_subtype',
+    'business_category',
+    'business_reach',
+    'country_code',
+    'state_code',
+    'postal_code',
+    'county',
+    'website_url',
+  ]
+  const payload = Object.fromEntries(
+    Object.entries(changes || {})
+      .filter(([key]) => allowedFields.includes(key))
+      .map(([key, value]) => [key, typeof value === 'string' ? value.trim() || null : value]),
+  )
+
+  const { data, error } = await supabase
+    .from('clients')
+    .update(payload)
+    .eq('id', clientId)
+    .select('*')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function upsertResearchProfile({
+  clientId,
+  serviceArea,
+  audienceSummary,
+  offerFocus,
+  blockedTopics,
+  researchNotes,
+  cadence = 'weekly',
+}) {
+  if (!clientId) throw new Error('Client profile is still loading.')
+
+  const { data, error } = await supabase
+    .from('client_research_profiles')
+    .upsert({
+      client_id: clientId,
+      service_area: serviceArea?.trim() || null,
+      audience_summary: audienceSummary?.trim() || null,
+      offer_focus_json: Array.isArray(offerFocus) ? offerFocus : [],
+      blocked_topics_json: Array.isArray(blockedTopics) ? blockedTopics : [],
+      research_notes: researchNotes?.trim() || null,
+      cadence,
+      is_active: true,
+    }, {
+      onConflict: 'client_id',
+    })
+    .select('id, client_id, service_area, audience_summary, offer_focus_json, preferred_platforms, blocked_topics_json, research_notes, cadence, is_active, created_at, updated_at')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
 export async function createResearchSource({ clientId, sourceType = 'local_event_calendar', label, url, handle = null, platform = null, priority = 1 }) {
   if (!clientId) throw new Error('Client profile is still loading.')
   if (!label?.trim()) throw new Error('Give this source a short name.')

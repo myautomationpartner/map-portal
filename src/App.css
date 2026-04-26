@@ -808,8 +808,8 @@
 }
 
 .assistant-train-dialog {
-  width: min(920px, 96vw);
-  max-height: min(720px, 92vh);
+  width: min(1080px, 96vw);
+  max-height: min(820px, 92vh);
   overflow: auto;
   border: 1px solid var(--portal-border);
   border-radius: var(--portal-radius-lg);
@@ -848,21 +848,50 @@
   background: rgba(255, 255, 255, 0.72);
 }
 
-.assistant-train-grid {
+.assistant-train-body {
   display: grid;
-  grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr);
   gap: 1rem;
   padding: 1.15rem;
 }
 
+.assistant-train-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr);
+  gap: 1rem;
+}
+
 .assistant-train-form,
-.assistant-train-sources {
+.assistant-train-sources,
+.assistant-profile-form {
   display: grid;
   align-content: start;
   gap: 0.85rem;
 }
 
-.assistant-train-form label {
+.assistant-profile-form {
+  border: 1px solid var(--portal-border);
+  border-radius: var(--portal-radius-lg);
+  background: rgba(255, 255, 255, 0.66);
+  padding: 1rem;
+}
+
+.assistant-profile-section {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.assistant-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.assistant-profile-wide {
+  grid-column: 1 / -1;
+}
+
+.assistant-train-form label,
+.assistant-profile-form label {
   display: block;
   margin-bottom: 0.35rem;
   color: var(--portal-text-soft);
@@ -873,7 +902,10 @@
 }
 
 .assistant-train-form input,
-.assistant-train-form select {
+.assistant-train-form select,
+.assistant-profile-form input,
+.assistant-profile-form select,
+.assistant-profile-form textarea {
   width: 100%;
   min-height: 2.85rem;
   border: 1px solid var(--portal-border);
@@ -885,8 +917,17 @@
   outline: none;
 }
 
+.assistant-profile-form textarea {
+  min-height: 6.5rem;
+  resize: vertical;
+  line-height: 1.5;
+}
+
 .assistant-train-form input:focus,
-.assistant-train-form select:focus {
+.assistant-train-form select:focus,
+.assistant-profile-form input:focus,
+.assistant-profile-form select:focus,
+.assistant-profile-form textarea:focus {
   border-color: rgba(201, 168, 76, 0.48);
   box-shadow: 0 0 0 4px rgba(201, 168, 76, 0.14);
 }
@@ -1006,6 +1047,10 @@
   .assistant-train-grid {
     grid-template-columns: 1fr;
   }
+
+  .assistant-profile-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -1040,6 +1085,10 @@
 
   .content-plan-actions {
     width: 100%;
+  }
+
+  .assistant-profile-grid {
+    grid-template-columns: 1fr;
   }
 
   .content-plan-week-control,
