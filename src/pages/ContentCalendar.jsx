@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { SiFacebook, SiGoogle, SiInstagram, SiTiktok } from 'react-icons/si'
 import {
   ArrowUpRight,
-  Brain,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
@@ -20,6 +19,7 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Sparkles,
   Trash2,
   Wand2,
   X,
@@ -656,8 +656,8 @@ function TrainPartnerModal({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="assistant-train-header">
-          <div className="assistant-train-icon">
-            <Brain className="h-5 w-5" />
+          <div className="assistant-train-icon portal-ai-icon">
+            <Sparkles className="h-5 w-5" />
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
@@ -1597,9 +1597,9 @@ export default function ContentCalendar() {
               setSourceNotice('')
               setTrainAssistantOpen(true)
             }}
-            className="portal-button-secondary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold"
+            className="portal-ai-action portal-ai-action-compact inline-flex items-center gap-2 rounded-full px-3.5 py-2.5 text-sm font-semibold"
           >
-            <Brain className="h-4 w-4" />
+            <Sparkles className="h-4 w-4" />
             Train your Partner
           </button>
           <button

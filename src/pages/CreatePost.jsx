@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { fetchDropboxWeekSuggestions, openDropboxChooser } from '../lib/dropboxApi'
+import { PLATFORM_CATALOG } from '../lib/platformCatalog.jsx'
 import {
   deletePost,
   deleteSocialDraft,
@@ -29,58 +29,26 @@ import {
   stringifyDraftMeta,
 } from '../lib/socialDrafting'
 import {
-  AlertCircle, ArrowUpRight, Calendar, CalendarDays, Camera, Check, CheckCircle2,
-  Clock3, Globe, History, Linkedin, Loader2, Music2, Paperclip,
-  Send, Share2, Sparkles, UploadCloud, Wand2, X,
-  Trash2, Twitter,
+  AlertCircle, ArrowUpRight, Calendar, CalendarDays, Check, CheckCircle2,
+  Clock3, History, Loader2, Paperclip,
+  Send, Sparkles, UploadCloud, Wand2, X,
+  Trash2,
 } from 'lucide-react'
+import { FaMicrosoft } from 'react-icons/fa'
+import { SiDropbox, SiGooglephotos, SiIcloud } from 'react-icons/si'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 
-const PLATFORMS = [
-  {
-    id: 'facebook',
-    label: 'Facebook',
-    Icon: Share2,
-    accent: '#4267B2',
-    soft: 'rgba(66, 103, 178, 0.10)',
-  },
-  {
-    id: 'instagram',
-    label: 'Instagram',
-    Icon: Camera,
-    accent: '#C13584',
-    soft: 'rgba(193, 53, 132, 0.10)',
-  },
-  {
-    id: 'google',
-    label: 'Google Business',
-    Icon: Globe,
-    accent: '#34A853',
-    soft: 'rgba(52, 168, 83, 0.10)',
-  },
-  {
-    id: 'tiktok',
-    label: 'TikTok',
-    Icon: Music2,
-    accent: '#111111',
-    soft: 'rgba(17, 17, 17, 0.08)',
-  },
-  {
-    id: 'linkedin',
-    label: 'LinkedIn',
-    Icon: Linkedin,
-    accent: '#0A66C2',
-    soft: 'rgba(10, 102, 194, 0.10)',
-  },
-  {
-    id: 'twitter',
-    label: 'X / Twitter',
-    Icon: Twitter,
-    accent: '#111111',
-    soft: 'rgba(17, 17, 17, 0.08)',
-  },
+const PHOTO_LIBRARY_LINKS = [
+  { label: 'Google Photos', href: 'https://photos.google.com/', Icon: SiGooglephotos, color: '#4285F4' },
+  { label: 'Apple Photos', href: 'https://www.icloud.com/photos/', Icon: SiIcloud, color: '#3693F3' },
+  { label: 'Dropbox', href: 'https://www.dropbox.com/home', Icon: SiDropbox, color: '#0061FF' },
+  { label: 'OneDrive', href: 'https://onedrive.live.com/', Icon: FaMicrosoft, color: '#00A4EF' },
 ]
+
+const PLATFORMS = ['facebook', 'instagram', 'google', 'tiktok', 'linkedin', 'twitter']
+  .map((id) => PLATFORM_CATALOG[id])
+  .filter(Boolean)
 
 const PLATFORM_FORMAT_RULES = {
   facebook: {
@@ -941,7 +909,7 @@ function ReviewModal({
                       }}
                       className="flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all"
                       style={active
-                        ? { background: soft, border: `1px solid ${accent}40`, color: accent }
+                        ? { background: soft, border: `2px solid ${accent}88`, color: accent, fontWeight: 950 }
                         : { background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)', color: 'var(--portal-text-muted)' }}
                     >
                       <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{ background: active ? accent : 'rgba(26,24,20,0.08)' }}>
@@ -982,6 +950,7 @@ function ReviewModal({
                   {activePlatforms.map((platformId) => {
                     const platform = PLATFORMS.find((item) => item.id === platformId)
                     if (!platform) return null
+                    const Icon = platform.Icon
 
                     return (
                       <button
@@ -990,9 +959,10 @@ function ReviewModal({
                         onClick={() => setPreviewPlatform(platformId)}
                         className="rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
                         style={previewPlatform === platformId
-                          ? { background: platform.soft, color: platform.accent, border: `1px solid ${platform.accent}40` }
+                          ? { background: platform.soft, color: platform.accent, border: `2px solid ${platform.accent}88`, fontWeight: 950 }
                           : { background: 'rgba(255,255,255,0.82)', color: 'var(--portal-text-soft)', border: '1px solid var(--portal-border)' }}
                       >
+                        <Icon className="h-3.5 w-3.5" />
                         {platform.label}
                       </button>
                     )
@@ -1074,12 +1044,6 @@ export default function CreatePost() {
   const [imageImproveMode, setImageImproveMode] = useState('')
   const [imageImproveError, setImageImproveError] = useState('')
   const [dropboxAttachments, setDropboxAttachments] = useState([])
-  const [dropboxLoading, setDropboxLoading] = useState(false)
-  const [dropboxSuggestedAssets, setDropboxSuggestedAssets] = useState([])
-  const [dropboxSuggestionStatus, setDropboxSuggestionStatus] = useState('idle')
-  const [dropboxSuggestionMessage, setDropboxSuggestionMessage] = useState('')
-  const [dropboxSuggestionWeek, setDropboxSuggestionWeek] = useState('')
-  const [previewedDropboxAsset, setPreviewedDropboxAsset] = useState(null)
   const [timingMode, setTimingMode] = useState('slot')
   const [selectedPlatforms, setSelectedPlatforms] = useState({
     facebook: true,
@@ -1192,8 +1156,7 @@ export default function CreatePost() {
   const isSubmitting = submitState === 'uploading' || submitState === 'posting'
   const minScheduleValue = getMinScheduleValue()
   const dropboxPreviewSource = getDropboxPreviewSource(dropboxAttachments)
-  const previewedDropboxSource = getDropboxThumbSource(previewedDropboxAsset)
-  const mediaPreviewSource = imagePreview || previewedDropboxSource || dropboxPreviewSource
+  const mediaPreviewSource = imagePreview || existingMediaUrl
   const canImproveImage = Boolean(clientId && mediaPreviewSource && !isSubmitting)
   const selectedDaySlots = selectedDay ? (slotsByDate.get(selectedDay) || []) : []
   const selectableDaySlots = selectedDaySlots.filter((slot) => ['recommended_fill', 'occupied_draft'].includes(slot.state))
@@ -1534,7 +1497,6 @@ export default function CreatePost() {
     setPlatformVariants({})
     setPlatformFormatStatus('')
     setDropboxAttachments([])
-    setPreviewedDropboxAsset(null)
     setActiveDraftId('')
     setActiveSlotKey('')
     setSelectedAngleId('')
@@ -1593,64 +1555,6 @@ export default function CreatePost() {
     }
   }, [draftDirty, activeDraftId, content, generatedCaption, mediaSuggestion, selectedAngleId, angleChoices, activeSlot, persistDraftEdits])
 
-  useEffect(() => {
-    if (!activeSlot?.slot_date_local || !activeSlot?.post_type || !mediaSuggestion) {
-      setDropboxSuggestedAssets([])
-      setDropboxSuggestionStatus('idle')
-      setDropboxSuggestionMessage('')
-      setDropboxSuggestionWeek('')
-      setPreviewedDropboxAsset(null)
-      return undefined
-    }
-
-    let ignore = false
-
-    async function loadWeekSuggestions() {
-      setDropboxSuggestionStatus('loading')
-      setDropboxSuggestionMessage('')
-
-      try {
-        const payload = await fetchDropboxWeekSuggestions({
-          dateString: activeSlot.slot_date_local,
-          postType: activeSlot.post_type,
-          mediaHint: mediaSuggestion,
-        })
-
-        if (ignore) return
-
-        setDropboxSuggestedAssets(payload.suggestions || [])
-        setDropboxSuggestionWeek(payload.weekFolder || '')
-        setPreviewedDropboxAsset((current) => {
-          if (current && (payload.suggestions || []).some((file) => file.link === current.link)) {
-            return current
-          }
-          return null
-        })
-        setDropboxSuggestionStatus('ready')
-        setDropboxSuggestionMessage(
-          payload.message
-          || (payload.suggestions?.length
-            ? `Suggested from Dropbox folder ${payload.weekFolder}.`
-            : `No matching media found in Dropbox folder ${payload.weekFolder}.`),
-        )
-      } catch (error) {
-        if (ignore) return
-        console.error('[DropboxWeeklySuggestions]', error)
-        setDropboxSuggestedAssets([])
-        setDropboxSuggestionWeek('')
-        setPreviewedDropboxAsset(null)
-        setDropboxSuggestionStatus('error')
-        setDropboxSuggestionMessage(error.message || 'Could not load Dropbox suggestions for this week.')
-      }
-    }
-
-    loadWeekSuggestions()
-
-    return () => {
-      ignore = true
-    }
-  }, [activeSlot?.slot_date_local, activeSlot?.post_type, mediaSuggestion])
-
   function handleFileChange(event) {
     const file = event.target.files?.[0]
     if (!file) return
@@ -1696,7 +1600,6 @@ export default function CreatePost() {
       setImageFile(file)
       setImagePreview(`data:${payload.mime_type || 'image/png'};base64,${payload.image_base64}`)
       setExistingMediaUrl('')
-      setPreviewedDropboxAsset(null)
       clearPlatformImageVariants('')
       setImageGenerateState('ready')
       setImageImproveState('idle')
@@ -1728,7 +1631,7 @@ export default function CreatePost() {
       return { image_data_url: await normalizeImageForAssist(imagePreview) }
     }
 
-    const imageUrl = existingMediaUrl || previewedDropboxSource || dropboxPreviewSource || ''
+    const imageUrl = existingMediaUrl || ''
     if (imageUrl && /^https?:\/\//i.test(imageUrl)) {
       return { image_url: imageUrl }
     }
@@ -1760,7 +1663,6 @@ export default function CreatePost() {
       setImageFile(file)
       setImagePreview(`data:${payload.mime_type || 'image/png'};base64,${payload.image_base64}`)
       setExistingMediaUrl('')
-      setPreviewedDropboxAsset(null)
       clearPlatformImageVariants('')
       setImageImproveState('ready')
       setDraftStatus('Improved image attached. Review it before approving the post.')
@@ -1885,7 +1787,7 @@ export default function CreatePost() {
       return imagePreview
     }
 
-    const imageUrl = existingMediaUrl || previewedDropboxSource || dropboxPreviewSource || ''
+    const imageUrl = existingMediaUrl || dropboxPreviewSource || ''
     if (imageUrl && /^https?:\/\//i.test(imageUrl)) return imageUrl
 
     throw new Error('Add or select an image before formatting it for platforms.')
@@ -1952,41 +1854,9 @@ export default function CreatePost() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  async function handleDropboxAttach() {
-    setDropboxLoading(true)
-    setErrorMsg('')
-    try {
-      const files = await openDropboxChooser({ multiselect: true, linkType: 'preview' })
-      if (files.length > 0) {
-        setDropboxAttachments((previous) => {
-          const existingLinks = new Set(previous.map((file) => file.link))
-          const incoming = files.filter((file) => !existingLinks.has(file.link))
-          return [...previous, ...incoming]
-        })
-        clearPlatformImageVariants('')
-      }
-    } catch (error) {
-      console.error('[Dropbox]', error)
-      setErrorMsg(error.message || 'Could not open Dropbox. Please try again.')
-    } finally {
-      setDropboxLoading(false)
-    }
-  }
-
   function removeDropboxAttachment(link) {
     setDropboxAttachments((previous) => previous.filter((file) => file.link !== link))
-    setPreviewedDropboxAsset((current) => (current?.link === link ? null : current))
-  }
-
-  function addDropboxAttachment(file) {
-    if (!file?.link) return
-
-    setPreviewedDropboxAsset(file)
     clearPlatformImageVariants('')
-    setDropboxAttachments((previous) => {
-      if (previous.some((existing) => existing.link === file.link)) return previous
-      return [...previous, file]
-    })
   }
 
   function chooseSlot(slot) {
@@ -2008,7 +1878,6 @@ export default function CreatePost() {
     setImageImproveMode('')
     setImageImproveError('')
     setDropboxAttachments([])
-    setPreviewedDropboxAsset(null)
     setSearchParams({ date: slot.slot_date_local, slot: slot.slot_label })
     composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     resolveDraftForSlot(slot, { source: 'slot_click' })
@@ -2112,7 +1981,6 @@ export default function CreatePost() {
         setImageFile(null)
         setImagePreview(null)
         setDropboxAttachments([])
-        setPreviewedDropboxAsset(null)
         setContent('')
         setPlatformVariants({})
         setPlatformFormatStatus('')
@@ -2442,11 +2310,6 @@ export default function CreatePost() {
         setImageImproveMode('')
         setImageImproveError('')
         setDropboxAttachments([])
-        setDropboxSuggestedAssets([])
-        setDropboxSuggestionStatus('idle')
-        setDropboxSuggestionMessage('')
-        setDropboxSuggestionWeek('')
-        setPreviewedDropboxAsset(null)
         setExistingMediaUrl('')
         setScheduledFor('')
         setTimingMode('slot')
@@ -2589,7 +2452,7 @@ export default function CreatePost() {
                   onClick={chooseNow}
                   className="rounded-2xl px-4 py-2.5 text-sm font-semibold"
                   style={timingMode === 'now'
-                    ? { background: 'rgba(201,168,76,0.14)', color: 'var(--portal-primary)', border: '1px solid rgba(201,168,76,0.32)' }
+                    ? { background: 'rgba(201,168,76,0.18)', color: 'var(--portal-primary)', border: '2px solid rgba(201,168,76,0.46)', fontWeight: 950 }
                     : { background: 'rgba(255,255,255,0.82)', color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
                 >
                   Post now
@@ -2599,7 +2462,7 @@ export default function CreatePost() {
                   onClick={() => chooseCustomTime(selectedDay)}
                   className="rounded-2xl px-4 py-2.5 text-sm font-semibold"
                   style={timingMode === 'custom'
-                    ? { background: 'rgba(201,168,76,0.14)', color: 'var(--portal-primary)', border: '1px solid rgba(201,168,76,0.32)' }
+                    ? { background: 'rgba(201,168,76,0.18)', color: 'var(--portal-primary)', border: '2px solid rgba(201,168,76,0.46)', fontWeight: 950 }
                     : { background: 'rgba(255,255,255,0.82)', color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
                 >
                   Custom time
@@ -2612,7 +2475,7 @@ export default function CreatePost() {
                   }}
                   className="rounded-2xl px-4 py-2.5 text-sm font-semibold"
                   style={timingMode === 'slot'
-                    ? { background: 'rgba(201,168,76,0.14)', color: 'var(--portal-primary)', border: '1px solid rgba(201,168,76,0.32)' }
+                    ? { background: 'rgba(201,168,76,0.18)', color: 'var(--portal-primary)', border: '2px solid rgba(201,168,76,0.46)', fontWeight: 950 }
                     : { background: 'rgba(255,255,255,0.82)', color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
                 >
                   Calendar slot
@@ -2662,7 +2525,7 @@ export default function CreatePost() {
                           }}
                           className="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-all"
                           style={active
-                            ? { background: soft, borderColor: `${accent}44`, color: accent }
+                            ? { background: soft, borderColor: `${accent}88`, borderWidth: 2, color: accent, fontWeight: 950 }
                             : { background: 'rgba(255,255,255,0.82)', borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}
                         >
                           <Icon className="h-3.5 w-3.5" />
@@ -2759,6 +2622,7 @@ export default function CreatePost() {
                         disabled={!canUseAssist || assistState === 'loading'}
                         title={action.description}
                         data-active={assistAction === action.id && assistState === 'loading'}
+                        className="portal-ai-mini-action"
                       >
                         {assistAction === action.id && assistState === 'loading' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                         {action.label}
@@ -2878,238 +2742,69 @@ export default function CreatePost() {
               </div>
             </section>
 
-            <section className="portal-panel rounded-[34px] p-5 md:p-6">
-              <div className="grid gap-3 lg:grid-cols-3">
+            <section className="portal-panel create-post-creative-panel rounded-[28px] p-4 md:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                    Main creative
+                  </p>
+                  <h2 className="mt-1 font-display text-xl font-semibold" style={{ color: 'var(--portal-text)' }}>
+                    Choose your creative
+                  </h2>
+                </div>
+                <div className="rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: 'rgba(245,240,235,0.92)', color: imageGenerateState === 'generating' ? '#4058c9' : 'var(--portal-text-soft)' }}>
+                  {imageGenerateState === 'ready' ? 'Generated image attached' : imageGenerateState === 'generating' ? 'Working on it...' : 'Upload, generate, or choose'}
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isSubmitting}
-                  className="flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
-                  style={{ background: 'rgba(201,168,76,0.12)', color: 'var(--portal-primary)' }}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full px-2.5 py-2 text-[11px] font-semibold"
+                  style={{ background: 'rgba(26,24,20,0.06)', color: 'var(--portal-text)' }}
                 >
-                  <UploadCloud className="h-4 w-4" />
-                  Upload from my computer
+                  <UploadCloud className="h-3.5 w-3.5" style={{ color: 'var(--portal-primary)' }} />
+                  From Computer
                 </button>
+
                 <button
                   type="button"
                   onClick={handleGenerateImage}
                   disabled={isSubmitting || imageGenerateState === 'generating' || !canGenerateImage}
-                  className="flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60"
-                  style={{ background: canGenerateImage ? 'rgba(93,120,255,0.12)' : 'rgba(26,24,20,0.05)', color: canGenerateImage ? '#4058c9' : 'var(--portal-text-soft)' }}
+                  className="portal-ai-action inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-semibold transition disabled:cursor-not-allowed"
+                  data-generating={imageGenerateState === 'generating'}
+                  style={{
+                    background: 'linear-gradient(135deg, #6d4aff, #b454ff 48%, #f1c6ff)',
+                    color: '#fff',
+                    boxShadow: canGenerateImage
+                      ? '0 14px 32px rgba(132, 72, 255, 0.30), 0 0 0 1px rgba(255,255,255,0.55) inset'
+                      : '0 10px 24px rgba(132, 72, 255, 0.18), 0 0 0 1px rgba(255,255,255,0.42) inset',
+                  }}
                 >
-                  {imageGenerateState === 'generating' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                  {imageGenerateState === 'generating' ? 'Generating image...' : 'Generate image'}
+                  {imageGenerateState === 'generating' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  {imageGenerateState === 'generating' ? 'Generating...' : 'Generate with AI'}
+                  {imageGenerateState !== 'generating' && <Sparkles className="h-3.5 w-3.5" />}
                 </button>
-                <button
-                  type="button"
-                  onClick={handleDropboxAttach}
-                  disabled={isSubmitting || dropboxLoading}
-                  className="flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60"
-                  style={{ background: 'rgba(26,24,20,0.06)', color: 'var(--portal-text)' }}
-                >
-                  {dropboxLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
-                  {dropboxLoading ? 'Opening Dropbox…' : 'Choose from Dropbox'}
-                </button>
-              </div>
 
-              <div className="mt-4 rounded-[24px] px-4 py-4" style={{ background: 'rgba(255,255,255,0.78)', border: '1px solid var(--portal-border)' }}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                      Image option
-                    </p>
-                    <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>
-                      {imageGenerationPrompt || 'Load a Radar idea or calendar draft to unlock an AI image prompt.'}
-                    </p>
-                    {imageGenerateError && (
-                      <p className="mt-2 text-xs leading-relaxed" style={{ color: 'var(--portal-danger)' }}>
-                        {imageGenerateError}
-                      </p>
-                    )}
-                  </div>
-                  <div className="rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: 'rgba(245,240,235,0.92)', color: imageGenerateState === 'generating' ? '#4058c9' : 'var(--portal-text-soft)' }}>
-                    {imageGenerateState === 'ready' ? 'Generated image attached' : imageGenerateState === 'generating' ? 'Working on it...' : 'Upload or generate'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="image-assist-box">
-                <div className="partner-assist-head">
-                  <div>
-                    <p>Image Assist</p>
-                    <h2>Improve with Partner</h2>
-                  </div>
-                  <span>2 credits</span>
-                </div>
-                <div className="partner-assist-actions">
-                  {IMAGE_ASSIST_ACTIONS.map((action) => (
-                    <button
-                      key={action.id}
-                      type="button"
-                      onClick={() => handleImproveImage(action.id)}
-                      disabled={!canImproveImage || imageImproveState === 'improving' || imageGenerateState === 'generating'}
-                      title={action.description}
-                      data-active={imageImproveMode === action.id && imageImproveState === 'improving'}
-                    >
-                      {imageImproveMode === action.id && imageImproveState === 'improving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                      {action.label}
-                    </button>
-                  ))}
-                </div>
-                {imageImproveError ? (
-                  <p className="partner-assist-error">{imageImproveError}</p>
-                ) : imageImproveState === 'improving' ? (
-                  <p className="partner-assist-note">Partner is improving the selected image...</p>
-                ) : canImproveImage ? (
-                  <p className="partner-assist-note">Works best with JPG, PNG, or WebP. iPhone HEIC photos should be saved as JPG first.</p>
-                ) : (
-                  <p className="partner-assist-note">Upload, generate, or select an image to unlock Image Assist.</p>
-                )}
-              </div>
-
-              <div className="image-assist-box">
-                <div className="partner-assist-head">
-                  <div>
-                    <p>Platform Images</p>
-                    <h2>Format image for platforms</h2>
-                  </div>
-                  <span>{activePlatforms.length || 0} channels</span>
-                </div>
-                <div className="partner-assist-actions">
-                  <button
-                    type="button"
-                    onClick={handleFormatPlatformImages}
-                    disabled={!canImproveImage || imageFormatState === 'formatting' || imageGenerateState === 'generating'}
-                    title="Create platform-specific crops from the selected image."
+                {PHOTO_LIBRARY_LINKS.map(({ label, href, Icon, color }) => (
+                  <a
+                    key={href}
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-2 text-[11px] font-semibold"
+                    style={{ background: 'rgba(26,24,20,0.06)', color: 'var(--portal-text)' }}
                   >
-                    {imageFormatState === 'formatting' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                    {imageFormatState === 'formatting' ? 'Formatting...' : 'Format all selected'}
-                  </button>
-                  {Object.keys(platformImageVariants).length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => clearPlatformImageVariants('Platform image crops cleared.')}
-                      disabled={imageFormatState === 'formatting'}
-                      title="Clear platform-specific image crops."
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Clear crops
-                    </button>
-                  )}
-                </div>
-                {imageFormatStatus ? (
-                  <p className={imageFormatState === 'error' ? 'partner-assist-error' : 'partner-assist-note'}>{imageFormatStatus}</p>
-                ) : canImproveImage ? (
-                  <p className="partner-assist-note">Creates Instagram, TikTok, Facebook, LinkedIn, X/Twitter, and Google-ready crops from the selected image.</p>
-                ) : (
-                  <p className="partner-assist-note">Upload, generate, or select an image before formatting platform crops.</p>
-                )}
-                {Object.keys(platformImageVariants).length > 0 && (
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {activePlatforms.map((platformId) => {
-                      const platform = PLATFORMS.find((item) => item.id === platformId)
-                      const image = platformImageVariants[platformId]
-                      const target = PLATFORM_IMAGE_TARGETS[platformId]
-                      if (!platform || !image) return null
-
-                      return (
-                        <button
-                          key={platformId}
-                          type="button"
-                          onClick={() => setPreviewPlatform(platformId)}
-                          className="flex items-center gap-3 rounded-2xl border p-2 text-left"
-                          style={{ background: 'rgba(255,255,255,0.72)', borderColor: 'var(--portal-border)' }}
-                        >
-                          <img
-                            src={image.preview_url || image.url}
-                            alt={`${platform.label} crop`}
-                            className="h-14 w-14 rounded-xl object-cover"
-                          />
-                          <span className="min-w-0">
-                            <span className="block text-xs font-semibold" style={{ color: 'var(--portal-text)' }}>{platform.label}</span>
-                            <span className="block text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>{target?.aspectRatio || image.aspect_ratio}</span>
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
+                    <Icon className="h-3.5 w-3.5" style={{ color }} />
+                    {label}
+                    <ArrowUpRight className="h-2.5 w-2.5" style={{ color: 'var(--portal-text-soft)' }} />
+                  </a>
+                ))}
               </div>
 
-              <div className="mt-4 rounded-[24px] px-4 py-4" style={{ background: 'rgba(255,255,255,0.78)', border: '1px solid var(--portal-border)' }}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                      This week&apos;s Dropbox folder
-                    </p>
-                    <p className="mt-2 text-sm" style={{ color: 'var(--portal-text)' }}>
-                      {dropboxSuggestionWeek || 'Pick a dated slot to load the matching week folder.'}
-                    </p>
-                    {dropboxSuggestionMessage && (
-                      <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                        {dropboxSuggestionMessage}
-                      </p>
-                    )}
-                  </div>
-                  <div className="rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: 'rgba(245,240,235,0.92)', color: dropboxSuggestionStatus === 'loading' ? 'var(--portal-primary)' : 'var(--portal-text-soft)' }}>
-                    {dropboxSuggestionStatus === 'loading' ? 'Checking Dropbox…' : 'Weekly photo suggestions'}
-                  </div>
-                </div>
-
-                <div className="mt-4">
-                  {dropboxSuggestedAssets.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-                      {dropboxSuggestedAssets.map((file) => {
-                        const alreadyAdded = dropboxAttachments.some((attachment) => attachment.link === file.link)
-                        const isPreviewed = previewedDropboxAsset?.link === file.link
-                        const thumbSource = getDropboxThumbSource(file)
-
-                        return (
-                          <button
-                            key={file.link}
-                            type="button"
-                            onClick={() => setPreviewedDropboxAsset(file)}
-                            onDoubleClick={() => addDropboxAttachment({
-                              name: file.name,
-                              size: file.size,
-                              link: file.link,
-                              thumbnail: thumbSource,
-                            })}
-                            className="group overflow-hidden rounded-xl text-left transition-all"
-                            style={isPreviewed
-                              ? { background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.32)', boxShadow: '0 0 0 2px rgba(201,168,76,0.12)' }
-                              : { background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)' }}
-                          >
-                            <div
-                              className="flex aspect-square w-full items-center justify-center overflow-hidden"
-                              style={{ background: 'rgba(201, 168, 76, 0.08)' }}
-                            >
-                              {thumbSource && isImageAttachment(file) ? (
-                                <img src={thumbSource} alt={file.name} className="h-full w-full object-cover" />
-                              ) : (
-                                <Paperclip className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
-                              )}
-                            </div>
-                            <div className="px-2 py-1.5">
-                              <p className="truncate text-[11px] font-medium" style={{ color: alreadyAdded ? '#2d876a' : 'var(--portal-text)' }}>
-                                {file.name}
-                              </p>
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl px-4 py-3 text-sm" style={{ background: 'rgba(255,255,255,0.72)', color: 'var(--portal-text-muted)', border: '1px solid var(--portal-border)' }}>
-                      {dropboxSuggestionStatus === 'loading'
-                        ? 'Looking through the matching Dropbox week folder now…'
-                        : 'No Dropbox photo suggestions are ready for this slot yet.'}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-4 overflow-hidden rounded-[28px]" style={{ border: '1px solid var(--portal-border)', background: 'rgba(255,255,255,0.78)' }}>
+              <div className="mt-3 overflow-hidden rounded-[24px]" style={{ border: '1px solid var(--portal-border)', background: 'rgba(255,255,255,0.78)' }}>
                 {mediaPreviewSource ? (
                   <div className="relative">
                     <img src={mediaPreviewSource} alt="Upload preview" className="max-h-[420px] w-full object-cover" />
@@ -3123,20 +2818,12 @@ export default function CreatePost() {
                         <X className="h-4 w-4" />
                       </button>
                     )}
-                    {!imagePreview && (previewedDropboxSource || dropboxPreviewSource) && (
-                      <div
-                        className="absolute left-3 top-3 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]"
-                        style={{ background: 'rgba(0,0,0,0.58)', color: '#fff' }}
-                      >
-                        Dropbox preview
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isSubmitting}
-                    className="flex min-h-[320px] w-full flex-col items-center justify-center gap-4 px-6 py-10 text-center"
+                    className="flex min-h-[300px] w-full flex-col items-center justify-center gap-4 px-6 py-8 text-center"
                     style={{ background: 'linear-gradient(145deg, rgba(201, 168, 76, 0.06), rgba(232, 213, 160, 0.05))' }}
                   >
                     <div className="flex h-16 w-16 items-center justify-center rounded-[20px]" style={{ background: '#fff', border: '1px solid var(--portal-border)' }}>
@@ -3147,50 +2834,161 @@ export default function CreatePost() {
                         Add your main creative
                       </p>
                       <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
-                        Choose one strong visual from your computer or Dropbox.
+                        Upload, generate with Partner, or grab one from a photo library.
                       </p>
                     </div>
                   </button>
                 )}
               </div>
 
-              {dropboxAttachments.length > 0 && (
-                <div className="mt-4 space-y-2">
+              <div className="mt-3 rounded-[22px] p-3" style={{ background: 'rgba(255,255,255,0.72)', border: '1px solid var(--portal-border)' }}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                      Image tools
+                    </p>
+                    <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                      Improve the image, then format crops for the selected platforms.
+                    </p>
+                  </div>
+                  <span className="rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: 'rgba(93,120,255,0.10)', color: '#4058c9' }}>
+                    2 credits for AI edits
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {IMAGE_ASSIST_ACTIONS.map((action) => (
+                    <button
+                      key={action.id}
+                      type="button"
+                      onClick={() => handleImproveImage(action.id)}
+                      disabled={!canImproveImage || imageImproveState === 'improving' || imageGenerateState === 'generating'}
+                      title={action.description}
+                      data-active={imageImproveMode === action.id && imageImproveState === 'improving'}
+                      className="portal-ai-mini-action inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed"
+                    >
+                      {imageImproveMode === action.id && imageImproveState === 'improving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                      {action.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={handleFormatPlatformImages}
+                    disabled={!canImproveImage || imageFormatState === 'formatting' || imageGenerateState === 'generating'}
+                    title="Create platform-specific crops from the selected image."
+                    className="portal-ai-mini-action inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed"
+                  >
+                    {imageFormatState === 'formatting' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                    {imageFormatState === 'formatting' ? 'Formatting...' : 'Format crops'}
+                  </button>
+                  {Object.keys(platformImageVariants).length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => clearPlatformImageVariants('Platform image crops cleared.')}
+                      disabled={imageFormatState === 'formatting'}
+                      title="Clear platform-specific image crops."
+                      className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold disabled:opacity-50"
+                      style={{ background: 'rgba(26,24,20,0.06)', color: 'var(--portal-text-muted)' }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Clear crops
+                    </button>
+                  )}
+                </div>
+                {imageImproveError ? (
+                  <p className="partner-assist-error">{imageImproveError}</p>
+                ) : imageFormatState === 'error' && imageFormatStatus ? (
+                  <p className="partner-assist-error">{imageFormatStatus}</p>
+                ) : imageImproveState === 'improving' ? (
+                  <p className="partner-assist-note">Partner is improving the selected image...</p>
+                ) : imageFormatStatus ? (
+                  <p className="partner-assist-note">{imageFormatStatus}</p>
+                ) : canImproveImage ? (
+                  <p className="partner-assist-note">JPG, PNG, and WebP work best. iPhone HEIC photos should be saved as JPG first.</p>
+                ) : (
+                  <p className="partner-assist-note">Add or select an image to unlock image tools.</p>
+                )}
+                {Object.keys(platformImageVariants).length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {activePlatforms.map((platformId) => {
+                      const platform = PLATFORMS.find((item) => item.id === platformId)
+                      const image = platformImageVariants[platformId]
+                      const target = PLATFORM_IMAGE_TARGETS[platformId]
+                      if (!platform || !image) return null
+
+                      return (
+                        <button
+                          key={platformId}
+                          type="button"
+                          onClick={() => setPreviewPlatform(platformId)}
+                          className="inline-flex items-center gap-2 rounded-full border px-2 py-1.5 text-left"
+                          style={{ background: 'rgba(255,255,255,0.72)', borderColor: 'var(--portal-border)' }}
+                        >
+                          <img
+                            src={image.preview_url || image.url}
+                            alt={`${platform.label} crop`}
+                            className="h-7 w-7 rounded-full object-cover"
+                          />
+                          <span className="text-[11px] font-semibold" style={{ color: 'var(--portal-text)' }}>{platform.shortLabel || platform.label}</span>
+                          <span className="text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>{target?.aspectRatio || image.aspect_ratio}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {imageGenerationPrompt && (
+                <div className="mt-3 rounded-[20px] px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.62)', border: '1px solid var(--portal-border)' }}>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                    Dropbox assets
+                    Partner image prompt
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                    {imageGenerationPrompt}
+                  </p>
+                  {imageGenerateError && (
+                    <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--portal-danger)' }}>
+                      {imageGenerateError}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {dropboxAttachments.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                    Attached photo links
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {dropboxAttachments.map((file) => {
                       const thumbSource = getDropboxThumbSource(file)
-                      const isPreviewed = previewedDropboxAsset?.link === file.link
 
                       return (
-                        <button
-                      key={file.link}
-                          type="button"
-                          onClick={() => setPreviewedDropboxAsset(file)}
-                          className="group relative overflow-hidden rounded-2xl text-left"
-                          style={isPreviewed
-                            ? { border: '1px solid rgba(201,168,76,0.34)', boxShadow: '0 0 0 2px rgba(201,168,76,0.14)' }
-                            : { border: '1px solid var(--portal-border)' }}
+                        <div
+                          key={file.link}
+                          className="group flex items-center gap-2 rounded-2xl px-2.5 py-2"
+                          style={{ background: 'rgba(255,255,255,0.72)', border: '1px solid var(--portal-border)' }}
                         >
-                          <div className="flex h-20 w-20 items-center justify-center overflow-hidden" style={{ background: 'rgba(255,255,255,0.86)' }}>
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl" style={{ background: 'rgba(201, 168, 76, 0.08)' }}>
                             {thumbSource && isImageAttachment(file) ? (
                               <img src={thumbSource} alt={file.name} className="h-full w-full object-cover" />
                             ) : (
                               <Paperclip className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
                             )}
                           </div>
-                          <div className="absolute inset-x-0 bottom-0 bg-[rgba(17,14,10,0.68)] px-2 py-1">
-                            <p className="truncate text-[10px] font-medium text-white">{file.name}</p>
+                          <div className="min-w-0">
+                            <p className="max-w-[160px] truncate text-xs font-semibold" style={{ color: 'var(--portal-text)' }}>
+                              {file.name}
+                            </p>
+                            <p className="text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>
+                              Linked asset
+                            </p>
                           </div>
                           <a
                             href={file.link}
                             target="_blank"
                             rel="noopener noreferrer"
-                            onClick={(event) => event.stopPropagation()}
-                            className="absolute right-1 top-1 rounded-full p-1"
-                            style={{ background: 'rgba(17,14,10,0.5)', color: '#fff' }}
+                            className="rounded-full p-1.5"
+                            style={{ background: 'rgba(26,24,20,0.06)', color: 'var(--portal-text)' }}
                           >
                             <ArrowUpRight className="h-3 w-3" />
                           </a>
@@ -3201,12 +2999,12 @@ export default function CreatePost() {
                               removeDropboxAttachment(file.link)
                             }}
                             disabled={isSubmitting}
-                            className="absolute left-1 top-1 rounded-full p-1 disabled:opacity-50"
-                            style={{ background: 'rgba(17,14,10,0.5)', color: '#fff' }}
+                            className="rounded-full p-1.5 disabled:opacity-50"
+                            style={{ background: 'rgba(26,24,20,0.06)', color: 'var(--portal-text-muted)' }}
                           >
                             <X className="h-3 w-3" />
                           </button>
-                        </button>
+                        </div>
                       )
                     })}
                   </div>
@@ -3237,16 +3035,18 @@ export default function CreatePost() {
                 {activePlatforms.map((platformId) => {
                   const platform = PLATFORMS.find((item) => item.id === platformId)
                   if (!platform) return null
+                  const Icon = platform.Icon
                   return (
                     <button
                       key={platformId}
                       type="button"
                       onClick={() => setPreviewPlatform(platformId)}
-                      className="rounded-full border px-3 py-2 text-xs font-semibold"
+                      className="inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-semibold"
                       style={previewPlatform === platformId
-                        ? { background: platform.soft, color: platform.accent, borderColor: `${platform.accent}44` }
+                        ? { background: platform.soft, color: platform.accent, borderColor: `${platform.accent}88`, borderWidth: 2, fontWeight: 950 }
                         : { background: 'rgba(255,255,255,0.82)', color: 'var(--portal-text-muted)', borderColor: 'var(--portal-border)' }}
                     >
+                      <Icon className="h-3.5 w-3.5" style={{ color: platform.accent }} />
                       {platform.label}
                     </button>
                   )

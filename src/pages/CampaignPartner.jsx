@@ -13,14 +13,12 @@ import {
   Loader2,
   Megaphone,
   MoreHorizontal,
-  Plus,
   RotateCcw,
   Search,
   Sparkles,
   Target,
   Trash2,
   Upload,
-  Wand2,
 } from 'lucide-react'
 import {
   archiveCampaignProject,
@@ -664,8 +662,14 @@ export default function CampaignPartner() {
           </div>
           <div className="campaign-partner-actions">
             <button type="button" className="portal-button-secondary" onClick={() => setMode('library')}>Back to campaigns</button>
-            <button type="button" className="portal-button-primary" onClick={() => saveProject.mutate({})} disabled={saveProject.isPending}>
-              {saveProject.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+            <button
+              type="button"
+              className="portal-ai-action portal-ai-action-compact inline-flex items-center gap-2 rounded-full px-3.5 py-2.5 text-sm font-semibold"
+              data-generating={saveProject.isPending}
+              onClick={() => saveProject.mutate({})}
+              disabled={saveProject.isPending}
+            >
+              {saveProject.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               Generate campaign
             </button>
           </div>
@@ -750,8 +754,14 @@ export default function CampaignPartner() {
                 <h2>{previewPlan.summary}</h2>
                 <p>{form.campaignMode === 'advanced' ? 'Advanced will research timing, sources, competition, and growth actions before building the plan.' : 'Standard will turn your brief into a focused campaign schedule.'}</p>
               </div>
-              <button type="button" className="portal-button-primary" onClick={() => saveProject.mutate({})} disabled={saveProject.isPending}>
-                {saveProject.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+              <button
+                type="button"
+                className="portal-ai-action portal-ai-action-compact inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold"
+                data-generating={saveProject.isPending}
+                onClick={() => saveProject.mutate({})}
+                disabled={saveProject.isPending}
+              >
+                {saveProject.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 Generate
               </button>
             </div>
@@ -869,9 +879,13 @@ export default function CampaignPartner() {
             </div>
             <div className="campaign-partner-actions">
               <button type="button" className="portal-button-secondary" onClick={() => navigate('/opportunities')}>Import idea</button>
-              <button type="button" className="portal-button-primary" onClick={() => setMode('create')}>
-                <Plus className="h-4 w-4" />
-                Create campaign
+              <button
+                type="button"
+                className="portal-ai-action portal-ai-action-compact inline-flex items-center gap-2 rounded-full px-3.5 py-2.5 text-sm font-semibold"
+                onClick={() => setMode('create')}
+              >
+                <Sparkles className="h-4 w-4" />
+                Plan campaign
               </button>
             </div>
           </header>
