@@ -348,6 +348,91 @@ async function setInboxMembers(accountId, inboxId, userIds) {
   })
 }
 
+function resolveWebsiteToken(inbox) {
+  return String(inbox?.website_token || inbox?.channel?.website_token || inbox?.channel?.websiteToken || '').trim()
+}
+
+function buildWebsiteChatSnippet({ baseUrl, websiteToken }) {
+  if (!websiteToken) return ''
+
+  return [
+    '<script>',
+    '  (function(d,t) {',
+    `    var BASE_URL="${baseUrl.replace(/"/g, '&quot;')}";`,
+    '    var g=d.createElement(t),s=d.getElementsByTagName(t)[0];',
+    '    g.src=BASE_URL+"/packs/js/sdk.js";',
+    '    g.defer=true;',
+    '    g.async=true;',
+    '    s.parentNode.insertBefore(g,s);',
+    '    g.onload=function(){',
+    `      window.chatwootSDK.run({ websiteToken: "${websiteToken.replace(/"/g, '&quot;')}", baseUrl: BASE_URL });`,
+    '    };',
+    '  })(document,"script");',
+    '</script>',
+  ].join('\n')
+}
+
+async function upsertWebsiteChatSettings({ client, account, websiteInbox }) {
+  const config = getChatwootProvisioningConfig()
+  const websiteToken = resolveWebsiteToken(websiteInbox)
+
+  if (!websiteToken) {
+    throw new Error(`Chatwoot Website Chat inbox ${websiteInbox?.id || ''} did not return a website token.`)
+  }
+
+  const snippet = buildWebsiteChatSnippet({ baseUrl: config.baseUrl, websiteToken })
+  await fetchJson(`${requiredValue(['SUPABASE_URL'], 'SUPABASE_URL', FALLBACK_SUPABASE_URL)}/rest/v1/client_website_chat_settings?on_conflict=client_id`, {
+    method: 'POST',
+    headers: {
+      apikey: requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY'),
+      Authorization: `Bearer ${requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY')}`,
+      Prefer: 'resolution=merge-duplicates,return=representation',
+      ...jsonHeaders(),
+    },
+    body: JSON.stringify({
+      client_id: client.id,
+      chatwoot_account_id: account.id,
+      chatwoot_website_inbox_id: websiteInbox.id,
+      chatwoot_website_token: websiteToken,
+      chatwoot_base_url: config.baseUrl,
+      widget_color: websiteInbox.widget_color || '#C9A84C',
+      greeting_enabled: websiteInbox.greeting_enabled ?? true,
+      greeting_message: websiteInbox.greeting_message || `Hi! Send ${client.business_name || 'us'} a message and we will get back to you soon.`,
+      install_status: 'not_checked',
+      last_check_error: null,
+      saved_replies: [
+        {
+          title: 'Thanks',
+          message: 'Thanks for reaching out. We will take a look and reply shortly.',
+        },
+        {
+          title: 'After hours',
+          message: 'Thanks for your message. We are currently away, but we will get back to you as soon as we are open.',
+        },
+      ],
+      automation_rules: [
+        {
+          id: 'instant-welcome',
+          enabled: true,
+          label: 'Instant welcome reply',
+          message: websiteInbox.greeting_message || `Hi! Send ${client.business_name || 'us'} a message and we will get back to you soon.`,
+        },
+        {
+          id: 'after-hours',
+          enabled: true,
+          label: 'After-hours reply',
+          message: 'Thanks for your message. We are currently away, but we will get back to you as soon as we are open.',
+        },
+      ],
+    }),
+  })
+
+  return {
+    websiteToken,
+    snippetConfigured: Boolean(snippet),
+  }
+}
+
 async function triggerChatwootPasswordReset(email) {
   const config = getChatwootProvisioningConfig()
   return fetchJson(`${config.baseUrl}/auth/password`, {
@@ -398,6 +483,7 @@ async function provisionChatwootTenant({ client, dryRun, skipChatwootProvisionin
 
   const websiteInbox = await createOrUpdateWebsiteInbox(account.id, client)
   const socialInbox = await createOrUpdateSocialInbox(account.id, client, callbackSecret)
+  const websiteChatSettings = await upsertWebsiteChatSettings({ client, account, websiteInbox })
   const inboxMemberIds = [...new Set([user.id, operatorUserId].filter(Boolean))]
   await setInboxMembers(account.id, websiteInbox.id, inboxMemberIds)
   await setInboxMembers(account.id, socialInbox.id, inboxMemberIds)
@@ -412,6 +498,7 @@ async function provisionChatwootTenant({ client, dryRun, skipChatwootProvisionin
     userEmail: customerEmail,
     websiteInboxId: websiteInbox.id,
     socialInboxId: socialInbox.id,
+    websiteChatSettings,
     callbackSecret,
     passwordReset,
   }
@@ -757,6 +844,12 @@ function summarizeChatwootProvisioning(result) {
     userEmail: result.userEmail || undefined,
     websiteInboxId: result.websiteInboxId || undefined,
     socialInboxId: result.socialInboxId || undefined,
+    websiteChatSettings: result.websiteChatSettings
+      ? {
+          tokenStored: Boolean(result.websiteChatSettings.websiteToken),
+          snippetConfigured: Boolean(result.websiteChatSettings.snippetConfigured),
+        }
+      : undefined,
     callbackSecretConfigured: Boolean(result.callbackSecret),
     passwordReset: result.passwordReset?.skipped
       ? { sent: false, skipped: true, reason: result.passwordReset.reason }

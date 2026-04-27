@@ -1,7 +1,10 @@
 const DROPBOX_API_BASE = 'https://api.dropboxapi.com/2'
 const DROPBOX_CONTENT_API_BASE = 'https://content.dropboxapi.com/2'
 const DROPBOX_OAUTH_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token'
+const DEFAULT_CHATWOOT_BASE_URL = 'https://chatwoot.myautomationpartner.com'
 const DEFAULT_N8N_BASE_URL = 'https://n8n.myautomationpartner.com'
+const DEFAULT_ZERNIO_API_BASE_URL = 'https://zernio.com/api/v1'
+const DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME = 'Social Inbox'
 const TECHNICAL_HOST_SUFFIXES = ['.workers.dev', '.pages.dev']
 const SUPPORTED_MEDIA_EXTENSIONS = new Set([
   'jpg',
@@ -206,6 +209,18 @@ function getSupabaseConfig(env) {
   return { url, serviceRoleKey, clientId, webhookSecret }
 }
 
+function getPortalAuthConfig(env) {
+  const url = String(env.SUPABASE_URL || '').replace(/\/$/, '')
+  const serviceRoleKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '')
+  const clientId = String(env.PORTAL_CLIENT_ID || '')
+
+  if (!url || !serviceRoleKey || !clientId) {
+    throw new Error('Missing worker secrets for portal authentication.')
+  }
+
+  return { url, serviceRoleKey, clientId }
+}
+
 async function supabaseRest(envConfig, path, init = {}) {
   const response = await fetch(`${envConfig.url}${path}`, {
     ...init,
@@ -223,6 +238,928 @@ async function supabaseRest(envConfig, path, init = {}) {
   }
 
   return response
+}
+
+async function authorizePortalUser(request, env) {
+  const authHeader = request.headers.get('authorization') || ''
+  const bearerToken = authHeader.replace(/^Bearer\s+/i, '').trim()
+  if (!bearerToken) {
+    return { error: json({ error: 'Authentication required.' }, { status: 401 }) }
+  }
+
+  let envConfig
+  try {
+    envConfig = getPortalAuthConfig(env)
+  } catch (error) {
+    return { error: json({ error: error.message || 'Portal auth is not configured.' }, { status: 500 }) }
+  }
+
+  const userResponse = await fetch(`${envConfig.url}/auth/v1/user`, {
+    headers: {
+      apikey: envConfig.serviceRoleKey,
+      Authorization: `Bearer ${bearerToken}`,
+    },
+  })
+
+  if (!userResponse.ok) {
+    return { error: json({ error: 'Invalid or expired portal session.' }, { status: 401 }) }
+  }
+
+  const authUser = await userResponse.json().catch(() => null)
+  const authUserId = String(authUser?.id || '').trim()
+  if (!authUserId) {
+    return { error: json({ error: 'Invalid portal session.' }, { status: 401 }) }
+  }
+
+  const filters = new URLSearchParams({
+    select: 'id,client_id,role,email',
+    id: `eq.${authUserId}`,
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+
+  let portalRows = []
+  try {
+    const response = await supabaseRest(envConfig, `/rest/v1/users?${filters.toString()}`)
+    portalRows = await response.json()
+  } catch (error) {
+    return { error: json({ error: error.message || 'Could not verify portal access.' }, { status: 502 }) }
+  }
+
+  const portalUser = Array.isArray(portalRows) ? portalRows[0] : null
+  if (!portalUser) {
+    return { error: json({ error: 'This portal session is not authorized for this tenant.' }, { status: 403 }) }
+  }
+
+  return { user: portalUser, envConfig }
+}
+
+function getChatwootConfig(env) {
+  const baseUrl = String(env.CHATWOOT_BASE_URL || DEFAULT_CHATWOOT_BASE_URL).replace(/\/$/, '')
+  const accountId = String(env.CHATWOOT_ACCOUNT_ID || '').trim()
+  const apiToken = String(env.CHATWOOT_API_ACCESS_TOKEN || '').trim()
+  const socialInboxId = parsePositiveInteger(env.CHATWOOT_SOCIAL_INBOX_ID)
+
+  if (!accountId || !apiToken) {
+    throw new Error('Chatwoot API is not configured for this portal yet.')
+  }
+
+  return { baseUrl, accountId, apiToken, socialInboxId }
+}
+
+function getZernioConfig(env) {
+  const baseUrl = String(env.ZERNIO_API_BASE_URL || DEFAULT_ZERNIO_API_BASE_URL).replace(/\/$/, '')
+  const apiKey = String(env.ZERNIO_API_KEY || '').trim()
+
+  if (!apiKey) {
+    throw new Error('Zernio API key is not configured for inbox replies yet.')
+  }
+
+  return { baseUrl, apiKey }
+}
+
+function chatwootHeaders(apiToken, extra = {}) {
+  return {
+    api_access_token: apiToken,
+    'content-type': 'application/json',
+    ...extra,
+  }
+}
+
+function sanitizeChatwootError(message) {
+  return String(message || 'Chatwoot request failed.')
+    .replace(/api_access_token=[^&\s]+/gi, 'api_access_token=<redacted>')
+    .replace(/api_access_token:?\s*["']?[^"',\s]+/gi, 'api_access_token: <redacted>')
+}
+
+async function readChatwootResponse(response) {
+  const contentType = response.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    return response.json().catch(() => ({}))
+  }
+
+  const text = await response.text().catch(() => '')
+  return text ? { message: text } : {}
+}
+
+async function chatwootFetch(env, path, init = {}) {
+  const config = getChatwootConfig(env)
+  const response = await fetch(`${config.baseUrl}/api/v1/accounts/${config.accountId}${path}`, {
+    ...init,
+    headers: chatwootHeaders(config.apiToken, init.headers || {}),
+  })
+
+  const payload = await readChatwootResponse(response)
+  if (!response.ok) {
+    const error = new Error(sanitizeChatwootError(payload?.message || payload?.error || `Chatwoot request failed (${response.status}).`))
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}
+
+async function zernioFetch(env, path, init = {}) {
+  const config = getZernioConfig(env)
+  const response = await fetch(`${config.baseUrl}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'content-type': 'application/json',
+      ...(init.headers || {}),
+    },
+  })
+
+  const payload = await readChatwootResponse(response)
+  if (!response.ok) {
+    const error = new Error(payload?.message || payload?.error || `Zernio request failed (${response.status}).`)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}
+
+function parsePositiveInteger(value) {
+  const parsed = Number.parseInt(String(value || ''), 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function trimText(value, maxLength = 500) {
+  return String(value || '').trim().slice(0, maxLength)
+}
+
+function normalizeHexColor(value, fallback = '#C9A84C') {
+  const color = String(value || '').trim()
+  return /^#[0-9A-Fa-f]{6}$/.test(color) ? color : fallback
+}
+
+function normalizeJsonArray(value, fallback = []) {
+  return Array.isArray(value) ? value : fallback
+}
+
+function buildWebsiteChatSnippet(settings) {
+  const baseUrl = String(settings?.chatwoot_base_url || DEFAULT_CHATWOOT_BASE_URL).replace(/\/$/, '')
+  const websiteToken = String(settings?.chatwoot_website_token || '').trim()
+  if (!websiteToken) return ''
+
+  return [
+    '<script>',
+    '  (function(d,t) {',
+    `    var BASE_URL="${baseUrl.replace(/"/g, '&quot;')}";`,
+    '    var g=d.createElement(t),s=d.getElementsByTagName(t)[0];',
+    '    g.src=BASE_URL+"/packs/js/sdk.js";',
+    '    g.defer=true;',
+    '    g.async=true;',
+    '    s.parentNode.insertBefore(g,s);',
+    '    g.onload=function(){',
+    `      window.chatwootSDK.run({ websiteToken: "${websiteToken.replace(/"/g, '&quot;')}", baseUrl: BASE_URL });`,
+    '    };',
+    '  })(document,"script");',
+    '</script>',
+  ].join('\n')
+}
+
+async function loadWebsiteChatSettings(envConfig) {
+  const params = new URLSearchParams({
+    select: '*',
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/client_website_chat_settings?${params.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function loadPortalClient(envConfig) {
+  const params = new URLSearchParams({
+    select: 'id,slug,business_name,website_url,portal_domain',
+    id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/clients?${params.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function updateWebsiteChatSettings(envConfig, body) {
+  const response = await supabaseRest(
+    envConfig,
+    `/rest/v1/client_website_chat_settings?client_id=eq.${encodeURIComponent(envConfig.clientId)}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify(body),
+    },
+  )
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+function websiteChatResponse(settings, extras = {}) {
+  return {
+    configured: Boolean(settings?.chatwoot_website_token),
+    settings,
+    installSnippet: buildWebsiteChatSnippet(settings),
+    ...extras,
+  }
+}
+
+function sanitizeWebsiteChatSettingsPatch(body) {
+  const patch = {}
+  if ('widget_color' in body) patch.widget_color = normalizeHexColor(body.widget_color)
+  if ('welcome_heading' in body) patch.welcome_heading = trimText(body.welcome_heading, 80) || 'Hi there'
+  if ('welcome_tagline' in body) patch.welcome_tagline = trimText(body.welcome_tagline, 180) || 'Send us a message and we will get back to you soon.'
+  if ('greeting_enabled' in body) patch.greeting_enabled = Boolean(body.greeting_enabled)
+  if ('greeting_message' in body) patch.greeting_message = trimText(body.greeting_message, 500) || 'Hi! How can we help?'
+  if ('pre_chat_form_enabled' in body) patch.pre_chat_form_enabled = Boolean(body.pre_chat_form_enabled)
+  if ('pre_chat_message' in body) patch.pre_chat_message = trimText(body.pre_chat_message, 300) || 'Tell us how to reach you before we start.'
+  if ('pre_chat_fields' in body) patch.pre_chat_fields = normalizeJsonArray(body.pre_chat_fields, [])
+  if ('saved_replies' in body) {
+    patch.saved_replies = normalizeJsonArray(body.saved_replies, [])
+      .slice(0, 12)
+      .map((reply) => ({
+        title: trimText(reply?.title, 60) || 'Reply',
+        message: trimText(reply?.message, 1200),
+      }))
+      .filter((reply) => reply.message)
+  }
+  if ('automation_rules' in body) {
+    patch.automation_rules = normalizeJsonArray(body.automation_rules, [])
+      .slice(0, 8)
+      .map((rule) => ({
+        id: trimText(rule?.id, 50),
+        enabled: Boolean(rule?.enabled),
+        label: trimText(rule?.label, 80),
+        message: trimText(rule?.message, 1200),
+      }))
+      .filter((rule) => rule.id && rule.label)
+  }
+  return patch
+}
+
+async function syncWebsiteChatToChatwoot(env, settings, patch) {
+  const inboxId = parsePositiveInteger(settings?.chatwoot_website_inbox_id)
+  if (!inboxId) return { synced: false, reason: 'Website Chat inbox id is not configured.' }
+
+  const chatwootPatch = {}
+  if ('widget_color' in patch) chatwootPatch.widget_color = patch.widget_color
+  if ('greeting_enabled' in patch) chatwootPatch.greeting_enabled = patch.greeting_enabled
+  if ('greeting_message' in patch) chatwootPatch.greeting_message = patch.greeting_message
+
+  if (!Object.keys(chatwootPatch).length) {
+    return { synced: false, reason: 'No Chatwoot widget fields changed.' }
+  }
+
+  await chatwootFetch(env, `/inboxes/${inboxId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(chatwootPatch),
+  })
+
+  return { synced: true }
+}
+
+async function handleWebsiteChatSettings(request, env) {
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  if (request.method === 'GET') {
+    const settings = await loadWebsiteChatSettings(auth.envConfig)
+    return json(websiteChatResponse(settings))
+  }
+
+  if (request.method !== 'PATCH') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET, PATCH' } })
+  }
+
+  if (auth.user.role !== 'admin') {
+    return json({ error: 'Only client admins can change website chat settings.' }, { status: 403 })
+  }
+
+  const currentSettings = await loadWebsiteChatSettings(auth.envConfig)
+  if (!currentSettings) {
+    return json({ error: 'Website chat settings are not configured for this portal yet.' }, { status: 404 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const patch = sanitizeWebsiteChatSettingsPatch(body)
+  if (!Object.keys(patch).length) {
+    return json(websiteChatResponse(currentSettings, { sync: { synced: false, reason: 'No changes provided.' } }))
+  }
+
+  let sync = { synced: false }
+  try {
+    sync = await syncWebsiteChatToChatwoot(env, currentSettings, patch)
+  } catch (error) {
+    sync = { synced: false, warning: error.message || 'Could not sync widget changes to Chatwoot.' }
+  }
+
+  const updated = await updateWebsiteChatSettings(auth.envConfig, patch)
+  return json(websiteChatResponse(updated, { sync }))
+}
+
+async function handleWebsiteChatInstallCheck(request, env) {
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const [settings, client] = await Promise.all([
+    loadWebsiteChatSettings(auth.envConfig),
+    loadPortalClient(auth.envConfig),
+  ])
+
+  if (!settings?.chatwoot_website_token) {
+    return json({ error: 'Website chat token is not configured yet.' }, { status: 404 })
+  }
+
+  const websiteUrl = String(client?.website_url || '').trim()
+  if (!websiteUrl) {
+    const updated = await updateWebsiteChatSettings(auth.envConfig, {
+      install_status: 'needs_help',
+      last_checked_at: new Date().toISOString(),
+      last_check_error: 'No website URL is saved for this client.',
+    })
+    return json(websiteChatResponse(updated, { detected: false }))
+  }
+
+  try {
+    const response = await fetch(websiteUrl, {
+      redirect: 'follow',
+      headers: {
+        'user-agent': 'MAP Website Chat Install Checker/1.0',
+      },
+    })
+    const html = await response.text()
+    const hasToken = html.includes(settings.chatwoot_website_token)
+    const hasChatwoot = html.includes(settings.chatwoot_base_url) || html.includes('chatwootSDK.run')
+    const detected = response.ok && hasToken && hasChatwoot
+    const now = new Date().toISOString()
+    const updated = await updateWebsiteChatSettings(auth.envConfig, {
+      install_status: detected ? 'detected' : 'not_detected',
+      last_checked_at: now,
+      last_detected_at: detected ? now : settings.last_detected_at,
+      last_check_error: detected ? null : 'The widget script was not found on the saved website homepage.',
+    })
+
+    return json(websiteChatResponse(updated, { detected, checkedUrl: websiteUrl }))
+  } catch (error) {
+    const updated = await updateWebsiteChatSettings(auth.envConfig, {
+      install_status: 'needs_help',
+      last_checked_at: new Date().toISOString(),
+      last_check_error: error.message || 'Could not fetch the saved website homepage.',
+    })
+    return json(websiteChatResponse(updated, { detected: false, checkedUrl: websiteUrl }))
+  }
+}
+
+async function handleChatwootProxy(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: { allow: 'GET, POST, OPTIONS' },
+    })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const route = url.pathname.replace(/^\/api\/chatwoot\/?/, '')
+
+  try {
+    if (route === 'health') {
+      getChatwootConfig(env)
+      return json({ configured: true })
+    }
+
+    if (route === 'inboxes' && request.method === 'GET') {
+      const payload = await chatwootFetch(env, '/inboxes')
+      return json(payload)
+    }
+
+    if (route === 'agents' && request.method === 'GET') {
+      const payload = await chatwootFetch(env, '/agents')
+      return json(payload)
+    }
+
+    if (route === 'conversations' && request.method === 'GET') {
+      const params = new URLSearchParams()
+      params.set('status', url.searchParams.get('status') || 'open')
+      params.set('assignee_type', url.searchParams.get('assignee_type') || 'all')
+      params.set('page', String(parsePositiveInteger(url.searchParams.get('page')) || 1))
+
+      const q = String(url.searchParams.get('q') || '').trim()
+      const inboxId = parsePositiveInteger(url.searchParams.get('inbox_id'))
+      if (q) params.set('q', q.slice(0, 120))
+      if (inboxId) params.set('inbox_id', String(inboxId))
+
+      const payload = await chatwootFetch(env, `/conversations?${params.toString()}`)
+      return json(payload)
+    }
+
+    const messagesMatch = /^conversations\/(\d+)\/messages$/.exec(route)
+    if (messagesMatch && request.method === 'GET') {
+      const conversationId = messagesMatch[1]
+      const payload = await chatwootFetch(env, `/conversations/${conversationId}/messages`)
+      return json(payload)
+    }
+
+    if (messagesMatch && request.method === 'POST') {
+      const conversationId = messagesMatch[1]
+      const body = await request.json().catch(() => ({}))
+      const content = String(body.content || '').trim()
+      if (!content) {
+        return json({ error: 'Reply content is required.' }, { status: 400 })
+      }
+
+      const conversation = await chatwootFetch(env, `/conversations/${conversationId}`)
+      const shouldBridgeToZernio = isZernioBackedConversation(conversation) && !body.private
+      let zernioResult = null
+
+      if (shouldBridgeToZernio) {
+        zernioResult = await sendZernioConversationReply(env, conversation, content)
+      }
+
+      const payload = await chatwootFetch(env, `/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({
+          content: content.slice(0, 5000),
+          message_type: 'outgoing',
+          private: Boolean(body.private),
+          content_type: 'text',
+          source_id: zernioResult?.messageId ? `zernio:${zernioResult.messageId}` : undefined,
+          content_attributes: zernioResult ? {
+            zernio_bridge_sent: true,
+            zernio_message_id: zernioResult.messageId || null,
+          } : {},
+        }),
+      })
+      return json(payload)
+    }
+
+    const statusMatch = /^conversations\/(\d+)\/status$/.exec(route)
+    if (statusMatch && request.method === 'POST') {
+      const conversationId = statusMatch[1]
+      const body = await request.json().catch(() => ({}))
+      const status = String(body.status || '').trim().toLowerCase()
+      const allowedStatuses = new Set(['open', 'resolved', 'pending'])
+      if (!allowedStatuses.has(status)) {
+        return json({ error: 'Status must be open, pending, or resolved.' }, { status: 400 })
+      }
+
+      const payload = await chatwootFetch(env, `/conversations/${conversationId}/toggle_status`, {
+        method: 'POST',
+        body: JSON.stringify({ status }),
+      })
+      return json(payload)
+    }
+
+    return json({ error: 'Chatwoot route not found.' }, { status: 404 })
+  } catch (error) {
+    const status = error?.status || (String(error?.message || '').includes('not configured') ? 503 : 502)
+    return json({ error: sanitizeChatwootError(error?.message) }, { status })
+  }
+}
+
+function getChatwootSocialInboxId(env) {
+  const configured = getChatwootConfig(env).socialInboxId
+  if (configured) return configured
+  return null
+}
+
+async function resolveChatwootSocialInbox(env) {
+  const configuredId = getChatwootSocialInboxId(env)
+  if (configuredId) return { id: configuredId }
+
+  const inboxes = await chatwootFetch(env, '/inboxes')
+  const payload = Array.isArray(inboxes?.payload) ? inboxes.payload : (Array.isArray(inboxes) ? inboxes : [])
+  const socialInbox = payload.find((inbox) => (
+    String(inbox?.name || '').trim().toLowerCase() === DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME.toLowerCase()
+    && String(inbox?.channel_type || '').toLowerCase().includes('api')
+  ))
+
+  if (!socialInbox?.id) {
+    throw new Error('Chatwoot Social Inbox API channel is not configured.')
+  }
+
+  return socialInbox
+}
+
+function getConversationCustomAttributes(conversation) {
+  return conversation?.custom_attributes || conversation?.payload?.custom_attributes || {}
+}
+
+function isZernioBackedConversation(conversation) {
+  const attrs = getConversationCustomAttributes(conversation)
+  return Boolean(attrs?.zernio_conversation_id && attrs?.zernio_account_id)
+}
+
+function normalizeZernioEventName(request, payload) {
+  return String(
+    request.headers.get('x-zernio-event')
+    || request.headers.get('x-late-event')
+    || payload.event
+    || '',
+  ).trim()
+}
+
+function firstString(...values) {
+  for (const value of values) {
+    const normalized = String(value || '').trim()
+    if (normalized) return normalized
+  }
+  return ''
+}
+
+function normalizeZernioAccount(payload) {
+  const account = payload.account || {}
+  return {
+    id: firstString(account.id, account.accountId, payload.accountId, payload.zernioAccountId),
+    platform: normalizePlatform(firstString(account.platform, payload.platform)),
+    username: firstString(account.username, account.handle, account.displayName, payload.username),
+  }
+}
+
+function normalizeZernioMessage(payload) {
+  const message = payload.message || payload.data?.message || {}
+  const conversation = payload.conversation || payload.data?.conversation || {}
+  const sender = message.sender || conversation.contact || payload.contact || {}
+  const attachments = Array.isArray(message.attachments)
+    ? message.attachments
+    : (Array.isArray(payload.attachments) ? payload.attachments : [])
+  const messageId = firstString(message.id, message.messageId, payload.messageId, payload.id)
+  const conversationId = firstString(conversation.id, conversation.conversationId, message.conversationId, payload.conversationId)
+  const senderId = firstString(
+    sender.id,
+    sender.contactId,
+    sender.platformIdentifier,
+    sender.username,
+    message.senderId,
+    conversation.contactId,
+    conversation.participantId,
+    conversationId,
+  )
+  const senderName = firstString(
+    sender.name,
+    sender.displayName,
+    sender.username,
+    conversation.name,
+    conversation.title,
+    'Social contact',
+  )
+  const content = firstString(message.text, message.content, message.message, payload.text, payload.content)
+
+  return {
+    id: messageId,
+    conversationId,
+    senderId,
+    senderName,
+    senderEmail: firstString(sender.email),
+    senderPhone: firstString(sender.phone, sender.phoneNumber),
+    senderAvatar: firstString(sender.avatarUrl, sender.avatar, sender.profilePictureUrl),
+    content,
+    attachments,
+    timestamp: firstString(message.timestamp, message.createdAt, payload.timestamp),
+  }
+}
+
+function buildZernioContactIdentifier(accountId, senderId) {
+  return `zernio:${accountId}:${senderId}`.slice(0, 255)
+}
+
+function appendAttachmentLinks(content, attachments) {
+  const links = (attachments || [])
+    .map((attachment) => firstString(attachment.url, attachment.fileUrl, attachment.downloadUrl, attachment.mediaUrl))
+    .filter(Boolean)
+
+  if (!links.length) return content || '[Attachment received]'
+
+  const attachmentText = links.map((link) => `Attachment: ${link}`).join('\n')
+  return [content, attachmentText].filter(Boolean).join('\n\n')
+}
+
+async function findChatwootContactByIdentifier(env, identifier) {
+  const params = new URLSearchParams({ q: identifier })
+  const payload = await chatwootFetch(env, `/contacts/search?${params.toString()}`)
+  const contacts = Array.isArray(payload?.payload) ? payload.payload : []
+  return contacts.find((contact) => String(contact.identifier || '') === identifier) || null
+}
+
+function getContactInboxSourceId(contact, inboxId) {
+  const contactInboxes = Array.isArray(contact?.contact_inboxes) ? contact.contact_inboxes : []
+  const contactInbox = contactInboxes.find((entry) => Number(entry?.inbox?.id) === Number(inboxId))
+  return firstString(contactInbox?.source_id)
+}
+
+async function findOrCreateChatwootZernioContact(env, inboxId, account, message) {
+  const identifier = buildZernioContactIdentifier(account.id, message.senderId)
+  const existing = await findChatwootContactByIdentifier(env, identifier)
+  if (existing?.id && getContactInboxSourceId(existing, inboxId)) return existing
+
+  const created = await chatwootFetch(env, '/contacts', {
+    method: 'POST',
+    body: JSON.stringify({
+      inbox_id: inboxId,
+      name: message.senderName,
+      email: message.senderEmail || undefined,
+      phone_number: message.senderPhone || undefined,
+      avatar_url: message.senderAvatar || undefined,
+      identifier,
+      additional_attributes: {
+        source: 'zernio',
+        platform: account.platform,
+      },
+      custom_attributes: {
+        zernio_account_id: account.id,
+        zernio_platform: account.platform,
+        zernio_sender_id: message.senderId,
+      },
+    }),
+  })
+
+  const contact = Array.isArray(created?.payload) ? created.payload[0] : created?.payload || created
+  if (contact?.id && getContactInboxSourceId(contact, inboxId)) return contact
+
+  return findChatwootContactByIdentifier(env, identifier)
+}
+
+async function findChatwootZernioConversation(env, contactId, zernioConversationId, inboxId) {
+  const payload = await chatwootFetch(env, `/contacts/${contactId}/conversations`)
+  const conversations = Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
+  return conversations.find((conversation) => (
+    Number(conversation?.inbox_id) === Number(inboxId)
+    && String(conversation?.custom_attributes?.zernio_conversation_id || '') === String(zernioConversationId)
+    && String(conversation?.status || '').toLowerCase() !== 'resolved'
+  )) || conversations.find((conversation) => (
+    Number(conversation?.inbox_id) === Number(inboxId)
+    && String(conversation?.custom_attributes?.zernio_conversation_id || '') === String(zernioConversationId)
+  )) || null
+}
+
+async function findOrCreateChatwootZernioConversation(env, contact, inboxId, account, message) {
+  const existing = await findChatwootZernioConversation(env, contact.id, message.conversationId, inboxId)
+  if (existing?.id) return existing
+
+  const sourceId = getContactInboxSourceId(contact, inboxId)
+  if (!sourceId) {
+    throw new Error('Chatwoot contact source id is missing for the Social Inbox.')
+  }
+  return chatwootFetch(env, '/conversations', {
+    method: 'POST',
+    body: JSON.stringify({
+      source_id: sourceId,
+      inbox_id: inboxId,
+      contact_id: contact.id,
+      status: 'open',
+      custom_attributes: {
+        zernio_account_id: account.id,
+        zernio_conversation_id: message.conversationId,
+        zernio_platform: account.platform,
+        zernio_username: account.username || null,
+      },
+      additional_attributes: {
+        source: 'zernio',
+        platform: account.platform,
+        zernio_account_id: account.id,
+      },
+    }),
+  })
+}
+
+async function chatwootMessageExists(env, conversationId, externalMessageId) {
+  if (!externalMessageId) return false
+  const payload = await chatwootFetch(env, `/conversations/${conversationId}/messages`)
+  const messages = Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
+  return messages.some((message) => (
+    String(message?.source_id || '') === `zernio:${externalMessageId}`
+    || String(message?.content_attributes?.zernio_message_id || '') === String(externalMessageId)
+    || String(message?.external_source_ids?.zernio || '') === String(externalMessageId)
+  ))
+}
+
+async function ensureZernioAccountIsConnected(envConfig, account) {
+  const filters = new URLSearchParams({
+    select: 'id,platform,zernio_account_id,username',
+    client_id: `eq.${envConfig.clientId}`,
+    zernio_account_id: `eq.${account.id}`,
+    limit: '1',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/social_connections?${filters.toString()}`)
+  const rows = await response.json()
+  const row = Array.isArray(rows) ? rows[0] : null
+  if (!row) return null
+
+  if (account.platform && normalizePlatform(row.platform) !== account.platform) return null
+  return row
+}
+
+async function handleZernioInboxWebhook(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: { allow: 'POST, OPTIONS' },
+    })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+
+  let envConfig
+  try {
+    envConfig = getSupabaseConfig(env)
+  } catch (error) {
+    return json({ error: error.message || 'Webhook configuration is incomplete.' }, { status: 500 })
+  }
+
+  let rawBody = ''
+  try {
+    rawBody = await request.text()
+  } catch {
+    return json({ error: 'Could not read webhook body.' }, { status: 400 })
+  }
+
+  const signature = request.headers.get('x-zernio-signature') || request.headers.get('x-late-signature') || ''
+  const isValidSignature = await verifyZernioWebhookSignature(rawBody, signature, envConfig.webhookSecret)
+  if (!isValidSignature) {
+    return json({ error: 'Invalid webhook signature.' }, { status: 401 })
+  }
+
+  let payload = {}
+  try {
+    payload = JSON.parse(rawBody || '{}')
+  } catch {
+    return json({ error: 'Webhook payload was not valid JSON.' }, { status: 400 })
+  }
+
+  const eventName = normalizeZernioEventName(request, payload)
+  if (eventName === 'webhook.test') {
+    return json({ success: true, message: 'Inbox webhook test received.' })
+  }
+
+  const allowedEvents = new Set(['message.received', 'comment.received', 'review.new'])
+  if (!allowedEvents.has(eventName)) {
+    return json({ success: true, skipped: true, reason: 'Unhandled inbox event.', event: eventName })
+  }
+
+  const account = normalizeZernioAccount(payload)
+  const message = normalizeZernioMessage(payload)
+  if (!account.id || !account.platform || !message.conversationId || !message.senderId) {
+    return json({ error: 'Missing account, platform, conversation, or sender identifier.' }, { status: 400 })
+  }
+
+  const connection = await ensureZernioAccountIsConnected(envConfig, account)
+  if (!connection) {
+    return json({ success: true, skipped: true, reason: 'Zernio account is not connected to this tenant.', event: eventName })
+  }
+
+  try {
+    const inbox = await resolveChatwootSocialInbox(env)
+    const contact = await findOrCreateChatwootZernioContact(env, inbox.id, account, message)
+    const conversation = await findOrCreateChatwootZernioConversation(env, contact, inbox.id, account, message)
+    const conversationId = conversation?.id
+    if (!conversationId) throw new Error('Chatwoot conversation could not be created.')
+
+    if (await chatwootMessageExists(env, conversationId, message.id)) {
+      return json({ success: true, deduped: true, conversationId, event: eventName })
+    }
+
+    const content = appendAttachmentLinks(message.content, message.attachments).slice(0, 5000)
+    const createdMessage = await chatwootFetch(env, `/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content,
+        message_type: 'incoming',
+        private: false,
+        source_id: message.id ? `zernio:${message.id}` : undefined,
+        content_type: 'text',
+        content_attributes: {
+          zernio_event: eventName,
+          zernio_message_id: message.id || null,
+          zernio_conversation_id: message.conversationId,
+          zernio_account_id: account.id,
+          zernio_platform: account.platform,
+          zernio_timestamp: message.timestamp || null,
+          zernio_attachments: message.attachments,
+        },
+      }),
+    })
+
+    return json({
+      success: true,
+      event: eventName,
+      platform: account.platform,
+      inboxId: inbox.id,
+      contactId: contact.id,
+      conversationId,
+      messageId: createdMessage?.id || null,
+    })
+  } catch (error) {
+    return json({ error: sanitizeChatwootError(error?.message), event: eventName }, { status: error?.status || 502 })
+  }
+}
+
+async function sendZernioConversationReply(env, conversation, content) {
+  const attrs = getConversationCustomAttributes(conversation)
+  const zernioConversationId = firstString(attrs.zernio_conversation_id)
+  const zernioAccountId = firstString(attrs.zernio_account_id)
+  if (!zernioConversationId || !zernioAccountId) {
+    throw new Error('This Chatwoot conversation is missing Zernio routing metadata.')
+  }
+
+  const n8nWebhookUrl = String(env.ZERNIO_INBOX_SEND_WEBHOOK_URL || '').trim()
+  const requestBody = {
+    accountId: zernioAccountId,
+    conversationId: zernioConversationId,
+    message: content.slice(0, 5000),
+  }
+
+  const payload = n8nWebhookUrl
+    ? await sendZernioReplyThroughN8n(env, n8nWebhookUrl, requestBody)
+    : await zernioFetch(env, `/inbox/conversations/${encodeURIComponent(zernioConversationId)}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        accountId: zernioAccountId,
+        message: content.slice(0, 5000),
+      }),
+    })
+
+  return {
+    payload,
+    messageId: firstString(payload?.message?.id, payload?.id, payload?.data?.id),
+  }
+}
+
+async function sendZernioReplyThroughN8n(env, webhookUrl, body) {
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(env.ZERNIO_INBOX_SEND_SECRET ? { 'x-map-bridge-secret': String(env.ZERNIO_INBOX_SEND_SECRET) } : {}),
+    },
+    body: JSON.stringify(body),
+  })
+
+  const payload = await readChatwootResponse(response)
+  if (!response.ok || payload?.success === false) {
+    const error = new Error(payload?.message || payload?.error || `Zernio inbox send workflow failed (${response.status}).`)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}
+
+async function handleChatwootMessageWebhook(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: { allow: 'POST, OPTIONS' },
+    })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+
+  const url = new URL(request.url)
+  const expectedToken = String(env.CHATWOOT_WEBHOOK_BRIDGE_SECRET || '').trim()
+  if (expectedToken && url.searchParams.get('token') !== expectedToken) {
+    return json({ error: 'Invalid Chatwoot webhook token.' }, { status: 401 })
+  }
+
+  const payload = await request.json().catch(() => ({}))
+  const eventName = firstString(payload.event, payload.event_name, payload.name)
+  const message = payload.message || payload
+  const conversation = payload.conversation || message.conversation || {}
+
+  if (eventName && eventName !== 'message_created') {
+    return json({ success: true, skipped: true, reason: 'Unhandled Chatwoot event.', event: eventName })
+  }
+
+  const isOutgoing = String(message.message_type || '').toLowerCase() === 'outgoing' || Number(message.message_type) === 1
+  const alreadyBridged = Boolean(message.content_attributes?.zernio_bridge_sent)
+  if (!isOutgoing || message.private || alreadyBridged || !isZernioBackedConversation(conversation)) {
+    return json({ success: true, skipped: true, reason: 'Not an outbound Zernio-backed customer reply.' })
+  }
+
+  try {
+    const zernioResult = await sendZernioConversationReply(env, conversation, firstString(message.content))
+    return json({
+      success: true,
+      event: eventName || 'message_created',
+      zernioMessageId: zernioResult.messageId || null,
+    })
+  } catch (error) {
+    return json({ error: error.message || 'Could not bridge Chatwoot reply to Zernio.' }, { status: error?.status || 502 })
+  }
 }
 
 async function replaceSocialConnection(envConfig, { platform, accountId, username }) {
@@ -793,6 +1730,26 @@ export default {
 
     if (url.pathname === '/api/zernio/account-events') {
       return handleZernioAccountWebhook(request, env)
+    }
+
+    if (url.pathname === '/api/zernio/inbox-events') {
+      return handleZernioInboxWebhook(request, env)
+    }
+
+    if (url.pathname === '/api/chatwoot/webhooks/messages') {
+      return handleChatwootMessageWebhook(request, env)
+    }
+
+    if (url.pathname.startsWith('/api/chatwoot/')) {
+      return handleChatwootProxy(request, env)
+    }
+
+    if (url.pathname === '/api/website-chat/settings') {
+      return handleWebsiteChatSettings(request, env)
+    }
+
+    if (url.pathname === '/api/website-chat/check-installation') {
+      return handleWebsiteChatInstallCheck(request, env)
     }
 
     if (url.pathname === '/api/dropbox/week-media') {

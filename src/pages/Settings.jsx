@@ -6,7 +6,7 @@ import { buildTenantConfig } from '../lib/tenantConfig'
 import { DASHBOARD_PLATFORMS } from '../lib/platformCatalog'
 import {
   User, Lock, Building2, CheckCircle2, Loader2, AlertCircle,
-  Link2, ExternalLink, Wifi, WifiOff
+  Link2, ExternalLink, Wifi, WifiOff, MessageCircle, Copy, RefreshCw, Mail, Save
 } from 'lucide-react'
 
 const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
@@ -31,6 +31,46 @@ async function fetchConnections(clientId) {
     .eq('client_id', clientId)
   if (error) throw error
   return data || []
+}
+
+async function websiteChatPortalFetch(path, options = {}) {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData?.session?.access_token
+  if (!token) throw new Error('You need to be signed in to manage website chat.')
+
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  })
+  const payload = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(payload?.error || 'Website chat request failed.')
+  }
+
+  return payload
+}
+
+async function fetchWebsiteChatSettings() {
+  return websiteChatPortalFetch('/api/website-chat/settings')
+}
+
+async function saveWebsiteChatSettings(body) {
+  return websiteChatPortalFetch('/api/website-chat/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+async function checkWebsiteChatInstallation() {
+  return websiteChatPortalFetch('/api/website-chat/check-installation', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
 }
 
 // ── Shared components ─────────────────────────────────────────────────────────
@@ -477,6 +517,325 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
   )
 }
 
+// ── Website Chat section ─────────────────────────────────────────────────────
+
+function formatInstallStatus(status) {
+  if (status === 'detected') return 'Installed'
+  if (status === 'not_detected') return 'Not detected'
+  if (status === 'needs_help') return 'Needs help'
+  if (status === 'map_install_requested') return 'MAP install requested'
+  return 'Not checked'
+}
+
+function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant }) {
+  const queryClient = useQueryClient()
+  const [form, setForm] = useState(null)
+  const [status, setStatus] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [copying, setCopying] = useState(false)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['website-chat-settings', client?.id],
+    queryFn: fetchWebsiteChatSettings,
+    enabled: !!client?.id,
+  })
+
+  const settings = data?.settings
+  const installSnippet = data?.installSnippet || ''
+
+  useEffect(() => {
+    if (!settings) return
+    setForm({
+      widget_color: settings.widget_color || '#C9A84C',
+      welcome_heading: settings.welcome_heading || 'Hi there',
+      welcome_tagline: settings.welcome_tagline || 'Send us a message and we will get back to you soon.',
+      greeting_enabled: settings.greeting_enabled ?? true,
+      greeting_message: settings.greeting_message || 'Hi! How can we help?',
+      pre_chat_form_enabled: settings.pre_chat_form_enabled ?? true,
+      pre_chat_message: settings.pre_chat_message || 'Tell us how to reach you before we start.',
+      saved_replies: Array.isArray(settings.saved_replies) ? settings.saved_replies : [],
+      automation_rules: Array.isArray(settings.automation_rules) ? settings.automation_rules : [],
+    })
+  }, [settings])
+
+  function updateForm(key, value) {
+    setForm((current) => ({ ...(current || {}), [key]: value }))
+  }
+
+  function updateSavedReply(index, key, value) {
+    setForm((current) => {
+      const replies = [...(current?.saved_replies || [])]
+      replies[index] = { ...(replies[index] || {}), [key]: value }
+      return { ...(current || {}), saved_replies: replies }
+    })
+  }
+
+  async function handleCopySnippet() {
+    if (!installSnippet) return
+    setCopying(true)
+    setStatus(null)
+    try {
+      await navigator.clipboard.writeText(installSnippet)
+      setStatus({ type: 'success', message: 'Website chat script copied.' })
+    } catch {
+      setStatus({ type: 'error', message: 'Could not copy the script. Select the script text and copy it manually.' })
+    } finally {
+      setCopying(false)
+    }
+  }
+
+  async function handleSave() {
+    if (!requireWriteAccess('update website chat')) return
+    if (!form) return
+    setSaving(true)
+    setStatus(null)
+    try {
+      const result = await saveWebsiteChatSettings(form)
+      await queryClient.invalidateQueries({ queryKey: ['website-chat-settings', client?.id] })
+      setStatus({
+        type: result?.sync?.warning ? 'info' : 'success',
+        message: result?.sync?.warning || 'Website chat settings saved.',
+      })
+    } catch (error) {
+      setStatus({ type: 'error', message: error instanceof Error ? error.message : 'Could not save website chat settings.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleCheckInstall() {
+    setChecking(true)
+    setStatus(null)
+    try {
+      const result = await checkWebsiteChatInstallation()
+      await queryClient.invalidateQueries({ queryKey: ['website-chat-settings', client?.id] })
+      setStatus({
+        type: result.detected ? 'success' : 'info',
+        message: result.detected
+          ? 'Website chat is installed on the saved website.'
+          : 'Website chat was not found on the saved homepage yet.',
+      })
+    } catch (error) {
+      setStatus({ type: 'error', message: error instanceof Error ? error.message : 'Could not check website chat installation.' })
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const webPersonBody = [
+    `Please add this website chat script to ${client?.website_url || 'our website'} before the closing </body> tag on every public page:`,
+    '',
+    installSnippet,
+  ].join('\n')
+
+  if (isLoading) {
+    return (
+      <Section title="Website Chat" description="Install and manage the website chat widget" icon={MessageCircle}>
+        <div className="flex items-center gap-2" style={{ color: 'var(--portal-text-muted)' }}>
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Loading website chat…</span>
+        </div>
+      </Section>
+    )
+  }
+
+  if (!settings) {
+    return (
+      <Section title="Website Chat" description="Install and manage the website chat widget" icon={MessageCircle}>
+        <StatusBadge status="info" message="Website chat is being prepared for this portal." />
+      </Section>
+    )
+  }
+
+  return (
+    <Section title="Website Chat" description="Install and manage your customer chat widget" icon={MessageCircle}>
+      <div className="space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)' }}>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{formatInstallStatus(settings.install_status)}</p>
+            <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+              {settings.last_checked_at ? `Last checked ${formatConnectionDate(settings.last_checked_at)}` : 'Check your website after installing the script.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleCheckInstall}
+            disabled={checking}
+            className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-all disabled:opacity-50"
+            style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.25)', color: 'var(--portal-primary)' }}
+          >
+            {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Check installation
+          </button>
+        </div>
+
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <label className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--portal-text-soft)' }}>
+              Install script
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleCopySnippet}
+                disabled={!installSnippet || copying}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50"
+                style={{ background: 'rgba(255,255,255,0.86)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+              >
+                {copying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />}
+                Copy script
+              </button>
+              <a
+                href={`mailto:?subject=${encodeURIComponent('Website chat install script')}&body=${encodeURIComponent(webPersonBody)}`}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all"
+                style={{ background: 'rgba(255,255,255,0.86)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+              >
+                <Mail className="h-3 w-3" />
+                Email to web person
+              </a>
+              <a
+                href={`mailto:${tenant.supportEmail}?subject=${encodeURIComponent('Please install my website chat')}&body=${encodeURIComponent(`Please help install website chat for ${client?.business_name || 'my business'}: ${client?.website_url || ''}`)}`}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all"
+                style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.25)', color: 'var(--portal-primary)' }}
+              >
+                <MessageCircle className="h-3 w-3" />
+                Request MAP install
+              </a>
+            </div>
+          </div>
+          <textarea
+            readOnly
+            value={installSnippet}
+            rows={8}
+            className="portal-input w-full resize-y rounded-xl px-4 py-3 font-mono text-xs leading-5 focus:outline-none"
+          />
+        </div>
+
+        {form && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                Widget color
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={form.widget_color}
+                  onChange={(event) => updateForm('widget_color', event.target.value)}
+                  className="h-11 w-14 rounded-xl border-0 bg-transparent p-0"
+                  disabled={billingAccess?.readOnly}
+                />
+                <input
+                  value={form.widget_color}
+                  onChange={(event) => updateForm('widget_color', event.target.value)}
+                  className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none"
+                  disabled={billingAccess?.readOnly}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                Welcome heading
+              </label>
+              <input
+                value={form.welcome_heading}
+                onChange={(event) => updateForm('welcome_heading', event.target.value)}
+                className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none"
+                disabled={billingAccess?.readOnly}
+              />
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                Welcome tagline
+              </label>
+              <input
+                value={form.welcome_tagline}
+                onChange={(event) => updateForm('welcome_tagline', event.target.value)}
+                className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none"
+                disabled={billingAccess?.readOnly}
+              />
+            </div>
+
+            <label className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+              <input
+                type="checkbox"
+                checked={form.greeting_enabled}
+                onChange={(event) => updateForm('greeting_enabled', event.target.checked)}
+                disabled={billingAccess?.readOnly}
+              />
+              Send an automatic greeting
+            </label>
+
+            <label className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+              <input
+                type="checkbox"
+                checked={form.pre_chat_form_enabled}
+                onChange={(event) => updateForm('pre_chat_form_enabled', event.target.checked)}
+                disabled={billingAccess?.readOnly}
+              />
+              Ask for contact info first
+            </label>
+
+            <div className="lg:col-span-2">
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                Greeting message
+              </label>
+              <textarea
+                value={form.greeting_message}
+                onChange={(event) => updateForm('greeting_message', event.target.value)}
+                rows={3}
+                className="portal-input w-full resize-y rounded-xl px-4 py-3 text-sm focus:outline-none"
+                disabled={billingAccess?.readOnly}
+              />
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                Saved replies
+              </label>
+              <div className="space-y-3">
+                {(form.saved_replies || []).slice(0, 3).map((reply, index) => (
+                  <div key={`${reply.title}-${index}`} className="grid gap-2 rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)' }}>
+                    <input
+                      value={reply.title || ''}
+                      onChange={(event) => updateSavedReply(index, 'title', event.target.value)}
+                      className="portal-input w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
+                      disabled={billingAccess?.readOnly}
+                    />
+                    <textarea
+                      value={reply.message || ''}
+                      onChange={(event) => updateSavedReply(index, 'message', event.target.value)}
+                      rows={2}
+                      className="portal-input w-full resize-y rounded-lg px-3 py-2 text-sm focus:outline-none"
+                      disabled={billingAccess?.readOnly}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {status && <StatusBadge status={status.type} message={status.message} />}
+
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving || billingAccess?.readOnly}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:-translate-y-px active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ background: 'linear-gradient(135deg, var(--portal-primary), #ddc275)', color: 'var(--portal-dark)' }}
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save website chat
+        </button>
+      </div>
+    </Section>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Settings() {
@@ -600,6 +959,15 @@ export default function Settings() {
             returnedPlatform={returnedPlatform}
             requireWriteAccess={requireWriteAccess}
             billingAccess={billingAccess}
+          />
+        )}
+
+        {client && (
+          <WebsiteChatSection
+            client={client}
+            requireWriteAccess={requireWriteAccess}
+            billingAccess={billingAccess}
+            tenant={tenant}
           />
         )}
 
