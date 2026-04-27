@@ -712,149 +712,67 @@ function PlatformPreview({ platformId, profile, content, imagePreview, dropboxAt
   const previewTime = scheduledFor ? formatDetailedLocalDateTime(scheduledFor) : 'Ready to publish'
   const attachmentCount = dropboxAttachments.length
   const visualPreview = platformImage?.url || platformImage?.preview_url || imagePreview || getDropboxPreviewSource(dropboxAttachments)
-
-  if (platformId === 'instagram') {
-    return (
-      <div
-        className="mx-auto max-w-[430px] overflow-hidden rounded-[28px]"
-        style={{ background: '#fff', border: '1px solid var(--portal-border)', boxShadow: '0 18px 40px rgba(26, 24, 20, 0.08)' }}
-      >
-        <div className="flex items-center gap-3 px-4 py-4" style={{ borderBottom: '1px solid var(--portal-border)' }}>
-          <div className="h-10 w-10 rounded-full" style={{ background: 'linear-gradient(135deg, #feda75, #d62976, #4f5bd5)' }} />
-          <div>
-            <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{businessName}</p>
-            <p className="text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>{previewTime}</p>
-          </div>
-        </div>
-        <div
-          className="aspect-square w-full overflow-hidden"
-          style={{ background: visualPreview ? '#f4f1ec' : 'linear-gradient(135deg, rgba(254,218,117,0.16), rgba(214,41,118,0.12))' }}
-        >
-          {visualPreview ? (
-            <img
-              src={visualPreview}
-              alt="Instagram preview"
-              className="h-full w-full object-contain"
-              style={{ background: '#f4f1ec' }}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-sm" style={{ color: 'var(--portal-text-soft)' }}>
-              Image-first Instagram preview
-            </div>
-          )}
-        </div>
-        <div className="px-4 py-4">
-          <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--portal-text)' }}>
-            <span className="font-semibold">{businessName}</span> {content}
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  if (platformId === 'facebook') {
-    return (
-      <div className="overflow-hidden rounded-[28px]" style={{ background: '#fff', border: '1px solid var(--portal-border)' }}>
-        <div className="flex items-center gap-3 px-4 py-4" style={{ borderBottom: '1px solid var(--portal-border)' }}>
-          <div className="flex h-10 w-10 items-center justify-center rounded-full text-white" style={{ background: platform.accent }}>
-            <platform.Icon className="h-4 w-4" />
-          </div>
-          <div className="flex-1">
-            <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{businessName}</p>
-            <p className="text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>{previewTime}</p>
-          </div>
-        </div>
-        <div className="px-4 py-4">
-          <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--portal-text)' }}>{content}</p>
-        </div>
-        {visualPreview && (
-          <img src={visualPreview} alt="Facebook preview" className="max-h-80 w-full object-cover" />
-        )}
-      </div>
-    )
-  }
-
-  if (platformId === 'google') {
-    return (
-      <div className="rounded-[28px] p-5" style={{ background: '#fff', border: '1px solid var(--portal-border)' }}>
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl text-white" style={{ background: platform.accent }}>
-            <platform.Icon className="h-4 w-4" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{businessName}</p>
-            <p className="text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>Google Business update</p>
-          </div>
-        </div>
-        <div className="mt-4 rounded-[20px] p-4" style={{ background: 'rgba(52, 168, 83, 0.06)' }}>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: platform.accent }}>
-            Scheduled
-          </p>
-          <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--portal-text)' }}>{content}</p>
-          <p className="mt-3 text-xs" style={{ color: 'var(--portal-text-soft)' }}>{previewTime}</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (platformId === 'linkedin') {
-    return (
-      <div className="overflow-hidden rounded-[28px]" style={{ background: '#fff', border: '1px solid var(--portal-border)' }}>
-        <div className="flex items-center gap-3 px-4 py-4" style={{ borderBottom: '1px solid var(--portal-border)' }}>
-          <div className="flex h-10 w-10 items-center justify-center rounded-md text-white" style={{ background: platform.accent }}>
-            <platform.Icon className="h-4 w-4" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{businessName}</p>
-            <p className="text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>{previewTime}</p>
-          </div>
-        </div>
-        {visualPreview && <img src={visualPreview} alt="LinkedIn preview" className="max-h-80 w-full object-cover" />}
-        <div className="px-4 py-4">
-          <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--portal-text)' }}>{content}</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (platformId === 'twitter') {
-    return (
-      <div className="rounded-[28px] p-4" style={{ background: '#fff', border: '1px solid var(--portal-border)' }}>
-        <div className="flex gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full text-white" style={{ background: platform.accent }}>
-            <platform.Icon className="h-4 w-4" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{businessName}</p>
-              <p className="text-xs" style={{ color: 'var(--portal-text-soft)' }}>@{businessName.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 18) || 'business'}</p>
-            </div>
-            <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--portal-text)' }}>{content}</p>
-            {visualPreview && (
-              <img src={visualPreview} alt="X preview" className="mt-3 max-h-72 w-full rounded-2xl object-cover" style={{ border: '1px solid var(--portal-border)' }} />
-            )}
-            <p className="mt-2 text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>{previewTime}</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const Icon = platform.Icon
+  const rules = PLATFORM_FORMAT_RULES[platformId] || {}
+  const platformMeta = {
+    instagram: { label: 'Feed post', badge: visualPreview ? 'Media first' : 'Needs image', handlePrefix: '@' },
+    facebook: { label: 'Community post', badge: visualPreview ? 'Feed ready' : 'Text post', handlePrefix: '' },
+    google: { label: 'Business update', badge: 'Local update', handlePrefix: '' },
+    tiktok: { label: 'Vertical caption', badge: visualPreview ? 'Video/photo' : 'Caption only', handlePrefix: '@' },
+    linkedin: { label: 'Professional update', badge: visualPreview ? 'Feed media' : 'Text update', handlePrefix: '' },
+    twitter: { label: 'Timeline post', badge: visualPreview ? 'Media post' : 'Text post', handlePrefix: '@' },
+  }[platformId] || { label: 'Preview', badge: 'Draft', handlePrefix: '' }
+  const handle = businessName.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 20) || 'business'
+  const caption = content || 'Your caption preview will appear here.'
 
   return (
-    <div className="rounded-[28px] p-5" style={{ background: '#111', color: '#fff', border: '1px solid rgba(255,255,255,0.08)' }}>
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold">{businessName}</p>
-          <p className="text-[10px] text-white/60">TikTok caption preview</p>
+    <div
+      className="platform-preview-card"
+      data-platform={platformId}
+      style={{
+        '--platform-accent': platform.accent,
+        '--platform-soft': platform.soft,
+      }}
+    >
+      <div className="platform-preview-accent" />
+      <header className="platform-preview-header">
+        <div className="platform-preview-icon">
+          <Icon className="h-4 w-4" />
         </div>
-        <div className="rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(255,255,255,0.08)' }}>
-          {attachmentCount > 0 ? `${attachmentCount} assets` : 'Caption only'}
+        <div className="min-w-0 flex-1">
+          <div className="platform-preview-title-row">
+            <p>{businessName}</p>
+            <span>{platform.shortLabel}</span>
+          </div>
+          <p className="platform-preview-subtitle">
+            {platformMeta.handlePrefix ? `${platformMeta.handlePrefix}${handle} · ` : ''}{platformMeta.label}
+          </p>
         </div>
+      </header>
+
+      <div className="platform-preview-media" data-empty={!visualPreview}>
+        {visualPreview ? (
+          <img src={visualPreview} alt={`${platform.label} preview`} />
+        ) : (
+          <div>
+            <Icon className="h-5 w-5" />
+            <p>{rules.media || 'Add an image to preview the final creative.'}</p>
+          </div>
+        )}
+        <span>{platformMeta.badge}</span>
       </div>
-      <div className="mt-4 rounded-[22px] p-4" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))' }}>
-        <p className="text-lg font-semibold leading-snug">{content || 'Your caption preview will appear here.'}</p>
-        <p className="mt-4 text-xs text-white/60">{previewTime}</p>
+
+      <div className="platform-preview-copy">
+        <p className="whitespace-pre-wrap">
+          {platformId === 'instagram' && content ? <strong>{businessName} </strong> : null}
+          {caption}
+        </p>
       </div>
+
+      <footer className="platform-preview-footer">
+        <span>{previewTime}</span>
+        <span>{attachmentCount > 1 ? `${attachmentCount} assets` : rules.label || platform.label}</span>
+      </footer>
     </div>
   )
 }
