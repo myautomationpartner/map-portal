@@ -11,6 +11,7 @@ import {
   FileText,
   Inbox as InboxIcon,
   Loader2,
+  Mail,
   MessageCircle,
   MonitorSmartphone,
   RefreshCw,
@@ -98,6 +99,13 @@ async function websiteChatPortalFetch(path, options = {}) {
 
 function fetchWebsiteChatSettings() {
   return websiteChatPortalFetch('/api/website-chat/settings')
+}
+
+function sendMobileSetupEmail() {
+  return websiteChatPortalFetch('/api/inbox/mobile-setup-email', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
 }
 
 async function fetchConversations({ queryKey }) {
@@ -282,6 +290,8 @@ function SetupChecklistItem({ done, title, detail }) {
 
 function SetupInboxModal({ open, onClose, websiteChat, websiteChatLoading, userEmail }) {
   const [copied, setCopied] = useState('')
+  const [mobileEmailStatus, setMobileEmailStatus] = useState(null)
+  const [sendingMobileEmail, setSendingMobileEmail] = useState(false)
   if (!open) return null
 
   const settings = websiteChat?.settings || {}
@@ -295,6 +305,25 @@ function SetupInboxModal({ open, onClose, websiteChat, websiteChatLoading, userE
     await navigator.clipboard?.writeText(value)
     setCopied(label)
     window.setTimeout(() => setCopied(''), 1800)
+  }
+
+  async function handleSendMobileEmail() {
+    setSendingMobileEmail(true)
+    setMobileEmailStatus(null)
+    try {
+      await sendMobileSetupEmail()
+      setMobileEmailStatus({
+        type: 'success',
+        message: `Mobile inbox setup email sent to ${loginEmail}. It should come from inbox@myautomationpartner.com.`,
+      })
+    } catch (error) {
+      setMobileEmailStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Could not send the mobile inbox setup email.',
+      })
+    } finally {
+      setSendingMobileEmail(false)
+    }
   }
 
   return (
@@ -366,6 +395,15 @@ function SetupInboxModal({ open, onClose, websiteChat, websiteChatLoading, userE
                   </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSendMobileEmail}
+                    disabled={sendingMobileEmail}
+                    className="portal-button-primary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {sendingMobileEmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+                    Send mobile setup email
+                  </button>
                   <a href={CHATWOOT_IOS_URL} target="_blank" rel="noopener noreferrer" className="portal-button-secondary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold">
                     iPhone app
                     <ArrowUpRight className="h-3.5 w-3.5" />
@@ -375,6 +413,16 @@ function SetupInboxModal({ open, onClose, websiteChat, websiteChatLoading, userE
                     <ArrowUpRight className="h-3.5 w-3.5" />
                   </a>
                 </div>
+                {mobileEmailStatus && (
+                  <p
+                    className="mt-3 rounded-xl border px-3 py-2 text-xs font-semibold"
+                    style={mobileEmailStatus.type === 'success'
+                      ? { borderColor: 'rgba(47,143,87,0.28)', background: 'rgba(47,143,87,0.1)', color: '#2f8f57' }
+                      : { borderColor: 'rgba(196,85,110,0.2)', background: 'rgba(196,85,110,0.08)', color: '#a83f58' }}
+                  >
+                    {mobileEmailStatus.message}
+                  </p>
+                )}
               </div>
 
               <div className="rounded-2xl border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.76)' }}>
@@ -425,7 +473,7 @@ function SetupInboxModal({ open, onClose, websiteChat, websiteChatLoading, userE
                 </div>
                 <div>
                   <p className="font-semibold" style={{ color: 'var(--portal-text)' }}>Mobile steps</p>
-                  <p>Download Chatwoot, enter the workspace URL, then log in with your MAP email. If the password does not work, use the Chatwoot reset-password link.</p>
+                  <p>Download Chatwoot, enter the workspace URL, then click Send mobile setup email if you need a Chatwoot password link. The email is only for mobile inbox access.</p>
                 </div>
                 <div>
                   <p className="font-semibold" style={{ color: 'var(--portal-text)' }}>Website steps</p>

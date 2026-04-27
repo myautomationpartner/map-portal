@@ -617,6 +617,43 @@ async function handleWebsiteChatInstallCheck(request, env) {
   }
 }
 
+async function handleChatwootMobileSetupEmail(request, env) {
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const email = String(auth.user?.email || '').trim().toLowerCase()
+  if (!email) {
+    return json({ error: 'Your portal user does not have an email address.' }, { status: 400 })
+  }
+
+  const baseUrl = String(env.CHATWOOT_BASE_URL || DEFAULT_CHATWOOT_BASE_URL).replace(/\/$/, '')
+  const response = await fetch(`${baseUrl}/auth/password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email,
+      redirect_url: `${baseUrl}/app/login`,
+    }),
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    return json({
+      error: sanitizeChatwootError(payload?.message || payload?.error || 'Could not send the mobile inbox setup email.'),
+    }, { status: response.status })
+  }
+
+  return json({
+    success: true,
+    email,
+    message: 'Mobile inbox setup email sent.',
+  })
+}
+
 async function handleChatwootProxy(request, env) {
   if (request.method === 'OPTIONS') {
     return new Response(null, {
@@ -1779,6 +1816,10 @@ export default {
 
     if (url.pathname === '/api/website-chat/check-installation') {
       return handleWebsiteChatInstallCheck(request, env)
+    }
+
+    if (url.pathname === '/api/inbox/mobile-setup-email') {
+      return handleChatwootMobileSetupEmail(request, env)
     }
 
     if (url.pathname === '/api/dropbox/week-media') {

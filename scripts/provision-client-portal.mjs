@@ -488,7 +488,7 @@ async function provisionChatwootTenant({ client, dryRun, skipChatwootProvisionin
   await setInboxMembers(account.id, websiteInbox.id, inboxMemberIds)
   await setInboxMembers(account.id, socialInbox.id, inboxMemberIds)
   const passwordReset = skipChatwootPasswordReset
-    ? { skipped: true, reason: 'Chatwoot password reset skipped by flag.' }
+    ? { skipped: true, reason: 'Chatwoot mobile setup email is sent on demand from Inbox setup.' }
     : await triggerChatwootPasswordReset(customerEmail)
 
   return {
@@ -927,7 +927,7 @@ async function main() {
   const skipWebhookConfig = Boolean(args['skip-webhook-config'])
   const skipInitialRadar = Boolean(args['skip-initial-radar'])
   const skipChatwootProvisioning = Boolean(args['skip-chatwoot-provisioning'])
-  const skipChatwootPasswordReset = Boolean(args['skip-chatwoot-password-reset'])
+  const skipChatwootPasswordReset = !Boolean(args['send-chatwoot-password-reset']) || Boolean(args['skip-chatwoot-password-reset'])
   const client = await loadClient(args)
 
   if (!client.portal_domain || !client.worker_name || !client.portal_subdomain) {
