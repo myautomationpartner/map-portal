@@ -1684,7 +1684,7 @@ export default function CreatePost() {
 
   async function getImageImproveInput() {
     if (activeCreativeItem?.type === 'dropbox' || activeCreativeItem?.type === 'existing') {
-      const imageUrl = activeCreativeItem.link || activeCreativeItem.previewUrl || ''
+      const imageUrl = activeCreativeItem.previewUrl || activeCreativeItem.link || ''
       if (imageUrl && /^https?:\/\//i.test(imageUrl)) return { image_url: imageUrl }
     }
 
@@ -1860,7 +1860,7 @@ export default function CreatePost() {
       return activePreview
     }
 
-    const imageUrl = activeCreativeItem?.link || activeCreativeItem?.previewUrl || existingMediaUrl || dropboxPreviewSource || ''
+    const imageUrl = activeCreativeItem?.previewUrl || activeCreativeItem?.link || existingMediaUrl || dropboxPreviewSource || ''
     if (imageUrl && /^https?:\/\//i.test(imageUrl)) return imageUrl
 
     throw new Error('Add or select an image before formatting it for platforms.')
