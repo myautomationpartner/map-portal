@@ -2396,12 +2396,30 @@ export default function CreatePost() {
           </section>
         )}
 
-        <div className="space-y-5">
-          <div className="create-post-compose-grid">
-            <section className="portal-panel rounded-[34px] p-5 md:p-6">
+        <div className="space-y-5 create-post-ticket-layout">
+          <article className="create-post-ticket-card" ref={composerRef}>
+            <div className="create-post-phone-bar">
+              <button type="button" onClick={() => navigate('/calendar')} className="create-post-phone-button">
+                Cancel
+              </button>
+              <div className="create-post-phone-title">Create post</div>
+              <button type="button" onClick={openReview} disabled={isSubmitting || charOver} className="create-post-phone-button">
+                Next
+              </button>
+            </div>
+            <div className="create-post-phone-body">
+              <div className="create-post-identity-row">
+                <div className="create-post-avatar">D</div>
+                <div>
+                  <strong>{profile?.clients?.business_name || 'Dancescapes Performing Arts'}</strong>
+                  <span>{activePlatforms.length ? activePlatforms.map((platformId) => PLATFORMS.find((platform) => platform.id === platformId)?.label).filter(Boolean).join(', ') : 'Choose platforms below'}</span>
+                </div>
+              </div>
+              <div className="create-post-compose-grid create-post-ticket-grid">
+            <section className="create-post-caption-panel">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h1 ref={composerRef} className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
+                  <h1 className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
                     {editingScheduledPostId ? 'Editing scheduled post' : activeDraftId ? 'Draft loaded' : 'Publisher'}
                   </h1>
                   <p className="mt-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
@@ -2631,7 +2649,7 @@ export default function CreatePost() {
               </div>
             </section>
 
-            <section className="portal-panel create-post-creative-panel rounded-[28px] p-4 md:p-5">
+            <section className="create-post-creative-panel">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
@@ -2908,9 +2926,47 @@ export default function CreatePost() {
                 onChange={handleFileChange}
               />
             </section>
-          </div>
+              </div>
+            </div>
+          </article>
 
-          <section className="portal-panel rounded-[34px] p-5 md:p-6">
+          <section className="create-post-schedule-strip">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                Schedule
+              </p>
+              <h2>Choose timing</h2>
+              <p>{timingSummary}</p>
+            </div>
+            <div className="create-post-schedule-actions">
+              <button type="button" onClick={chooseNow} data-active={timingMode === 'now'}>
+                Post now
+              </button>
+              <button type="button" onClick={() => chooseCustomTime(selectedDay)} data-active={timingMode === 'custom'}>
+                Custom time
+              </button>
+              <button
+                type="button"
+                onClick={() => setTimingMode('slot')}
+                data-active={timingMode === 'slot'}
+              >
+                Calendar slot
+              </button>
+            </div>
+            <input
+              type="datetime-local"
+              value={scheduledFor}
+              min={minScheduleValue}
+              onChange={(event) => {
+                setScheduledFor(event.target.value)
+                setTimingMode('custom')
+              }}
+              className="portal-input rounded-2xl px-4 py-3 text-sm focus:outline-none"
+              style={{ colorScheme: 'light' }}
+            />
+          </section>
+
+          <section className="create-post-preview-section">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>

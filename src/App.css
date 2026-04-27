@@ -2240,6 +2240,203 @@
   align-items: start;
 }
 
+.create-post-ticket-layout {
+  max-width: 1180px;
+  margin-inline: auto;
+}
+
+.create-post-ticket-layout > .space-y-5 {
+  display: none;
+}
+
+.create-post-ticket-card,
+.create-post-schedule-strip,
+.create-post-preview-section {
+  border: 1px solid var(--portal-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 12px 28px rgba(20, 19, 16, 0.045);
+  overflow: hidden;
+}
+
+.create-post-phone-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--portal-border);
+  padding: 0.75rem;
+}
+
+.create-post-phone-title {
+  text-align: center;
+  color: var(--portal-text);
+  font-size: 0.95rem;
+  font-weight: 950;
+}
+
+.create-post-phone-button {
+  min-width: 4.2rem;
+  border: 1px solid var(--portal-border);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--portal-text-muted);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.create-post-phone-body {
+  padding: 0.95rem;
+}
+
+.create-post-identity-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 1rem;
+}
+
+.create-post-avatar {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border: 1px solid var(--portal-border);
+  border-radius: 0.65rem;
+  background: rgba(245, 240, 235, 0.7);
+  color: var(--portal-text);
+  font-size: 1.05rem;
+  font-weight: 950;
+}
+
+.create-post-identity-row strong {
+  display: block;
+  color: var(--portal-text);
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+
+.create-post-identity-row span {
+  display: block;
+  color: var(--portal-text-muted);
+  font-size: 0.78rem;
+}
+
+.create-post-ticket-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.1rem;
+}
+
+.create-post-caption-panel,
+.create-post-creative-panel {
+  min-width: 0;
+}
+
+.create-post-caption-panel > .flex:first-child,
+.create-post-caption-panel > .mt-4,
+.create-post-caption-panel > .mt-5:first-of-type,
+.create-post-caption-panel .mt-5 > button {
+  display: none !important;
+}
+
+.create-post-caption-panel textarea {
+  min-height: 360px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+  color: var(--portal-text) !important;
+  font-size: 1.18rem !important;
+  line-height: 1.45 !important;
+}
+
+.create-post-caption-panel .partner-assist-box,
+.create-post-creative-panel > div,
+.create-post-creative-panel > .mt-3 {
+  border-radius: 0.65rem !important;
+}
+
+.create-post-creative-panel > .mt-3:nth-of-type(2) {
+  border-radius: 0.65rem !important;
+}
+
+.create-post-creative-panel img {
+  max-height: 360px !important;
+}
+
+.create-post-creative-panel button.min-h-\[300px\],
+.create-post-creative-panel .min-h-\[300px\] {
+  min-height: 360px !important;
+}
+
+.create-post-schedule-strip {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.75fr) minmax(0, 1fr) minmax(220px, 0.75fr);
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+}
+
+.create-post-schedule-strip h2 {
+  margin: 0.12rem 0;
+  color: var(--portal-text);
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.create-post-schedule-strip p {
+  margin: 0;
+  color: var(--portal-text-muted);
+  font-size: 0.76rem;
+}
+
+.create-post-schedule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.create-post-schedule-actions button {
+  border: 1px solid var(--portal-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--portal-text-muted);
+  padding: 0.58rem 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.create-post-schedule-actions button[data-active="true"] {
+  border-color: rgba(201, 168, 76, 0.42);
+  background: rgba(201, 168, 76, 0.15);
+  color: var(--portal-primary);
+}
+
+.create-post-preview-section {
+  padding: 0;
+}
+
+.create-post-preview-section > .flex {
+  border-bottom: 1px solid var(--portal-border);
+  padding: 0.85rem 1rem;
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.create-post-preview-section .create-post-preview-grid {
+  grid-template-columns: repeat(3, minmax(250px, 1fr));
+  gap: 0;
+  margin-top: 0 !important;
+  overflow-x: auto;
+}
+
+.create-post-preview-section .create-post-preview-shell {
+  min-width: 250px;
+  border-width: 0 1px 0 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .create-post-preview-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
