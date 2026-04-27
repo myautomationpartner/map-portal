@@ -19,6 +19,7 @@ import {
   upsertSocialDraft,
 } from '../lib/portalApi'
 import { openDropboxChooser } from '../lib/dropboxApi'
+import { isGooglePickerConfigured, openGoogleImagePicker } from '../lib/googlePickerApi'
 import { buildCalendarModel } from '../lib/socialPlanner'
 import { buildDraftPayload } from '../lib/socialPlanner'
 import {
@@ -41,7 +42,7 @@ import { SiDropbox, SiGooglephotos, SiIcloud } from 'react-icons/si'
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 
 const PHOTO_LIBRARY_LINKS = [
-  { label: 'Google Photos', href: 'https://photos.google.com/', Icon: SiGooglephotos, color: '#4285F4' },
+  { label: 'Google', href: 'https://photos.google.com/', action: 'google', Icon: SiGooglephotos, color: '#4285F4' },
   { label: 'Apple Photos', href: 'https://www.icloud.com/photos/', Icon: SiIcloud, color: '#3693F3' },
   { label: 'Dropbox', action: 'dropbox', Icon: SiDropbox, color: '#0061FF' },
   { label: 'OneDrive', href: 'https://onedrive.live.com/', Icon: FaMicrosoft, color: '#00A4EF' },
@@ -1188,6 +1189,7 @@ export default function CreatePost() {
   const charPercent = Math.min((content.length / charLimit) * 100, 100)
   const isSubmitting = submitState === 'uploading' || submitState === 'posting'
   const minScheduleValue = getMinScheduleValue()
+  const googlePickerReady = isGooglePickerConfigured()
   const creativeItems = useMemo(() => {
     const items = []
     if (localImageItems.length) {
@@ -1624,7 +1626,11 @@ export default function CreatePost() {
   async function handleFileChange(event) {
     const files = Array.from(event.target.files || [])
     if (!files.length) return
+    await addLocalImageFiles(files)
+    event.target.value = ''
+  }
 
+  async function addLocalImageFiles(files, source = 'local') {
     const imageFiles = files.filter((file) => file.type.startsWith('image/'))
     if (!imageFiles.length) {
       setErrorMsg('Only image files are supported.')
@@ -1638,8 +1644,8 @@ export default function CreatePost() {
     }
 
     const items = await Promise.all(imageFiles.map(async (file, index) => ({
-      id: `local:${file.name}:${file.lastModified}:${index}`,
-      type: 'local',
+      id: `${source}:${file.name}:${file.lastModified}:${index}:${Date.now()}`,
+      type: source === 'google' ? 'google' : 'local',
       name: file.name || `Image ${index + 1}`,
       file,
       previewUrl: await readFileAsDataUrl(file),
@@ -1656,6 +1662,25 @@ export default function CreatePost() {
     setImageImproveMode('')
     setImageImproveError('')
     clearPlatformImageVariants('')
+  }
+
+  async function handleChooseGoogle() {
+    if (!requireWriteAccess('choose Google media')) return
+    if (isSubmitting) return
+
+    setImageGenerateError('')
+    setImageImproveError('')
+    setErrorMsg('')
+
+    try {
+      const files = await openGoogleImagePicker()
+      if (!files.length) return
+      await addLocalImageFiles(files, 'google')
+      setDraftStatus(`${files.length} Google image${files.length === 1 ? '' : 's'} added.`)
+    } catch (error) {
+      console.error('[GooglePicker]', error)
+      setErrorMsg(error.message || 'Could not open Google image picker.')
+    }
   }
 
   async function handleChooseDropbox() {
@@ -1995,7 +2020,7 @@ export default function CreatePost() {
   function selectCreativeItem(index) {
     const item = creativeItems[index]
     setMediaSlideIndex(index)
-    if (item?.type === 'local' || item?.type === 'generated') {
+    if (item?.type === 'local' || item?.type === 'generated' || item?.type === 'google') {
       setImageFile(item.file || null)
       setImagePreview(item.previewUrl || null)
       setExistingMediaUrl('')
@@ -2026,7 +2051,7 @@ export default function CreatePost() {
       removeDropboxAttachment(item.link)
       return
     }
-    if (item.type === 'local' || item.type === 'generated') {
+    if (item.type === 'local' || item.type === 'generated' || item.type === 'google') {
       const nextItems = localImageItems.filter((media) => media.id !== item.id)
       setLocalImageItems(nextItems)
       const nextActive = nextItems[clampIndex(activeCreativeIndex, nextItems.length)] || null
@@ -2939,11 +2964,11 @@ export default function CreatePost() {
                 </button>
 
                 {PHOTO_LIBRARY_LINKS.map(({ label, href, action, Icon, color }) => (
-                  action === 'dropbox' ? (
+                  action === 'dropbox' || (action === 'google' && googlePickerReady) ? (
                     <button
                       key={label}
                       type="button"
-                      onClick={handleChooseDropbox}
+                      onClick={action === 'google' ? handleChooseGoogle : handleChooseDropbox}
                       disabled={isSubmitting}
                       className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-2 text-[11px] font-semibold disabled:opacity-55"
                       style={{ background: 'rgba(26,24,20,0.06)', color: 'var(--portal-text)' }}
