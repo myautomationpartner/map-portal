@@ -7,7 +7,7 @@ export default function PortalBillingBanner({ billingAccess, onAction, actionPen
 
   return (
     <section
-      className="mx-auto mb-5 max-w-[1640px] rounded-[28px] border px-5 py-4 md:px-6"
+      className="mb-5 w-full max-w-none rounded-[28px] border px-5 py-4 md:px-6"
       style={{
         background: 'linear-gradient(135deg, rgba(201,168,76,0.18), rgba(232,213,160,0.08))',
         borderColor: 'rgba(201,168,76,0.28)',

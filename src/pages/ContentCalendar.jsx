@@ -1587,7 +1587,7 @@ export default function ContentCalendar() {
   }
 
   return (
-    <div className="portal-page content-plan-page mx-auto max-w-[1500px] space-y-3 md:p-4 xl:p-5">
+    <div className="portal-page content-plan-page w-full max-w-none space-y-3 md:p-4 xl:p-5">
       <section className="content-plan-slimbar content-plan-publisher-bar">
         <div className="content-plan-toolbar-left">
           <button

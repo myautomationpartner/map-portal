@@ -106,7 +106,7 @@ export default function PlatformStats() {
   const changeYear = calcNetChange(metrics, 365, config.metricField)
 
   return (
-    <div className="portal-page mx-auto max-w-[1280px] space-y-6 md:p-6 xl:p-8">
+    <div className="portal-page w-full max-w-none space-y-6 md:p-5 xl:p-6">
       <Link
         to="/"
         className="portal-button-secondary inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold"

@@ -157,7 +157,7 @@ export default function PostHistory() {
   const filterTabInactive = { ...filterTabBase, background: 'transparent', color: 'var(--portal-text-muted)' }
 
   return (
-    <div className="portal-page mx-auto max-w-[1480px] space-y-6 md:p-6 xl:p-8">
+    <div className="portal-page w-full max-w-none space-y-6 md:p-5 xl:p-6">
       {/* Back link */}
       <div className="mb-6">
         <Link

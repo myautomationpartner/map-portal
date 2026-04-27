@@ -148,7 +148,7 @@ export default function ScheduledPosts() {
   }
 
   return (
-    <div className="portal-page mx-auto max-w-[1280px] space-y-6 md:p-6 xl:p-8">
+    <div className="portal-page w-full max-w-none space-y-6 md:p-5 xl:p-6">
       <div>
         <Link
           to="/post"

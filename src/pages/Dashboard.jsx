@@ -1018,7 +1018,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="portal-page mx-auto max-w-[1560px] space-y-5 md:p-6 xl:p-8">
+    <div className="portal-page w-full max-w-none space-y-5 md:p-5 xl:p-6">
       <section className="portal-surface overflow-hidden rounded-[30px] p-4 md:p-5">
         <div className="portal-page-header items-center">
           <div className="max-w-4xl">

@@ -688,7 +688,7 @@ export default function Inbox() {
   }
 
   return (
-    <div className="portal-page mx-auto max-w-[1580px] space-y-3 p-0 md:p-4 xl:p-5">
+    <div className="portal-page w-full max-w-none space-y-3 p-0 md:p-4 xl:p-5">
       <section className="portal-panel overflow-hidden">
         <div className="flex min-h-[60px] flex-wrap items-center justify-between gap-3 border-b px-4 py-3 md:px-5" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
           <div className="flex min-w-0 items-center gap-3">

@@ -2343,7 +2343,7 @@ export default function CreatePost() {
 
   return (
     <>
-      <div className="portal-page mx-auto max-w-[1520px] space-y-6 md:p-6 xl:p-8">
+      <div className="portal-page create-post-page w-full max-w-none space-y-6 md:p-5 xl:p-6">
         {(submitState === 'success' || errorMsg || draftError || draftStatus) && (
           <section className="space-y-3">
             {submitState === 'success' && (

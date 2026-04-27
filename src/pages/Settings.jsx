@@ -963,7 +963,7 @@ export default function Settings() {
   const tenant = buildTenantConfig({ client })
 
   return (
-    <div className="portal-page mx-auto max-w-[1180px] space-y-6 md:p-6 xl:p-8">
+    <div className="portal-page w-full max-w-none space-y-6 md:p-5 xl:p-6">
       <section className="portal-surface rounded-[36px] p-5 md:p-7">
         <div className="portal-page-header">
           <div>
