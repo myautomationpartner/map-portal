@@ -168,17 +168,18 @@ function getDropboxPreviewSource(attachments) {
 
 function getDropboxThumbSource(file) {
   if (!file) return null
-  return getDropboxRenderableImageUrl(file.thumbnail) || getDropboxRenderableImageUrl(file.link) || null
+  return getDropboxRenderableImageUrl(file.thumbnail) || null
 }
 
 function buildDropboxMediaItem(file, index = 0) {
   if (!file) return null
-  const previewUrl = getDropboxThumbSource(file) || getDropboxRenderableImageUrl(file.link)
+  const previewUrl = getDropboxRenderableImageUrl(file.link) || getDropboxThumbSource(file)
   return {
     id: `dropbox:${file.link || file.name || index}`,
     type: 'dropbox',
     name: file.name || `Dropbox image ${index + 1}`,
     previewUrl,
+    thumbUrl: getDropboxThumbSource(file) || previewUrl,
     link: file.link,
     file,
   }
@@ -3045,7 +3046,7 @@ export default function CreatePost() {
                       data-active={index === activeCreativeIndex}
                       title={item.name}
                     >
-                      <img src={item.previewUrl} alt="" />
+                      <img src={item.thumbUrl || item.previewUrl} alt="" />
                       <span>{index + 1}</span>
                     </button>
                   ))}
