@@ -8,7 +8,10 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "provision:client": "node ./scripts/provision-client-portal.mjs"
+    "provision:client": "node ./scripts/provision-client-portal.mjs",
+    "deploy:test-portal": "node ./scripts/deploy-portal-update.mjs --client-slug dancescapes-performing-arts",
+    "deploy:portal": "node ./scripts/deploy-portal-update.mjs",
+    "deploy:all-portals": "node ./scripts/deploy-all-portal-updates.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",
