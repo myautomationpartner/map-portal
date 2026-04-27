@@ -2241,7 +2241,8 @@
 }
 
 .create-post-ticket-layout {
-  max-width: 1180px;
+  width: min(100%, calc(100vw - var(--sidebar-offset, 0px) - 2rem));
+  max-width: none;
   margin-inline: auto;
 }
 
@@ -2324,8 +2325,8 @@
 }
 
 .create-post-ticket-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1.1rem;
+  grid-template-columns: minmax(460px, 1fr) minmax(520px, 1fr);
+  gap: clamp(1rem, 1.4vw, 1.75rem);
 }
 
 .create-post-caption-panel,
@@ -2341,7 +2342,7 @@
 }
 
 .create-post-caption-panel textarea {
-  min-height: 360px;
+  min-height: clamp(360px, 38vh, 560px);
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
@@ -2362,12 +2363,12 @@
 }
 
 .create-post-creative-panel img {
-  max-height: 360px !important;
+  max-height: clamp(360px, 38vh, 560px) !important;
 }
 
 .create-post-creative-panel button.min-h-\[300px\],
 .create-post-creative-panel .min-h-\[300px\] {
-  min-height: 360px !important;
+  min-height: clamp(360px, 38vh, 560px) !important;
 }
 
 .create-post-schedule-strip {
@@ -2424,17 +2425,42 @@
 }
 
 .create-post-preview-section .create-post-preview-grid {
-  grid-template-columns: repeat(3, minmax(250px, 1fr));
+  grid-template-columns: repeat(3, minmax(320px, 1fr));
   gap: 0;
   margin-top: 0 !important;
   overflow-x: auto;
 }
 
 .create-post-preview-section .create-post-preview-shell {
-  min-width: 250px;
+  min-width: 320px;
   border-width: 0 1px 0 0;
   border-radius: 0;
   box-shadow: none;
+}
+
+@media (min-width: 1700px) {
+  .create-post-ticket-layout {
+    width: min(100%, calc(100vw - 8rem));
+  }
+
+  .create-post-ticket-grid {
+    grid-template-columns: minmax(560px, 1fr) minmax(640px, 1fr);
+  }
+
+  .create-post-preview-section .create-post-preview-grid {
+    grid-template-columns: repeat(4, minmax(320px, 1fr));
+  }
+}
+
+@media (max-width: 1180px) {
+  .create-post-ticket-layout {
+    width: 100%;
+  }
+
+  .create-post-ticket-grid,
+  .create-post-schedule-strip {
+    grid-template-columns: 1fr;
+  }
 }
 
 .create-post-preview-grid {
