@@ -239,6 +239,60 @@ function StatusPill({ status }) {
   )
 }
 
+function conversationInitials(conversation) {
+  const title = conversationTitle(conversation)
+  return title
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'C'
+}
+
+function inboxName(conversation, inboxes = []) {
+  const match = inboxes.find((inbox) => String(inbox.id) === String(conversation?.inbox_id))
+  return match?.name || conversation?.channel || 'Inbox'
+}
+
+function channelBadge(conversation, inboxes = []) {
+  const name = inboxName(conversation, inboxes).toLowerCase()
+  if (name.includes('instagram')) return { label: 'IG', style: { background: '#c13584', color: '#fff' } }
+  if (name.includes('facebook')) return { label: 'FB', style: { background: '#1b74e4', color: '#fff' } }
+  if (name.includes('tiktok')) return { label: 'TT', style: { background: '#111827', color: '#fff' } }
+  if (name.includes('linkedin')) return { label: 'IN', style: { background: '#0a66c2', color: '#fff' } }
+  if (name.includes('website') || name.includes('chat')) return { label: 'WEB', style: { background: '#20a67a', color: '#fff' } }
+  return { label: 'MSG', style: { background: '#64748b', color: '#fff' } }
+}
+
+function ticketStepState(selectedConversation, step) {
+  const status = selectedConversation?.status || 'open'
+  if (status === 'resolved') return 'done'
+  if (step <= 2) return 'done'
+  if (status === 'pending' && step === 4) return 'next'
+  if (status === 'open' && step === 3) return 'next'
+  return 'waiting'
+}
+
+function TicketStage({ state, number, title, detail }) {
+  const styles = {
+    done: { background: '#22a06b', color: '#fff' },
+    next: { background: '#2377ff', color: '#fff' },
+    waiting: { background: '#aeb8c5', color: '#fff' },
+  }
+
+  return (
+    <div className="grid grid-cols-[20px_1fr] gap-2 border-t py-2 first:border-t-0" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
+      <div className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-black" style={styles[state]}>
+        {state === 'done' ? <Check className="h-3 w-3" /> : number}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[13px] font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>{title}</p>
+        <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--portal-text-muted)' }}>{detail}</p>
+      </div>
+    </div>
+  )
+}
+
 function MobileAppBanner() {
   if (!isMobile()) return null
 
@@ -634,76 +688,71 @@ export default function Inbox() {
   }
 
   return (
-    <div className="portal-page mx-auto max-w-[1540px] space-y-5 md:p-6 xl:p-8">
-      <section className="portal-surface p-5 md:p-6">
-        <div className="portal-page-header">
-          <div>
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
-                Unified Inbox
-              </span>
-              <StatusPill status={status} />
+    <div className="portal-page mx-auto max-w-[1580px] space-y-3 p-0 md:p-4 xl:p-5">
+      <section className="portal-panel overflow-hidden">
+        <div className="flex min-h-[60px] flex-wrap items-center justify-between gap-3 border-b px-4 py-3 md:px-5" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
+          <div className="flex min-w-0 items-center gap-3">
+            <div>
+              <h1 className="text-xl font-semibold leading-tight tracking-normal" style={{ color: 'var(--portal-text)' }}>Inbox</h1>
+              <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--portal-text-muted)' }}>
+                Website chat and social messages in one customer-service queue.
+              </p>
             </div>
-            <h1 className="portal-page-title font-display">Inbox</h1>
-            <p className="portal-page-subtitle">
-              Customer service for website chat, email, and connected social channels without leaving the MAP portal.
-            </p>
+            <StatusPill status={status} />
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
+            <div className="relative hidden sm:block">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--portal-text-soft)' }} />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search messages"
+                className="portal-input h-9 w-[240px] rounded-full pl-9 pr-3 text-sm lg:w-[340px]"
+              />
+            </div>
             <button
               type="button"
               onClick={() => setSetupOpen(true)}
-              className="portal-button-primary inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold"
+              className="portal-button-primary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold"
             >
               <Settings className="h-4 w-4" />
-              Setup inbox
+              Setup Inbox
             </button>
             <button
               type="button"
               onClick={() => conversationsQuery.refetch()}
-              className="portal-button-secondary inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold"
+              className="portal-button-secondary inline-flex h-9 w-9 items-center justify-center"
+              aria-label="Refresh inbox"
             >
               <RefreshCw className={`h-4 w-4 ${conversationsQuery.isFetching ? 'animate-spin' : ''}`} />
-              Refresh
             </button>
-            <a
-              href={openChatwootUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="portal-button-secondary inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold"
-            >
-              Chatwoot
-              <ExternalLink className="h-4 w-4" />
-            </a>
           </div>
         </div>
-      </section>
 
-      <SetupInboxModal
-        open={setupOpen}
-        onClose={() => setSetupOpen(false)}
-        websiteChat={websiteChatQuery.data}
-        websiteChatLoading={websiteChatQuery.isLoading || websiteChatQuery.isFetching}
-        userEmail={userQuery.data?.email || ''}
-      />
+        <SetupInboxModal
+          open={setupOpen}
+          onClose={() => setSetupOpen(false)}
+          websiteChat={websiteChatQuery.data}
+          websiteChatLoading={websiteChatQuery.isLoading || websiteChatQuery.isFetching}
+          userEmail={userQuery.data?.email || ''}
+        />
 
-      <MobileAppBanner />
-      <ErrorBanner message={conversationsQuery.error?.message || inboxesQuery.error?.message || messagesQuery.error?.message} />
+        <MobileAppBanner />
+        <ErrorBanner message={conversationsQuery.error?.message || inboxesQuery.error?.message || messagesQuery.error?.message} />
 
-      <section className="portal-panel min-h-[680px] overflow-hidden">
-        <div className="grid min-h-[680px] lg:grid-cols-[360px_minmax(0,1fr)_300px]">
-          <aside className={`${mobileThreadOpen ? 'hidden lg:flex' : 'flex'} min-h-[680px] flex-col border-r`} style={{ borderColor: 'var(--portal-border)' }}>
-            <div className="space-y-3 border-b p-4" style={{ borderColor: 'var(--portal-border)' }}>
-              <div className="relative">
+        <div className="grid min-h-[calc(100vh-150px)] lg:grid-cols-[324px_minmax(0,1fr)_300px]">
+          <aside className={`${mobileThreadOpen ? 'hidden lg:flex' : 'flex'} min-h-[calc(100vh-150px)] flex-col border-r bg-white`} style={{ borderColor: 'var(--portal-border)' }}>
+            <div className="border-b px-3 py-3" style={{ borderColor: 'var(--portal-border)' }}>
+              <div className="relative mb-3 sm:hidden">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--portal-text-soft)' }} />
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search conversations"
-                  className="portal-input h-11 pl-9 pr-3 text-sm"
+                  placeholder="Search messages"
+                  className="portal-input h-10 rounded-full pl-9 pr-3 text-sm"
                 />
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="flex gap-2 overflow-x-auto pb-1">
                 {STATUS_OPTIONS.map((option) => (
                   <button
                     key={option.value}
@@ -712,8 +761,8 @@ export default function Inbox() {
                       setStatus(option.value)
                       setSelectedId(null)
                     }}
-                    className={`rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${status === option.value ? '' : 'bg-white/70'}`}
-                    style={status === option.value ? statusStyle(option.value) : { borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}
+                    className="shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors"
+                    style={status === option.value ? { background: '#162033', borderColor: '#162033', color: '#fff' } : { background: '#fff', borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}
                   >
                     {option.label}
                   </button>
@@ -725,7 +774,7 @@ export default function Inbox() {
                   setInboxId(event.target.value)
                   setSelectedId(null)
                 }}
-                className="portal-input h-11 px-3 text-sm"
+                className="portal-input mt-2 h-9 px-3 text-xs"
               >
                 <option value="">All inboxes</option>
                 {(inboxesQuery.data || []).map((inbox) => (
@@ -736,9 +785,9 @@ export default function Inbox() {
               </select>
             </div>
 
-            <div className="flex items-center justify-between border-b px-4 py-3 text-xs" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
+            <div className="flex items-center justify-between border-b px-4 py-2 text-xs" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
               <span>{totalCount} conversations</span>
-              <span>{conversationsQuery.isFetching ? 'Syncing' : 'Live every 30s'}</span>
+              <span>{conversationsQuery.isFetching ? 'Syncing' : 'Live'}</span>
             </div>
 
             <div className="portal-scroll flex-1 overflow-y-auto">
@@ -749,51 +798,54 @@ export default function Inbox() {
               ) : conversations.length === 0 ? (
                 <EmptyState title="No conversations here" detail="When customers write in, their conversations will appear in this queue." />
               ) : (
-                conversations.map((conversation) => (
-                  <button
-                    key={conversation.id}
-                    type="button"
-                    onClick={() => handleSelect(conversation.id)}
-                    className="block w-full border-b p-4 text-left transition-colors hover:bg-white/70"
-                    style={{
-                      borderColor: 'var(--portal-border)',
-                      background: activeConversationId === conversation.id ? 'rgba(201,168,76,0.09)' : 'transparent',
-                    }}
-                  >
-                    <div className="mb-2 flex items-start justify-between gap-3">
+                conversations.map((conversation) => {
+                  const badge = channelBadge(conversation, inboxesQuery.data || [])
+                  const isActive = activeConversationId === conversation.id
+                  return (
+                    <button
+                      key={conversation.id}
+                      type="button"
+                      onClick={() => handleSelect(conversation.id)}
+                      className="grid w-full grid-cols-[44px_1fr_auto] gap-3 border-l-[3px] px-3 py-3 text-left transition-colors hover:bg-slate-50"
+                      style={{
+                        borderLeftColor: isActive ? '#2377ff' : 'transparent',
+                        background: isActive ? '#eef5ff' : '#fff',
+                      }}
+                    >
+                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#2377ff] to-[#65d6a8] text-sm font-black text-white">
+                        {conversationInitials(conversation)}
+                      </div>
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
-                          {conversationTitle(conversation)}
-                        </p>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
+                            {conversationTitle(conversation)}
+                          </p>
+                          <span className="rounded px-1.5 py-0.5 text-[10px] font-black" style={badge.style}>{badge.label}</span>
+                        </div>
                         <p className="mt-0.5 truncate text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                          {conversationPreview(conversation)}
+                        </p>
+                        <p className="mt-1 truncate text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>
                           {conversationSubtitle(conversation)}
                         </p>
                       </div>
-                      <span className="shrink-0 text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>
-                        {formatRelativeTime(conversation.last_activity_at || conversation.updated_at)}
-                      </span>
-                    </div>
-                    <p className="line-clamp-2 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                      {conversationPreview(conversation)}
-                    </p>
-                    <div className="mt-3 flex items-center justify-between gap-2">
-                      <StatusPill status={conversation.status} />
-                      {conversation.unread_count > 0 && (
-                        <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: 'var(--portal-primary)', color: 'var(--portal-dark)' }}>
-                          {conversation.unread_count}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                ))
+                      <div className="text-right text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>
+                        <span>{formatRelativeTime(conversation.last_activity_at || conversation.updated_at)}</span>
+                        {conversation.unread_count > 0 && (
+                          <span className="ml-auto mt-2 block h-2.5 w-2.5 rounded-full" style={{ background: '#2377ff' }} />
+                        )}
+                      </div>
+                    </button>
+                  )
+                })
               )}
             </div>
           </aside>
 
-          <main className={`${mobileThreadOpen ? 'flex' : 'hidden lg:flex'} min-h-[680px] flex-col`}>
+          <main className={`${mobileThreadOpen ? 'flex' : 'hidden lg:flex'} min-h-[calc(100vh-150px)] min-w-0 flex-col`} style={{ background: '#f9fbfe' }}>
             {selectedConversation ? (
               <>
-                <div className="flex items-center justify-between gap-3 border-b px-4 py-3 md:px-5" style={{ borderColor: 'var(--portal-border)' }}>
+                <div className="flex min-h-[72px] items-center justify-between gap-3 border-b bg-white/95 px-4 py-3 md:px-5" style={{ borderColor: 'var(--portal-border)' }}>
                   <div className="flex min-w-0 items-center gap-3">
                     <button
                       type="button"
@@ -803,22 +855,38 @@ export default function Inbox() {
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </button>
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl" style={{ background: 'rgba(201,168,76,0.1)' }}>
-                      <UserRound className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#2377ff] to-[#65d6a8] text-sm font-black text-white">
+                      {conversationInitials(selectedConversation)}
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
-                        {conversationTitle(selectedConversation)}
-                      </p>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <p className="truncate text-base font-semibold" style={{ color: 'var(--portal-text)' }}>
+                          {conversationTitle(selectedConversation)}
+                        </p>
+                        <span className="rounded px-1.5 py-0.5 text-[10px] font-black" style={channelBadge(selectedConversation, inboxesQuery.data || []).style}>
+                          {channelBadge(selectedConversation, inboxesQuery.data || []).label}
+                        </span>
+                      </div>
                       <p className="truncate text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                        {conversationSubtitle(selectedConversation)}
+                        {inboxName(selectedConversation, inboxesQuery.data || [])} · {conversationSubtitle(selectedConversation)}
                       </p>
                     </div>
                   </div>
-                  <StatusPill status={selectedConversation.status} />
+                  <div className="flex items-center gap-2">
+                    <StatusPill status={selectedConversation.status} />
+                    <a
+                      href={openChatwootUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="portal-button-secondary hidden h-9 items-center gap-2 px-3 text-xs font-semibold md:inline-flex"
+                    >
+                      Chatwoot
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </div>
                 </div>
 
-                <div className="portal-scroll flex-1 space-y-3 overflow-y-auto bg-white/35 p-4 md:p-5">
+                <div className="portal-scroll flex-1 overflow-y-auto px-3 py-4 md:px-6">
                   {messagesQuery.isLoading ? (
                     <div className="flex h-full items-center justify-center">
                       <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} />
@@ -826,64 +894,77 @@ export default function Inbox() {
                   ) : messages.length === 0 ? (
                     <EmptyState title="No messages loaded" detail="This conversation is selected, but Chatwoot has not returned message history yet." />
                   ) : (
-                    messages.map((message) => {
-                      const outgoing = isOutgoing(message)
-                      return (
-                        <div key={message.id || `${message.created_at}-${message.content}`} className={`flex ${outgoing ? 'justify-end' : 'justify-start'}`}>
-                          <div
-                            className="max-w-[82%] rounded-2xl border px-4 py-3"
-                            style={{
-                              borderColor: outgoing ? 'rgba(201,168,76,0.28)' : 'var(--portal-border)',
-                              background: outgoing ? 'rgba(201,168,76,0.13)' : 'rgba(255,255,255,0.96)',
-                              color: 'var(--portal-text)',
-                            }}
-                          >
-                            <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold" style={{ color: 'var(--portal-text-muted)' }}>
-                              <span>{senderName(message)}</span>
-                              {message.private && (
-                                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5" style={{ background: 'rgba(100,116,139,0.1)' }}>
-                                  <StickyNote className="h-3 w-3" />
-                                  Note
-                                </span>
-                              )}
-                              <span>{formatRelativeTime(message.created_at)}</span>
+                    <div className="mx-auto max-w-[900px] space-y-2">
+                      <div className="mx-auto mb-4 w-fit rounded-full px-3 py-1 text-[11px] font-bold" style={{ background: '#e9eef5', color: '#7b8797' }}>
+                        Today
+                      </div>
+                      {messages.map((message) => {
+                        const outgoing = isOutgoing(message)
+                        return (
+                          <div key={message.id || `${message.created_at}-${message.content}`} className={`flex ${outgoing ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[84%] md:max-w-[72%] ${outgoing ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+                              <div
+                                className="px-4 py-2.5 text-sm leading-relaxed shadow-sm"
+                                style={{
+                                  borderRadius: outgoing ? '20px 20px 6px 20px' : '20px 20px 20px 6px',
+                                  background: outgoing ? '#2478ff' : '#eef2f7',
+                                  color: outgoing ? '#fff' : 'var(--portal-text)',
+                                }}
+                              >
+                                {message.private && (
+                                  <span className="mb-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: outgoing ? 'rgba(255,255,255,0.18)' : 'rgba(100,116,139,0.12)' }}>
+                                    <StickyNote className="h-3 w-3" />
+                                    Note
+                                  </span>
+                                )}
+                                <p className="whitespace-pre-wrap break-words">
+                                  {message.content || '[Attachment or system message]'}
+                                </p>
+                              </div>
+                              <span className="px-1.5 text-[11px]" style={{ color: 'var(--portal-text-muted)' }}>
+                                {senderName(message)} · {formatRelativeTime(message.created_at)}
+                              </span>
                             </div>
-                            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-                              {message.content || '[Attachment or system message]'}
-                            </p>
                           </div>
-                        </div>
-                      )
-                    })
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
 
-                <form onSubmit={handleSubmit} className="border-t p-4" style={{ borderColor: 'var(--portal-border)' }}>
-                  <textarea
-                    value={composer}
-                    onChange={(event) => setComposer(event.target.value)}
-                    placeholder={isPrivate ? 'Write an internal note' : 'Write a reply'}
-                    rows={3}
-                    className="portal-input min-h-24 resize-none p-3 text-sm"
-                  />
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <form onSubmit={handleSubmit} className="border-t bg-white/95 p-3 md:p-4" style={{ borderColor: 'var(--portal-border)' }}>
+                  <div className="mx-auto grid max-w-[980px] grid-cols-[auto_1fr_auto_auto] items-center gap-2 rounded-full border bg-white p-2" style={{ borderColor: 'var(--portal-border)' }}>
                     <button
                       type="button"
                       onClick={() => setIsPrivate((value) => !value)}
-                      className="portal-button-secondary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold"
-                      style={isPrivate ? { borderColor: 'rgba(201,168,76,0.35)', background: 'rgba(201,168,76,0.1)' } : undefined}
+                      className="flex h-9 w-9 items-center justify-center rounded-full border text-xs font-bold"
+                      style={isPrivate ? { borderColor: '#2377ff', background: '#eef5ff', color: '#2377ff' } : { borderColor: 'var(--portal-border)', background: '#f8fafc', color: 'var(--portal-text-muted)' }}
+                      aria-label="Toggle private note"
                     >
                       <StickyNote className="h-4 w-4" />
-                      Private note
-                      {isPrivate && <Check className="h-3.5 w-3.5" />}
+                    </button>
+                    <input
+                      value={composer}
+                      onChange={(event) => setComposer(event.target.value)}
+                      placeholder={isPrivate ? 'Write an internal note...' : `Message ${conversationTitle(selectedConversation)}...`}
+                      className="min-h-9 w-full border-0 bg-transparent px-1 text-sm outline-none"
+                      style={{ color: 'var(--portal-text)' }}
+                    />
+                    <button
+                      type="button"
+                      className="hidden h-9 rounded-full border px-3 text-xs font-bold sm:inline-flex sm:items-center"
+                      style={{ borderColor: 'var(--portal-border)', background: '#f8fafc', color: 'var(--portal-text-muted)' }}
+                    >
+                      Saved Reply
                     </button>
                     <button
                       type="submit"
                       disabled={!composer.trim() || replyMutation.isPending}
-                      className="portal-button-primary inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                      className="flex h-9 w-9 items-center justify-center rounded-full text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      style={{ background: '#2377ff' }}
+                      aria-label="Send reply"
                     >
                       {replyMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                      Send
                     </button>
                   </div>
                   <ErrorBanner message={replyMutation.error?.message} />
@@ -894,82 +975,93 @@ export default function Inbox() {
             )}
           </main>
 
-          <aside className="hidden min-h-[680px] border-l lg:block" style={{ borderColor: 'var(--portal-border)' }}>
-            <div className="border-b p-5" style={{ borderColor: 'var(--portal-border)' }}>
-              <h2 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
-                Conversation
-              </h2>
-              <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                Use the portal for daily triage. Open Chatwoot only for advanced inbox configuration.
-              </p>
+          <aside className="hidden min-h-[calc(100vh-150px)] border-l bg-white p-4 lg:block" style={{ borderColor: 'var(--portal-border)' }}>
+            <div className="mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Ticket Flow</h2>
+                <StatusPill status={selectedConversation?.status || status} />
+              </div>
+              <TicketStage
+                state={ticketStepState(selectedConversation, 1)}
+                number="1"
+                title="Message received"
+                detail={`${selectedConversation ? inboxName(selectedConversation, inboxesQuery.data || []) : 'Inbox'} · ${formatRelativeTime(selectedConversation?.last_activity_at || selectedConversation?.updated_at)}`}
+              />
+              <TicketStage
+                state={ticketStepState(selectedConversation, 2)}
+                number="2"
+                title="Customer identified"
+                detail={selectedConversation ? conversationSubtitle(selectedConversation) : 'Waiting for customer'}
+              />
+              <TicketStage
+                state={ticketStepState(selectedConversation, 3)}
+                number="3"
+                title="Needs reply"
+                detail={selectedConversation?.status === 'open' ? 'Reply or add a private note' : 'No active reply needed'}
+              />
+              <TicketStage
+                state={ticketStepState(selectedConversation, 4)}
+                number="4"
+                title="Close or follow up"
+                detail={selectedConversation?.status === 'pending' ? 'Waiting on customer' : 'Resolve when handled'}
+              />
             </div>
 
-            <div className="space-y-5 p-5">
-              <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--portal-text-soft)' }}>
-                  Status
-                </p>
-                <div className="grid gap-2">
-                  {STATUS_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      disabled={!activeConversationId || statusMutation.isPending}
-                      onClick={() => statusMutation.mutate({ conversationId: activeConversationId, status: option.value })}
-                      className="portal-button-secondary inline-flex items-center justify-between px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <span>{option.label}</span>
-                      {selectedConversation?.status === option.value && <CheckCircle2 className="h-4 w-4" style={{ color: '#2f8f57' }} />}
-                    </button>
-                  ))}
+            <div className="mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
+              <div className="grid gap-2 text-xs">
+                <div className="flex justify-between gap-3 border-b pb-2" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
+                  <span style={{ color: 'var(--portal-text-muted)' }}>Priority</span>
+                  <b style={{ color: 'var(--portal-text)' }}>Normal</b>
                 </div>
-                <ErrorBanner message={statusMutation.error?.message} />
+                <div className="flex justify-between gap-3 border-b pb-2" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
+                  <span style={{ color: 'var(--portal-text-muted)' }}>Source</span>
+                  <b className="text-right" style={{ color: 'var(--portal-text)' }}>{selectedConversation ? inboxName(selectedConversation, inboxesQuery.data || []) : 'Inbox'}</b>
+                </div>
+                <div className="flex justify-between gap-3 border-b pb-2" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
+                  <span style={{ color: 'var(--portal-text-muted)' }}>Owner</span>
+                  <b style={{ color: 'var(--portal-text)' }}>Customer team</b>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span style={{ color: 'var(--portal-text-muted)' }}>SLA</span>
+                  <b style={{ color: 'var(--portal-text)' }}>{selectedConversation?.status === 'open' ? 'Reply soon' : 'On track'}</b>
+                </div>
               </div>
+            </div>
 
-              <div className="space-y-3 rounded-2xl border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.72)' }}>
-                <div className="flex items-center gap-2">
-                  <MessageCircle className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
-                  <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
-                    Channel
-                  </p>
-                </div>
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                  {selectedConversation?.channel || selectedConversation?.inbox_id ? `Inbox #${selectedConversation?.inbox_id}` : 'Waiting for first customer message'}
-                </p>
+            <div className="mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
+              <p className="mb-3 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Status</p>
+              <div className="grid gap-2">
+                {STATUS_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    disabled={!activeConversationId || statusMutation.isPending}
+                    onClick={() => statusMutation.mutate({ conversationId: activeConversationId, status: option.value })}
+                    className="portal-button-secondary inline-flex h-9 items-center justify-between px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span>{option.label}</span>
+                    {selectedConversation?.status === option.value && <CheckCircle2 className="h-4 w-4" style={{ color: '#22a06b' }} />}
+                  </button>
+                ))}
               </div>
+              <ErrorBanner message={statusMutation.error?.message} />
+            </div>
 
-              <div className="space-y-3 rounded-2xl border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.72)' }}>
-                <div className="flex items-center gap-2">
-                  <MonitorSmartphone className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
-                  <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
-                    Mobile
-                  </p>
-                </div>
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                  Agents can use the Chatwoot mobile app for notifications and quick replies.
-                </p>
+            <div className="rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
+              <p className="mb-3 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Quick Actions</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" className="portal-button-secondary h-9 px-2 text-xs font-semibold">Saved Reply</button>
+                <button type="button" className="portal-button-secondary h-9 px-2 text-xs font-semibold">Add Note</button>
+                <button type="button" className="portal-button-secondary h-9 px-2 text-xs font-semibold">Mark Lead</button>
                 <a
                   href={mobileStoreUrl()}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-xs font-semibold"
-                  style={{ color: 'var(--portal-primary)' }}
+                  className="portal-button-secondary inline-flex h-9 items-center justify-center gap-1 px-2 text-xs font-semibold"
                 >
-                  Mobile apps
-                  <ArrowUpRight className="h-3.5 w-3.5" />
+                  Mobile
+                  <ArrowUpRight className="h-3 w-3" />
                 </a>
-              </div>
-
-              <div className="space-y-3 rounded-2xl border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.72)' }}>
-                <div className="flex items-center gap-2">
-                  <Clock3 className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
-                  <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
-                    Activity
-                  </p>
-                </div>
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                  Last activity: {formatRelativeTime(selectedConversation?.last_activity_at || selectedConversation?.updated_at)}
-                </p>
               </div>
             </div>
           </aside>
