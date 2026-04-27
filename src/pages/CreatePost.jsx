@@ -1046,8 +1046,8 @@ export default function CreatePost() {
   const [dropboxAttachments, setDropboxAttachments] = useState([])
   const [timingMode, setTimingMode] = useState('slot')
   const [selectedPlatforms, setSelectedPlatforms] = useState({
-    facebook: true,
-    instagram: true,
+    facebook: false,
+    instagram: false,
     google: false,
     tiktok: false,
     linkedin: false,
@@ -1058,7 +1058,7 @@ export default function CreatePost() {
   const [errorMsg, setErrorMsg] = useState('')
   const [publishResult, setPublishResult] = useState(null)
   const [reviewOpen, setReviewOpen] = useState(false)
-  const [previewPlatform, setPreviewPlatform] = useState('facebook')
+  const [previewPlatform, setPreviewPlatform] = useState('')
   const [selectedDay, setSelectedDay] = useState('')
   const [viewedMonth, setViewedMonth] = useState(() => startOfMonth(new Date()))
   const [activeDraftId, setActiveDraftId] = useState('')
@@ -1737,20 +1737,6 @@ export default function CreatePost() {
     setPlatformFormatStatus('Platform captions formatted. Review and edit each one before approval.')
   }
 
-  function handlePlatformCaptionChange(platformId, nextCaption) {
-    setPlatformVariants((current) => ({
-      ...current,
-      [platformId]: {
-        ...(current?.[platformId] || {}),
-        caption: nextCaption,
-        format: platformId,
-        rules: PLATFORM_FORMAT_RULES[platformId] || null,
-        edited_at: new Date().toISOString(),
-      },
-    }))
-    setPlatformFormatStatus('Platform caption edits saved in this post.')
-  }
-
   function getResolvedPlatformVariants(platformIds = activePlatforms) {
     return buildPlatformVariants(platformIds, content, profile, platformVariants)
   }
@@ -2068,7 +2054,7 @@ export default function CreatePost() {
       return 'Unable to identify your client profile. Please refresh.'
     }
     if (activePlatforms.length === 0) {
-      return 'Select at least one platform in the approval window.'
+      return 'Select at least one platform preview before approval.'
     }
     if (connectedActivePlatforms.length === 0) {
       return 'Connect at least one social account in Settings before publishing.'
@@ -2502,39 +2488,6 @@ export default function CreatePost() {
               )}
 
               <div className="mt-5">
-                <div className="mb-4">
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                    Publishing to
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {PLATFORMS.map(({ id, label, Icon, accent, soft }) => {
-                      const active = selectedPlatforms[id]
-                      return (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => {
-                            const nextValue = !selectedPlatforms[id]
-                            const next = { ...selectedPlatforms, [id]: nextValue }
-                            setSelectedPlatforms(next)
-                            if (nextValue) {
-                              setPreviewPlatform(id)
-                            } else if (previewPlatform === id) {
-                              setPreviewPlatform(Object.entries(next).find(([, enabled]) => enabled)?.[0] || '')
-                            }
-                          }}
-                          className="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-all"
-                          style={active
-                            ? { background: soft, borderColor: `${accent}88`, borderWidth: 2, color: accent, fontWeight: 950 }
-                            : { background: 'rgba(255,255,255,0.82)', borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}
-                        >
-                          <Icon className="h-3.5 w-3.5" />
-                          {label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
                 {timingMode !== 'now' && scheduledFor && (
                   <div
                     className="mb-4 rounded-2xl px-4 py-3 text-sm"
@@ -2654,70 +2607,6 @@ export default function CreatePost() {
                     </div>
                   ) : (
                     <p className="partner-assist-note">Try a quick improvement, shorter version, stronger CTA, or platform-aware caption before approval.</p>
-                  )}
-                </div>
-
-                <div className="partner-assist-box">
-                  <div className="partner-assist-head">
-                    <div>
-                      <p>Platform formatting</p>
-                      <h2>Partner Format</h2>
-                    </div>
-                    <span>{activePlatforms.length || 0} channels</span>
-                  </div>
-                  <div className="partner-assist-actions">
-                    <button
-                      type="button"
-                      onClick={handleGeneratePlatformVariants}
-                      disabled={!content.trim() || !activePlatforms.length || isSubmitting}
-                      title="Create editable platform-specific captions from the base caption."
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      Format for platforms
-                    </button>
-                  </div>
-                  {platformFormatStatus ? (
-                    <p className="partner-assist-note">{platformFormatStatus}</p>
-                  ) : (
-                    <p className="partner-assist-note">Creates native captions for Facebook, Instagram, Google Business, TikTok, LinkedIn, and X/Twitter based on each platform&apos;s format.</p>
-                  )}
-
-                  {activePlatforms.length > 0 && (
-                    <div className="mt-4 space-y-3">
-                      {activePlatforms.map((platformId) => {
-                        const platform = PLATFORMS.find((item) => item.id === platformId)
-                        const rules = PLATFORM_FORMAT_RULES[platformId] || {}
-                        const caption = platformCaptions[platformId] || ''
-                        if (!platform) return null
-
-                        return (
-                          <div key={platformId} className="rounded-[20px] p-3" style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid var(--portal-border)' }}>
-                            <div className="mb-2 flex items-center justify-between gap-3">
-                              <div className="flex items-center gap-2">
-                                <span className="flex h-7 w-7 items-center justify-center rounded-full text-white" style={{ background: platform.accent }}>
-                                  <platform.Icon className="h-3.5 w-3.5" />
-                                </span>
-                                <div>
-                                  <p className="text-xs font-semibold" style={{ color: 'var(--portal-text)' }}>{platform.label}</p>
-                                  <p className="text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>{rules.guidance}</p>
-                                </div>
-                              </div>
-                              <span className="text-[10px] font-semibold" style={{ color: caption.length > rules.maxChars ? 'var(--portal-danger)' : 'var(--portal-text-soft)' }}>
-                                {caption.length}/{rules.maxChars}
-                              </span>
-                            </div>
-                            <textarea
-                              value={caption}
-                              onChange={(event) => handlePlatformCaptionChange(platformId, event.target.value)}
-                              rows={platformId === 'twitter' ? 2 : 3}
-                              className="w-full resize-none rounded-2xl bg-white px-3 py-2 text-xs leading-relaxed focus:outline-none"
-                              style={{ color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
-                            />
-                            <p className="mt-2 text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>{rules.media}</p>
-                          </div>
-                        )
-                      })}
-                    </div>
                   )}
                 </div>
 
@@ -3031,49 +2920,92 @@ export default function CreatePost() {
                   Review every selected channel
                 </h2>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {activePlatforms.map((platformId) => {
-                  const platform = PLATFORMS.find((item) => item.id === platformId)
-                  if (!platform) return null
-                  const Icon = platform.Icon
-                  return (
-                    <button
-                      key={platformId}
-                      type="button"
-                      onClick={() => setPreviewPlatform(platformId)}
-                      className="inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-semibold"
-                      style={previewPlatform === platformId
-                        ? { background: platform.soft, color: platform.accent, borderColor: `${platform.accent}88`, borderWidth: 2, fontWeight: 950 }
-                        : { background: 'rgba(255,255,255,0.82)', color: 'var(--portal-text-muted)', borderColor: 'var(--portal-border)' }}
-                    >
-                      <Icon className="h-3.5 w-3.5" style={{ color: platform.accent }} />
-                      {platform.label}
-                    </button>
-                  )
-                })}
+              <div className="create-post-preview-actions">
+                <div className="create-post-preview-hint">
+                  Choose the channels you want to approve. Nothing is selected by default.
+                </div>
+                <button
+                  type="button"
+                  onClick={handleGeneratePlatformVariants}
+                  disabled={!content.trim() || !activePlatforms.length || isSubmitting}
+                  className="portal-ai-mini-action"
+                  title="Create platform-aware captions for the selected preview cards."
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Platform-aware
+                </button>
               </div>
             </div>
+            {platformFormatStatus ? (
+              <p className="mt-3 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                {platformFormatStatus}
+              </p>
+            ) : null}
 
-            {activePlatforms.length > 0 ? (
-              <div className="create-post-preview-grid mt-5">
-                {activePlatforms.map((platformId) => (
-                  <PlatformPreview
-                    key={platformId}
-                    platformId={platformId}
-                    profile={profile}
-                    content={platformCaptions[platformId] || content}
-                    imagePreview={imagePreview || existingMediaUrl}
-                    dropboxAttachments={dropboxAttachments}
-                    scheduledFor={scheduledFor}
-                    platformImage={platformImageVariants[platformId]}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="mt-5 rounded-[22px] p-4 text-sm" style={{ background: 'rgba(255,255,255,0.74)', color: 'var(--portal-text-muted)', border: '1px solid var(--portal-border)' }}>
-                Select at least one platform above to preview the post.
-              </div>
-            )}
+            <div className="create-post-preview-grid mt-5">
+              {PLATFORMS.map(({ id, label, Icon, accent, soft }) => {
+                const active = selectedPlatforms[id]
+                return (
+                  <article key={id} className="create-post-preview-shell" data-active={active}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextValue = !selectedPlatforms[id]
+                        const next = { ...selectedPlatforms, [id]: nextValue }
+                        setSelectedPlatforms(next)
+                        if (nextValue) {
+                          setPreviewPlatform(id)
+                        } else if (previewPlatform === id) {
+                          setPreviewPlatform(Object.entries(next).find(([, enabled]) => enabled)?.[0] || '')
+                        }
+                      }}
+                      className="create-post-preview-selector"
+                      style={active
+                        ? { background: soft, borderColor: `${accent}88`, color: accent }
+                        : { background: 'rgba(255,255,255,0.82)', borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}
+                    >
+                      <span className="create-post-checkmark" data-active={active}>
+                        {active ? <Check className="h-3.5 w-3.5" /> : null}
+                      </span>
+                      <Icon className="h-4 w-4" style={{ color: accent }} />
+                      {label}
+                    </button>
+                    <PlatformPreview
+                      platformId={id}
+                      profile={profile}
+                      content={platformCaptions[id] || content}
+                      imagePreview={imagePreview || existingMediaUrl}
+                      dropboxAttachments={dropboxAttachments}
+                      scheduledFor={scheduledFor}
+                      platformImage={platformImageVariants[id]}
+                    />
+                    <div className="create-post-preview-tools">
+                      <button
+                        type="button"
+                        onClick={() => handleImproveImage('cleanup')}
+                        disabled={!active || !canImproveImage || imageImproveState === 'improving' || imageGenerateState === 'generating'}
+                        className="portal-ai-mini-action"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Improve image
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPreviewPlatform(id)
+                          handleFormatPlatformImages()
+                        }}
+                        disabled={!active || !canImproveImage || imageFormatState === 'formatting' || imageGenerateState === 'generating'}
+                        className="portal-ai-mini-action"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Crop setting
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
           </section>
 
           <div className="space-y-5">

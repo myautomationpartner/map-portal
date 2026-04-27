@@ -10,7 +10,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  Image,
   Link2,
   Loader2,
   Megaphone,
@@ -61,6 +60,13 @@ const STATUS_MARKERS = {
   draft: { label: 'Draft', color: '#c87628' },
   scheduled: { label: 'Scheduled', color: '#1fa971' },
   published: { label: 'Posted', color: '#c9a84c' },
+}
+const STATUS_VIEW_CONFIG = {
+  scheduled: { label: 'Scheduled', title: 'Scheduled posts', badgeType: 'scheduled', description: 'Posts waiting for their publish time.' },
+  suggested: { label: 'Suggested', title: 'Partner suggestions', badgeType: 'radar', description: 'AI-recommended posts ready to review.' },
+  draft: { label: 'Draft', title: 'Draft posts', badgeType: 'draft', description: 'Saved work that can be edited before approval.' },
+  setup: { label: 'Needs setup', title: 'Needs setup', badgeType: 'pending', description: 'Posts with platforms or details that may need attention.' },
+  approval: { label: 'Needs approval', title: 'Needs approval', badgeType: 'pending', description: 'Drafts and suggestions still waiting for a final edit.' },
 }
 const PLATFORM_MARKERS = {
   facebook: { label: 'Facebook', Icon: SiFacebook, color: '#1877f2' },
@@ -879,7 +885,7 @@ export default function ContentCalendar() {
     return date ? getWeekOffsetFromDate(date) : 0
   })
   const [queueMode, setQueueMode] = useState(() => initialParams.get('view') === 'month' ? 'month' : 'week')
-  const [composerCaptions, setComposerCaptions] = useState({})
+  const [activeStatusView, setActiveStatusView] = useState('')
   const selectedWeekStart = useMemo(() => startOfWeek(addDays(new Date(), weekOffset * 7)), [weekOffset])
   const selectedWeekStartString = toDateString(selectedWeekStart)
   const selectedWeekLabel = weekOffset === 0 ? 'This week' : getWeekRangeLabel(selectedWeekStart)
@@ -1120,6 +1126,25 @@ export default function ContentCalendar() {
     return [...radarDetailItems, ...draftDetailItems, ...postDetailItems]
   }, [calendarPosts, drafts, opportunities, selectedWeekStart, selectedWeekStartString])
 
+  const statusViewItems = useMemo(() => {
+    const needsSetup = allDetailItems.filter((item) => (
+      item.source !== 'post' &&
+      (item.platforms || []).some((platform) => platform && !PLATFORM_MARKERS[platform])
+    ))
+    const approvalItems = allDetailItems.filter((item) => item.source === 'radar' || item.source === 'draft')
+
+    return {
+      scheduled: allDetailItems.filter((item) => item.source === 'post' && item.badgeType === 'scheduled'),
+      suggested: allDetailItems.filter((item) => item.source === 'radar'),
+      draft: allDetailItems.filter((item) => item.source === 'draft'),
+      setup: needsSetup,
+      approval: approvalItems,
+    }
+  }, [allDetailItems])
+
+  const activeStatusConfig = activeStatusView ? STATUS_VIEW_CONFIG[activeStatusView] : null
+  const activeStatusItems = activeStatusView ? (statusViewItems[activeStatusView] || []) : []
+
   const planItems = useMemo(() => {
     const merged = [...radarItems, ...draftItems, ...postItems]
     return merged
@@ -1138,7 +1163,6 @@ export default function ContentCalendar() {
   }, [planItems, weekDays])
 
   const selectedItem = allDetailItems.find((item) => item.id === selectedItemId) || (queueMode === 'month' ? null : planItems[0]) || null
-  const composerCaption = selectedItem ? (composerCaptions[selectedItem.id] ?? selectedItem.caption ?? '') : ''
   const monthDays = useMemo(() => getMonthGridDays(monthGridDate), [monthGridDate])
 
   const monthItemsByDate = useMemo(() => {
@@ -1522,13 +1546,30 @@ export default function ContentCalendar() {
     navigate(`/post?${params.toString()}`)
   }
 
+  function openStatusView(statusKey) {
+    setActiveStatusView(statusKey)
+    setSelectedItemId('')
+  }
+
+  function chooseCalendarMode(mode) {
+    setQueueMode(mode)
+    setActiveStatusView('')
+  }
+
+  function openCalendarItem(targetItemId) {
+    const targetItem = allDetailItems.find((item) => item.id === targetItemId)
+    if (targetItem) {
+      handlePrimaryAction(targetItem)
+    }
+  }
+
   function handleMonthItemClick(dateString, item) {
     if (!item?.targetItemId) {
       handleAddPost(dateString)
       return
     }
-    setSelectedItemId(item.targetItemId)
     setWeekOffset(getWeekOffsetFromDate(dateString))
+    openCalendarItem(item.targetItemId)
   }
 
   const isLoading = profileLoading || postsLoading || draftsLoading || radarLoading || researchSourcesLoading || researchProfileLoading
@@ -1547,41 +1588,57 @@ export default function ContentCalendar() {
 
   return (
     <div className="portal-page content-plan-page mx-auto max-w-[1500px] space-y-3 md:p-4 xl:p-5">
-      <section className="content-plan-slimbar">
-        <div className="content-plan-week-inline">
+      <section className="content-plan-slimbar content-plan-publisher-bar">
+        <div className="content-plan-toolbar-left">
           <button
             type="button"
-            onClick={() => setWeekOffset((value) => Math.max(0, value - 1))}
-            disabled={weekOffset === 0}
-            className="portal-button-secondary inline-flex h-9 w-9 items-center justify-center disabled:opacity-40"
-            aria-label="Previous week"
+            onClick={() => {
+              setWeekOffset(0)
+              chooseCalendarMode('week')
+            }}
+            className="content-plan-toolbar-button"
           >
-            <ChevronLeft className="h-4 w-4" />
+            Today
           </button>
-          <div>
-            <h1 className="content-plan-title font-display">{selectedWeekLabel}</h1>
-            <p className="content-plan-subtitle text-sm leading-relaxed">
-              {getWeekRangeLabel(selectedWeekStart)}
-            </p>
-          </div>
           <button
             type="button"
-            onClick={() => setWeekOffset((value) => Math.min(8, value + 1))}
-            className="portal-button-secondary inline-flex h-9 w-9 items-center justify-center"
-            aria-label="Next week"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="content-plan-actions flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setQueueMode('month')}
-            className="portal-button-secondary inline-flex items-center gap-2 px-3.5 py-2.5 text-sm font-semibold"
+            onClick={() => chooseCalendarMode('month')}
+            className="content-plan-toolbar-button"
+            data-active={!activeStatusView && queueMode === 'month'}
           >
             <CalendarDays className="h-4 w-4" />
-            Month view
+            Month
           </button>
+          <button
+            type="button"
+            onClick={() => chooseCalendarMode('week')}
+            className="content-plan-toolbar-button"
+            data-active={!activeStatusView && queueMode === 'week'}
+          >
+            <Clock3 className="h-4 w-4" />
+            Week
+          </button>
+          <button
+            type="button"
+            onClick={() => setActionNotice('Use the status pills to filter posts by workflow stage.')}
+            className="content-plan-toolbar-button"
+          >
+            Filter
+          </button>
+          {['scheduled', 'suggested', 'draft', 'setup'].map((statusKey) => (
+            <button
+              key={statusKey}
+              type="button"
+              onClick={() => openStatusView(statusKey)}
+              className="content-plan-status-pill"
+              data-active={activeStatusView === statusKey}
+            >
+              {STATUS_VIEW_CONFIG[statusKey].label}
+              <span>{statusViewItems[statusKey]?.length || 0}</span>
+            </button>
+          ))}
+        </div>
+        <div className="content-plan-actions flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => handleAddPost()}
@@ -1629,15 +1686,72 @@ export default function ContentCalendar() {
         </div>
       )}
 
-      <section className="content-plan-workspace">
+      {activeStatusView ? (
+        <section className="content-plan-status-page">
+          <div className="content-plan-status-head">
+            <div>
+              <button
+                type="button"
+                onClick={() => setActiveStatusView('')}
+                className="content-plan-toolbar-button"
+              >
+                Back to calendar
+              </button>
+              <h2 className="font-display">{activeStatusConfig?.title}</h2>
+              <p>{activeStatusConfig?.description}</p>
+            </div>
+            <Badge type={activeStatusConfig?.badgeType || 'pending'} />
+          </div>
+          <div className="content-plan-post-list">
+            {activeStatusItems.length > 0 ? activeStatusItems.map((item) => (
+              <article key={item.id} className="content-plan-post-row">
+                <div>
+                  <Badge type={item.badgeType} />
+                  <h3>{item.detailTitle || item.title}</h3>
+                  <p>{item.caption}</p>
+                  <div className="content-plan-post-meta">
+                    <span>{item.dayLabel}</span>
+                    <span>{item.timeLabel}</span>
+                    {(item.platforms || []).slice(0, 4).map((platform) => {
+                      const marker = PLATFORM_MARKERS[platform]
+                      if (!marker) return null
+                      const Icon = marker.Icon
+                      return (
+                        <span key={platform} className="content-plan-platform-chip">
+                          <Icon className="h-3.5 w-3.5" style={{ color: marker.color }} />
+                          {marker.label}
+                        </span>
+                      )
+                    })}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handlePrimaryAction(item)}
+                  disabled={isCreating}
+                  className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
+                >
+                  {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <PencilLine className="h-4 w-4" />}
+                  Edit post
+                </button>
+              </article>
+            )) : (
+              <div className="content-plan-status-empty">
+                No posts are in this stage right now.
+              </div>
+            )}
+          </div>
+        </section>
+      ) : (
+      <section className="content-plan-workspace content-plan-calendar-workspace">
         <div className="content-plan-list">
           <div className="content-plan-list-header" style={{ borderColor: 'var(--portal-border)' }}>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                {selectedWeekLabel}
+                {queueMode === 'month' ? 'Month view' : selectedWeekLabel}
               </p>
               <h2 className="mt-1 font-display text-xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-                Publisher
+                {queueMode === 'month' ? getMonthLabel(monthGridDate) : getWeekRangeLabel(selectedWeekStart)}
               </h2>
             </div>
             <div className="content-plan-filterbar">
@@ -1648,7 +1762,7 @@ export default function ContentCalendar() {
                 <button
                   key={value}
                   type="button"
-                  onClick={() => setQueueMode(value)}
+                  onClick={() => chooseCalendarMode(value)}
                   className="content-plan-filter"
                   data-active={queueMode === value}
                 >
@@ -1656,11 +1770,24 @@ export default function ContentCalendar() {
                 </button>
               ))}
             </div>
-            <div className="flex flex-wrap gap-2">
-              <ProofChip onClick={() => navigate('/opportunities')} title="Open Partner ideas">{studioCounts.ideas} Partner Ideas</ProofChip>
-              <ProofChip onClick={() => setQueueMode('week')} title="Show drafts in Studio">{studioCounts.drafts} Drafts</ProofChip>
-              <ProofChip onClick={() => navigate('/post/scheduled')} title="Manage scheduled posts">{studioCounts.scheduled} Scheduled</ProofChip>
-              <ProofChip onClick={() => navigate('/post/history')} title="View post history">{studioCounts.posted} Posted</ProofChip>
+            <div className="content-plan-week-inline">
+              <button
+                type="button"
+                onClick={() => setWeekOffset((value) => Math.max(0, value - 1))}
+                disabled={weekOffset === 0}
+                className="portal-button-secondary inline-flex h-9 w-9 items-center justify-center disabled:opacity-40"
+                aria-label="Previous week"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeekOffset((value) => Math.min(8, value + 1))}
+                className="portal-button-secondary inline-flex h-9 w-9 items-center justify-center"
+                aria-label="Next week"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
           </div>
 
@@ -1736,7 +1863,7 @@ export default function ContentCalendar() {
                     day={day}
                     items={weekItemsByDate.get(dateString) || []}
                     selectedItemId={selectedItem?.id || ''}
-                    onSelect={setSelectedItemId}
+                    onSelect={openCalendarItem}
                     onAddPost={handleAddPost}
                     getActions={getRowActions}
                   />
@@ -1746,119 +1873,63 @@ export default function ContentCalendar() {
           )}
         </div>
 
-        <aside className="content-plan-detail">
-          {selectedItem ? (
-            <div className="flex h-full flex-col">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <Badge type={selectedItem.badgeType} />
-                  <h2 className="content-plan-detail-title font-display" style={{ color: 'var(--portal-text)' }}>
-                    {selectedItem.detailTitle}
-                  </h2>
-                </div>
-                {selectedItem.adWorthiness && selectedItem.adWorthiness !== 'organic_only' ? <Badge type="ad" /> : null}
-              </div>
+        <aside className="content-plan-side-stack">
+          <section className="content-plan-load-card">
+            <div className="content-plan-side-head">
+              <p>Publishing load</p>
+              <span>{studioCounts.scheduled + studioCounts.ideas + studioCounts.drafts} active</span>
+            </div>
+            <div className="content-plan-load-grid">
+              <button type="button" onClick={() => openStatusView('scheduled')} className="content-plan-load-button">
+                <strong>{studioCounts.scheduled}</strong>
+                <span>Scheduled</span>
+              </button>
+              <button type="button" onClick={() => openStatusView('suggested')} className="content-plan-load-button">
+                <strong>{studioCounts.ideas}</strong>
+                <span>AI ideas</span>
+              </button>
+              <button type="button" onClick={() => openStatusView('draft')} className="content-plan-load-button">
+                <strong>{studioCounts.drafts}</strong>
+                <span>Drafts</span>
+              </button>
+              <button type="button" onClick={() => openStatusView('approval')} className="content-plan-load-button">
+                <strong>{statusViewItems.approval.length}</strong>
+                <span>Needs approval</span>
+              </button>
+            </div>
+          </section>
 
-              <div className="content-plan-detail-sections">
-                <div className="content-plan-detail-section content-plan-composer">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
-                    Post copy
-                  </p>
-                  <textarea
-                    value={composerCaption}
-                    onChange={(event) => {
-                      if (!selectedItem) return
-                      setComposerCaptions((captions) => ({
-                        ...captions,
-                        [selectedItem.id]: event.target.value,
-                      }))
-                    }}
-                    rows={7}
-                    className="content-plan-caption-input"
-                    placeholder="Review or adjust the caption before sending it into the publisher."
-                  />
-                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
-                    <span>{composerCaption.length} characters</span>
-                    <span>Manual approval before anything posts</span>
-                  </div>
-                </div>
-                <div className="content-plan-detail-section">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
-                    Why now
-                  </p>
-                  <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                    {selectedItem.whyNow}
-                  </p>
-                </div>
-                <div className="content-plan-detail-section">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
-                    Image idea
-                  </p>
-                  <div className="mt-2 flex gap-3 rounded-[16px] border p-3" style={{ borderColor: 'var(--portal-border)', background: 'rgba(245,240,235,0.55)' }}>
-                    <Image className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--portal-primary)' }} />
-                    <p className="text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                      {selectedItem.imagePrompt}
-                    </p>
-                  </div>
-                </div>
-                <div className="content-plan-detail-section">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>
-                    Proof
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {(selectedItem.proof || []).length > 0
-                      ? selectedItem.proof.map((source) => (
-                          <ProofChip key={source}>
-                            {String(source).replace(/^https?:\/\//, '').replace(/\/$/, '').slice(0, 34)}
-                          </ProofChip>
-                        ))
-                      : <ProofChip>Planner rule</ProofChip>}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-5 grid gap-2">
+          <section className="content-plan-recommendations-card">
+            <div className="content-plan-side-head">
+              <p>Use empty days</p>
+              <span>{monthOpenCount} open</span>
+            </div>
+            <div className="content-plan-recommendation-list">
+              {radarItems.length > 0 ? radarItems.slice(0, 4).map((item) => (
                 <button
+                  key={item.id}
                   type="button"
-                  onClick={() => handlePrimaryAction(selectedItem)}
+                  onClick={() => handlePrimaryAction(item)}
                   disabled={isCreating}
-                  className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
+                  className="content-plan-recommendation"
                 >
-                  {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <PencilLine className="h-4 w-4" />}
-                  Open full editor
+                  <span>
+                    <Badge type={item.badgeType} />
+                    <strong>{item.title}</strong>
+                    <small>{item.dayLabel} · {item.timeLabel}</small>
+                  </span>
+                  {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpRight className="h-4 w-4" />}
                 </button>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handlePrimaryAction(selectedItem)}
-                    disabled={isCreating}
-                    className="portal-button-secondary inline-flex items-center justify-center gap-2 px-3 py-2.5 text-sm font-semibold disabled:opacity-60"
-                  >
-                    <Wand2 className="h-4 w-4" />
-                    Generate
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handlePrimaryAction(selectedItem)}
-                    disabled={isCreating}
-                    className="portal-button-secondary inline-flex items-center justify-center gap-2 px-3 py-2.5 text-sm font-semibold disabled:opacity-60"
-                  >
-                    <CalendarDays className="h-4 w-4" />
-                    Schedule
-                  </button>
+              )) : (
+                <div className="content-plan-status-empty">
+                  No Partner recommendations are waiting right now.
                 </div>
-                <p className="text-center text-xs" style={{ color: 'var(--portal-text-soft)' }}>
-                  Radar proof, planner timing, image options, and final publishing now start from this workspace.
-                </p>
-              </div>
+              )}
             </div>
-          ) : (
-            <div className="flex min-h-[360px] items-center justify-center text-center text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-              Select an item from the plan to review it.
-            </div>
-          )}
+          </section>
         </aside>
       </section>
+      )}
 
       <section className="content-plan-footer">
         <div className="portal-command-bar-group">
