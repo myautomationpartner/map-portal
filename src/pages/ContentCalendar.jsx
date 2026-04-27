@@ -536,12 +536,54 @@ function RowActionMenu({ item, actions }) {
   )
 }
 
-function PlanItemChip({ item, selected, onSelect, actions }) {
+function CalendarHoverPreview({ preview }) {
+  if (!preview?.item) return null
+
+  const { item, position } = preview
+
+  return createPortal(
+    <aside
+      className="content-plan-hover-preview"
+      style={{ top: `${position.top}px`, left: `${position.left}px` }}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="content-plan-hover-preview-head">
+        <StatusMarker type={item.badgeType} />
+        <span>{item.dayLabel} · {item.timeLabel}</span>
+      </div>
+      <div className="content-plan-hover-preview-body">
+        {item.thumbnailUrl ? (
+          <img src={item.thumbnailUrl} alt="" />
+        ) : (
+          <div className="content-plan-hover-preview-empty">
+            <Sparkles className="h-5 w-5" />
+          </div>
+        )}
+        <div className="min-w-0">
+          <h3>{item.title}</h3>
+          <p>{item.caption || item.subtitle}</p>
+          <div className="content-plan-hover-preview-meta">
+            <PlatformMarkers platforms={item.platforms} />
+            <span>{item.source === 'post' ? 'Click to open post' : 'Click to edit in Publisher'}</span>
+          </div>
+        </div>
+      </div>
+    </aside>,
+    window.document.body,
+  )
+}
+
+function PlanItemChip({ item, selected, onSelect, actions, onPreviewOpen, onPreviewClose }) {
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={() => onSelect(item.id)}
+      onMouseEnter={(event) => onPreviewOpen(item, event.currentTarget)}
+      onMouseLeave={onPreviewClose}
+      onFocus={(event) => onPreviewOpen(item, event.currentTarget)}
+      onBlur={onPreviewClose}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()
@@ -582,7 +624,7 @@ function PlanItemChip({ item, selected, onSelect, actions }) {
   )
 }
 
-function WeekDayLane({ day, items, selectedItemId, onSelect, onAddPost, getActions }) {
+function WeekDayLane({ day, items, selectedItemId, onSelect, onAddPost, getActions, onPreviewOpen, onPreviewClose }) {
   return (
     <div className="content-plan-day-lane">
       <div className="content-plan-day-stamp">
@@ -599,6 +641,8 @@ function WeekDayLane({ day, items, selectedItemId, onSelect, onAddPost, getActio
                 selected={selectedItemId === item.id}
                 onSelect={onSelect}
                 actions={getActions(item)}
+                onPreviewOpen={onPreviewOpen}
+                onPreviewClose={onPreviewClose}
               />
             ))}
           </div>
@@ -880,6 +924,7 @@ export default function ContentCalendar() {
   const [sourceNotice, setSourceNotice] = useState('')
   const [busySourceId, setBusySourceId] = useState('')
   const [partnerProfileForm, setPartnerProfileForm] = useState(() => buildPartnerProfileForm(null, null))
+  const [hoverPreview, setHoverPreview] = useState(null)
   const [weekOffset, setWeekOffset] = useState(() => {
     const date = initialParams.get('date')
     return date ? getWeekOffsetFromDate(date) : 0
@@ -1125,6 +1170,8 @@ export default function ContentCalendar() {
 
     return [...radarDetailItems, ...draftDetailItems, ...postDetailItems]
   }, [calendarPosts, drafts, opportunities, selectedWeekStart, selectedWeekStartString])
+
+  const detailItemsById = useMemo(() => new Map(allDetailItems.map((item) => [item.id, item])), [allDetailItems])
 
   const statusViewItems = useMemo(() => {
     const needsSetup = allDetailItems.filter((item) => (
@@ -1554,9 +1601,11 @@ export default function ContentCalendar() {
   function chooseCalendarMode(mode) {
     setQueueMode(mode)
     setActiveStatusView('')
+    setHoverPreview(null)
   }
 
   function openCalendarItem(targetItemId) {
+    setHoverPreview(null)
     const targetItem = allDetailItems.find((item) => item.id === targetItemId)
     if (targetItem) {
       handlePrimaryAction(targetItem)
@@ -1570,6 +1619,33 @@ export default function ContentCalendar() {
     }
     setWeekOffset(getWeekOffsetFromDate(dateString))
     openCalendarItem(item.targetItemId)
+  }
+
+  function openCalendarPreview(itemOrId, target) {
+    const item = typeof itemOrId === 'string' ? detailItemsById.get(itemOrId) : itemOrId
+    if (!item || !target) return
+
+    const rect = target.getBoundingClientRect()
+    const previewWidth = Math.min(360, window.innerWidth - 24)
+    const previewHeight = 190
+    const gap = 12
+    const top = Math.min(
+      Math.max(12, rect.top + rect.height / 2 - previewHeight / 2),
+      window.innerHeight - previewHeight - 12,
+    )
+    const preferredLeft = rect.right + gap
+    const left = preferredLeft + previewWidth > window.innerWidth - 12
+      ? Math.max(12, rect.left - previewWidth - gap)
+      : preferredLeft
+
+    setHoverPreview({
+      item,
+      position: { top, left },
+    })
+  }
+
+  function closeCalendarPreview() {
+    setHoverPreview(null)
   }
 
   const isLoading = profileLoading || postsLoading || draftsLoading || radarLoading || researchSourcesLoading || researchProfileLoading
@@ -1838,6 +1914,10 @@ export default function ContentCalendar() {
                             type="button"
                             className="content-plan-month-pill"
                             data-status={item.status}
+                            onMouseEnter={(event) => openCalendarPreview(item.targetItemId, event.currentTarget)}
+                            onMouseLeave={closeCalendarPreview}
+                            onFocus={(event) => openCalendarPreview(item.targetItemId, event.currentTarget)}
+                            onBlur={closeCalendarPreview}
                             onClick={() => handleMonthItemClick(dateString, item)}
                           >
                             <span>{item.type}</span>
@@ -1866,6 +1946,8 @@ export default function ContentCalendar() {
                     onSelect={openCalendarItem}
                     onAddPost={handleAddPost}
                     getActions={getRowActions}
+                    onPreviewOpen={openCalendarPreview}
+                    onPreviewClose={closeCalendarPreview}
                   />
                 )
               })}
@@ -1930,6 +2012,8 @@ export default function ContentCalendar() {
         </aside>
       </section>
       )}
+
+      <CalendarHoverPreview preview={hoverPreview} />
 
       <section className="content-plan-footer">
         <div className="portal-command-bar-group">
