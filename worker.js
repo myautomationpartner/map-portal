@@ -382,6 +382,226 @@ async function zernioFetch(env, path, init = {}) {
   return payload
 }
 
+function normalizeBoostGoal(goal) {
+  const value = String(goal || '').trim().toLowerCase()
+  const allowed = new Set([
+    'engagement',
+    'traffic',
+    'awareness',
+    'video_views',
+    'lead_generation',
+    'conversions',
+    'app_promotion',
+  ])
+  return allowed.has(value) ? value : null
+}
+
+function normalizeBudgetType(type) {
+  const value = String(type || '').trim().toLowerCase()
+  return value === 'lifetime' ? 'lifetime' : 'daily'
+}
+
+function normalizeBoostStatus(status) {
+  const value = String(status || '').trim().toLowerCase()
+    .replace(/[\s-]+/g, '_')
+  const statusMap = {
+    pending: 'pending',
+    pending_review: 'pending',
+    in_review: 'pending',
+    active: 'active',
+    live: 'active',
+    enabled: 'active',
+    paused: 'paused',
+    completed: 'completed',
+    complete: 'completed',
+    ended: 'completed',
+    cancelled: 'cancelled',
+    canceled: 'cancelled',
+    rejected: 'rejected',
+    disapproved: 'rejected',
+    failed: 'failed',
+    error: 'failed',
+  }
+  return statusMap[value] || 'active'
+}
+
+function parseBoostAmount(value) {
+  const amount = Number(value)
+  return Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) / 100 : null
+}
+
+async function loadBoostRows(envConfig, { postId } = {}) {
+  const filters = new URLSearchParams({
+    select: '*',
+    client_id: `eq.${envConfig.clientId}`,
+    order: 'created_at.desc',
+  })
+
+  if (postId) filters.set('post_id', `eq.${postId}`)
+
+  const response = await supabaseRest(envConfig, `/rest/v1/post_boosts?${filters.toString()}`)
+  return response.json()
+}
+
+async function loadPostForBoost(envConfig, postId) {
+  const filters = new URLSearchParams({
+    select: 'id,client_id,content,platforms,status,published_at,n8n_execution_id',
+    id: `eq.${postId}`,
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/posts?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function loadSocialConnectionForBoost(envConfig, platform) {
+  const filters = new URLSearchParams({
+    select: 'id,platform,zernio_account_id,username',
+    client_id: `eq.${envConfig.clientId}`,
+    platform: `eq.${platform}`,
+    limit: '1',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/social_connections?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function insertPostBoost(envConfig, payload) {
+  const response = await supabaseRest(envConfig, '/rest/v1/post_boosts', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(payload),
+  })
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function handlePostBoosts(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'GET, POST, OPTIONS' } })
+  }
+
+  if (!['GET', 'POST'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET, POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  if (request.method === 'GET') {
+    const url = new URL(request.url)
+    const postId = String(url.searchParams.get('postId') || '').trim()
+    try {
+      const boosts = await loadBoostRows(auth.envConfig, { postId })
+      return json({ success: true, boosts })
+    } catch (error) {
+      return json({ error: error.message || 'Could not load boosts.' }, { status: 502 })
+    }
+  }
+
+  if (auth.user.role !== 'admin') {
+    return json({ error: 'Only client admins can boost posts.' }, { status: 403 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const postId = String(body.postId || '').trim()
+  const platform = normalizePlatform(body.platform)
+  const goal = normalizeBoostGoal(body.goal)
+  const budgetAmount = parseBoostAmount(body.budgetAmount)
+  const budgetType = normalizeBudgetType(body.budgetType)
+  const adAccountId = String(body.adAccountId || '').trim()
+  const currency = String(body.currency || 'USD').trim().toUpperCase().slice(0, 3) || 'USD'
+  const name = String(body.name || 'MAP Boost').trim().slice(0, 255)
+  const startsAt = String(body.startsAt || '').trim() || null
+  const endsAt = String(body.endsAt || '').trim() || null
+  const targeting = body.targeting && typeof body.targeting === 'object' && !Array.isArray(body.targeting)
+    ? body.targeting
+    : {}
+
+  if (!postId) return json({ error: 'Choose a published post to boost.' }, { status: 400 })
+  if (!platform) return json({ error: 'Choose a supported platform to boost.' }, { status: 400 })
+  if (!goal) return json({ error: 'Choose a supported boost goal.' }, { status: 400 })
+  if (!budgetAmount) return json({ error: 'Enter a boost budget greater than $0.' }, { status: 400 })
+  if (!adAccountId) return json({ error: 'Enter the ad account ID from Zernio.' }, { status: 400 })
+
+  try {
+    const post = await loadPostForBoost(auth.envConfig, postId)
+    if (!post) return json({ error: 'Published post was not found for this portal.' }, { status: 404 })
+    if (post.status !== 'published') {
+      return json({ error: 'Boost is available after a post is published.' }, { status: 409 })
+    }
+    if (!post.n8n_execution_id) {
+      return json({ error: 'This post is missing its Zernio post ID and cannot be boosted yet.' }, { status: 409 })
+    }
+    if (!Array.isArray(post.platforms) || !post.platforms.includes(platform)) {
+      return json({ error: `This post was not published to ${platform}.` }, { status: 409 })
+    }
+
+    const connection = await loadSocialConnectionForBoost(auth.envConfig, platform)
+    if (!connection?.zernio_account_id) {
+      return json({ error: `Connect ${platform} in Settings before boosting.` }, { status: 409 })
+    }
+
+    const zernioBody = {
+      postId: post.n8n_execution_id,
+      accountId: connection.zernio_account_id,
+      adAccountId,
+      name,
+      goal,
+      budget: {
+        amount: budgetAmount,
+        type: budgetType,
+        currency,
+      },
+      ...(startsAt || endsAt ? { schedule: { ...(startsAt ? { startDate: startsAt } : {}), ...(endsAt ? { endDate: endsAt } : {}) } } : {}),
+      ...(Object.keys(targeting).length ? { targeting } : {}),
+    }
+
+    const zernioResult = await zernioFetch(env, '/ads/boost', {
+      method: 'POST',
+      body: JSON.stringify(zernioBody),
+    })
+    const ad = zernioResult?.ad || zernioResult?.data?.ad || {}
+    const boost = await insertPostBoost(auth.envConfig, {
+      client_id: auth.envConfig.clientId,
+      post_id: post.id,
+      social_connection_id: connection.id || null,
+      platform,
+      zernio_account_id: connection.zernio_account_id,
+      ad_account_id: adAccountId,
+      name,
+      goal,
+      budget_amount: budgetAmount,
+      budget_type: budgetType,
+      currency,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      targeting_json: targeting,
+      zernio_ad_id: ad._id || ad.id || null,
+      platform_ad_id: ad.platformAdId || null,
+      platform_campaign_id: ad.platformCampaignId || null,
+      platform_ad_set_id: ad.platformAdSetId || null,
+      status: normalizeBoostStatus(ad.status),
+      zernio_response_json: zernioResult || {},
+      created_by: auth.user.id,
+    })
+
+    return json({
+      success: true,
+      boost,
+      message: zernioResult?.message || 'Boost launched.',
+    }, { status: 201 })
+  } catch (error) {
+    return json({
+      error: error.message || 'Could not launch boost.',
+      details: error.payload || null,
+    }, { status: error.status || 502 })
+  }
+}
+
 function parsePositiveInteger(value) {
   const parsed = Number.parseInt(String(value || ''), 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null
@@ -1792,6 +2012,10 @@ export default {
 
     if (url.pathname === '/api/social-connections/disconnect') {
       return handleSocialConnectionDisconnect(request, env)
+    }
+
+    if (url.pathname === '/api/post-boosts') {
+      return handlePostBoosts(request, env)
     }
 
     if (url.pathname === '/api/zernio/account-events') {

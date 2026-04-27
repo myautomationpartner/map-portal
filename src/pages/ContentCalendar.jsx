@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { SiFacebook, SiGoogle, SiInstagram, SiTiktok } from 'react-icons/si'
+import { SiFacebook, SiGoogle, SiInstagram, SiTiktok, SiX } from 'react-icons/si'
 import {
   ArrowUpRight,
   CalendarDays,
@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Clock3,
   Link2,
+  Linkedin,
   Loader2,
   Megaphone,
   MoreHorizontal,
@@ -30,10 +31,12 @@ import {
   deleteSocialDraft,
   fetchCalendarPosts,
   fetchOpportunityRadar,
+  fetchPostBoosts,
   fetchProfile,
   fetchResearchProfile,
   fetchResearchSources,
   fetchSocialDrafts,
+  launchPostBoost,
   recordPlannerFeedbackEvent,
   updateClientPartnerProfile,
   updateResearchSource,
@@ -73,7 +76,20 @@ const PLATFORM_MARKERS = {
   instagram: { label: 'Instagram', Icon: SiInstagram, color: '#e4405f' },
   google: { label: 'Google Business', Icon: SiGoogle, color: '#34a853' },
   tiktok: { label: 'TikTok', Icon: SiTiktok, color: '#111111' },
+  linkedin: { label: 'LinkedIn', Icon: Linkedin, color: '#0a66c2' },
+  twitter: { label: 'X / Twitter', Icon: SiX, color: '#111111' },
 }
+const BOOST_GOALS = [
+  { value: 'engagement', label: 'More engagement' },
+  { value: 'traffic', label: 'More website visits' },
+  { value: 'awareness', label: 'More local awareness' },
+]
+const BOOST_DURATIONS = [
+  { value: 3, label: '3 days' },
+  { value: 5, label: '5 days' },
+  { value: 7, label: '7 days' },
+]
+const BOOSTABLE_PLATFORMS = new Set(['facebook', 'instagram', 'tiktok', 'linkedin', 'twitter'])
 const RESEARCH_SOURCE_TYPES = [
   { value: 'local_event_calendar', label: 'Event calendar' },
   { value: 'client_website', label: 'Website page' },
@@ -429,6 +445,144 @@ function PlatformMarkers({ platforms = [] }) {
   )
 }
 
+function getBoostStatus(boosts = []) {
+  const latest = boosts[0]
+  if (!latest) return null
+
+  const status = String(latest.status || 'active')
+  const labelMap = {
+    pending: 'Boost pending',
+    active: 'Boost active',
+    paused: 'Boost paused',
+    completed: 'Boost complete',
+    cancelled: 'Boost cancelled',
+    rejected: 'Boost rejected',
+    failed: 'Boost failed',
+  }
+  return {
+    label: labelMap[status] || 'Boost saved',
+    status,
+  }
+}
+
+function BoostPostModal({ item, defaultPlatform, onClose, onSubmit, isSaving, error }) {
+  const availablePlatforms = [...new Set(item?.platforms || [])].filter((platform) => BOOSTABLE_PLATFORMS.has(platform))
+  const [platform, setPlatform] = useState(defaultPlatform || availablePlatforms[0] || 'facebook')
+  const [goal, setGoal] = useState('engagement')
+  const [budgetAmount, setBudgetAmount] = useState('10')
+  const [budgetType, setBudgetType] = useState('daily')
+  const [durationDays, setDurationDays] = useState(5)
+  const [adAccountId, setAdAccountId] = useState('')
+
+  if (!item?.post) return null
+
+  return createPortal(
+    <div className="portal-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="boost-post-title">
+      <section className="portal-modal-panel boost-post-modal">
+        <div className="portal-modal-head">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+              Paid boost
+            </p>
+            <h2 id="boost-post-title" className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
+              Boost this post
+            </h2>
+          </div>
+          <button type="button" onClick={onClose} className="portal-icon-button" aria-label="Close boost setup">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="boost-post-preview">
+          <div>
+            <Badge type="published" />
+            <p>{item.caption}</p>
+          </div>
+          {item.thumbnailUrl ? <img src={item.thumbnailUrl} alt="" /> : null}
+        </div>
+
+        <div className="boost-post-grid">
+          <label>
+            <span>Platform</span>
+            <select value={platform} onChange={(event) => setPlatform(event.target.value)}>
+              {availablePlatforms.map((platformId) => {
+                const marker = PLATFORM_MARKERS[platformId]
+                return (
+                  <option key={platformId} value={platformId}>
+                    {marker?.label || platformId}
+                  </option>
+                )
+              })}
+            </select>
+          </label>
+          <label>
+            <span>Goal</span>
+            <select value={goal} onChange={(event) => setGoal(event.target.value)}>
+              {BOOST_GOALS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Budget</span>
+            <input value={budgetAmount} onChange={(event) => setBudgetAmount(event.target.value)} inputMode="decimal" placeholder="10" />
+          </label>
+          <label>
+            <span>Budget type</span>
+            <select value={budgetType} onChange={(event) => setBudgetType(event.target.value)}>
+              <option value="daily">Daily</option>
+              <option value="lifetime">Lifetime</option>
+            </select>
+          </label>
+          <label>
+            <span>Duration</span>
+            <select value={durationDays} onChange={(event) => setDurationDays(Number(event.target.value))}>
+              {BOOST_DURATIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Zernio ad account ID</span>
+            <input value={adAccountId} onChange={(event) => setAdAccountId(event.target.value)} placeholder="Paste adAccountId" />
+          </label>
+        </div>
+
+        <div className="boost-post-note">
+          This launches real ad spend through Zernio. Keep the first test small so we can verify account setup and tracking.
+        </div>
+
+        {error ? <div className="boost-post-error">{error}</div> : null}
+
+        <div className="portal-modal-actions">
+          <button type="button" onClick={onClose} className="portal-button-secondary px-4 py-2.5 text-sm font-semibold">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={isSaving || availablePlatforms.length === 0}
+            onClick={() => onSubmit({
+              postId: item.post.id,
+              platform,
+              goal,
+              budgetAmount,
+              budgetType,
+              durationDays,
+              adAccountId,
+              name: `MAP Boost - ${item.title || 'Published post'}`,
+            })}
+            className="portal-button-primary inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
+          >
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Megaphone className="h-4 w-4" />}
+            Launch boost
+          </button>
+        </div>
+      </section>
+    </div>,
+    window.document.body,
+  )
+}
+
 function RowActionMenu({ item, actions }) {
   const [isOpen, setIsOpen] = useState(false)
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
@@ -614,6 +768,12 @@ function PlanItemChip({ item, selected, onSelect, actions, onPreviewOpen, onPrev
         </div>
       </div>
       <div className="content-plan-row-status">
+        {item.boostStatus ? (
+          <span className="content-plan-boost-marker">
+            <Megaphone className="h-3 w-3" />
+            {item.boostStatus.label.replace(/^Boost /, '')}
+          </span>
+        ) : null}
         <StatusMarker type={item.badgeType} />
         {(item.badgeType === 'scheduled' || item.badgeType === 'published') ? (
           <PlatformMarkers platforms={item.platforms} />
@@ -925,6 +1085,8 @@ export default function ContentCalendar() {
   const [busySourceId, setBusySourceId] = useState('')
   const [partnerProfileForm, setPartnerProfileForm] = useState(() => buildPartnerProfileForm(null, null))
   const [hoverPreview, setHoverPreview] = useState(null)
+  const [boostItem, setBoostItem] = useState(null)
+  const [boostError, setBoostError] = useState('')
   const [weekOffset, setWeekOffset] = useState(() => {
     const date = initialParams.get('date')
     return date ? getWeekOffsetFromDate(date) : 0
@@ -955,6 +1117,12 @@ export default function ContentCalendar() {
     enabled: !!clientId,
   })
 
+  const { data: postBoosts = [], isLoading: boostsLoading, refetch: refetchBoosts } = useQuery({
+    queryKey: ['post-boosts', clientId],
+    queryFn: () => fetchPostBoosts(clientId),
+    enabled: !!clientId,
+  })
+
   const { data: drafts = [], isLoading: draftsLoading, refetch: refetchDrafts, isRefetching: isRefetchingDrafts } = useQuery({
     queryKey: ['social-drafts', clientId],
     queryFn: () => fetchSocialDrafts(clientId),
@@ -977,6 +1145,20 @@ export default function ContentCalendar() {
     queryKey: ['research-profile', clientId],
     queryFn: () => fetchResearchProfile(clientId),
     enabled: !!clientId,
+  })
+
+  const launchBoost = useMutation({
+    mutationFn: launchPostBoost,
+    onSuccess: async (payload) => {
+      setBoostError('')
+      setBoostItem(null)
+      setActionNotice(payload?.message || 'Boost launched.')
+      await queryClient.invalidateQueries({ queryKey: ['post-boosts', clientId] })
+      await refetchBoosts()
+    },
+    onError: (error) => {
+      setBoostError(error.message || 'Could not launch this boost.')
+    },
   })
 
   useEffect(() => {
@@ -1056,30 +1238,46 @@ export default function ContentCalendar() {
       }))
   ), [drafts, selectedWeekStart])
 
+  const postBoostsByPostId = useMemo(() => {
+    const groups = new Map()
+    for (const boost of postBoosts) {
+      if (!boost.post_id) continue
+      if (!groups.has(boost.post_id)) groups.set(boost.post_id, [])
+      groups.get(boost.post_id).push(boost)
+    }
+    return groups
+  }, [postBoosts])
+
   const postItems = useMemo(() => (
     calendarPosts
       .filter((post) => isDateInWeek(getPostDisplayDate(post), selectedWeekStart))
-      .map((post) => ({
-        id: `post:${post.id}`,
-        source: 'post',
-        badgeType: post.status === 'published' ? 'published' : 'scheduled',
-        dateString: toDateString(new Date(getPostDisplayDate(post))),
-        dayLabel: formatDate(getPostDisplayDate(post), { weekday: 'short', month: 'short', day: 'numeric' }),
-        timeLabel: formatDate(getPostDisplayDate(post), { hour: 'numeric', minute: '2-digit' }),
-        title: post.content?.slice(0, 72) || (post.status === 'published' ? 'Posted content' : 'Scheduled post'),
-        subtitle: post.status === 'published' ? 'Already posted' : 'Scheduled and waiting for publish time',
-        detailTitle: post.status === 'published' ? 'Posted content' : 'Scheduled post',
-        caption: post.content || 'This post is already on the calendar.',
-        whyNow: post.status === 'published'
-          ? 'This content has already gone out and stays visible here for context.'
-          : 'This item is already planned and helps avoid overfilling the calendar.',
-        imagePrompt: post.media_url ? 'Media is attached to this post.' : 'No media is attached yet.',
-        proof: [post.status === 'published' ? 'Posted content' : 'Scheduled content'],
-        thumbnailUrl: post.media_url || '',
-        platforms: post.platforms || [],
-        post,
-      }))
-  ), [calendarPosts, selectedWeekStart])
+      .map((post) => {
+        const boosts = postBoostsByPostId.get(post.id) || []
+        const boostStatus = getBoostStatus(boosts)
+        return {
+          id: `post:${post.id}`,
+          source: 'post',
+          badgeType: post.status === 'published' ? 'published' : 'scheduled',
+          dateString: toDateString(new Date(getPostDisplayDate(post))),
+          dayLabel: formatDate(getPostDisplayDate(post), { weekday: 'short', month: 'short', day: 'numeric' }),
+          timeLabel: formatDate(getPostDisplayDate(post), { hour: 'numeric', minute: '2-digit' }),
+          title: post.content?.slice(0, 72) || (post.status === 'published' ? 'Posted content' : 'Scheduled post'),
+          subtitle: boostStatus?.label || (post.status === 'published' ? 'Already posted' : 'Scheduled and waiting for publish time'),
+          detailTitle: post.status === 'published' ? 'Posted content' : 'Scheduled post',
+          caption: post.content || 'This post is already on the calendar.',
+          whyNow: post.status === 'published'
+            ? 'This content has already gone out and stays visible here for context.'
+            : 'This item is already planned and helps avoid overfilling the calendar.',
+          imagePrompt: post.media_url ? 'Media is attached to this post.' : 'No media is attached yet.',
+          proof: [post.status === 'published' ? 'Posted content' : 'Scheduled content'],
+          thumbnailUrl: post.media_url || '',
+          platforms: post.platforms || [],
+          boosts,
+          boostStatus,
+          post,
+        }
+      })
+  ), [calendarPosts, postBoostsByPostId, selectedWeekStart])
 
   const studioCounts = useMemo(() => ({
     ideas: opportunities
@@ -1147,29 +1345,35 @@ export default function ContentCalendar() {
       }))
 
     const postDetailItems = calendarPosts
-      .map((post) => ({
-        id: `post:${post.id}`,
-        source: 'post',
-        badgeType: post.status === 'published' ? 'published' : 'scheduled',
-        dateString: toDateString(new Date(getPostDisplayDate(post))),
-        dayLabel: formatDate(getPostDisplayDate(post), { weekday: 'short', month: 'short', day: 'numeric' }),
-        timeLabel: formatDate(getPostDisplayDate(post), { hour: 'numeric', minute: '2-digit' }),
-        title: post.content?.slice(0, 72) || (post.status === 'published' ? 'Posted content' : 'Scheduled post'),
-        subtitle: post.status === 'published' ? 'Already posted' : 'Scheduled and waiting for publish time',
-        detailTitle: post.status === 'published' ? 'Posted content' : 'Scheduled post',
-        caption: post.content || 'This post is already on the calendar.',
-        whyNow: post.status === 'published'
-          ? 'This content has already gone out and stays visible here for context.'
-          : 'This item is already planned and helps avoid overfilling the calendar.',
-        imagePrompt: post.media_url ? 'Media is attached to this post.' : 'No media is attached yet.',
-        proof: [post.status === 'published' ? 'Posted content' : 'Scheduled content'],
-        thumbnailUrl: post.media_url || '',
-        platforms: post.platforms || [],
-        post,
-      }))
+      .map((post) => {
+        const boosts = postBoostsByPostId.get(post.id) || []
+        const boostStatus = getBoostStatus(boosts)
+        return {
+          id: `post:${post.id}`,
+          source: 'post',
+          badgeType: post.status === 'published' ? 'published' : 'scheduled',
+          dateString: toDateString(new Date(getPostDisplayDate(post))),
+          dayLabel: formatDate(getPostDisplayDate(post), { weekday: 'short', month: 'short', day: 'numeric' }),
+          timeLabel: formatDate(getPostDisplayDate(post), { hour: 'numeric', minute: '2-digit' }),
+          title: post.content?.slice(0, 72) || (post.status === 'published' ? 'Posted content' : 'Scheduled post'),
+          subtitle: boostStatus?.label || (post.status === 'published' ? 'Already posted' : 'Scheduled and waiting for publish time'),
+          detailTitle: post.status === 'published' ? 'Posted content' : 'Scheduled post',
+          caption: post.content || 'This post is already on the calendar.',
+          whyNow: post.status === 'published'
+            ? 'This content has already gone out and stays visible here for context.'
+            : 'This item is already planned and helps avoid overfilling the calendar.',
+          imagePrompt: post.media_url ? 'Media is attached to this post.' : 'No media is attached yet.',
+          proof: [post.status === 'published' ? 'Posted content' : 'Scheduled content'],
+          thumbnailUrl: post.media_url || '',
+          platforms: post.platforms || [],
+          boosts,
+          boostStatus,
+          post,
+        }
+      })
 
     return [...radarDetailItems, ...draftDetailItems, ...postDetailItems]
-  }, [calendarPosts, drafts, opportunities, selectedWeekStart, selectedWeekStartString])
+  }, [calendarPosts, drafts, opportunities, postBoostsByPostId, selectedWeekStart, selectedWeekStartString])
 
   const detailItemsById = useMemo(() => new Map(allDetailItems.map((item) => [item.id, item])), [allDetailItems])
 
@@ -1554,6 +1758,33 @@ export default function ContentCalendar() {
     }
   }
 
+  function handleOpenBoost(item) {
+    if (!requireWriteAccess('boost posts')) return
+    if (!item?.post?.id) return
+    if (item.post.status !== 'published') {
+      setActionError('Boost is available after a post is published.')
+      return
+    }
+    setBoostError('')
+    setBoostItem(item)
+  }
+
+  function handleLaunchBoost(input) {
+    const now = new Date()
+    const durationDays = Number(input.durationDays) || 5
+    const endsAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000)
+    launchBoost.mutate({
+      ...input,
+      startsAt: now.toISOString(),
+      endsAt: endsAt.toISOString(),
+      currency: 'USD',
+      targeting: {
+        mode: 'local_default',
+        source: 'map_portal',
+      },
+    })
+  }
+
   function getRowActions(item) {
     if (!item || actionBusyId === item.id) return []
     if (item.source === 'radar') {
@@ -1578,6 +1809,9 @@ export default function ContentCalendar() {
     }
     if (item.source === 'post') {
       return [
+        ...(item.badgeType === 'published' ? [
+          { label: item.boostStatus ? 'Boost again' : 'Boost post', Icon: Megaphone, onSelect: () => handleOpenBoost(item) },
+        ] : []),
         { label: 'View history', Icon: ArrowUpRight, onSelect: () => navigate('/post/history') },
       ]
     }
@@ -1648,7 +1882,7 @@ export default function ContentCalendar() {
     setHoverPreview(null)
   }
 
-  const isLoading = profileLoading || postsLoading || draftsLoading || radarLoading || researchSourcesLoading || researchProfileLoading
+  const isLoading = profileLoading || postsLoading || draftsLoading || radarLoading || researchSourcesLoading || researchProfileLoading || boostsLoading
   const isRefreshing = isRefetchingPosts || isRefetchingDrafts || isRefetchingRadar
   const isCreating = createRadarDraft.isPending
 
@@ -2055,6 +2289,19 @@ export default function ContentCalendar() {
           onSave={handleSaveSource}
           onToggleSource={handleToggleSource}
           onDeleteSource={handleDeleteSource}
+        />
+      ) : null}
+      {boostItem ? (
+        <BoostPostModal
+          item={boostItem}
+          defaultPlatform={(boostItem.platforms || []).find((platform) => ['facebook', 'instagram'].includes(platform)) || (boostItem.platforms || [])[0]}
+          onClose={() => {
+            setBoostItem(null)
+            setBoostError('')
+          }}
+          onSubmit={handleLaunchBoost}
+          isSaving={launchBoost.isPending}
+          error={boostError}
         />
       ) : null}
     </div>

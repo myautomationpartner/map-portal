@@ -21,7 +21,7 @@ const DROPBOX_APP_KEY = 's0hnp0b7frldcbb'
 const DROPBOX_WEEK_MEDIA_ENDPOINT = '/api/dropbox/week-media'
 
 /** File types accepted by the Chooser — mirrors social media requirements. */
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.mp4', '.pdf', '.docx']
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif', '.heic', '.heif']
 
 /**
  * Cached load promise — ensures the script tag is only injected once,

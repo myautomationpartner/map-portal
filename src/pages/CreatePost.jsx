@@ -18,6 +18,7 @@ import {
   updateSocialDraft,
   upsertSocialDraft,
 } from '../lib/portalApi'
+import { openDropboxChooser } from '../lib/dropboxApi'
 import { buildCalendarModel } from '../lib/socialPlanner'
 import { buildDraftPayload } from '../lib/socialPlanner'
 import {
@@ -30,7 +31,7 @@ import {
 } from '../lib/socialDrafting'
 import {
   AlertCircle, ArrowUpRight, Calendar, CalendarDays, Check, CheckCircle2,
-  Clock3, History, Loader2, Paperclip,
+  ChevronLeft, ChevronRight, Clock3, History, Loader2,
   Send, Sparkles, UploadCloud, Wand2, X,
   Trash2,
 } from 'lucide-react'
@@ -42,7 +43,7 @@ const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationp
 const PHOTO_LIBRARY_LINKS = [
   { label: 'Google Photos', href: 'https://photos.google.com/', Icon: SiGooglephotos, color: '#4285F4' },
   { label: 'Apple Photos', href: 'https://www.icloud.com/photos/', Icon: SiIcloud, color: '#3693F3' },
-  { label: 'Dropbox', href: 'https://www.dropbox.com/home', Icon: SiDropbox, color: '#0061FF' },
+  { label: 'Dropbox', action: 'dropbox', Icon: SiDropbox, color: '#0061FF' },
   { label: 'OneDrive', href: 'https://onedrive.live.com/', Icon: FaMicrosoft, color: '#00A4EF' },
 ]
 
@@ -168,6 +169,35 @@ function getDropboxPreviewSource(attachments) {
 function getDropboxThumbSource(file) {
   if (!file) return null
   return getDropboxRenderableImageUrl(file.thumbnail) || getDropboxRenderableImageUrl(file.link) || null
+}
+
+function buildDropboxMediaItem(file, index = 0) {
+  if (!file) return null
+  const previewUrl = getDropboxThumbSource(file) || getDropboxRenderableImageUrl(file.link)
+  return {
+    id: `dropbox:${file.link || file.name || index}`,
+    type: 'dropbox',
+    name: file.name || `Dropbox image ${index + 1}`,
+    previewUrl,
+    link: file.link,
+    file,
+  }
+}
+
+function buildExistingMediaItem(url) {
+  if (!url) return null
+  return {
+    id: `existing:${url}`,
+    type: 'existing',
+    name: 'Current image',
+    previewUrl: url,
+    link: url,
+  }
+}
+
+function clampIndex(index, count) {
+  if (!count) return 0
+  return Math.min(Math.max(index, 0), count - 1)
 }
 
 function base64ToImageFile(base64, mimeType = 'image/png', filename = 'generated-post-image.png') {
@@ -1038,6 +1068,8 @@ export default function CreatePost() {
   const [content, setContent] = useState('')
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
+  const [localImageItems, setLocalImageItems] = useState([])
+  const [mediaSlideIndex, setMediaSlideIndex] = useState(0)
   const [imageGenerateState, setImageGenerateState] = useState('idle')
   const [imageGenerateError, setImageGenerateError] = useState('')
   const [imageImproveState, setImageImproveState] = useState('idle')
@@ -1155,8 +1187,33 @@ export default function CreatePost() {
   const charPercent = Math.min((content.length / charLimit) * 100, 100)
   const isSubmitting = submitState === 'uploading' || submitState === 'posting'
   const minScheduleValue = getMinScheduleValue()
-  const dropboxPreviewSource = getDropboxPreviewSource(dropboxAttachments)
-  const mediaPreviewSource = imagePreview || existingMediaUrl
+  const creativeItems = useMemo(() => {
+    const items = []
+    if (localImageItems.length) {
+      items.push(...localImageItems)
+    } else if (imagePreview && !existingMediaUrl) {
+      items.push({
+        id: 'image-preview',
+        type: imageFile ? 'local' : 'generated',
+        name: imageFile?.name || 'Selected image',
+        previewUrl: imagePreview,
+        file: imageFile,
+      })
+    }
+    const existingItem = localImageItems.length || imagePreview ? null : buildExistingMediaItem(existingMediaUrl)
+    if (existingItem) items.push(existingItem)
+    dropboxAttachments.forEach((file, index) => {
+      const item = buildDropboxMediaItem(file, index)
+      if (item) items.push(item)
+    })
+    return items
+  }, [dropboxAttachments, existingMediaUrl, imageFile, imagePreview, localImageItems])
+  const activeCreativeIndex = clampIndex(mediaSlideIndex, creativeItems.length)
+  const activeCreativeItem = creativeItems[activeCreativeIndex] || null
+  const dropboxPreviewSource = activeCreativeItem?.type === 'dropbox'
+    ? activeCreativeItem.previewUrl
+    : getDropboxPreviewSource(dropboxAttachments)
+  const mediaPreviewSource = activeCreativeItem?.previewUrl || imagePreview || existingMediaUrl
   const canImproveImage = Boolean(clientId && mediaPreviewSource && !isSubmitting)
   const selectedDaySlots = selectedDay ? (slotsByDate.get(selectedDay) || []) : []
   const selectableDaySlots = selectedDaySlots.filter((slot) => ['recommended_fill', 'occupied_draft'].includes(slot.state))
@@ -1230,6 +1287,12 @@ export default function CreatePost() {
         .filter(([, image]) => Boolean(image?.preview_url || image?.url)),
     )
   }, [activePlatforms, platformVariants])
+
+  useEffect(() => {
+    if (mediaSlideIndex >= creativeItems.length && creativeItems.length > 0) {
+      setMediaSlideIndex(creativeItems.length - 1)
+    }
+  }, [creativeItems.length, mediaSlideIndex])
 
   useEffect(() => {
     if (!activePlatforms.includes(previewPlatform)) {
@@ -1488,7 +1551,9 @@ export default function CreatePost() {
     setSelectedDay(post.localDate || selectedDay)
     setExistingMediaUrl(post.media_url || '')
     setImageFile(null)
+    setLocalImageItems([])
     setImagePreview(post.media_url || null)
+    setMediaSlideIndex(0)
     setImageGenerateState('idle')
     setImageGenerateError('')
     setImageImproveState('idle')
@@ -1555,25 +1620,76 @@ export default function CreatePost() {
     }
   }, [draftDirty, activeDraftId, content, generatedCaption, mediaSuggestion, selectedAngleId, angleChoices, activeSlot, persistDraftEdits])
 
-  function handleFileChange(event) {
-    const file = event.target.files?.[0]
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
+  async function handleFileChange(event) {
+    const files = Array.from(event.target.files || [])
+    if (!files.length) return
+
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'))
+    if (!imageFiles.length) {
       setErrorMsg('Only image files are supported.')
       return
     }
 
-    setImageFile(file)
-    const reader = new FileReader()
-    reader.onload = (loadEvent) => setImagePreview(loadEvent.target?.result || null)
-    reader.readAsDataURL(file)
+    if (imageFiles.length !== files.length) {
+      setErrorMsg('Some files were skipped because only image files are supported.')
+    } else {
+      setErrorMsg('')
+    }
+
+    const items = await Promise.all(imageFiles.map(async (file, index) => ({
+      id: `local:${file.name}:${file.lastModified}:${index}`,
+      type: 'local',
+      name: file.name || `Image ${index + 1}`,
+      file,
+      previewUrl: await readFileAsDataUrl(file),
+    })))
+
+    setLocalImageItems(items)
+    setImageFile(items[0]?.file || null)
+    setImagePreview(items[0]?.previewUrl || null)
+    setExistingMediaUrl('')
+    setMediaSlideIndex(0)
     setImageGenerateState('idle')
     setImageGenerateError('')
     setImageImproveState('idle')
     setImageImproveMode('')
     setImageImproveError('')
     clearPlatformImageVariants('')
+  }
+
+  async function handleChooseDropbox() {
+    if (!requireWriteAccess('choose Dropbox media')) return
+    if (isSubmitting) return
+
+    setImageGenerateError('')
+    setImageImproveError('')
     setErrorMsg('')
+
+    try {
+      const selectedFiles = await openDropboxChooser({
+        multiselect: true,
+        linkType: 'preview',
+      })
+      const imageFiles = selectedFiles.filter((file) => isImageAttachment(file))
+      if (!imageFiles.length) {
+        if (selectedFiles.length) setErrorMsg('Choose image files from Dropbox for post creative.')
+        return
+      }
+
+      setDropboxAttachments((previous) => {
+        const existingLinks = new Set(previous.map((file) => file.link))
+        return [
+          ...previous,
+          ...imageFiles.filter((file) => file.link && !existingLinks.has(file.link)),
+        ]
+      })
+      setMediaSlideIndex(creativeItems.length)
+      clearPlatformImageVariants('')
+      setDraftStatus(`${imageFiles.length} Dropbox image${imageFiles.length === 1 ? '' : 's'} added.`)
+    } catch (error) {
+      console.error('[DropboxChooser]', error)
+      setErrorMsg(error.message || 'Could not open Dropbox chooser.')
+    }
   }
 
   async function handleGenerateImage() {
@@ -1597,9 +1713,18 @@ export default function CreatePost() {
         quality: 'low',
       })
       const file = base64ToImageFile(payload.image_base64, payload.mime_type || 'image/png')
+      const previewUrl = `data:${payload.mime_type || 'image/png'};base64,${payload.image_base64}`
+      setLocalImageItems([{
+        id: `generated:${Date.now()}`,
+        type: 'generated',
+        name: 'Generated image',
+        file,
+        previewUrl,
+      }])
       setImageFile(file)
-      setImagePreview(`data:${payload.mime_type || 'image/png'};base64,${payload.image_base64}`)
+      setImagePreview(previewUrl)
       setExistingMediaUrl('')
+      setMediaSlideIndex(0)
       clearPlatformImageVariants('')
       setImageGenerateState('ready')
       setImageImproveState('idle')
@@ -1614,24 +1739,31 @@ export default function CreatePost() {
   }
 
   async function getImageImproveInput() {
-    if (imageFile) {
-      const fileType = String(imageFile.type || '').toLowerCase()
-      const fileName = String(imageFile.name || '').toLowerCase()
+    if (activeCreativeItem?.type === 'dropbox' || activeCreativeItem?.type === 'existing') {
+      const imageUrl = activeCreativeItem.link || activeCreativeItem.previewUrl || ''
+      if (imageUrl && /^https?:\/\//i.test(imageUrl)) return { image_url: imageUrl }
+    }
+
+    const activeFile = activeCreativeItem?.file || imageFile
+    if (activeFile) {
+      const fileType = String(activeFile.type || '').toLowerCase()
+      const fileName = String(activeFile.name || '').toLowerCase()
       if (fileType.includes('heic') || fileType.includes('heif') || /\.(heic|heif)$/.test(fileName)) {
         throw new Error('iPhone HEIC photos need to be saved or exported as JPG before Image Assist can improve them.')
       }
       if (!/^image\/(png|jpe?g|webp)$/i.test(fileType)) {
         throw new Error('Image Assist supports JPG, PNG, and WebP images.')
       }
-      const dataUrl = await readFileAsDataUrl(imageFile)
+      const dataUrl = await readFileAsDataUrl(activeFile)
       return { image_data_url: await normalizeImageForAssist(dataUrl) }
     }
 
-    if (typeof imagePreview === 'string' && imagePreview.startsWith('data:image/')) {
-      return { image_data_url: await normalizeImageForAssist(imagePreview) }
+    const activePreview = activeCreativeItem?.previewUrl || imagePreview
+    if (typeof activePreview === 'string' && activePreview.startsWith('data:image/')) {
+      return { image_data_url: await normalizeImageForAssist(activePreview) }
     }
 
-    const imageUrl = existingMediaUrl || ''
+    const imageUrl = existingMediaUrl || dropboxPreviewSource || ''
     if (imageUrl && /^https?:\/\//i.test(imageUrl)) {
       return { image_url: imageUrl }
     }
@@ -1660,9 +1792,18 @@ export default function CreatePost() {
         ...imageInput,
       })
       const file = base64ToImageFile(payload.image_base64, payload.mime_type || 'image/png', `partner-improved-${mode || 'image'}.png`)
+      const previewUrl = `data:${payload.mime_type || 'image/png'};base64,${payload.image_base64}`
+      setLocalImageItems([{
+        id: `improved:${mode}:${Date.now()}`,
+        type: 'local',
+        name: `Partner improved ${mode || 'image'}`,
+        file,
+        previewUrl,
+      }])
       setImageFile(file)
-      setImagePreview(`data:${payload.mime_type || 'image/png'};base64,${payload.image_base64}`)
+      setImagePreview(previewUrl)
       setExistingMediaUrl('')
+      setMediaSlideIndex(0)
       clearPlatformImageVariants('')
       setImageImproveState('ready')
       setDraftStatus('Improved image attached. Review it before approving the post.')
@@ -1757,23 +1898,25 @@ export default function CreatePost() {
   }
 
   async function getMasterImageSourceForFormatting() {
-    if (imageFile) {
-      const fileType = String(imageFile.type || '').toLowerCase()
-      const fileName = String(imageFile.name || '').toLowerCase()
+    const activeFile = activeCreativeItem?.file || imageFile
+    if (activeFile) {
+      const fileType = String(activeFile.type || '').toLowerCase()
+      const fileName = String(activeFile.name || '').toLowerCase()
       if (fileType.includes('heic') || fileType.includes('heif') || /\.(heic|heif)$/.test(fileName)) {
         throw new Error('iPhone HEIC photos need to be saved or exported as JPG before image formatting.')
       }
       if (!/^image\/(png|jpe?g|webp)$/i.test(fileType)) {
         throw new Error('Image formatting supports JPG, PNG, and WebP images.')
       }
-      return readFileAsDataUrl(imageFile)
+      return readFileAsDataUrl(activeFile)
     }
 
-    if (typeof imagePreview === 'string' && imagePreview.startsWith('data:image/')) {
-      return imagePreview
+    const activePreview = activeCreativeItem?.previewUrl || imagePreview
+    if (typeof activePreview === 'string' && activePreview.startsWith('data:image/')) {
+      return activePreview
     }
 
-    const imageUrl = existingMediaUrl || dropboxPreviewSource || ''
+    const imageUrl = activeCreativeItem?.link || activeCreativeItem?.previewUrl || existingMediaUrl || dropboxPreviewSource || ''
     if (imageUrl && /^https?:\/\//i.test(imageUrl)) return imageUrl
 
     throw new Error('Add or select an image before formatting it for platforms.')
@@ -1830,7 +1973,9 @@ export default function CreatePost() {
   function removeImage() {
     setImageFile(null)
     setImagePreview(null)
+    setLocalImageItems([])
     setExistingMediaUrl('')
+    setMediaSlideIndex(0)
     setImageGenerateState('idle')
     setImageGenerateError('')
     setImageImproveState('idle')
@@ -1842,7 +1987,56 @@ export default function CreatePost() {
 
   function removeDropboxAttachment(link) {
     setDropboxAttachments((previous) => previous.filter((file) => file.link !== link))
+    setMediaSlideIndex((current) => Math.max(0, current - 1))
     clearPlatformImageVariants('')
+  }
+
+  function selectCreativeItem(index) {
+    const item = creativeItems[index]
+    setMediaSlideIndex(index)
+    if (item?.type === 'local' || item?.type === 'generated') {
+      setImageFile(item.file || null)
+      setImagePreview(item.previewUrl || null)
+      setExistingMediaUrl('')
+    } else if (item?.type === 'existing') {
+      setImageFile(null)
+      setImagePreview(null)
+      setExistingMediaUrl(item.previewUrl || item.link || '')
+    } else if (item?.type === 'dropbox') {
+      setImageFile(null)
+      setImagePreview(null)
+      setExistingMediaUrl('')
+    }
+  }
+
+  function showPreviousCreative() {
+    if (creativeItems.length <= 1) return
+    selectCreativeItem((activeCreativeIndex - 1 + creativeItems.length) % creativeItems.length)
+  }
+
+  function showNextCreative() {
+    if (creativeItems.length <= 1) return
+    selectCreativeItem((activeCreativeIndex + 1) % creativeItems.length)
+  }
+
+  function removeCreativeItem(item = activeCreativeItem) {
+    if (!item) return
+    if (item.type === 'dropbox') {
+      removeDropboxAttachment(item.link)
+      return
+    }
+    if (item.type === 'local' || item.type === 'generated') {
+      const nextItems = localImageItems.filter((media) => media.id !== item.id)
+      setLocalImageItems(nextItems)
+      const nextActive = nextItems[clampIndex(activeCreativeIndex, nextItems.length)] || null
+      setImageFile(nextActive?.file || null)
+      setImagePreview(nextActive?.previewUrl || null)
+      setMediaSlideIndex(clampIndex(activeCreativeIndex, nextItems.length))
+      if (!nextItems.length) removeImage()
+      clearPlatformImageVariants('')
+      return
+    }
+    removeImage()
   }
 
   function chooseSlot(slot) {
@@ -1857,7 +2051,9 @@ export default function CreatePost() {
     setEditingScheduledPostRef('')
     setExistingMediaUrl('')
     setImageFile(null)
+    setLocalImageItems([])
     setImagePreview(null)
+    setMediaSlideIndex(0)
     setImageGenerateState('idle')
     setImageGenerateError('')
     setImageImproveState('idle')
@@ -1965,7 +2161,9 @@ export default function CreatePost() {
         setEditingScheduledPostRef('')
         setExistingMediaUrl('')
         setImageFile(null)
+        setLocalImageItems([])
         setImagePreview(null)
+        setMediaSlideIndex(0)
         setDropboxAttachments([])
         setContent('')
         setPlatformVariants({})
@@ -2121,15 +2319,55 @@ export default function CreatePost() {
 
     try {
       setPublishResult(null)
-      let r2MediaUrl = null
-      if (imageFile) {
+      const localUploadItems = localImageItems.length
+        ? localImageItems.filter((item) => item.file)
+        : (imageFile ? [{ id: 'primary-image', name: imageFile.name || 'Selected image', file: imageFile }] : [])
+      let uploadedMedia = []
+      if (localUploadItems.length) {
         setSubmitState('uploading')
-        r2MediaUrl = await uploadToR2(imageFile)
+        uploadedMedia = await Promise.all(localUploadItems.map(async (item) => ({
+          name: item.name || item.file?.name || 'Selected image',
+          source: item.type || 'computer',
+          url: await uploadToR2(item.file),
+        })))
       }
 
       setSubmitState('posting')
 
-      const effectiveMediaUrl = r2MediaUrl || (dropboxAttachments.length > 0 ? dropboxAttachments[0].link : null) || existingMediaUrl || null
+      const activeUploadedMedia = activeCreativeItem?.type !== 'dropbox' && activeCreativeItem?.type !== 'existing'
+        ? uploadedMedia[activeCreativeIndex]
+        : null
+      const activeDropboxUrl = activeCreativeItem?.type === 'dropbox' ? activeCreativeItem.link : null
+      const activeExistingUrl = activeCreativeItem?.type === 'existing' ? activeCreativeItem.link : null
+      const dropboxMedia = dropboxAttachments
+        .filter((file) => file.link)
+        .map(({ name, link, size, thumbnail }) => ({
+          name: name || 'Dropbox image',
+          link,
+          url: link,
+          size: size || 0,
+          thumbnail: thumbnail || null,
+          source: 'dropbox',
+        }))
+      const uploadedMediaAssets = uploadedMedia.map((item) => ({
+        name: item.name,
+        link: item.url,
+        url: item.url,
+        size: 0,
+        source: item.source || 'computer',
+      }))
+      const mediaAssets = [
+        ...uploadedMediaAssets,
+        ...dropboxMedia,
+      ]
+      const mediaUrls = mediaAssets.map((item) => item.url).filter(Boolean)
+      const effectiveMediaUrl = activeUploadedMedia?.url
+        || activeDropboxUrl
+        || activeExistingUrl
+        || uploadedMedia[0]?.url
+        || dropboxMedia[0]?.url
+        || existingMediaUrl
+        || null
       const scheduledForIso = timingMode === 'now' ? null : localDateTimeToIso(scheduledFor)
       const targetStatus = timingMode === 'now' ? 'published' : 'scheduled'
       const targetPlatforms = connectedActivePlatforms
@@ -2201,7 +2439,9 @@ export default function CreatePost() {
               .filter(([, url]) => Boolean(url)),
           ),
           mediaUrl: effectiveMediaUrl,
-          dropboxLinks: dropboxAttachments.map(({ name, link, size }) => ({ name, link, size })),
+          mediaUrls,
+          mediaAssets,
+          dropboxLinks: dropboxMedia.map(({ name, link, size, thumbnail }) => ({ name, link, size, thumbnail })),
           platforms: targetPlatforms,
           scheduledFor: scheduledForIso,
         }),
@@ -2289,7 +2529,9 @@ export default function CreatePost() {
         }
         setContent('')
         setImageFile(null)
+        setLocalImageItems([])
         setImagePreview(null)
+        setMediaSlideIndex(0)
         setImageGenerateState('idle')
         setImageGenerateError('')
         setImageImproveState('idle')
@@ -2695,29 +2937,73 @@ export default function CreatePost() {
                   {imageGenerateState !== 'generating' && <Sparkles className="h-3.5 w-3.5" />}
                 </button>
 
-                {PHOTO_LIBRARY_LINKS.map(({ label, href, Icon, color }) => (
-                  <a
-                    key={href}
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-2 text-[11px] font-semibold"
-                    style={{ background: 'rgba(26,24,20,0.06)', color: 'var(--portal-text)' }}
-                  >
-                    <Icon className="h-3.5 w-3.5" style={{ color }} />
-                    {label}
-                    <ArrowUpRight className="h-2.5 w-2.5" style={{ color: 'var(--portal-text-soft)' }} />
-                  </a>
+                {PHOTO_LIBRARY_LINKS.map(({ label, href, action, Icon, color }) => (
+                  action === 'dropbox' ? (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={handleChooseDropbox}
+                      disabled={isSubmitting}
+                      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-2 text-[11px] font-semibold disabled:opacity-55"
+                      style={{ background: 'rgba(26,24,20,0.06)', color: 'var(--portal-text)' }}
+                    >
+                      <Icon className="h-3.5 w-3.5" style={{ color }} />
+                      {label}
+                    </button>
+                  ) : (
+                    <a
+                      key={label}
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-2 text-[11px] font-semibold"
+                      style={{ background: 'rgba(26,24,20,0.06)', color: 'var(--portal-text)' }}
+                    >
+                      <Icon className="h-3.5 w-3.5" style={{ color }} />
+                      {label}
+                      <ArrowUpRight className="h-2.5 w-2.5" style={{ color: 'var(--portal-text-soft)' }} />
+                    </a>
+                  )
                 ))}
               </div>
 
               <div className="mt-3 overflow-hidden rounded-[24px]" style={{ border: '1px solid var(--portal-border)', background: 'rgba(255,255,255,0.78)' }}>
                 {mediaPreviewSource ? (
-                  <div className="relative">
-                    <img src={mediaPreviewSource} alt="Upload preview" className="max-h-[420px] w-full object-cover" />
-                    {imagePreview && (
+                  <div className="create-post-media-stage">
+                    <img src={mediaPreviewSource} alt={activeCreativeItem?.name || 'Upload preview'} className="w-full object-cover" />
+                    {creativeItems.length > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={showPreviousCreative}
+                          disabled={isSubmitting}
+                          className="create-post-media-arrow"
+                          data-side="left"
+                          aria-label="Previous image"
+                        >
+                          <ChevronLeft className="h-5 w-5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={showNextCreative}
+                          disabled={isSubmitting}
+                          className="create-post-media-arrow"
+                          data-side="right"
+                          aria-label="Next image"
+                        >
+                          <ChevronRight className="h-5 w-5" />
+                        </button>
+                      </>
+                    )}
+                    {creativeItems.length > 1 && (
+                      <div className="create-post-media-count">
+                        {activeCreativeIndex + 1} / {creativeItems.length}
+                      </div>
+                    )}
+                    {activeCreativeItem && (
                       <button
-                        onClick={removeImage}
+                        type="button"
+                        onClick={() => removeCreativeItem()}
                         disabled={isSubmitting}
                         className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-white"
                         style={{ background: 'rgba(0,0,0,0.58)' }}
@@ -2747,6 +3033,24 @@ export default function CreatePost() {
                   </button>
                 )}
               </div>
+
+              {creativeItems.length > 1 && (
+                <div className="create-post-media-strip" aria-label="Selected post images">
+                  {creativeItems.map((item, index) => (
+                    <button
+                      key={item.id || `${item.name}-${index}`}
+                      type="button"
+                      onClick={() => selectCreativeItem(index)}
+                      className="create-post-media-thumb"
+                      data-active={index === activeCreativeIndex}
+                      title={item.name}
+                    >
+                      <img src={item.previewUrl} alt="" />
+                      <span>{index + 1}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
 
               <div className="mt-3 rounded-[22px] p-3" style={{ background: 'rgba(255,255,255,0.72)', border: '1px solid var(--portal-border)' }}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2860,68 +3164,11 @@ export default function CreatePost() {
                 </div>
               )}
 
-              {dropboxAttachments.length > 0 && (
-                <div className="mt-3 space-y-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                    Attached photo links
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {dropboxAttachments.map((file) => {
-                      const thumbSource = getDropboxThumbSource(file)
-
-                      return (
-                        <div
-                          key={file.link}
-                          className="group flex items-center gap-2 rounded-2xl px-2.5 py-2"
-                          style={{ background: 'rgba(255,255,255,0.72)', border: '1px solid var(--portal-border)' }}
-                        >
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl" style={{ background: 'rgba(201, 168, 76, 0.08)' }}>
-                            {thumbSource && isImageAttachment(file) ? (
-                              <img src={thumbSource} alt={file.name} className="h-full w-full object-cover" />
-                            ) : (
-                              <Paperclip className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="max-w-[160px] truncate text-xs font-semibold" style={{ color: 'var(--portal-text)' }}>
-                              {file.name}
-                            </p>
-                            <p className="text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>
-                              Linked asset
-                            </p>
-                          </div>
-                          <a
-                            href={file.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="rounded-full p-1.5"
-                            style={{ background: 'rgba(26,24,20,0.06)', color: 'var(--portal-text)' }}
-                          >
-                            <ArrowUpRight className="h-3 w-3" />
-                          </a>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              removeDropboxAttachment(file.link)
-                            }}
-                            disabled={isSubmitting}
-                            className="rounded-full p-1.5 disabled:opacity-50"
-                            style={{ background: 'rgba(26,24,20,0.06)', color: 'var(--portal-text-muted)' }}
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
+                multiple
                 className="hidden"
                 onChange={handleFileChange}
               />
@@ -3030,7 +3277,7 @@ export default function CreatePost() {
                       platformId={id}
                       profile={profile}
                       content={platformCaptions[id] || content}
-                      imagePreview={imagePreview || existingMediaUrl}
+                      imagePreview={mediaPreviewSource}
                       dropboxAttachments={dropboxAttachments}
                       scheduledFor={scheduledFor}
                       platformImage={platformImageVariants[id]}
@@ -3331,7 +3578,7 @@ export default function CreatePost() {
         isSubmitting={isSubmitting}
         profile={profile}
         content={content}
-        imagePreview={imagePreview}
+        imagePreview={mediaPreviewSource}
         dropboxAttachments={dropboxAttachments}
         selectedPlatforms={selectedPlatforms}
         setSelectedPlatforms={setSelectedPlatforms}

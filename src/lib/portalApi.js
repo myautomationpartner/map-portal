@@ -421,6 +421,43 @@ export async function fetchPostById(postId) {
   return data ?? null
 }
 
+export async function fetchPostBoosts(clientId, options = {}) {
+  if (!clientId) return []
+
+  const { data, error } = await supabase
+    .from('post_boosts')
+    .select('*')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+
+  const postId = options.postId || ''
+  return postId ? (data ?? []).filter((boost) => boost.post_id === postId) : (data ?? [])
+}
+
+export async function launchPostBoost(input) {
+  const accessToken = await getAccessToken()
+  const response = await fetch('/api/post-boosts', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(input ?? {}),
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || payload?.success === false) {
+    const error = new Error(payload?.error || payload?.message || `Boost request failed (${response.status}).`)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}
+
 export async function reconcileScheduledPosts(clientId, options = {}) {
   if (!clientId) return { publishedCount: 0 }
 
