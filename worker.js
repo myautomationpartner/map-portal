@@ -1211,6 +1211,31 @@ async function removeSocialConnection(envConfig, { platform, accountId }) {
   )
 }
 
+async function handleSocialConnectionDisconnect(request, env) {
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+  if (auth.user.role !== 'admin') {
+    return json({ error: 'Only client admins can disconnect social accounts.' }, { status: 403 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const platform = normalizePlatform(body.platform)
+  if (!platform) {
+    return json({ error: 'Choose a supported social platform to disconnect.' }, { status: 400 })
+  }
+
+  await removeSocialConnection(auth.envConfig, { platform })
+  return json({
+    success: true,
+    platform,
+    message: `${platform} is disconnected from this MAP portal.`,
+  })
+}
+
 async function handleZernioAccountWebhook(request, env) {
   if (request.method === 'OPTIONS') {
     return new Response(null, {
@@ -1726,6 +1751,10 @@ export default {
 
     if (url.pathname === '/api/n8n/zernio-sync-accounts') {
       return proxyN8nWebhook(request, env, 'zernio-sync-accounts')
+    }
+
+    if (url.pathname === '/api/social-connections/disconnect') {
+      return handleSocialConnectionDisconnect(request, env)
     }
 
     if (url.pathname === '/api/zernio/account-events') {

@@ -6,11 +6,12 @@ import { buildTenantConfig } from '../lib/tenantConfig'
 import { DASHBOARD_PLATFORMS } from '../lib/platformCatalog'
 import {
   User, Lock, Building2, CheckCircle2, Loader2, AlertCircle,
-  Link2, ExternalLink, Wifi, WifiOff, MessageCircle, Copy, RefreshCw, Mail, Save
+  Link2, ExternalLink, Wifi, WifiOff, MessageCircle, Copy, RefreshCw, Mail, Save, Unlink2
 } from 'lucide-react'
 
 const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
 const SETTINGS_SYNC_ENDPOINT = '/api/n8n/zernio-sync-accounts'
+const SETTINGS_DISCONNECT_ENDPOINT = '/api/social-connections/disconnect'
 
 const PLATFORMS = DASHBOARD_PLATFORMS
 
@@ -71,6 +72,26 @@ async function checkWebsiteChatInstallation() {
     method: 'POST',
     body: JSON.stringify({}),
   })
+}
+
+async function disconnectSocialConnection(platform) {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData?.session?.access_token
+  if (!token) throw new Error('You need to be signed in to disconnect accounts.')
+
+  const response = await fetch(SETTINGS_DISCONNECT_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ platform }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(payload?.error || 'Could not disconnect this account.')
+  }
+  return payload
 }
 
 // ── Shared components ─────────────────────────────────────────────────────────
@@ -181,6 +202,7 @@ function normalizeWorkflowError(data, fallbackMessage) {
 function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAccess, billingAccess }) {
   const queryClient = useQueryClient()
   const [connectingPlatform, setConnectingPlatform] = useState(null)
+  const [disconnectingPlatform, setDisconnectingPlatform] = useState(null)
   const [syncStatus, setSyncStatus] = useState(null)
   const autoSyncTimeoutRef = useRef(null)
 
@@ -385,6 +407,33 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
     }
   }
 
+  async function handleDisconnect(platform, label) {
+    if (!requireWriteAccess('disconnect social accounts')) return
+    const normalizedPlatform = normalizeConnectionPlatform(platform)
+    const confirmed = window.confirm(`Disconnect ${label} from this MAP portal? Publishing, metrics, and inbox messages for this platform will stop until it is connected again.`)
+    if (!confirmed) return
+
+    setDisconnectingPlatform(normalizedPlatform)
+    setSyncStatus(null)
+    clearAutoSyncTimer()
+
+    try {
+      await disconnectSocialConnection(normalizedPlatform)
+      await queryClient.invalidateQueries({ queryKey: ['social_connections', clientId] })
+      setSyncStatus({
+        type: 'success',
+        message: `${label} is disconnected from this portal. You can connect it again anytime.`,
+      })
+    } catch (error) {
+      setSyncStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : `Could not disconnect ${label}.`,
+      })
+    } finally {
+      setDisconnectingPlatform(null)
+    }
+  }
+
   useEffect(() => {
     if (!returnedPlatform || !clientId) return
     const normalizedPlatform = normalizeConnectionPlatform(returnedPlatform)
@@ -434,6 +483,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
           {PLATFORMS.map(({ id, label, Icon, accent, soft, connectionEnabled }) => {
             const conn = connectedMap[id]
             const isConnecting = connectingPlatform === id
+            const isDisconnecting = disconnectingPlatform === id
 
             return (
               <div
@@ -474,12 +524,24 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
                 {/* Connection actions */}
                 <div className="shrink-0 flex items-center gap-2">
                   {conn ? (
-                    <div
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
-                      style={{ background: 'rgba(107,193,142,0.10)', border: '1px solid rgba(107,193,142,0.22)', color: '#2f8f57' }}>
-                      <CheckCircle2 className="w-3 h-3" />
-                      Connected
-                    </div>
+                    <>
+                      <div
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+                        style={{ background: 'rgba(107,193,142,0.10)', border: '1px solid rgba(107,193,142,0.22)', color: '#2f8f57' }}>
+                        <CheckCircle2 className="w-3 h-3" />
+                        Connected
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDisconnect(id, label)}
+                        disabled={!!disconnectingPlatform || !!connectingPlatform || billingAccess?.readOnly}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{ background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.18)', color: '#a83f58' }}
+                      >
+                        {isDisconnecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Unlink2 className="w-3 h-3" />}
+                        {isDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+                      </button>
+                    </>
                   ) : (
                     <button
                       onClick={() => connectionEnabled && handleConnect(id)}
