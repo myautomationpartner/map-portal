@@ -121,6 +121,15 @@ const PLATFORM_FORMAT_RULES = {
   },
 }
 
+const PLATFORM_IMAGE_TARGETS = {
+  facebook: { label: 'Facebook feed', aspectRatio: '4:5', width: 1080, height: 1350, guidance: 'Tall feed crop for stronger mobile presence.' },
+  instagram: { label: 'Instagram feed', aspectRatio: '4:5', width: 1080, height: 1350, guidance: 'Feed-safe portrait crop.' },
+  google: { label: 'Google Business', aspectRatio: '1:1', width: 1080, height: 1080, guidance: 'Clean square image for local updates.' },
+  tiktok: { label: 'TikTok vertical', aspectRatio: '9:16', width: 1080, height: 1920, guidance: 'Vertical crop for TikTok/Reels-style viewing.' },
+  linkedin: { label: 'LinkedIn feed', aspectRatio: '1.91:1', width: 1200, height: 628, guidance: 'Wide professional feed crop.' },
+  twitter: { label: 'X / Twitter', aspectRatio: '16:9', width: 1200, height: 675, guidance: 'Wide timeline crop.' },
+}
+
 const ASSIST_ACTIONS = [
   { id: 'improve', label: 'Improve', description: 'Clean up the caption and make it stronger.' },
   { id: 'shorten', label: 'Shorten', description: 'Keep the idea, cut the extra words.' },
@@ -202,6 +211,12 @@ function base64ToImageFile(base64, mimeType = 'image/png', filename = 'generated
   return new File([bytes], filename, { type: mimeType })
 }
 
+function dataUrlToFile(dataUrl, filename = 'platform-image.png') {
+  const match = String(dataUrl || '').match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i)
+  if (!match) throw new Error('Could not prepare the platform image.')
+  return base64ToImageFile(match[2], match[1], filename)
+}
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -211,9 +226,10 @@ function readFileAsDataUrl(file) {
   })
 }
 
-function loadImageElement(source) {
+function loadImageElement(source, { crossOrigin = false } = {}) {
   return new Promise((resolve, reject) => {
     const image = new Image()
+    if (crossOrigin) image.crossOrigin = 'anonymous'
     image.onload = () => resolve(image)
     image.onerror = () => reject(new Error('Could not prepare the selected image for Image Assist.'))
     image.src = source
@@ -239,6 +255,38 @@ async function normalizeImageForAssist(source) {
   if (!context) throw new Error('Could not prepare the selected image for Image Assist.')
 
   context.drawImage(image, 0, 0, width, height)
+  return canvas.toDataURL('image/png')
+}
+
+function centerCropRect(sourceWidth, sourceHeight, targetWidth, targetHeight) {
+  const sourceRatio = sourceWidth / sourceHeight
+  const targetRatio = targetWidth / targetHeight
+
+  if (sourceRatio > targetRatio) {
+    const width = sourceHeight * targetRatio
+    return { sx: (sourceWidth - width) / 2, sy: 0, sw: width, sh: sourceHeight }
+  }
+
+  const height = sourceWidth / targetRatio
+  return { sx: 0, sy: (sourceHeight - height) / 2, sw: sourceWidth, sh: height }
+}
+
+async function cropImageForTarget(source, target) {
+  const image = await loadImageElement(source, { crossOrigin: /^https?:\/\//i.test(source) })
+  const sourceWidth = image.naturalWidth || image.width
+  const sourceHeight = image.naturalHeight || image.height
+  if (!sourceWidth || !sourceHeight) throw new Error('Could not read the selected image size.')
+
+  const { sx, sy, sw, sh } = centerCropRect(sourceWidth, sourceHeight, target.width, target.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = target.width
+  canvas.height = target.height
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Could not format this image for platforms.')
+
+  context.fillStyle = '#f4f1ec'
+  context.fillRect(0, 0, target.width, target.height)
+  context.drawImage(image, sx, sy, sw, sh, 0, 0, target.width, target.height)
   return canvas.toDataURL('image/png')
 }
 
@@ -656,14 +704,14 @@ function buildPlatformVariants(platformIds, caption, profile, existingVariants =
   }, {})
 }
 
-function PlatformPreview({ platformId, profile, content, imagePreview, dropboxAttachments, scheduledFor }) {
+function PlatformPreview({ platformId, profile, content, imagePreview, dropboxAttachments, scheduledFor, platformImage }) {
   const platform = PLATFORMS.find((item) => item.id === platformId)
   if (!platform) return null
 
   const businessName = profile?.clients?.business_name || 'Your Business'
   const previewTime = scheduledFor ? formatDetailedLocalDateTime(scheduledFor) : 'Ready to publish'
   const attachmentCount = dropboxAttachments.length
-  const visualPreview = imagePreview || getDropboxPreviewSource(dropboxAttachments)
+  const visualPreview = platformImage?.url || platformImage?.preview_url || imagePreview || getDropboxPreviewSource(dropboxAttachments)
 
   if (platformId === 'instagram') {
     return (
@@ -827,6 +875,7 @@ function ReviewModal({
   timingMode,
   scheduledFor,
   platformCaptions,
+  platformImageVariants,
 }) {
   if (!open) return null
 
@@ -957,6 +1006,7 @@ function ReviewModal({
                   imagePreview={imagePreview}
                   dropboxAttachments={dropboxAttachments}
                   scheduledFor={scheduledFor}
+                  platformImage={platformImageVariants?.[previewPlatform]}
                 />
               </>
             ) : (
@@ -1067,6 +1117,8 @@ export default function CreatePost() {
   const [assistSuggestions, setAssistSuggestions] = useState([])
   const [platformVariants, setPlatformVariants] = useState({})
   const [platformFormatStatus, setPlatformFormatStatus] = useState('')
+  const [imageFormatState, setImageFormatState] = useState('idle')
+  const [imageFormatStatus, setImageFormatStatus] = useState('')
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile'],
@@ -1208,6 +1260,13 @@ export default function CreatePost() {
       ]),
     )
   }, [activePlatforms, platformVariants, content, profile])
+  const platformImageVariants = useMemo(() => {
+    return Object.fromEntries(
+      activePlatforms
+        .map((platformId) => [platformId, platformVariants?.[platformId]?.image])
+        .filter(([, image]) => Boolean(image?.preview_url || image?.url)),
+    )
+  }, [activePlatforms, platformVariants])
 
   useEffect(() => {
     if (!activePlatforms.includes(previewPlatform)) {
@@ -1609,6 +1668,7 @@ export default function CreatePost() {
     setImageImproveState('idle')
     setImageImproveMode('')
     setImageImproveError('')
+    clearPlatformImageVariants('')
     setErrorMsg('')
   }
 
@@ -1635,13 +1695,14 @@ export default function CreatePost() {
       const file = base64ToImageFile(payload.image_base64, payload.mime_type || 'image/png')
       setImageFile(file)
       setImagePreview(`data:${payload.mime_type || 'image/png'};base64,${payload.image_base64}`)
-    setExistingMediaUrl('')
-    setPreviewedDropboxAsset(null)
-    setImageGenerateState('ready')
-    setImageImproveState('idle')
-    setImageImproveMode('')
-    setImageImproveError('')
-    setDraftStatus('Generated image added. You can replace it with an upload if you prefer.')
+      setExistingMediaUrl('')
+      setPreviewedDropboxAsset(null)
+      clearPlatformImageVariants('')
+      setImageGenerateState('ready')
+      setImageImproveState('idle')
+      setImageImproveMode('')
+      setImageImproveError('')
+      setDraftStatus('Generated image added. You can replace it with an upload if you prefer.')
     } catch (error) {
       console.error('[GeneratePublisherImage]', error)
       setImageGenerateError(error.message || 'Could not generate an image right now.')
@@ -1700,6 +1761,7 @@ export default function CreatePost() {
       setImagePreview(`data:${payload.mime_type || 'image/png'};base64,${payload.image_base64}`)
       setExistingMediaUrl('')
       setPreviewedDropboxAsset(null)
+      clearPlatformImageVariants('')
       setImageImproveState('ready')
       setDraftStatus('Improved image attached. Review it before approving the post.')
     } catch (error) {
@@ -1791,6 +1853,92 @@ export default function CreatePost() {
     return buildPlatformVariants(platformIds, content, profile, platformVariants)
   }
 
+  function clearPlatformImageVariants(message = '') {
+    setPlatformVariants((current) => {
+      const next = { ...current }
+      Object.keys(next).forEach((platformId) => {
+        if (next[platformId]?.image) {
+          next[platformId] = { ...next[platformId] }
+          delete next[platformId].image
+        }
+      })
+      return next
+    })
+    setImageFormatState('idle')
+    setImageFormatStatus(message)
+  }
+
+  async function getMasterImageSourceForFormatting() {
+    if (imageFile) {
+      const fileType = String(imageFile.type || '').toLowerCase()
+      const fileName = String(imageFile.name || '').toLowerCase()
+      if (fileType.includes('heic') || fileType.includes('heif') || /\.(heic|heif)$/.test(fileName)) {
+        throw new Error('iPhone HEIC photos need to be saved or exported as JPG before image formatting.')
+      }
+      if (!/^image\/(png|jpe?g|webp)$/i.test(fileType)) {
+        throw new Error('Image formatting supports JPG, PNG, and WebP images.')
+      }
+      return readFileAsDataUrl(imageFile)
+    }
+
+    if (typeof imagePreview === 'string' && imagePreview.startsWith('data:image/')) {
+      return imagePreview
+    }
+
+    const imageUrl = existingMediaUrl || previewedDropboxSource || dropboxPreviewSource || ''
+    if (imageUrl && /^https?:\/\//i.test(imageUrl)) return imageUrl
+
+    throw new Error('Add or select an image before formatting it for platforms.')
+  }
+
+  async function handleFormatPlatformImages() {
+    if (!requireWriteAccess('format images for platforms')) return
+    if (!activePlatforms.length) {
+      setImageFormatStatus('Select at least one platform before formatting images.')
+      return
+    }
+
+    setImageFormatState('formatting')
+    setImageFormatStatus('')
+    setErrorMsg('')
+
+    try {
+      const source = await getMasterImageSourceForFormatting()
+      const entries = await Promise.all(activePlatforms.map(async (platformId) => {
+        const target = PLATFORM_IMAGE_TARGETS[platformId]
+        if (!target) return null
+        const previewUrl = await cropImageForTarget(source, target)
+        return [platformId, {
+          preview_url: previewUrl,
+          aspect_ratio: target.aspectRatio,
+          width: target.width,
+          height: target.height,
+          label: target.label,
+          guidance: target.guidance,
+          source: 'smart_crop',
+          generated_at: new Date().toISOString(),
+        }]
+      }))
+
+      setPlatformVariants((current) => {
+        const withCaptions = buildPlatformVariants(activePlatforms, content, profile, current)
+        entries.filter(Boolean).forEach(([platformId, image]) => {
+          withCaptions[platformId] = {
+            ...(withCaptions[platformId] || {}),
+            image,
+          }
+        })
+        return withCaptions
+      })
+      setImageFormatState('ready')
+      setImageFormatStatus('Platform images formatted. Review each preview before approval.')
+    } catch (error) {
+      console.error('[FormatPlatformImages]', error)
+      setImageFormatState('error')
+      setImageFormatStatus(error.message || 'Could not format this image for platforms.')
+    }
+  }
+
   function removeImage() {
     setImageFile(null)
     setImagePreview(null)
@@ -1800,6 +1948,7 @@ export default function CreatePost() {
     setImageImproveState('idle')
     setImageImproveMode('')
     setImageImproveError('')
+    clearPlatformImageVariants('')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -1814,6 +1963,7 @@ export default function CreatePost() {
           const incoming = files.filter((file) => !existingLinks.has(file.link))
           return [...previous, ...incoming]
         })
+        clearPlatformImageVariants('')
       }
     } catch (error) {
       console.error('[Dropbox]', error)
@@ -1832,6 +1982,7 @@ export default function CreatePost() {
     if (!file?.link) return
 
     setPreviewedDropboxAsset(file)
+    clearPlatformImageVariants('')
     setDropboxAttachments((previous) => {
       if (previous.some((existing) => existing.link === file.link)) return previous
       return [...previous, file]
@@ -1997,7 +2148,7 @@ export default function CreatePost() {
 
   async function uploadToR2(file) {
     const extension = file.name.split('.').pop()
-    const filename = `${clientId}/${Date.now()}.${extension}`
+    const filename = `${clientId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`
     const formData = new FormData()
     formData.append('file', file, filename)
     formData.append('filename', filename)
@@ -2011,6 +2162,31 @@ export default function CreatePost() {
     if (!response.ok) throw new Error('Image upload failed.')
     const { publicUrl } = await response.json()
     return publicUrl
+  }
+
+  async function uploadPlatformImageVariants(variants) {
+    const nextVariants = { ...variants }
+    const entries = Object.entries(nextVariants).filter(([, variant]) => variant?.image?.preview_url?.startsWith('data:image/'))
+
+    for (const [platformId, variant] of entries) {
+      const target = PLATFORM_IMAGE_TARGETS[platformId]
+      const file = dataUrlToFile(
+        variant.image.preview_url,
+        `${platformId}-${target?.aspectRatio || 'social'}.png`.replace(/[^a-z0-9.-]+/gi, '-'),
+      )
+      const url = await uploadToR2(file)
+      nextVariants[platformId] = {
+        ...variant,
+        image: {
+          ...variant.image,
+          url,
+          preview_url: undefined,
+          uploaded_at: new Date().toISOString(),
+        },
+      }
+    }
+
+    return nextVariants
   }
 
   function validatePost() {
@@ -2103,7 +2279,12 @@ export default function CreatePost() {
       const scheduledForIso = timingMode === 'now' ? null : localDateTimeToIso(scheduledFor)
       const targetStatus = timingMode === 'now' ? 'published' : 'scheduled'
       const targetPlatforms = connectedActivePlatforms
-      const targetPlatformVariants = getResolvedPlatformVariants(targetPlatforms)
+      let targetPlatformVariants = getResolvedPlatformVariants(targetPlatforms)
+      if (Object.values(targetPlatformVariants).some((variant) => variant?.image?.preview_url?.startsWith('data:image/'))) {
+        setSubmitState('uploading')
+        targetPlatformVariants = await uploadPlatformImageVariants(targetPlatformVariants)
+        setPlatformVariants((current) => ({ ...current, ...targetPlatformVariants }))
+      }
       let post = null
       const editCandidateId = editingScheduledPostId || editTargetPostId || ''
       let existingEditingPost = editingScheduledPost || scheduledPostsDetailed.find((item) => item.id === editCandidateId) || null
@@ -2160,6 +2341,11 @@ export default function CreatePost() {
           zernioPostId: resolvedEditingRef || null,
           content: content.trim(),
           platformVariants: targetPlatformVariants,
+          mediaVariants: Object.fromEntries(
+            targetPlatforms
+              .map((platformId) => [platformId, targetPlatformVariants?.[platformId]?.image?.url])
+              .filter(([, url]) => Boolean(url)),
+          ),
           mediaUrl: effectiveMediaUrl,
           dropboxLinks: dropboxAttachments.map(({ name, link, size }) => ({ name, link, size })),
           platforms: targetPlatforms,
@@ -2781,6 +2967,75 @@ export default function CreatePost() {
                 )}
               </div>
 
+              <div className="image-assist-box">
+                <div className="partner-assist-head">
+                  <div>
+                    <p>Platform Images</p>
+                    <h2>Format image for platforms</h2>
+                  </div>
+                  <span>{activePlatforms.length || 0} channels</span>
+                </div>
+                <div className="partner-assist-actions">
+                  <button
+                    type="button"
+                    onClick={handleFormatPlatformImages}
+                    disabled={!canImproveImage || imageFormatState === 'formatting' || imageGenerateState === 'generating'}
+                    title="Create platform-specific crops from the selected image."
+                  >
+                    {imageFormatState === 'formatting' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                    {imageFormatState === 'formatting' ? 'Formatting...' : 'Format all selected'}
+                  </button>
+                  {Object.keys(platformImageVariants).length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => clearPlatformImageVariants('Platform image crops cleared.')}
+                      disabled={imageFormatState === 'formatting'}
+                      title="Clear platform-specific image crops."
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Clear crops
+                    </button>
+                  )}
+                </div>
+                {imageFormatStatus ? (
+                  <p className={imageFormatState === 'error' ? 'partner-assist-error' : 'partner-assist-note'}>{imageFormatStatus}</p>
+                ) : canImproveImage ? (
+                  <p className="partner-assist-note">Creates Instagram, TikTok, Facebook, LinkedIn, X/Twitter, and Google-ready crops from the selected image.</p>
+                ) : (
+                  <p className="partner-assist-note">Upload, generate, or select an image before formatting platform crops.</p>
+                )}
+                {Object.keys(platformImageVariants).length > 0 && (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {activePlatforms.map((platformId) => {
+                      const platform = PLATFORMS.find((item) => item.id === platformId)
+                      const image = platformImageVariants[platformId]
+                      const target = PLATFORM_IMAGE_TARGETS[platformId]
+                      if (!platform || !image) return null
+
+                      return (
+                        <button
+                          key={platformId}
+                          type="button"
+                          onClick={() => setPreviewPlatform(platformId)}
+                          className="flex items-center gap-3 rounded-2xl border p-2 text-left"
+                          style={{ background: 'rgba(255,255,255,0.72)', borderColor: 'var(--portal-border)' }}
+                        >
+                          <img
+                            src={image.preview_url || image.url}
+                            alt={`${platform.label} crop`}
+                            className="h-14 w-14 rounded-xl object-cover"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-xs font-semibold" style={{ color: 'var(--portal-text)' }}>{platform.label}</span>
+                            <span className="block text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>{target?.aspectRatio || image.aspect_ratio}</span>
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div className="mt-4 rounded-[24px] px-4 py-4" style={{ background: 'rgba(255,255,255,0.78)', border: '1px solid var(--portal-border)' }}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -3010,6 +3265,7 @@ export default function CreatePost() {
                     imagePreview={imagePreview || existingMediaUrl}
                     dropboxAttachments={dropboxAttachments}
                     scheduledFor={scheduledFor}
+                    platformImage={platformImageVariants[platformId]}
                   />
                 ))}
               </div>
@@ -3296,6 +3552,7 @@ export default function CreatePost() {
         timingMode={timingMode}
         scheduledFor={scheduledFor}
         platformCaptions={platformCaptions}
+        platformImageVariants={platformImageVariants}
       />
     </>
   )
