@@ -2589,30 +2589,34 @@
 }
 
 .portal-ai-mini-action {
-  border: 1px solid rgba(132, 72, 255, 0.18) !important;
-  background: linear-gradient(135deg, rgba(132, 72, 255, 0.12), rgba(244, 198, 255, 0.16)) !important;
-  color: #7846c7 !important;
+  border: 1px solid rgba(132, 72, 255, 0.30) !important;
+  background: linear-gradient(135deg, rgba(132, 72, 255, 0.18), rgba(244, 198, 255, 0.28)) !important;
+  color: #5f30b2 !important;
   font-weight: 950 !important;
-  gap: 0.32rem !important;
-  padding: 0.43rem 0.68rem !important;
-  font-size: 0.68rem !important;
-  box-shadow: 0 8px 18px rgba(132, 72, 255, 0.10), 0 0 0 1px rgba(255,255,255,0.52) inset;
+  gap: 0.38rem !important;
+  padding: 0.54rem 0.78rem !important;
+  font-size: 0.76rem !important;
+  letter-spacing: -0.005em;
+  box-shadow: 0 10px 22px rgba(132, 72, 255, 0.14), 0 0 0 1px rgba(255,255,255,0.58) inset;
 }
 
 .portal-ai-mini-action svg {
-  width: 0.82rem;
-  height: 0.82rem;
+  width: 0.9rem;
+  height: 0.9rem;
+  stroke-width: 2.5;
 }
 
 .portal-ai-mini-action:hover:not(:disabled),
 .portal-ai-mini-action[data-active="true"] {
-  border-color: rgba(132, 72, 255, 0.28) !important;
-  box-shadow: 0 12px 26px rgba(132, 72, 255, 0.16), 0 0 0 1px rgba(255,255,255,0.62) inset;
+  border-color: rgba(132, 72, 255, 0.42) !important;
+  background: linear-gradient(135deg, rgba(132, 72, 255, 0.24), rgba(244, 198, 255, 0.34)) !important;
+  color: #4f239f !important;
+  box-shadow: 0 14px 30px rgba(132, 72, 255, 0.22), 0 0 0 1px rgba(255,255,255,0.68) inset;
 }
 
 .portal-ai-mini-action:disabled {
-  color: #9c7fc5 !important;
-  opacity: 0.82;
+  color: #7c56bc !important;
+  opacity: 0.74;
 }
 
 .portal-ai-icon {
