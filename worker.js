@@ -1141,6 +1141,26 @@ function isContentPartnerConversation(conversation) {
     || senderIdentifier.startsWith('map-content-partner:')
 }
 
+function isContentPartnerAutomationMessage(message) {
+  const attrs = message?.content_attributes || {}
+  const sourceId = firstString(message?.source_id)
+
+  return attrs?.map_content_partner_reply === true
+    || attrs?.map_content_partner_system === true
+    || sourceId.startsWith('map-content-partner:reply:')
+    || sourceId.startsWith('map-content-partner:greeting:')
+}
+
+function shouldProcessContentPartnerWebhookMessage(message, conversation) {
+  if (!isContentPartnerConversation(conversation)) return false
+  if (message?.private) return false
+  if (isContentPartnerAutomationMessage(message)) return false
+
+  const hasContent = Boolean(firstString(message?.content))
+  const hasAttachments = normalizeChatwootMessageAttachments({}, message).length > 0
+  return hasContent || hasAttachments
+}
+
 async function ensureChatwootContactInbox(env, contact, inboxId, sourceId) {
   if (!contact?.id) return contact
   if (getContactInboxSourceId(contact, inboxId)) return contact
@@ -1340,6 +1360,7 @@ async function contentPartnerReplyExists(env, conversationId, triggerMessageId) 
   return messages.some((message) => (
     String(message?.content_attributes?.map_content_partner_trigger_message_id || '') === String(triggerMessageId)
     || String(message?.source_id || '') === `map-content-partner:${triggerMessageId}`
+    || String(message?.source_id || '') === `map-content-partner:reply:${triggerMessageId}`
   ))
 }
 
@@ -1682,7 +1703,7 @@ async function sendContentPartnerChatwootReply(env, conversationId, triggerMessa
       message_type: 'incoming',
       private: false,
       content_type: 'text',
-      source_id: `map-content-partner:${triggerMessageId}`,
+      source_id: `map-content-partner:reply:${triggerMessageId}`,
       content_attributes: contentAttributes,
     }),
   })
@@ -2094,9 +2115,9 @@ async function handleChatwootMessageWebhook(request, env) {
 
   const isOutgoing = String(message.message_type || '').toLowerCase() === 'outgoing' || Number(message.message_type) === 1
   const alreadyBridged = Boolean(message.content_attributes?.zernio_bridge_sent)
-  const isContentPartner = isContentPartnerConversation(conversation)
+  const isContentPartnerMessage = shouldProcessContentPartnerWebhookMessage(message, conversation)
 
-  if (isOutgoing && !message.private && isContentPartner) {
+  if (isContentPartnerMessage) {
     try {
       const envConfig = getPortalAuthConfig(env)
       const result = await processContentPartnerMessage(env, envConfig, payload, message, conversation)
