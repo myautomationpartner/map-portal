@@ -1450,6 +1450,14 @@ export default function CreatePost() {
     }, 0)
   }, [])
 
+  const getDraftLoadedMessage = useCallback((draft) => {
+    const source = String(draft?.source_workflow || '').trim()
+    if (source === 'chatwoot_content_partner') return 'Content Partner draft loaded.'
+    if (source === 'campaign_partner') return 'Campaign Partner draft loaded.'
+    if (source === 'opportunity_radar') return 'Opportunity Radar draft loaded.'
+    return 'Draft loaded.'
+  }, [])
+
   const recordPlannerFeedbackSafely = useCallback(async (event, options = {}) => {
     if (!clientId || !event?.postType || !event?.eventType) return
 
@@ -1676,8 +1684,8 @@ export default function CreatePost() {
     if (!draft || !slot) return
 
     applyDraftToComposer(draft, slot)
-    setDraftStatus('Opportunity Radar draft loaded.')
-  }, [draftTargetId, drafts, draftLoading, activeDraftId, applyDraftToComposer])
+    setDraftStatus(getDraftLoadedMessage(draft))
+  }, [draftTargetId, drafts, draftLoading, activeDraftId, applyDraftToComposer, getDraftLoadedMessage])
 
   useEffect(() => {
     if (!editTargetPostId || scheduledPostsDetailed.length === 0) return

@@ -292,7 +292,7 @@ async function authorizePortalUser(request, env) {
     return { error: json({ error: 'This portal session is not authorized for this tenant.' }, { status: 403 }) }
   }
 
-  return { user: portalUser, envConfig }
+  return { user: portalUser, envConfig, bearerToken }
 }
 
 function getChatwootConfig(env) {
@@ -361,12 +361,13 @@ async function chatwootFetch(env, path, init = {}) {
   return payload
 }
 
-async function callSupabaseFunction(envConfig, functionName, body) {
+async function callSupabaseFunction(envConfig, functionName, body, gatewayToken = '') {
   const response = await fetch(`${envConfig.url}/functions/v1/${functionName}`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${envConfig.serviceRoleKey}`,
+      Authorization: `Bearer ${gatewayToken || envConfig.serviceRoleKey}`,
       apikey: envConfig.serviceRoleKey,
+      'x-map-service-role': envConfig.serviceRoleKey,
       'content-type': 'application/json',
     },
     body: JSON.stringify(body || {}),
@@ -994,6 +995,7 @@ async function handleChatwootProxy(request, env) {
 
       const conversation = await chatwootFetch(env, `/conversations/${conversationId}`)
       const shouldBridgeToZernio = isZernioBackedConversation(conversation) && !body.private
+      const shouldRunContentPartner = isContentPartnerConversation(conversation) && !body.private
       let zernioResult = null
 
       if (shouldBridgeToZernio) {
@@ -1014,6 +1016,39 @@ async function handleChatwootProxy(request, env) {
           } : {},
         }),
       })
+      if (shouldRunContentPartner) {
+        const createdMessage = extractChatwootRecord(payload) || {}
+        const contentPartnerMessage = {
+          ...createdMessage,
+          id: firstString(createdMessage.id, createdMessage.source_id),
+          conversation_id: firstString(createdMessage.conversation_id, conversationId),
+          inbox_id: createdMessage.inbox_id || conversation?.inbox_id || null,
+          content: firstString(createdMessage.content, content),
+          message_type: 'outgoing',
+          private: false,
+          sender: createdMessage.sender || {
+            id: auth.user?.id || null,
+            name: auth.user?.email || 'Portal user',
+          },
+        }
+        const contentPartnerResult = await processContentPartnerMessage(
+          env,
+          auth.envConfig,
+          { message: contentPartnerMessage, conversation },
+          contentPartnerMessage,
+          conversation,
+          auth.bearerToken,
+        )
+        const responsePayload = payload && typeof payload === 'object' && !Array.isArray(payload)
+          ? { ...payload }
+          : { payload }
+        responsePayload.contentPartner = {
+          deduped: Boolean(contentPartnerResult?.deduped),
+          requestId: contentPartnerResult?.requestId || null,
+          draftId: contentPartnerResult?.draftId || null,
+        }
+        return json(responsePayload)
+      }
       return json(payload)
     }
 
@@ -1214,6 +1249,13 @@ async function contentPartnerReplyExists(env, conversationId, triggerMessageId) 
   ))
 }
 
+function extractChatwootRecord(payload) {
+  if (Array.isArray(payload?.payload)) return payload.payload[0] || null
+  if (payload?.payload && typeof payload.payload === 'object') return payload.payload
+  if (payload?.message && typeof payload.message === 'object') return payload.message
+  return payload && typeof payload === 'object' ? payload : null
+}
+
 function getPortalReviewUrl(env, draftId) {
   const canonicalHost = getCanonicalPortalHost(env)
   const path = draftId ? `/post?draftId=${encodeURIComponent(draftId)}` : '/post'
@@ -1227,7 +1269,7 @@ function normalizeChatwootMessageAttachments(payload, message) {
   return []
 }
 
-async function createContentPartnerDraft(env, envConfig, payload, message, conversation) {
+async function createContentPartnerDraft(env, envConfig, payload, message, conversation, gatewayToken = '') {
   const sender = message.sender || payload.sender || {}
   return callSupabaseFunction(envConfig, 'portal-content-partner', {
     clientId: envConfig.clientId,
@@ -1239,7 +1281,7 @@ async function createContentPartnerDraft(env, envConfig, payload, message, conve
     senderName: firstString(sender.name, sender.available_name, message.sender?.name),
     messageContent: firstString(message.content),
     attachments: normalizeChatwootMessageAttachments(payload, message),
-  })
+  }, gatewayToken)
 }
 
 async function sendContentPartnerChatwootReply(env, conversationId, triggerMessageId, result) {
@@ -1265,6 +1307,25 @@ async function sendContentPartnerChatwootReply(env, conversationId, triggerMessa
       },
     }),
   })
+}
+
+async function processContentPartnerMessage(env, envConfig, payload, message, conversation, gatewayToken = '') {
+  const triggerMessageId = firstString(message.id, message.source_id)
+  const conversationId = firstString(conversation.id, message.conversation_id)
+  if (!triggerMessageId || !conversationId) {
+    const error = new Error('Missing Chatwoot content partner message or conversation id.')
+    error.status = 400
+    throw error
+  }
+
+  const alreadyReplied = await contentPartnerReplyExists(env, conversationId, triggerMessageId)
+  if (alreadyReplied) {
+    return { deduped: true, reason: 'Content Partner reply already exists.' }
+  }
+
+  const result = await createContentPartnerDraft(env, envConfig, payload, message, conversation, gatewayToken)
+  await sendContentPartnerChatwootReply(env, conversationId, triggerMessageId, result)
+  return result
 }
 
 function normalizeZernioEventName(request, payload) {
@@ -1657,25 +1718,15 @@ async function handleChatwootMessageWebhook(request, env) {
   const isContentPartner = isContentPartnerConversation(conversation)
 
   if (isOutgoing && !message.private && isContentPartner) {
-    const triggerMessageId = firstString(message.id, message.source_id)
-    const conversationId = firstString(conversation.id, message.conversation_id)
-    if (!triggerMessageId || !conversationId) {
-      return json({ error: 'Missing Chatwoot content partner message or conversation id.' }, { status: 400 })
-    }
-
     try {
-      const alreadyReplied = await contentPartnerReplyExists(env, conversationId, triggerMessageId)
-      if (alreadyReplied) {
-        return json({ success: true, deduped: true, reason: 'Content Partner reply already exists.' })
-      }
-
       const envConfig = getPortalAuthConfig(env)
-      const result = await createContentPartnerDraft(env, envConfig, payload, message, conversation)
-      await sendContentPartnerChatwootReply(env, conversationId, triggerMessageId, result)
+      const result = await processContentPartnerMessage(env, envConfig, payload, message, conversation)
       return json({
         success: true,
         event: eventName || 'message_created',
         contentPartner: true,
+        deduped: Boolean(result.deduped),
+        reason: result.reason || null,
         requestId: result.requestId || null,
         draftId: result.draftId || null,
       })
