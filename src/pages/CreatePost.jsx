@@ -2914,7 +2914,7 @@ export default function CreatePost() {
               <div className="mt-3 overflow-hidden rounded-[24px]" style={{ border: '1px solid var(--portal-border)', background: 'rgba(255,255,255,0.78)' }}>
                 {mediaPreviewSource ? (
                   <div className="create-post-media-stage">
-                    <img src={mediaPreviewSource} alt={activeCreativeItem?.name || 'Upload preview'} className="w-full object-cover" />
+                    <img src={mediaPreviewSource} alt={activeCreativeItem?.name || 'Upload preview'} className="w-full object-contain" />
                     {creativeItems.length > 1 && (
                       <>
                         <button

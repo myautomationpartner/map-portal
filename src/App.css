@@ -2606,16 +2606,21 @@
 
 .create-post-media-stage {
   position: relative;
+  display: grid;
+  min-height: clamp(360px, 38vh, 560px);
+  place-items: center;
   overflow: hidden;
-  background: rgba(26, 24, 20, 0.035);
+  background:
+    linear-gradient(135deg, rgba(26, 24, 20, 0.045), rgba(255, 255, 255, 0.58)),
+    rgba(245, 240, 235, 0.78);
 }
 
 .create-post-media-stage > img {
   display: block;
   width: 100%;
-  min-height: clamp(360px, 38vh, 560px);
-  max-height: clamp(360px, 38vh, 560px);
-  object-fit: cover;
+  height: clamp(360px, 38vh, 560px);
+  object-fit: contain;
+  object-position: center;
 }
 
 .create-post-media-arrow {
