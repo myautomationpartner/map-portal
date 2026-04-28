@@ -1960,20 +1960,29 @@ export default function CreatePost() {
     throw new Error('Add or select an image before formatting it for platforms.')
   }
 
-  async function handleFormatPlatformImages() {
+  async function handleFormatPlatformImages(targetPlatformIds = activePlatforms) {
     if (!requireWriteAccess('format images for platforms')) return
-    if (!activePlatforms.length) {
+    const requestedPlatforms = Array.isArray(targetPlatformIds)
+      ? targetPlatformIds.filter((platformId) => activePlatforms.includes(platformId))
+      : activePlatforms
+    const platformsToFormat = [...new Set(requestedPlatforms)]
+
+    if (!platformsToFormat.length) {
       setImageFormatStatus('Select at least one platform before formatting images.')
       return
     }
 
+    const platformLabel = platformsToFormat
+      .map((platformId) => PLATFORM_CATALOG[platformId]?.label || platformId)
+      .join(', ')
+
     setImageFormatState('formatting')
-    setImageFormatStatus('')
+    setImageFormatStatus(`Formatting ${platformLabel} crop${platformsToFormat.length === 1 ? '' : 's'}...`)
     setErrorMsg('')
 
     try {
       const source = await getMasterImageSourceForFormatting()
-      const entries = await Promise.all(activePlatforms.map(async (platformId) => {
+      const entries = await Promise.all(platformsToFormat.map(async (platformId) => {
         const target = PLATFORM_IMAGE_TARGETS[platformId]
         if (!target) return null
         const previewUrl = await cropImageForTarget(source, target)
@@ -2000,7 +2009,7 @@ export default function CreatePost() {
         return withCaptions
       })
       setImageFormatState('ready')
-      setImageFormatStatus('Platform images formatted. Review each preview before approval.')
+      setImageFormatStatus(`${platformLabel} crop${platformsToFormat.length === 1 ? '' : 's'} formatted. Review each preview before approval.`)
     } catch (error) {
       console.error('[FormatPlatformImages]', error)
       setImageFormatState('error')
@@ -3325,26 +3334,44 @@ export default function CreatePost() {
                     <div className="create-post-preview-tools">
                       <button
                         type="button"
-                        onClick={() => handleImproveImage('cleanup')}
+                        onClick={() => {
+                          setPreviewPlatform(id)
+                          handleImproveImage('cleanup')
+                        }}
                         disabled={!active || !canImproveImage || imageImproveState === 'improving' || imageGenerateState === 'generating'}
                         className="portal-ai-mini-action"
                       >
-                        <Sparkles className="h-3.5 w-3.5" />
-                        Improve image
+                        {imageImproveState === 'improving' && imageImproveMode === 'cleanup'
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <Sparkles className="h-3.5 w-3.5" />}
+                        {imageImproveState === 'improving' && imageImproveMode === 'cleanup' ? 'Improving...' : 'Improve image'}
                       </button>
                       <button
                         type="button"
                         onClick={() => {
                           setPreviewPlatform(id)
-                          handleFormatPlatformImages()
+                          handleFormatPlatformImages([id])
                         }}
                         disabled={!active || !canImproveImage || imageFormatState === 'formatting' || imageGenerateState === 'generating'}
                         className="portal-ai-mini-action"
                       >
-                        <Sparkles className="h-3.5 w-3.5" />
-                        Crop setting
+                        {imageFormatState === 'formatting' && previewPlatform === id
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <Sparkles className="h-3.5 w-3.5" />}
+                        {imageFormatState === 'formatting' && previewPlatform === id ? 'Cropping...' : 'Crop setting'}
                       </button>
                     </div>
+                    {active && (
+                      <p className="create-post-preview-tool-note">
+                        {imageImproveState === 'improving' && imageImproveMode === 'cleanup' && previewPlatform === id
+                          ? 'Partner is improving the selected image.'
+                          : imageFormatState === 'formatting' && previewPlatform === id
+                            ? `Creating a ${label} crop.`
+                            : platformImageVariants[id]
+                              ? `${label} crop applied.`
+                              : 'Actions use the selected main creative.'}
+                      </p>
+                    )}
                   </article>
                 )
               })}

@@ -2917,6 +2917,15 @@
   color: #5f30b2 !important;
 }
 
+.create-post-preview-tool-note {
+  margin: -0.1rem 0 0;
+  color: var(--portal-text-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.3;
+  text-align: center;
+}
+
 .platform-preview-card {
   --platform-accent: var(--portal-primary);
   --platform-soft: rgba(201, 168, 76, 0.12);
