@@ -19,6 +19,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Sparkles,
   Smartphone,
   StickyNote,
   X,
@@ -103,6 +104,13 @@ function fetchWebsiteChatSettings() {
 
 function sendMobileSetupEmail() {
   return websiteChatPortalFetch('/api/inbox/mobile-setup-email', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+function openContentPartnerConversation() {
+  return websiteChatPortalFetch('/api/content-partner/conversation', {
     method: 'POST',
     body: JSON.stringify({}),
   })
@@ -668,6 +676,21 @@ export default function Inbox() {
     },
   })
 
+  const contentPartnerMutation = useMutation({
+    mutationFn: openContentPartnerConversation,
+    onSuccess: async (payload) => {
+      setStatus('open')
+      setQuery('')
+      setInboxId('')
+      setSelectedId(payload.conversationId || null)
+      setMobileThreadOpen(true)
+      await queryClient.invalidateQueries({ queryKey: ['chatwoot-conversations'] })
+      if (payload.conversationId) {
+        await queryClient.invalidateQueries({ queryKey: ['chatwoot-messages', payload.conversationId] })
+      }
+    },
+  })
+
   const messages = messagesQuery.data || selectedConversation?.messages || []
   const meta = conversationsQuery.data?.meta || {}
   const totalCount = meta.all_count ?? conversations.length
@@ -712,6 +735,21 @@ export default function Inbox() {
             </div>
             <button
               type="button"
+              onClick={() => contentPartnerMutation.mutate()}
+              disabled={contentPartnerMutation.isPending}
+              className="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-black shadow-sm transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+              style={{
+                borderColor: 'rgba(145,86,255,0.35)',
+                background: 'linear-gradient(135deg, #7c3cff, #d977ff)',
+                color: '#fff',
+                boxShadow: '0 12px 28px rgba(124,60,255,0.22)',
+              }}
+            >
+              {contentPartnerMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              Content Partner
+            </button>
+            <button
+              type="button"
               onClick={() => setSetupOpen(true)}
               className="portal-button-primary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold"
             >
@@ -738,7 +776,7 @@ export default function Inbox() {
         />
 
         <MobileAppBanner />
-        <ErrorBanner message={conversationsQuery.error?.message || inboxesQuery.error?.message || messagesQuery.error?.message} />
+        <ErrorBanner message={contentPartnerMutation.error?.message || conversationsQuery.error?.message || inboxesQuery.error?.message || messagesQuery.error?.message} />
 
         <div className="grid min-h-[calc(100vh-150px)] lg:grid-cols-[324px_minmax(0,1fr)_300px]">
           <aside className={`${mobileThreadOpen ? 'hidden lg:flex' : 'flex'} min-h-[calc(100vh-150px)] flex-col border-r bg-white`} style={{ borderColor: 'var(--portal-border)' }}>

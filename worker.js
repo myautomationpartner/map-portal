@@ -5,6 +5,7 @@ const DEFAULT_CHATWOOT_BASE_URL = 'https://chatwoot.myautomationpartner.com'
 const DEFAULT_N8N_BASE_URL = 'https://n8n.myautomationpartner.com'
 const DEFAULT_ZERNIO_API_BASE_URL = 'https://zernio.com/api/v1'
 const DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME = 'Social Inbox'
+const CONTENT_PARTNER_CONTACT_NAME = 'MAP Content Partner'
 const TECHNICAL_HOST_SUFFIXES = ['.workers.dev', '.pages.dev']
 const SUPPORTED_MEDIA_EXTENSIONS = new Set([
   'jpg',
@@ -352,6 +353,28 @@ async function chatwootFetch(env, path, init = {}) {
   const payload = await readChatwootResponse(response)
   if (!response.ok) {
     const error = new Error(sanitizeChatwootError(payload?.message || payload?.error || `Chatwoot request failed (${response.status}).`))
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}
+
+async function callSupabaseFunction(envConfig, functionName, body) {
+  const response = await fetch(`${envConfig.url}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${envConfig.serviceRoleKey}`,
+      apikey: envConfig.serviceRoleKey,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body || {}),
+  })
+
+  const payload = await readChatwootResponse(response)
+  if (!response.ok || payload?.success === false) {
+    const error = new Error(payload?.error || payload?.message || `${functionName} failed (${response.status}).`)
     error.status = response.status
     error.payload = payload
     throw error
@@ -874,6 +897,41 @@ async function handleChatwootMobileSetupEmail(request, env) {
   })
 }
 
+async function handleContentPartnerConversation(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: { allow: 'POST, OPTIONS' },
+    })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  try {
+    const { conversation, contact, inbox } = await findOrCreateChatwootContentPartnerConversation(env, auth.envConfig)
+    const conversationId = conversation?.id || conversation?.payload?.id
+    if (!conversationId) throw new Error('MAP Content Partner conversation could not be opened.')
+
+    return json({
+      success: true,
+      conversationId,
+      inboxId: inbox?.id || null,
+      contactId: contact?.id || null,
+      title: CONTENT_PARTNER_CONTACT_NAME,
+      reviewPath: '/post',
+    })
+  } catch (error) {
+    return json({
+      error: sanitizeChatwootError(error?.message || 'Could not open MAP Content Partner.'),
+    }, { status: error?.status || 502 })
+  }
+}
+
 async function handleChatwootProxy(request, env) {
   if (request.method === 'OPTIONS') {
     return new Response(null, {
@@ -1014,6 +1072,199 @@ function getConversationCustomAttributes(conversation) {
 function isZernioBackedConversation(conversation) {
   const attrs = getConversationCustomAttributes(conversation)
   return Boolean(attrs?.zernio_conversation_id && attrs?.zernio_account_id)
+}
+
+function buildContentPartnerIdentifier(clientId) {
+  return `map-content-partner:${clientId}`.slice(0, 255)
+}
+
+function isContentPartnerConversation(conversation) {
+  const attrs = getConversationCustomAttributes(conversation)
+  const additional = conversation?.additional_attributes || conversation?.payload?.additional_attributes || {}
+  const senderIdentifier = firstString(
+    conversation?.meta?.sender?.identifier,
+    conversation?.contact?.identifier,
+    conversation?.contact_inbox?.source_id,
+  )
+  return attrs?.source === 'map_content_partner'
+    || attrs?.map_content_partner === true
+    || additional?.source === 'map_content_partner'
+    || senderIdentifier.startsWith('map-content-partner:')
+}
+
+async function ensureChatwootContactInbox(env, contact, inboxId, sourceId) {
+  if (!contact?.id) return contact
+  if (getContactInboxSourceId(contact, inboxId)) return contact
+
+  try {
+    await chatwootFetch(env, `/contacts/${contact.id}/contact_inboxes`, {
+      method: 'POST',
+      body: JSON.stringify({
+        inbox_id: inboxId,
+        source_id: sourceId,
+      }),
+    })
+  } catch (error) {
+    if (error?.status !== 422 && error?.status !== 409) throw error
+  }
+
+  return findChatwootContactByIdentifier(env, sourceId)
+}
+
+async function findOrCreateChatwootContentPartnerContact(env, inboxId, envConfig) {
+  const identifier = buildContentPartnerIdentifier(envConfig.clientId)
+  const existing = await findChatwootContactByIdentifier(env, identifier)
+  if (existing?.id) return ensureChatwootContactInbox(env, existing, inboxId, identifier)
+
+  const created = await chatwootFetch(env, '/contacts', {
+    method: 'POST',
+    body: JSON.stringify({
+      inbox_id: inboxId,
+      name: CONTENT_PARTNER_CONTACT_NAME,
+      identifier,
+      additional_attributes: {
+        source: 'map_content_partner',
+      },
+      custom_attributes: {
+        source: 'map_content_partner',
+        map_content_partner: true,
+        portal_client_id: envConfig.clientId,
+      },
+    }),
+  })
+
+  const contact = Array.isArray(created?.payload) ? created.payload[0] : created?.payload || created
+  if (contact?.id) return ensureChatwootContactInbox(env, contact, inboxId, identifier)
+
+  return findChatwootContactByIdentifier(env, identifier)
+}
+
+async function findChatwootContentPartnerConversation(env, contactId, inboxId, envConfig) {
+  const payload = await chatwootFetch(env, `/contacts/${contactId}/conversations`)
+  const conversations = Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
+  return conversations.find((conversation) => (
+    Number(conversation?.inbox_id) === Number(inboxId)
+    && isContentPartnerConversation(conversation)
+    && String(getConversationCustomAttributes(conversation)?.portal_client_id || '') === String(envConfig.clientId)
+    && String(conversation?.status || '').toLowerCase() !== 'resolved'
+  )) || conversations.find((conversation) => (
+    Number(conversation?.inbox_id) === Number(inboxId)
+    && isContentPartnerConversation(conversation)
+  )) || null
+}
+
+async function createChatwootContentPartnerConversation(env, contact, inboxId, envConfig) {
+  const sourceId = getContactInboxSourceId(contact, inboxId) || buildContentPartnerIdentifier(envConfig.clientId)
+  const conversation = await chatwootFetch(env, '/conversations', {
+    method: 'POST',
+    body: JSON.stringify({
+      source_id: sourceId,
+      inbox_id: inboxId,
+      contact_id: contact.id,
+      status: 'open',
+      custom_attributes: {
+        source: 'map_content_partner',
+        map_content_partner: true,
+        portal_client_id: envConfig.clientId,
+      },
+      additional_attributes: {
+        source: 'map_content_partner',
+      },
+    }),
+  })
+
+  const conversationId = conversation?.id || conversation?.payload?.id
+  if (conversationId) {
+    await chatwootFetch(env, `/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content: 'Send me a rough note, photos, or both. I will turn it into a Publisher draft for you to review before anything posts.',
+        message_type: 'incoming',
+        private: false,
+        content_type: 'text',
+        source_id: `map-content-partner:greeting:${envConfig.clientId}`,
+        content_attributes: {
+          map_content_partner_system: true,
+        },
+      }),
+    })
+  }
+
+  return conversation
+}
+
+async function findOrCreateChatwootContentPartnerConversation(env, envConfig) {
+  const inbox = await resolveChatwootSocialInbox(env)
+  const contact = await findOrCreateChatwootContentPartnerContact(env, inbox.id, envConfig)
+  if (!contact?.id) throw new Error('Could not create MAP Content Partner contact.')
+
+  const existing = await findChatwootContentPartnerConversation(env, contact.id, inbox.id, envConfig)
+  if (existing?.id) return { conversation: existing, contact, inbox }
+
+  const conversation = await createChatwootContentPartnerConversation(env, contact, inbox.id, envConfig)
+  return { conversation, contact, inbox }
+}
+
+async function contentPartnerReplyExists(env, conversationId, triggerMessageId) {
+  if (!conversationId || !triggerMessageId) return false
+  const payload = await chatwootFetch(env, `/conversations/${conversationId}/messages`)
+  const messages = Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
+  return messages.some((message) => (
+    String(message?.content_attributes?.map_content_partner_trigger_message_id || '') === String(triggerMessageId)
+  ))
+}
+
+function getPortalReviewUrl(env, draftId) {
+  const canonicalHost = getCanonicalPortalHost(env)
+  const path = draftId ? `/post?draftId=${encodeURIComponent(draftId)}` : '/post'
+  return canonicalHost ? `https://${canonicalHost}${path}` : path
+}
+
+function normalizeChatwootMessageAttachments(payload, message) {
+  if (Array.isArray(message?.attachments)) return message.attachments
+  if (Array.isArray(payload?.attachments)) return payload.attachments
+  if (Array.isArray(payload?.message?.attachments)) return payload.message.attachments
+  return []
+}
+
+async function createContentPartnerDraft(env, envConfig, payload, message, conversation) {
+  const sender = message.sender || payload.sender || {}
+  return callSupabaseFunction(envConfig, 'portal-content-partner', {
+    clientId: envConfig.clientId,
+    chatwootAccountId: getChatwootConfig(env).accountId,
+    chatwootInboxId: conversation?.inbox_id || message.inbox_id || null,
+    chatwootConversationId: conversation?.id || message.conversation_id || null,
+    chatwootMessageId: firstString(message.id, message.source_id),
+    senderId: firstString(sender.id, message.sender_id),
+    senderName: firstString(sender.name, sender.available_name, message.sender?.name),
+    messageContent: firstString(message.content),
+    attachments: normalizeChatwootMessageAttachments(payload, message),
+  })
+}
+
+async function sendContentPartnerChatwootReply(env, conversationId, triggerMessageId, result) {
+  const reviewUrl = getPortalReviewUrl(env, result?.draftId)
+  const lines = [
+    firstString(result?.partnerReply) || 'I created a Publisher draft from your message.',
+    reviewUrl ? `Review it here: ${reviewUrl}` : '',
+  ].filter(Boolean)
+
+  return chatwootFetch(env, `/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      content: lines.join('\n\n').slice(0, 5000),
+      message_type: 'incoming',
+      private: false,
+      content_type: 'text',
+      source_id: `map-content-partner:${triggerMessageId}`,
+      content_attributes: {
+        map_content_partner_reply: true,
+        map_content_partner_trigger_message_id: String(triggerMessageId),
+        map_content_partner_request_id: result?.requestId || null,
+        map_content_partner_draft_id: result?.draftId || null,
+      },
+    }),
+  })
 }
 
 function normalizeZernioEventName(request, payload) {
@@ -1403,6 +1654,38 @@ async function handleChatwootMessageWebhook(request, env) {
 
   const isOutgoing = String(message.message_type || '').toLowerCase() === 'outgoing' || Number(message.message_type) === 1
   const alreadyBridged = Boolean(message.content_attributes?.zernio_bridge_sent)
+  const isContentPartner = isContentPartnerConversation(conversation)
+
+  if (isOutgoing && !message.private && isContentPartner) {
+    const triggerMessageId = firstString(message.id, message.source_id)
+    const conversationId = firstString(conversation.id, message.conversation_id)
+    if (!triggerMessageId || !conversationId) {
+      return json({ error: 'Missing Chatwoot content partner message or conversation id.' }, { status: 400 })
+    }
+
+    try {
+      const alreadyReplied = await contentPartnerReplyExists(env, conversationId, triggerMessageId)
+      if (alreadyReplied) {
+        return json({ success: true, deduped: true, reason: 'Content Partner reply already exists.' })
+      }
+
+      const envConfig = getPortalAuthConfig(env)
+      const result = await createContentPartnerDraft(env, envConfig, payload, message, conversation)
+      await sendContentPartnerChatwootReply(env, conversationId, triggerMessageId, result)
+      return json({
+        success: true,
+        event: eventName || 'message_created',
+        contentPartner: true,
+        requestId: result.requestId || null,
+        draftId: result.draftId || null,
+      })
+    } catch (error) {
+      return json({
+        error: sanitizeChatwootError(error?.message || 'Could not create Content Partner draft.'),
+      }, { status: error?.status || 502 })
+    }
+  }
+
   if (!isOutgoing || message.private || alreadyBridged || !isZernioBackedConversation(conversation)) {
     return json({ success: true, skipped: true, reason: 'Not an outbound Zernio-backed customer reply.' })
   }
@@ -2028,6 +2311,10 @@ export default {
 
     if (url.pathname === '/api/chatwoot/webhooks/messages') {
       return handleChatwootMessageWebhook(request, env)
+    }
+
+    if (url.pathname === '/api/content-partner/conversation') {
+      return handleContentPartnerConversation(request, env)
     }
 
     if (url.pathname.startsWith('/api/chatwoot/')) {

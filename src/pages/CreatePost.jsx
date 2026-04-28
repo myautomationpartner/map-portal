@@ -165,6 +165,9 @@ function getDropboxRenderableImageUrl(link) {
 
   try {
     const url = new URL(link)
+    if (!/(^|\.)dropboxusercontent\.com$|(^|\.)dropbox\.com$/i.test(url.hostname)) {
+      return link
+    }
     url.searchParams.delete('dl')
     url.searchParams.set('raw', '1')
     return url.toString()
@@ -1372,6 +1375,17 @@ export default function CreatePost() {
 
   const applyDraftToComposer = useCallback((draft, slot) => {
     const meta = parseDraftMeta(draft?.review_notes)
+    const sourceMediaAssets = Array.isArray(meta.mediaAssets)
+      ? meta.mediaAssets
+        .map((asset, index) => ({
+          name: asset?.name || `Content Partner image ${index + 1}`,
+          link: asset?.url || asset?.link || '',
+          thumbnail: asset?.thumbnail || asset?.previewUrl || asset?.url || '',
+          size: Number(asset?.size || 0),
+          source: asset?.source || 'content_partner',
+        }))
+        .filter((asset) => asset.link)
+      : []
     hydratingDraftRef.current = true
     setActiveDraftId(draft.id || '')
     setActiveSlotKey(getSlotKey(slot))
@@ -1382,6 +1396,12 @@ export default function CreatePost() {
     setContent(draft.draft_caption || '')
     setPlatformVariants(meta.platformVariants || {})
     setPlatformFormatStatus(meta.platformVariants ? 'Saved platform captions loaded.' : '')
+    setImageFile(null)
+    setImagePreview(null)
+    setExistingMediaUrl('')
+    setLocalImageItems([])
+    setDropboxAttachments(sourceMediaAssets)
+    setMediaSlideIndex(0)
     setDraftDirty(false)
     setDraftStatus(draft.draft_caption ? 'Draft loaded.' : 'Draft ready.')
     setDraftError('')
@@ -1411,6 +1431,12 @@ export default function CreatePost() {
     setContent(generated.caption)
     setPlatformVariants({})
     setPlatformFormatStatus('')
+    setImageFile(null)
+    setImagePreview(null)
+    setExistingMediaUrl('')
+    setLocalImageItems([])
+    setDropboxAttachments([])
+    setMediaSlideIndex(0)
     setDraftDirty(false)
     setDraftError('')
     setTimingMode('slot')
