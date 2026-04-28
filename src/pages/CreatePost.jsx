@@ -302,8 +302,8 @@ function loadImageElement(source, { crossOrigin = false } = {}) {
   })
 }
 
-async function normalizeImageForAssist(source) {
-  const image = await loadImageElement(source)
+async function normalizeImageForAssist(source, options = {}) {
+  const image = await loadImageElement(source, options)
   const sourceWidth = image.naturalWidth || image.width
   const sourceHeight = image.naturalHeight || image.height
   if (!sourceWidth || !sourceHeight) {
@@ -322,6 +322,18 @@ async function normalizeImageForAssist(source) {
 
   context.drawImage(image, 0, 0, width, height)
   return canvas.toDataURL('image/png')
+}
+
+async function normalizeRemoteImageForAssist(imageUrl) {
+  const renderableUrl = getDropboxRenderableImageUrl(imageUrl) || imageUrl
+
+  try {
+    return {
+      image_data_url: await normalizeImageForAssist(renderableUrl, { crossOrigin: /^https?:\/\//i.test(renderableUrl) }),
+    }
+  } catch {
+    return { image_url: renderableUrl }
+  }
 }
 
 function centerCropRect(sourceWidth, sourceHeight, targetWidth, targetHeight) {
@@ -1815,13 +1827,13 @@ export default function CreatePost() {
     }
   }
 
-  async function getImageImproveInput() {
-    if (activeCreativeItem?.type === 'dropbox' || activeCreativeItem?.type === 'existing') {
-      const imageUrl = activeCreativeItem.previewUrl || activeCreativeItem.link || ''
-      if (imageUrl && /^https?:\/\//i.test(imageUrl)) return { image_url: imageUrl }
+  async function getImageImproveInput(sourceItem = activeCreativeItem) {
+    if (sourceItem?.type === 'dropbox' || sourceItem?.type === 'existing') {
+      const imageUrl = sourceItem.previewUrl || sourceItem.link || ''
+      if (imageUrl && /^https?:\/\//i.test(imageUrl)) return normalizeRemoteImageForAssist(imageUrl)
     }
 
-    const activeFile = activeCreativeItem?.file || imageFile
+    const activeFile = sourceItem?.file || imageFile
     if (activeFile) {
       const fileType = String(activeFile.type || '').toLowerCase()
       const fileName = String(activeFile.name || '').toLowerCase()
@@ -1835,20 +1847,54 @@ export default function CreatePost() {
       return { image_data_url: await normalizeImageForAssist(dataUrl) }
     }
 
-    const activePreview = activeCreativeItem?.previewUrl || imagePreview
+    const activePreview = sourceItem?.previewUrl || imagePreview
     if (typeof activePreview === 'string' && activePreview.startsWith('data:image/')) {
       return { image_data_url: await normalizeImageForAssist(activePreview) }
     }
 
-    const imageUrl = existingMediaUrl || dropboxPreviewSource || ''
+    const imageUrl = sourceItem?.previewUrl || sourceItem?.link || existingMediaUrl || dropboxPreviewSource || ''
     if (imageUrl && /^https?:\/\//i.test(imageUrl)) {
-      return { image_url: imageUrl }
+      return normalizeRemoteImageForAssist(imageUrl)
     }
 
     throw new Error('Add or select an image before using Image Assist.')
   }
 
-  async function handleImproveImage(mode) {
+  function attachImprovedImage({ file, previewUrl, mode, sourceItem = activeCreativeItem }) {
+    const improvedItem = {
+      id: `improved:${mode}:${Date.now()}`,
+      type: 'local',
+      name: `Partner improved ${mode || 'image'}`,
+      file,
+      previewUrl,
+    }
+
+    if (sourceItem?.type === 'local' || sourceItem?.type === 'generated' || sourceItem?.type === 'google') {
+      const sourceIndex = localImageItems.findIndex((item) => item.id === sourceItem.id)
+      if (sourceIndex >= 0) {
+        const nextItems = [...localImageItems]
+        nextItems[sourceIndex] = improvedItem
+        setLocalImageItems(nextItems)
+        setMediaSlideIndex(sourceIndex)
+      } else {
+        setLocalImageItems([improvedItem])
+        setMediaSlideIndex(0)
+      }
+    } else if (sourceItem?.type === 'dropbox') {
+      setDropboxAttachments((previous) => previous.filter((item) => item.link !== sourceItem.link))
+      setLocalImageItems((previous) => [improvedItem, ...previous])
+      setMediaSlideIndex(0)
+    } else {
+      setLocalImageItems([improvedItem])
+      setMediaSlideIndex(0)
+    }
+
+    setImageFile(file)
+    setImagePreview(previewUrl)
+    setExistingMediaUrl('')
+  }
+
+  async function handleImproveImage(mode, sourceItem = activeCreativeItem) {
     if (!requireWriteAccess('improve images with Partner')) return
 
     setImageImproveState('improving')
@@ -1858,7 +1904,7 @@ export default function CreatePost() {
     setErrorMsg('')
 
     try {
-      const imageInput = await getImageImproveInput()
+      const imageInput = await getImageImproveInput(sourceItem)
       const payload = await improvePublisherImage({
         client_id: clientId,
         business_name: profile?.clients?.business_name || '',
@@ -1870,17 +1916,7 @@ export default function CreatePost() {
       })
       const file = base64ToImageFile(payload.image_base64, payload.mime_type || 'image/png', `partner-improved-${mode || 'image'}.png`)
       const previewUrl = `data:${payload.mime_type || 'image/png'};base64,${payload.image_base64}`
-      setLocalImageItems([{
-        id: `improved:${mode}:${Date.now()}`,
-        type: 'local',
-        name: `Partner improved ${mode || 'image'}`,
-        file,
-        previewUrl,
-      }])
-      setImageFile(file)
-      setImagePreview(previewUrl)
-      setExistingMediaUrl('')
-      setMediaSlideIndex(0)
+      attachImprovedImage({ file, previewUrl, mode, sourceItem })
       clearPlatformImageVariants('')
       setImageImproveState('ready')
       setDraftStatus('Improved image attached. Review it before approving the post.')
@@ -3409,7 +3445,7 @@ export default function CreatePost() {
                         type="button"
                         onClick={() => {
                           setPreviewPlatform(id)
-                          handleImproveImage('cleanup')
+                          handleImproveImage('cleanup', activeCreativeItem)
                         }}
                         disabled={!active || !canImproveImage || imageImproveState === 'improving' || imageGenerateState === 'generating'}
                         className="portal-ai-mini-action"
