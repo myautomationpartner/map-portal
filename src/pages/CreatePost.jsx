@@ -117,6 +117,18 @@ const IMAGE_ASSIST_ACTIONS = [
   { id: 'story', label: 'Story crop', description: 'Create a vertical story/reel-friendly version.' },
 ]
 
+const IMAGE_GENERATION_MODES = [
+  { id: 'social_photo', label: 'Social photo', description: 'Natural no-text image' },
+  { id: 'branded_post', label: 'Branded post', description: 'Headline + CTA graphic' },
+  { id: 'event_flyer', label: 'Event flyer', description: 'Readable event promo' },
+  { id: 'promo_ad', label: 'Promo/ad', description: 'Offer-focused creative' },
+  { id: 'infographic', label: 'Infographic', description: 'Tips or process visual' },
+]
+
+const IMAGE_GENERATION_MODE_BY_ID = Object.fromEntries(
+  IMAGE_GENERATION_MODES.map((mode) => [mode.id, mode]),
+)
+
 const SLOT_STATE_STYLES = {
   occupied_planned: {
     label: 'Scheduled',
@@ -707,6 +719,22 @@ function buildLocalHashtags(profile) {
   return [...new Set(tags)].slice(0, 4)
 }
 
+function buildImageGenerationBrandContext({ profile, slot, draft, mediaSuggestion, mode }) {
+  const client = profile?.clients || {}
+  const modeLabel = IMAGE_GENERATION_MODE_BY_ID[mode]?.label || 'Social photo'
+  return [
+    `Generation style selected in portal: ${modeLabel}`,
+    client.website_url ? `Business website: ${client.website_url}` : '',
+    client.logo_url ? 'Client has a logo URL stored; use only as brand inspiration unless an exact logo file is provided.' : '',
+    client.business_category ? `Business category: ${client.business_category}` : '',
+    client.business_subtype ? `Business specialty: ${client.business_subtype}` : '',
+    slot?.post_type ? `Planner post type: ${String(slot.post_type).replace(/_/g, ' ')}` : '',
+    slot?.slot_label ? `Planner slot: ${slot.slot_label}` : '',
+    draft?.title ? `Draft title: ${draft.title}` : '',
+    mediaSuggestion ? `Partner media direction: ${mediaSuggestion}` : '',
+  ].filter(Boolean).join('\n')
+}
+
 function formatCaptionForPlatform(platformId, caption, profile) {
   const base = normalizeCaption(caption)
   const noTags = stripHashtags(base)
@@ -1086,6 +1114,7 @@ export default function CreatePost() {
   const [mediaSlideIndex, setMediaSlideIndex] = useState(0)
   const [imageGenerateState, setImageGenerateState] = useState('idle')
   const [imageGenerateError, setImageGenerateError] = useState('')
+  const [imageGenerationMode, setImageGenerationMode] = useState('social_photo')
   const [imageImproveState, setImageImproveState] = useState('idle')
   const [imageImproveMode, setImageImproveMode] = useState('')
   const [imageImproveError, setImageImproveError] = useState('')
@@ -1241,6 +1270,7 @@ export default function CreatePost() {
     () => getDraftMetaImagePrompt(activeDraft) || mediaSuggestion,
     [activeDraft, mediaSuggestion],
   )
+  const selectedImageGenerationMode = IMAGE_GENERATION_MODE_BY_ID[imageGenerationMode] || IMAGE_GENERATION_MODES[0]
   const canGenerateImage = Boolean(clientId && content.trim() && imageGenerationPrompt)
   const canUseAssist = Boolean(clientId && content.trim() && !isSubmitting)
   const scheduledPostsDetailed = useMemo(() => {
@@ -1747,8 +1777,17 @@ export default function CreatePost() {
         business_name: profile?.clients?.business_name || '',
         prompt: imageGenerationPrompt,
         caption: content,
+        image_mode: imageGenerationMode,
+        platforms: activePlatforms,
+        brand_context: buildImageGenerationBrandContext({
+          profile,
+          slot: activeSlot,
+          draft: activeDraft,
+          mediaSuggestion: imageGenerationPrompt,
+          mode: imageGenerationMode,
+        }),
         size: '1024x1024',
-        quality: 'low',
+        quality: imageGenerationMode === 'social_photo' ? 'low' : 'medium',
       })
       const file = base64ToImageFile(payload.image_base64, payload.mime_type || 'image/png')
       const previewUrl = `data:${payload.mime_type || 'image/png'};base64,${payload.image_base64}`
@@ -1768,7 +1807,7 @@ export default function CreatePost() {
       setImageImproveState('idle')
       setImageImproveMode('')
       setImageImproveError('')
-      setDraftStatus('Generated image added. You can replace it with an upload if you prefer.')
+      setDraftStatus(`${selectedImageGenerationMode.label} generated and attached. Review it before approving the post.`)
     } catch (error) {
       console.error('[GeneratePublisherImage]', error)
       setImageGenerateError(error.message || 'Could not generate an image right now.')
@@ -3014,6 +3053,35 @@ export default function CreatePost() {
                 ))}
               </div>
 
+              <div className="create-post-ai-mode-panel">
+                <div className="create-post-ai-mode-head">
+                  <span>
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Image style
+                  </span>
+                  <strong>{selectedImageGenerationMode.label}</strong>
+                </div>
+                <div className="create-post-ai-mode-grid">
+                  {IMAGE_GENERATION_MODES.map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => {
+                        setImageGenerationMode(mode.id)
+                        setImageGenerateError('')
+                      }}
+                      disabled={isSubmitting || imageGenerateState === 'generating'}
+                      data-active={imageGenerationMode === mode.id}
+                      title={mode.description}
+                      aria-pressed={imageGenerationMode === mode.id}
+                    >
+                      <span>{mode.label}</span>
+                      <small>{mode.description}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="mt-3 overflow-hidden rounded-[24px]" style={{ border: '1px solid var(--portal-border)', background: 'rgba(255,255,255,0.78)' }}>
                 {mediaPreviewSource ? (
                   <div className="create-post-media-stage">
@@ -3197,9 +3265,14 @@ export default function CreatePost() {
 
               {imageGenerationPrompt && (
                 <div className="mt-3 rounded-[20px] px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.62)', border: '1px solid var(--portal-border)' }}>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                    Partner image prompt
-                  </p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                      Partner image prompt
+                    </p>
+                    <span className="rounded-full px-2.5 py-1 text-[10px] font-bold" style={{ background: 'rgba(132, 72, 255, 0.12)', color: '#6d4aff' }}>
+                      {selectedImageGenerationMode.label}
+                    </span>
+                  </div>
                   <p className="mt-1 line-clamp-2 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
                     {imageGenerationPrompt}
                   </p>
