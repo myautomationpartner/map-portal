@@ -232,6 +232,46 @@ function conversationPreview(conversation) {
   return lastMessage?.content || conversation?.additional_attributes?.browser?.device_name || 'No message preview yet.'
 }
 
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function isSafeContentPartnerPreviewUrl(value) {
+  if (!value) return false
+  try {
+    const parsed = new URL(value, window.location.origin)
+    return parsed.protocol === 'https:'
+      && parsed.hostname.endsWith('.myautomationpartner.com')
+      && parsed.pathname.startsWith('/api/content-partner/previews/')
+      && parsed.pathname.endsWith('.svg')
+      && parsed.searchParams.has('token')
+  } catch {
+    return false
+  }
+}
+
+function extractContentPartnerPreviewUrl(message) {
+  const direct = message?.content_attributes?.map_content_partner_preview_url
+  if (isSafeContentPartnerPreviewUrl(direct)) return direct
+
+  const content = String(message?.content || '')
+  const match = content.match(/https:\/\/[^\s)]+\/api\/content-partner\/previews\/[^\s)]+\.svg\?token=[^\s)]+/i)
+  const url = match?.[0]?.replace(/[.,;]+$/, '')
+  return isSafeContentPartnerPreviewUrl(url) ? url : ''
+}
+
+function messageDisplayContent(message, previewUrl) {
+  const fallback = previewUrl ? 'Publisher draft preview is ready.' : '[Attachment or system message]'
+  let content = String(message?.content || '').trim()
+  if (previewUrl) {
+    content = content
+      .replace(new RegExp(`\\n*Preview image:\\s*${escapeRegExp(previewUrl)}`, 'i'), '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  }
+  return content || fallback
+}
+
 function senderName(message) {
   if (message?.sender?.name) return message.sender.name
   if (message?.sender_type === 'User') return 'Agent'
@@ -1192,6 +1232,8 @@ export default function Inbox() {
                       </div>
                       {messages.map((message) => {
                         const outgoing = isOutgoing(message)
+                        const previewUrl = extractContentPartnerPreviewUrl(message)
+                        const displayContent = messageDisplayContent(message, previewUrl)
                         return (
                           <div key={message.id || `${message.created_at}-${message.content}`} className={`flex ${outgoing ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[84%] md:max-w-[72%] ${outgoing ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
@@ -1210,8 +1252,24 @@ export default function Inbox() {
                                   </span>
                                 )}
                                 <p className="whitespace-pre-wrap break-words">
-                                  {message.content || '[Attachment or system message]'}
+                                  {displayContent}
                                 </p>
+                                {previewUrl && (
+                                  <a
+                                    href={previewUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="mt-3 block overflow-hidden rounded-2xl border bg-white shadow-sm"
+                                    style={{ borderColor: outgoing ? 'rgba(255,255,255,0.35)' : 'var(--portal-border)' }}
+                                  >
+                                    <img
+                                      src={previewUrl}
+                                      alt="Publisher draft preview"
+                                      className="block w-full max-w-[560px] bg-[#f2eee6]"
+                                      loading="lazy"
+                                    />
+                                  </a>
+                                )}
                               </div>
                               <span className="px-1.5 text-[11px]" style={{ color: 'var(--portal-text-muted)' }}>
                                 {senderName(message)} · {formatRelativeTime(message.created_at)}

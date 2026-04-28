@@ -345,9 +345,12 @@ async function readChatwootResponse(response) {
 
 async function chatwootFetch(env, path, init = {}) {
   const config = getChatwootConfig(env)
+  const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData
   const response = await fetch(`${config.baseUrl}/api/v1/accounts/${config.accountId}${path}`, {
     ...init,
-    headers: chatwootHeaders(config.apiToken, init.headers || {}),
+    headers: isFormData
+      ? { api_access_token: config.apiToken, ...(init.headers || {}) }
+      : chatwootHeaders(config.apiToken, init.headers || {}),
   })
 
   const payload = await readChatwootResponse(response)
@@ -1246,6 +1249,7 @@ async function contentPartnerReplyExists(env, conversationId, triggerMessageId) 
   const messages = Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
   return messages.some((message) => (
     String(message?.content_attributes?.map_content_partner_trigger_message_id || '') === String(triggerMessageId)
+    || String(message?.source_id || '') === `map-content-partner:${triggerMessageId}`
   ))
 }
 
@@ -1262,11 +1266,278 @@ function getPortalReviewUrl(env, draftId) {
   return canonicalHost ? `https://${canonicalHost}${path}` : path
 }
 
+function getPortalOrigin(env) {
+  const canonicalHost = getCanonicalPortalHost(env)
+  return canonicalHost ? `https://${canonicalHost}` : ''
+}
+
+function getContentPartnerPreviewUrl(env, draftId, requestId) {
+  const origin = getPortalOrigin(env)
+  if (!origin || !draftId || !requestId) return ''
+  const path = `/api/content-partner/previews/${encodeURIComponent(draftId)}.svg`
+  return `${origin}${path}?token=${encodeURIComponent(requestId)}`
+}
+
 function normalizeChatwootMessageAttachments(payload, message) {
   if (Array.isArray(message?.attachments)) return message.attachments
   if (Array.isArray(payload?.attachments)) return payload.attachments
   if (Array.isArray(payload?.message?.attachments)) return payload.message.attachments
   return []
+}
+
+function escapeSvgText(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function wrapPreviewText(value, maxChars, maxLines) {
+  const words = String(value || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean)
+  const lines = []
+  let current = ''
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word
+    if (next.length > maxChars && current) {
+      lines.push(current)
+      current = word
+    } else {
+      current = next
+    }
+
+    if (lines.length === maxLines) break
+  }
+
+  if (lines.length < maxLines && current) lines.push(current)
+  const consumedLength = lines.join(' ').length
+  const sourceLength = words.join(' ').length
+  if (sourceLength > consumedLength && lines.length) {
+    lines[lines.length - 1] = `${lines[lines.length - 1].replace(/[.,;:!?-]+$/, '')}...`
+  }
+
+  return lines.length ? lines : ['Ready for review.']
+}
+
+function formatPreviewDate(value) {
+  const date = new Date(value || '')
+  if (Number.isNaN(date.getTime())) return 'Ready to schedule'
+
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function parseJsonObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value !== 'string' || !value.trim()) return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function extractMediaSuggestionFromDraft(draft) {
+  const reviewNotes = parseJsonObject(draft?.review_notes)
+  if (reviewNotes.mediaSuggestion) return firstString(reviewNotes.mediaSuggestion)
+
+  const requirements = Array.isArray(draft?.asset_requirements_json) ? draft.asset_requirements_json : []
+  const mediaConcept = requirements.find((item) => item?.type === 'media_concept' && item?.suggestion)
+  return firstString(mediaConcept?.suggestion)
+}
+
+function normalizePreviewPlatforms(value) {
+  const platforms = Array.isArray(value) ? value : []
+  return platforms
+    .map((platform) => normalizePlatform(platform) || String(platform || '').trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 5)
+}
+
+function renderTextLines(lines, { x, y, lineHeight, size, weight = 500, color = '#1f1f1f', letterSpacing = 0 }) {
+  return lines.map((line, index) => (
+    `<text x="${x}" y="${y + (index * lineHeight)}" font-size="${size}" font-weight="${weight}" fill="${color}" letter-spacing="${letterSpacing}">${escapeSvgText(line)}</text>`
+  )).join('')
+}
+
+function renderPreviewPlatformChips(platforms, x, y) {
+  const labels = {
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+    tiktok: 'TikTok',
+    linkedin: 'LinkedIn',
+    twitter: 'X',
+  }
+  const colors = {
+    facebook: '#2f6ecb',
+    instagram: '#c13584',
+    tiktok: '#111111',
+    linkedin: '#0a66c2',
+    twitter: '#111111',
+  }
+  const items = normalizePreviewPlatforms(platforms)
+  const chips = items.length ? items : ['facebook', 'instagram']
+
+  let offset = 0
+  return chips.map((platform) => {
+    const label = labels[platform] || platform.replace(/_/g, ' ')
+    const width = Math.max(104, Math.min(168, 46 + (label.length * 12)))
+    const chip = [
+      `<rect x="${x + offset}" y="${y}" width="${width}" height="44" rx="22" fill="${colors[platform] || '#6b7280'}" opacity="0.12"/>`,
+      `<circle cx="${x + offset + 24}" cy="${y + 22}" r="10" fill="${colors[platform] || '#6b7280'}"/>`,
+      `<text x="${x + offset + 44}" y="${y + 29}" font-size="20" font-weight="700" fill="${colors[platform] || '#3f3a32'}">${escapeSvgText(label)}</text>`,
+    ].join('')
+    offset += width + 14
+    return chip
+  }).join('')
+}
+
+function renderContentPartnerPreviewSvg({
+  businessName,
+  title,
+  caption,
+  scheduledFor,
+  platforms,
+  mediaSuggestion,
+} = {}) {
+  const name = firstString(businessName, 'Your business')
+  const draftTitle = firstString(title, 'Publisher draft')
+  const captionText = firstString(caption, 'A new social post draft is ready for review.')
+  const mediaText = firstString(mediaSuggestion, 'Add or choose the best image before scheduling.')
+  const titleLines = wrapPreviewText(draftTitle, 34, 2)
+  const captionLines = wrapPreviewText(captionText, 64, 5)
+  const mediaLines = wrapPreviewText(mediaText, 62, 1)
+  const scheduleLabel = formatPreviewDate(scheduledFor)
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fffdf8"/>
+      <stop offset="1" stop-color="#f7f3ec"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#d946ef"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#3f2d14" flood-opacity="0.14"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="900" fill="#f2eee6"/>
+  <rect x="72" y="58" width="1056" height="784" rx="42" fill="url(#paper)" filter="url(#shadow)"/>
+  <rect x="72" y="58" width="1056" height="784" rx="42" fill="none" stroke="#e2ddd3" stroke-width="2"/>
+  <rect x="106" y="92" width="988" height="124" rx="30" fill="#ffffff" opacity="0.9"/>
+  <circle cx="158" cy="154" r="31" fill="url(#accent)"/>
+  <text x="158" y="165" text-anchor="middle" font-size="26" font-weight="900" fill="#ffffff">AI</text>
+  <text x="210" y="142" font-size="27" font-weight="800" fill="#1f1f1f">${escapeSvgText(name)}</text>
+  <text x="210" y="176" font-size="20" font-weight="600" fill="#8a8377">Content Partner draft preview</text>
+  <rect x="812" y="122" width="236" height="64" rx="32" fill="#f3ead8" stroke="#dcc990" stroke-width="2"/>
+  <text x="930" y="162" text-anchor="middle" font-size="22" font-weight="800" fill="#846118">Manual review</text>
+  <text x="112" y="275" font-size="18" font-weight="800" fill="#8a8377" letter-spacing="6">PUBLISHER DRAFT</text>
+  ${renderTextLines(titleLines, { x: 112, y: 338, lineHeight: 58, size: 50, weight: 900, color: '#171717' })}
+  <rect x="112" y="516" width="976" height="216" rx="28" fill="#ffffff" stroke="#e2ddd3" stroke-width="2"/>
+  <text x="146" y="562" font-size="18" font-weight="800" fill="#8a8377" letter-spacing="5">POST COPY</text>
+  ${renderTextLines(captionLines, { x: 146, y: 606, lineHeight: 29, size: 24, weight: 500, color: '#292622' })}
+  <line x1="112" y1="744" x2="1088" y2="744" stroke="#e2ddd3" stroke-width="2"/>
+  <text x="112" y="778" font-size="18" font-weight="800" fill="#8a8377" letter-spacing="5">SUGGESTED TIME</text>
+  <text x="112" y="814" font-size="28" font-weight="800" fill="#292622">${escapeSvgText(scheduleLabel)}</text>
+  <text x="512" y="778" font-size="18" font-weight="800" fill="#8a8377" letter-spacing="5">IMAGE IDEA</text>
+  ${renderTextLines(mediaLines, { x: 512, y: 814, lineHeight: 26, size: 21, weight: 600, color: '#5f574c' })}
+  ${renderPreviewPlatformChips(platforms, 112, 454)}
+</svg>`
+}
+
+async function loadContentPartnerPreview(envConfig, draftId, requestId) {
+  const requestParams = new URLSearchParams({
+    select: 'id,generated_draft_id,ai_metadata_json,created_at',
+    id: `eq.${requestId}`,
+    generated_draft_id: `eq.${draftId}`,
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const requestRowsResponse = await supabaseRest(envConfig, `/rest/v1/content_partner_requests?${requestParams.toString()}`)
+  const requestRows = await requestRowsResponse.json()
+  const requestRow = Array.isArray(requestRows) ? requestRows[0] : null
+  if (!requestRow?.id) return null
+
+  const draftParams = new URLSearchParams({
+    select: 'id,draft_title,draft_caption,scheduled_for,review_notes,asset_requirements_json,client_id',
+    id: `eq.${draftId}`,
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const draftRowsResponse = await supabaseRest(envConfig, `/rest/v1/social_drafts?${draftParams.toString()}`)
+  const draftRows = await draftRowsResponse.json()
+  const draft = Array.isArray(draftRows) ? draftRows[0] : null
+  if (!draft?.id) return null
+
+  const clientParams = new URLSearchParams({
+    select: 'business_name,slug',
+    id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const clientRowsResponse = await supabaseRest(envConfig, `/rest/v1/clients?${clientParams.toString()}`)
+  const clientRows = await clientRowsResponse.json()
+  const client = Array.isArray(clientRows) ? clientRows[0] || {} : {}
+  const aiMeta = parseJsonObject(requestRow.ai_metadata_json)
+
+  return {
+    businessName: firstString(client.business_name, client.slug),
+    title: draft.draft_title,
+    caption: draft.draft_caption,
+    scheduledFor: draft.scheduled_for,
+    mediaSuggestion: extractMediaSuggestionFromDraft(draft),
+    platforms: normalizePreviewPlatforms(aiMeta.recommendedPlatforms),
+  }
+}
+
+async function handleContentPartnerPreview(request, env, draftId) {
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET, HEAD' } })
+  }
+
+  const url = new URL(request.url)
+  const requestId = String(url.searchParams.get('token') || '').trim()
+  if (!draftId || !requestId) return json({ error: 'Preview token is required.' }, { status: 400 })
+
+  let envConfig
+  try {
+    envConfig = getPortalAuthConfig(env)
+  } catch (error) {
+    return json({ error: error.message || 'Portal preview is not configured.' }, { status: 500 })
+  }
+
+  try {
+    const preview = await loadContentPartnerPreview(envConfig, draftId, requestId)
+    if (!preview) return json({ error: 'Preview was not found.' }, { status: 404 })
+    const svg = renderContentPartnerPreviewSvg(preview)
+
+    if (request.method === 'HEAD') {
+      return new Response(null, {
+        headers: {
+          'content-type': 'image/svg+xml; charset=utf-8',
+          'cache-control': 'private, max-age=900',
+        },
+      })
+    }
+
+    return new Response(svg, {
+      headers: {
+        'content-type': 'image/svg+xml; charset=utf-8',
+        'cache-control': 'private, max-age=900',
+      },
+    })
+  } catch (error) {
+    return json({ error: error.message || 'Could not render the preview.' }, { status: error?.status || 502 })
+  }
 }
 
 async function createContentPartnerDraft(env, envConfig, payload, message, conversation, gatewayToken = '') {
@@ -1286,25 +1557,62 @@ async function createContentPartnerDraft(env, envConfig, payload, message, conve
 
 async function sendContentPartnerChatwootReply(env, conversationId, triggerMessageId, result) {
   const reviewUrl = getPortalReviewUrl(env, result?.draftId)
+  const previewUrl = getContentPartnerPreviewUrl(env, result?.draftId, result?.requestId)
   const lines = [
     firstString(result?.partnerReply) || 'I created a Publisher draft from your message.',
+    previewUrl ? `Preview image: ${previewUrl}` : '',
     reviewUrl ? `Review it here: ${reviewUrl}` : '',
   ].filter(Boolean)
+  const content = lines.join('\n\n').slice(0, 5000)
+  const contentAttributes = {
+    map_content_partner_reply: true,
+    map_content_partner_trigger_message_id: String(triggerMessageId),
+    map_content_partner_request_id: result?.requestId || null,
+    map_content_partner_draft_id: result?.draftId || null,
+    map_content_partner_preview_url: previewUrl || null,
+  }
+
+  if (result?.draftId && result?.requestId && result?.caption) {
+    const form = new FormData()
+    form.append('content', content)
+    form.append('message_type', 'incoming')
+    form.append('private', 'false')
+    form.append('content_type', 'text')
+    form.append('file_type', 'image')
+    form.append('source_id', `map-content-partner:${triggerMessageId}`)
+    form.append('content_attributes', JSON.stringify(contentAttributes))
+    form.append(
+      'attachments[]',
+      new Blob([renderContentPartnerPreviewSvg({
+        businessName: result.businessName,
+        title: result.title,
+        caption: result.caption,
+        scheduledFor: result.scheduledFor,
+        platforms: result.recommendedPlatforms,
+        mediaSuggestion: result.mediaSuggestion,
+      })], { type: 'image/svg+xml' }),
+      `publisher-preview-${result.draftId}.svg`,
+    )
+
+    try {
+      return await chatwootFetch(env, `/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        body: form,
+      })
+    } catch (error) {
+      console.warn('Content Partner preview attachment failed; sending text fallback.', error?.message || error)
+    }
+  }
 
   return chatwootFetch(env, `/conversations/${conversationId}/messages`, {
     method: 'POST',
     body: JSON.stringify({
-      content: lines.join('\n\n').slice(0, 5000),
+      content,
       message_type: 'incoming',
       private: false,
       content_type: 'text',
       source_id: `map-content-partner:${triggerMessageId}`,
-      content_attributes: {
-        map_content_partner_reply: true,
-        map_content_partner_trigger_message_id: String(triggerMessageId),
-        map_content_partner_request_id: result?.requestId || null,
-        map_content_partner_draft_id: result?.draftId || null,
-      },
+      content_attributes: contentAttributes,
     }),
   })
 }
@@ -2362,6 +2670,11 @@ export default {
 
     if (url.pathname === '/api/chatwoot/webhooks/messages') {
       return handleChatwootMessageWebhook(request, env)
+    }
+
+    const contentPartnerPreviewMatch = /^\/api\/content-partner\/previews\/([^/]+)\.svg$/.exec(url.pathname)
+    if (contentPartnerPreviewMatch) {
+      return handleContentPartnerPreview(request, env, decodeURIComponent(contentPartnerPreviewMatch[1]))
     }
 
     if (url.pathname === '/api/content-partner/conversation') {
