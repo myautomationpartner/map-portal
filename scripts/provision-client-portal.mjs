@@ -335,7 +335,7 @@ async function createOrUpdateSocialInbox(accountId, client, callbackSecret) {
       enable_auto_assignment: true,
       channel: {
         type: 'api',
-        webhook_url: `https://${client.portal_domain}/api/chatwoot/webhooks/messages?token=${encodeURIComponent(callbackSecret)}`,
+        webhook_url: `https://${client.portal_domain}/api/chatwoot/webhooks/messages/${encodeURIComponent(callbackSecret)}`,
       },
     }),
   })

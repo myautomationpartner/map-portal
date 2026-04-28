@@ -2100,7 +2100,16 @@ async function handleChatwootMessageWebhook(request, env) {
 
   const url = new URL(request.url)
   const expectedToken = String(env.CHATWOOT_WEBHOOK_BRIDGE_SECRET || '').trim()
-  if (expectedToken && url.searchParams.get('token') !== expectedToken) {
+  const pathTokenMatch = /^\/api\/chatwoot\/webhooks\/messages\/([^/]+)$/.exec(url.pathname)
+  const pathToken = pathTokenMatch?.[1] ? decodeURIComponent(pathTokenMatch[1]) : ''
+  const providedToken = firstString(
+    url.searchParams.get('token'),
+    pathToken,
+    request.headers.get('x-map-chatwoot-webhook-token'),
+    request.headers.get('x-chatwoot-webhook-token'),
+  )
+
+  if (expectedToken && providedToken !== expectedToken) {
     return json({ error: 'Invalid Chatwoot webhook token.' }, { status: 401 })
   }
 
@@ -2760,7 +2769,8 @@ export default {
       return handleZernioInboxWebhook(request, env)
     }
 
-    if (url.pathname === '/api/chatwoot/webhooks/messages') {
+    const chatwootMessageWebhookMatch = /^\/api\/chatwoot\/webhooks\/messages(?:\/[^/]+)?$/.exec(url.pathname)
+    if (chatwootMessageWebhookMatch) {
       return handleChatwootMessageWebhook(request, env)
     }
 
