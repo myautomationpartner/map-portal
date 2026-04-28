@@ -32,7 +32,7 @@ import {
 } from '../lib/socialDrafting'
 import {
   AlertCircle, ArrowUpRight, Calendar, CalendarDays, Check, CheckCircle2,
-  ChevronLeft, ChevronRight, Clock3, History, Loader2,
+  ChevronLeft, ChevronRight, Clock3, History, Images, Loader2,
   Send, Sparkles, UploadCloud, Wand2, X,
   Trash2,
 } from 'lucide-react'
@@ -195,6 +195,60 @@ function buildExistingMediaItem(url) {
     previewUrl: url,
     link: url,
   }
+}
+
+function getPreviewSourceFromMediaItem(item) {
+  return item?.previewUrl || item?.preview_url || item?.url || item?.link || null
+}
+
+function buildPreviewMediaItems({ mediaItems = [], imagePreview = '', dropboxAttachments = [], platformImage = null, activeMediaIndex = 0 }) {
+  const selectedItems = (mediaItems || [])
+    .map((item, index) => ({
+      id: item?.id || `media-${index}`,
+      name: item?.name || `Creative ${index + 1}`,
+      previewUrl: getPreviewSourceFromMediaItem(item),
+    }))
+    .filter((item) => item.previewUrl)
+
+  if (!selectedItems.length && imagePreview) {
+    selectedItems.push({
+      id: 'primary-preview',
+      name: 'Selected image',
+      previewUrl: imagePreview,
+    })
+  }
+
+  if (!selectedItems.length) {
+    dropboxAttachments.forEach((file, index) => {
+      const previewUrl = getDropboxRenderableImageUrl(file?.link) || file?.thumbnail || null
+      if (previewUrl) {
+        selectedItems.push({
+          id: `dropbox-preview-${file.link || index}`,
+          name: file.name || `Dropbox image ${index + 1}`,
+          previewUrl,
+        })
+      }
+    })
+  }
+
+  const platformImageUrl = platformImage?.url || platformImage?.preview_url || ''
+  if (platformImageUrl && selectedItems.length) {
+    const replacementIndex = selectedItems[activeMediaIndex] ? activeMediaIndex : 0
+    selectedItems[replacementIndex] = {
+      ...selectedItems[replacementIndex],
+      id: `${selectedItems[replacementIndex].id}:platform-format`,
+      name: `${selectedItems[replacementIndex].name} formatted`,
+      previewUrl: platformImageUrl,
+    }
+  } else if (platformImageUrl) {
+    selectedItems.push({
+      id: 'platform-format',
+      name: 'Platform formatted image',
+      previewUrl: platformImageUrl,
+    })
+  }
+
+  return selectedItems
 }
 
 function clampIndex(index, count) {
@@ -704,14 +758,33 @@ function buildPlatformVariants(platformIds, caption, profile, existingVariants =
   }, {})
 }
 
-function PlatformPreview({ platformId, profile, content, imagePreview, dropboxAttachments, scheduledFor, platformImage }) {
+function PlatformPreview({
+  platformId,
+  profile,
+  content,
+  imagePreview,
+  dropboxAttachments,
+  scheduledFor,
+  platformImage,
+  mediaItems = [],
+  activeMediaIndex = 0,
+}) {
   const platform = PLATFORMS.find((item) => item.id === platformId)
   if (!platform) return null
 
   const businessName = profile?.clients?.business_name || 'Your Business'
   const previewTime = scheduledFor ? formatDetailedLocalDateTime(scheduledFor) : 'Ready to publish'
-  const attachmentCount = dropboxAttachments.length
-  const visualPreview = platformImage?.url || platformImage?.preview_url || imagePreview || getDropboxPreviewSource(dropboxAttachments)
+  const mediaPreviews = buildPreviewMediaItems({
+    mediaItems,
+    imagePreview,
+    dropboxAttachments,
+    platformImage,
+    activeMediaIndex,
+  })
+  const attachmentCount = mediaPreviews.length
+  const visualPreview = mediaPreviews[0]?.previewUrl || ''
+  const galleryItems = mediaPreviews.slice(0, 4)
+  const extraMediaCount = Math.max(0, attachmentCount - galleryItems.length)
   const Icon = platform.Icon
   const rules = PLATFORM_FORMAT_RULES[platformId] || {}
   const platformMeta = {
@@ -751,7 +824,18 @@ function PlatformPreview({ platformId, profile, content, imagePreview, dropboxAt
       </header>
 
       <div className="platform-preview-media" data-empty={!visualPreview}>
-        {visualPreview ? (
+        {attachmentCount > 1 ? (
+          <div className="platform-preview-gallery" data-count={Math.min(galleryItems.length, 4)}>
+            {galleryItems.map((item, index) => (
+              <figure key={item.id || `${item.previewUrl}-${index}`}>
+                <img src={item.previewUrl} alt={`${platform.label} media ${index + 1}`} />
+                {index === galleryItems.length - 1 && extraMediaCount > 0 && (
+                  <figcaption>+{extraMediaCount}</figcaption>
+                )}
+              </figure>
+            ))}
+          </div>
+        ) : visualPreview ? (
           <img src={visualPreview} alt={`${platform.label} preview`} />
         ) : (
           <div>
@@ -760,6 +844,12 @@ function PlatformPreview({ platformId, profile, content, imagePreview, dropboxAt
           </div>
         )}
         <span>{platformMeta.badge}</span>
+        {attachmentCount > 1 && (
+          <div className="platform-preview-media-count">
+            <Images className="h-3 w-3" />
+            {attachmentCount} photos
+          </div>
+        )}
       </div>
 
       <div className="platform-preview-copy">
@@ -771,7 +861,7 @@ function PlatformPreview({ platformId, profile, content, imagePreview, dropboxAt
 
       <footer className="platform-preview-footer">
         <span>{previewTime}</span>
-        <span>{attachmentCount > 1 ? `${attachmentCount} assets` : rules.label || platform.label}</span>
+        <span>{attachmentCount > 1 ? `${attachmentCount} media assets` : rules.label || platform.label}</span>
       </footer>
     </div>
   )
@@ -794,6 +884,8 @@ function ReviewModal({
   scheduledFor,
   platformCaptions,
   platformImageVariants,
+  mediaItems,
+  activeMediaIndex,
 }) {
   if (!open) return null
 
@@ -927,6 +1019,8 @@ function ReviewModal({
                   dropboxAttachments={dropboxAttachments}
                   scheduledFor={scheduledFor}
                   platformImage={platformImageVariants?.[previewPlatform]}
+                  mediaItems={mediaItems}
+                  activeMediaIndex={activeMediaIndex}
                 />
               </>
             ) : (
@@ -3225,6 +3319,8 @@ export default function CreatePost() {
                       dropboxAttachments={dropboxAttachments}
                       scheduledFor={scheduledFor}
                       platformImage={platformImageVariants[id]}
+                      mediaItems={creativeItems}
+                      activeMediaIndex={activeCreativeIndex}
                     />
                     <div className="create-post-preview-tools">
                       <button
@@ -3532,6 +3628,8 @@ export default function CreatePost() {
         scheduledFor={scheduledFor}
         platformCaptions={platformCaptions}
         platformImageVariants={platformImageVariants}
+        mediaItems={creativeItems}
+        activeMediaIndex={activeCreativeIndex}
       />
     </>
   )
