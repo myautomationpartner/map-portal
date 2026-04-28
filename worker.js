@@ -167,6 +167,10 @@ function normalizePlatform(platform) {
   return platformMap[value] || null
 }
 
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
 function safeCompareHex(left, right) {
   if (left.length !== right.length) return false
   let mismatch = 0
@@ -917,7 +921,7 @@ async function handleContentPartnerConversation(request, env) {
   if (auth.error) return auth.error
 
   try {
-    const { conversation, contact, inbox } = await findOrCreateChatwootContentPartnerConversation(env, auth.envConfig)
+    const { conversation, contact, inbox, assignment } = await findOrCreateChatwootContentPartnerConversation(env, auth.envConfig, auth.user)
     const conversationId = conversation?.id || conversation?.payload?.id
     if (!conversationId) throw new Error('MAP Content Partner conversation could not be opened.')
 
@@ -926,6 +930,7 @@ async function handleContentPartnerConversation(request, env) {
       conversationId,
       inboxId: inbox?.id || null,
       contactId: contact?.id || null,
+      assignedToPortalUser: Boolean(assignment?.assigned || assignment?.alreadyAssigned),
       title: CONTENT_PARTNER_CONTACT_NAME,
       reviewPath: '/post',
     })
@@ -1000,6 +1005,12 @@ async function handleChatwootProxy(request, env) {
       const shouldBridgeToZernio = isZernioBackedConversation(conversation) && !body.private
       const shouldRunContentPartner = isContentPartnerConversation(conversation) && !body.private
       let zernioResult = null
+
+      if (shouldRunContentPartner) {
+        await assignChatwootContentPartnerConversation(env, conversation, auth.user).catch((error) => {
+          console.warn('Content Partner conversation assignment skipped.', sanitizeChatwootError(error?.message || error))
+        })
+      }
 
       if (shouldBridgeToZernio) {
         zernioResult = await sendZernioConversationReply(env, conversation, content)
@@ -1231,16 +1242,95 @@ async function createChatwootContentPartnerConversation(env, contact, inboxId, e
   return conversation
 }
 
-async function findOrCreateChatwootContentPartnerConversation(env, envConfig) {
+function getChatwootAgentId(agent) {
+  return parsePositiveInteger(firstString(
+    agent?.id,
+    agent?.user_id,
+    agent?.user?.id,
+  ))
+}
+
+function getChatwootAgentEmail(agent) {
+  return normalizeEmail(firstString(
+    agent?.email,
+    agent?.user?.email,
+  ))
+}
+
+function getChatwootConversationId(conversation) {
+  return parsePositiveInteger(firstString(
+    conversation?.id,
+    conversation?.payload?.id,
+  ))
+}
+
+function getChatwootConversationAssigneeId(conversation) {
+  return parsePositiveInteger(firstString(
+    conversation?.assignee_id,
+    conversation?.payload?.assignee_id,
+    conversation?.meta?.assignee?.id,
+    conversation?.payload?.meta?.assignee?.id,
+    conversation?.assignee?.id,
+    conversation?.payload?.assignee?.id,
+  ))
+}
+
+async function findChatwootAgentByEmail(env, email) {
+  const normalizedEmail = normalizeEmail(email)
+  if (!normalizedEmail) return null
+
+  const payload = await chatwootFetch(env, '/agents')
+  const agents = Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
+  return agents.find((agent) => getChatwootAgentEmail(agent) === normalizedEmail) || null
+}
+
+async function assignChatwootContentPartnerConversation(env, conversation, portalUser) {
+  const conversationId = getChatwootConversationId(conversation)
+  const portalEmail = normalizeEmail(portalUser?.email)
+  if (!conversationId || !portalEmail) {
+    return { assigned: false, alreadyAssigned: false, reason: 'missing_conversation_or_user' }
+  }
+
+  const agent = await findChatwootAgentByEmail(env, portalEmail)
+  const assigneeId = getChatwootAgentId(agent)
+  if (!assigneeId) {
+    return { assigned: false, alreadyAssigned: false, reason: 'chatwoot_agent_not_found' }
+  }
+
+  if (getChatwootConversationAssigneeId(conversation) === assigneeId) {
+    return { assigned: false, alreadyAssigned: true, assigneeId }
+  }
+
+  await chatwootFetch(env, `/conversations/${conversationId}/assignments`, {
+    method: 'POST',
+    body: JSON.stringify({ assignee_id: assigneeId }),
+  })
+
+  return { assigned: true, alreadyAssigned: false, assigneeId }
+}
+
+async function findOrCreateChatwootContentPartnerConversation(env, envConfig, portalUser = null) {
   const inbox = await resolveChatwootSocialInbox(env)
   const contact = await findOrCreateChatwootContentPartnerContact(env, inbox.id, envConfig)
   if (!contact?.id) throw new Error('Could not create MAP Content Partner contact.')
 
   const existing = await findChatwootContentPartnerConversation(env, contact.id, inbox.id, envConfig)
-  if (existing?.id) return { conversation: existing, contact, inbox }
+  if (existing?.id) {
+    const assignment = await assignChatwootContentPartnerConversation(env, existing, portalUser).catch((error) => ({
+      assigned: false,
+      alreadyAssigned: false,
+      reason: sanitizeChatwootError(error?.message || 'Could not assign Content Partner conversation.'),
+    }))
+    return { conversation: existing, contact, inbox, assignment }
+  }
 
   const conversation = await createChatwootContentPartnerConversation(env, contact, inbox.id, envConfig)
-  return { conversation, contact, inbox }
+  const assignment = await assignChatwootContentPartnerConversation(env, conversation, portalUser).catch((error) => ({
+    assigned: false,
+    alreadyAssigned: false,
+    reason: sanitizeChatwootError(error?.message || 'Could not assign Content Partner conversation.'),
+  }))
+  return { conversation, contact, inbox, assignment }
 }
 
 async function contentPartnerReplyExists(env, conversationId, triggerMessageId) {
