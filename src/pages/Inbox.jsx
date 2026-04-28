@@ -264,7 +264,9 @@ function messageDisplayContent(message, previewUrl) {
   const fallback = previewUrl ? 'Publisher draft preview is ready.' : '[Attachment or system message]'
   let content = String(message?.content || '').trim()
   if (previewUrl) {
+    const previewImagePattern = new RegExp(`\\n*!\\[[^\\]]*\\]\\(${escapeRegExp(previewUrl)}(?:[&?]cw_image_height=[^)\\s]+)?\\)`, 'i')
     content = content
+      .replace(previewImagePattern, '')
       .replace(new RegExp(`\\n*Preview image:\\s*${escapeRegExp(previewUrl)}`, 'i'), '')
       .replace(/\n{3,}/g, '\n\n')
       .trim()

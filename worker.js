@@ -1368,6 +1368,18 @@ function getContentPartnerPreviewUrl(env, draftId, requestId) {
   return `${origin}${path}?token=${encodeURIComponent(requestId)}`
 }
 
+function getContentPartnerPreviewChatImageUrl(previewUrl) {
+  if (!previewUrl) return ''
+
+  try {
+    const url = new URL(previewUrl)
+    url.searchParams.set('cw_image_height', '360px')
+    return url.toString()
+  } catch {
+    return previewUrl
+  }
+}
+
 function normalizeChatwootMessageAttachments(payload, message) {
   if (Array.isArray(message?.attachments)) return message.attachments
   if (Array.isArray(payload?.attachments)) return payload.attachments
@@ -1648,9 +1660,10 @@ async function createContentPartnerDraft(env, envConfig, payload, message, conve
 async function sendContentPartnerChatwootReply(env, conversationId, triggerMessageId, result) {
   const reviewUrl = getPortalReviewUrl(env, result?.draftId)
   const previewUrl = getContentPartnerPreviewUrl(env, result?.draftId, result?.requestId)
+  const previewChatImageUrl = getContentPartnerPreviewChatImageUrl(previewUrl)
   const lines = [
     firstString(result?.partnerReply) || 'I created a Publisher draft from your message.',
-    previewUrl ? `Preview image: ${previewUrl}` : '',
+    previewChatImageUrl ? `![Publisher draft preview](${previewChatImageUrl})` : '',
     reviewUrl ? `Review it here: ${reviewUrl}` : '',
   ].filter(Boolean)
   const content = lines.join('\n\n').slice(0, 5000)
@@ -1660,38 +1673,6 @@ async function sendContentPartnerChatwootReply(env, conversationId, triggerMessa
     map_content_partner_request_id: result?.requestId || null,
     map_content_partner_draft_id: result?.draftId || null,
     map_content_partner_preview_url: previewUrl || null,
-  }
-
-  if (result?.draftId && result?.requestId && result?.caption) {
-    const form = new FormData()
-    form.append('content', content)
-    form.append('message_type', 'incoming')
-    form.append('private', 'false')
-    form.append('content_type', 'text')
-    form.append('file_type', 'image')
-    form.append('source_id', `map-content-partner:${triggerMessageId}`)
-    form.append('content_attributes', JSON.stringify(contentAttributes))
-    form.append(
-      'attachments[]',
-      new Blob([renderContentPartnerPreviewSvg({
-        businessName: result.businessName,
-        title: result.title,
-        caption: result.caption,
-        scheduledFor: result.scheduledFor,
-        platforms: result.recommendedPlatforms,
-        mediaSuggestion: result.mediaSuggestion,
-      })], { type: 'image/svg+xml' }),
-      `publisher-preview-${result.draftId}.svg`,
-    )
-
-    try {
-      return await chatwootFetch(env, `/conversations/${conversationId}/messages`, {
-        method: 'POST',
-        body: form,
-      })
-    } catch (error) {
-      console.warn('Content Partner preview attachment failed; sending text fallback.', error?.message || error)
-    }
   }
 
   return chatwootFetch(env, `/conversations/${conversationId}/messages`, {
