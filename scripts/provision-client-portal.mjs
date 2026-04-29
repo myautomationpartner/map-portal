@@ -189,22 +189,46 @@ function resolvePortalDeploymentMode(args, client) {
   return 'dedicated-domain'
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function shouldRetryHttpStatus(status) {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504
+}
+
 async function fetchJson(url, init = {}) {
-  const response = await fetch(url, init)
-  const text = await response.text()
-  let payload = null
+  const parsedAttempts = Number.parseInt(String(init.retryAttempts || 3), 10)
+  const attempts = Number.isFinite(parsedAttempts) && parsedAttempts > 0 ? parsedAttempts : 3
+  const parsedDelay = Number.parseInt(String(init.retryDelayMs || 750), 10)
+  const retryDelayMs = Number.isFinite(parsedDelay) && parsedDelay > 0 ? parsedDelay : 750
+  const requestInit = { ...init }
+  delete requestInit.retryAttempts
+  delete requestInit.retryDelayMs
 
-  try {
-    payload = text ? JSON.parse(text) : null
-  } catch {
-    payload = text
+  let lastError = null
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const response = await fetch(url, requestInit)
+    const text = await response.text()
+    let payload = null
+
+    try {
+      payload = text ? JSON.parse(text) : null
+    } catch {
+      payload = text
+    }
+
+    if (response.ok) return payload
+
+    lastError = new Error(`${requestInit.method || 'GET'} ${url} failed with ${response.status} ${response.statusText}: ${typeof payload === 'string' ? payload : JSON.stringify(payload)}`)
+    if (!shouldRetryHttpStatus(response.status) || attempt === attempts) break
+
+    const delay = retryDelayMs * attempt
+    process.stderr.write(`Transient ${response.status} from ${url}; retrying in ${delay}ms (${attempt}/${attempts}).\n`)
+    await sleep(delay)
   }
 
-  if (!response.ok) {
-    throw new Error(`${init.method || 'GET'} ${url} failed with ${response.status} ${response.statusText}: ${typeof payload === 'string' ? payload : JSON.stringify(payload)}`)
-  }
-
-  return payload
+  throw lastError
 }
 
 function getChatwootProvisioningConfig() {
