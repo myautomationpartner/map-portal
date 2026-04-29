@@ -284,7 +284,14 @@ async function listChatwootAccounts() {
 
 async function findChatwootAccountForClient(client) {
   const accountName = String(client.business_name || client.slug || client.id).trim().toLowerCase()
-  const accounts = await listChatwootAccounts()
+  let accounts = []
+  try {
+    accounts = await listChatwootAccounts()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    process.stderr.write(`Chatwoot account lookup failed; creating a fresh account for ${client.slug || client.id}: ${message}\n`)
+    return null
+  }
 
   return accounts.find((account) => {
     const attributes = account?.custom_attributes || {}
