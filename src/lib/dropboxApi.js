@@ -18,9 +18,10 @@
  */
 
 const DROPBOX_APP_KEY = 's0hnp0b7frldcbb'
+const DROPBOX_WEEK_MEDIA_ENDPOINT = '/api/dropbox/week-media'
 
 /** File types accepted by the Chooser — mirrors social media requirements. */
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.mp4', '.pdf', '.docx']
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif', '.heic', '.heif']
 
 /**
  * Cached load promise — ensures the script tag is only injected once,
@@ -156,4 +157,39 @@ export async function openDropboxChooser(options = {}) {
       reject(err)
     }
   })
+}
+
+export async function fetchDropboxWeekSuggestions({ dateString, postType = '', mediaHint = '' }) {
+  if (!dateString) {
+    return {
+      weekFolder: '',
+      suggestions: [],
+      message: 'Pick a dated calendar slot to load Dropbox suggestions.',
+    }
+  }
+
+  const url = new URL(DROPBOX_WEEK_MEDIA_ENDPOINT, window.location.origin)
+  url.searchParams.set('date', dateString)
+  if (postType) url.searchParams.set('postType', postType)
+  if (mediaHint) url.searchParams.set('mediaHint', mediaHint)
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      accept: 'application/json',
+    },
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(payload.error || 'Could not load Dropbox media suggestions.')
+  }
+
+  return {
+    weekFolder: payload.weekFolder || '',
+    folderPath: payload.folderPath || '',
+    suggestions: Array.isArray(payload.suggestions) ? payload.suggestions : [],
+    message: payload.message || '',
+    totalCandidates: Number(payload.totalCandidates || 0),
+  }
 }

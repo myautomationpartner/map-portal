@@ -1,6 +1,7 @@
 # Dancescapes Portal — Architecture & Working Guide
 
-> **Live URL:** https://dancescapes-portal.kennymonico.workers.dev  
+> **Current technical URL:** https://dancescapes-portal.kennymonico.workers.dev  
+> **Recommended customer-facing URL:** https://dancescapes.portal.myautomationpartner.com  
 > **GitHub:** https://github.com/myautomationpartner/map-portal  
 > **Local folder:** `~/Desktop/Dancescapes Portal/MAP-PORTAL/`
 
@@ -162,6 +163,14 @@ The `wrangler.toml` configures:
 - Worker name: `dancescapes-portal`
 - Assets dir: `./dist`
 - SPA mode: all 404s rewrite to `/index.html` (required for React Router)
+
+Recommended worker env for MAP-owned cutover:
+```bash
+npx wrangler secret put PORTAL_CANONICAL_HOST
+# value: dancescapes.portal.myautomationpartner.com
+```
+
+With `PORTAL_CANONICAL_HOST` set, non-API browser requests hitting the technical host can be redirected to the MAP-owned customer-facing host while `/api/*` routes continue to work on the technical host during transition.
 
 ### Environment Variables
 

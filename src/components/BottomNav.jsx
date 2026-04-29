@@ -1,17 +1,17 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Send, MessageSquare, Settings } from 'lucide-react'
+import { CalendarDays, LayoutDashboard, MessageSquare, Settings, CreditCard } from 'lucide-react'
 
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/post',     icon: Send,            label: 'Publisher'  },
+  { to: '/calendar', icon: CalendarDays,     label: 'Publisher' },
   { to: '/inbox',    icon: MessageSquare,   label: 'Inbox'      },
   { to: '/settings', icon: Settings,        label: 'Settings'   },
 ]
 
-export default function BottomNav() {
+export default function BottomNav({ billingAccess, onBillingAction, billingActionPending = false }) {
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 shadow-2xl"
-      style={{ background: '#0d0b08', borderTop: '1px solid #3d3420' }}>
+    <nav className="fixed bottom-3 left-3 right-3 z-50 rounded-[28px] border shadow-2xl md:hidden"
+      style={{ background: 'rgba(10,10,10,0.94)', borderColor: 'rgba(201, 168, 76, 0.22)', backdropFilter: 'blur(20px)' }}>
       <div className="flex items-center">
         {navItems.map(({ to, icon: Icon, label }) => (
           <NavLink
@@ -19,29 +19,46 @@ export default function BottomNav() {
             to={to}
             end={to === '/'}
             className="flex-1 flex flex-col items-center gap-1 py-3 transition-all duration-200"
-            style={({ isActive }) => ({ color: isActive ? '#d4a83a' : '#4e4228' })}
+            style={({ isActive }) => ({ color: isActive ? 'var(--portal-primary)' : 'rgba(255,255,255,0.55)' })}
           >
             {({ isActive }) => (
               <>
-                <div className="relative p-2 rounded-xl transition-all duration-200"
-                  style={{ background: isActive ? 'rgba(212,168,58,0.10)' : 'transparent' }}>
-                  <Icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
+                <div className="relative rounded-2xl p-2.5 transition-all duration-200"
+                  style={{ background: isActive ? 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.08))' : 'transparent' }}>
+                  <Icon className="h-5 w-5" strokeWidth={isActive ? 2.5 : 2} />
                   {to === '/inbox' && (
-                    <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-[17px] h-[17px] bg-rose-600 text-white text-[9px] font-black px-1 rounded-full border-2 z-10 shadow-lg"
-                      style={{ borderColor: '#0d0b08' }}>
+                    <span className="absolute -right-1 -top-1 z-10 flex h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 px-1 text-[9px] font-black shadow-lg"
+                      style={{ borderColor: 'white', background: 'var(--portal-primary)', color: 'var(--portal-dark)' }}>
                       3
                     </span>
                   )}
                   {isActive && (
-                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-0.5 rounded-full bg-brand-gold"
-                      style={{ boxShadow: '0 0 8px rgba(212,168,58,0.5)' }} />
+                    <div className="absolute -bottom-1 left-1/2 h-0.5 w-4 -translate-x-1/2 rounded-full"
+                      style={{ background: 'linear-gradient(90deg, var(--portal-primary), #f0ddb0)', boxShadow: '0 0 12px rgba(201, 168, 76, 0.4)' }} />
                   )}
                 </div>
-                <span className="text-[9px] font-semibold uppercase tracking-widest">{label}</span>
+                <span className="text-[9px] font-semibold uppercase tracking-[0.24em]">{label}</span>
               </>
             )}
           </NavLink>
         ))}
+        {billingAccess?.showBanner && (billingAccess?.actionUrl || onBillingAction) ? (
+          <button
+            type="button"
+            onClick={onBillingAction}
+            disabled={billingActionPending}
+            className="flex-1 flex flex-col items-center gap-1 py-3 transition-all duration-200"
+            style={{ color: 'var(--portal-primary)' }}
+          >
+            <div
+              className="relative rounded-2xl p-2.5 transition-all duration-200"
+              style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.08))' }}
+            >
+              <CreditCard className="h-5 w-5" strokeWidth={2.5} />
+            </div>
+            <span className="text-[9px] font-semibold uppercase tracking-[0.24em]">{billingActionPending ? '...' : 'Pay'}</span>
+          </button>
+        ) : null}
       </div>
     </nav>
   )

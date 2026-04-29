@@ -1,12 +1,47 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { Loader2 } from 'lucide-react'
+import { buildTenantConfig } from '../lib/tenantConfig'
 
 export default function Login() {
-  const [email, setEmail] = useState('')
+  const tenant = useMemo(() => buildTenantConfig(), [])
+  const handleLogoError = (event) => {
+    const image = event.currentTarget
+
+    if (!image.dataset.fallbackApplied && tenant.fallbackLogoUrl && image.src !== tenant.fallbackLogoUrl) {
+      image.dataset.fallbackApplied = 'true'
+      image.src = tenant.fallbackLogoUrl
+      return
+    }
+
+    image.style.display = 'none'
+    image.parentElement.style.display = 'flex'
+    image.parentElement.style.alignItems = 'center'
+    image.parentElement.style.justifyContent = 'center'
+    image.parentElement.textContent = tenant.logoInitials
+    image.parentElement.style.color = '#c9a84c'
+    image.parentElement.style.fontSize = '28px'
+    image.parentElement.style.fontFamily = 'Sora,Georgia,serif'
+    image.parentElement.style.fontWeight = '600'
+  }
+  const loginContext = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return { email: '', setupMessage: '' }
+    }
+
+    const params = new URLSearchParams(window.location.search)
+    const seededEmail = params.get('email') || ''
+    const setupMessage = params.get('setup') === 'complete'
+      ? 'Your portal is ready. Sign in with the password you just created.'
+      : ''
+
+    return { email: seededEmail, setupMessage }
+  }, [])
+  const [email, setEmail] = useState(loginContext.email)
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [setupMessage] = useState(loginContext.setupMessage)
 
   async function handleLogin(e) {
     e.preventDefault()
@@ -21,48 +56,86 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4"
-      style={{ background: '#0d0b08' }}>
+    <div className="portal-shell relative flex min-h-screen items-center justify-center p-4">
+      <div className="pointer-events-none absolute inset-0"
+        style={{ background: 'radial-gradient(ellipse 80% 55% at 50% 0%, rgba(201, 168, 76, 0.16) 0%, transparent 68%)' }} />
 
-      {/* Subtle warm vignette */}
-      <div className="absolute inset-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(212,168,58,0.04) 0%, transparent 70%)' }} />
+      <div className="relative z-10 grid w-full max-w-5xl gap-8 lg:grid-cols-[1.1fr_430px] lg:items-center">
+        <div className="hidden lg:block">
+          <div className="portal-panel rounded-[40px] p-8">
+            <div className="mb-8 flex items-center gap-4">
+              <div className="inline-flex h-20 w-20 items-center justify-center overflow-hidden rounded-[28px] border bg-white p-1 shadow-sm"
+                style={{ borderColor: 'rgba(201, 168, 76, 0.2)' }}>
+                <img
+                  src={tenant.logoUrl}
+                  alt={tenant.displayName}
+                  className="h-full w-full object-cover"
+                  onError={handleLogoError}
+                />
+              </div>
+              <div>
+                <p className="font-display text-3xl font-semibold" style={{ color: 'var(--portal-text)' }}>{tenant.displayName}</p>
+                <p className="mt-1 text-sm font-medium" style={{ color: 'var(--portal-text-muted)' }}>{tenant.portalLabel}</p>
+              </div>
+            </div>
 
-      <div className="w-full max-w-sm relative z-10">
-
-        {/* Brand */}
-        <div className="text-center mb-10">
-          <div className="inline-block w-20 h-20 rounded-2xl overflow-hidden mb-5 border"
-            style={{ borderColor: '#3d3420' }}>
-            <img
-              src="https://pub-ba8be99ab92a493c8f41012c737905d5.r2.dev/dancescapes%20logo.jpg"
-              alt="Dancescapes"
-              className="w-full h-full object-cover"
-              onError={e => {
-                e.target.style.display = 'none'
-                e.target.parentElement.style.display = 'flex'
-                e.target.parentElement.style.alignItems = 'center'
-                e.target.parentElement.style.justifyContent = 'center'
-                e.target.parentElement.style.background = '#1e1910'
-                e.target.parentElement.innerHTML = '<span style="color:#d4a83a;font-size:32px;font-family:Cormorant Garamond,serif;font-weight:600">D</span>'
-              }}
-            />
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="portal-stat-card rounded-[24px] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Documents</p>
+                <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>OneDrive-style file browsing</p>
+              </div>
+              <div className="portal-stat-card rounded-[24px] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Sharing</p>
+                <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Signed previews and secure links</p>
+              </div>
+              <div className="portal-stat-card rounded-[24px] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Daily Work</p>
+                <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Dashboard tools in one place</p>
+              </div>
+            </div>
           </div>
-          <h1 className="font-display text-3xl font-semibold mb-1" style={{ color: '#f8f2e4' }}>
-            Dancescapes
-          </h1>
-          <p className="text-sm" style={{ color: '#8a7858' }}>Partner Portal</p>
         </div>
 
-        {/* Card */}
-        <div className="rounded-2xl p-8" style={{ background: '#1e1910', border: '1px solid #3d3420' }}>
-          <h2 className="font-display text-xl font-semibold mb-1" style={{ color: '#f8f2e4' }}>Welcome back</h2>
-          <p className="text-sm mb-7" style={{ color: '#8a7858' }}>Sign in to your studio dashboard</p>
+        <div className="w-full max-w-sm justify-self-center lg:max-w-none">
+          <div className="mb-10 text-center lg:hidden">
+          <div className="mb-5 inline-block h-20 w-20 overflow-hidden rounded-[26px] border bg-white p-1 shadow-lg"
+            style={{ borderColor: 'rgba(201, 168, 76, 0.2)' }}>
+            <img
+              src={tenant.logoUrl}
+              alt={tenant.displayName}
+              className="w-full h-full object-cover"
+              onError={handleLogoError}
+            />
+          </div>
+          <h1 className="font-display mb-1 text-3xl font-semibold" style={{ color: 'var(--portal-text)' }}>
+            {tenant.displayName}
+          </h1>
+          <p className="text-sm font-medium" style={{ color: 'var(--portal-text-muted)' }}>{tenant.portalLabel}</p>
+        </div>
+
+        <div className="portal-surface rounded-[32px] p-8">
+          <div className="mb-7">
+            <span className="portal-chip inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
+              Secure client access
+            </span>
+            <h2 className="font-display mt-4 text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>Welcome back</h2>
+            <p className="mt-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>Sign in to your portal dashboard and documents workspace.</p>
+          </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
+            {setupMessage && (
+              <div className="rounded-2xl px-4 py-3 text-sm" style={{
+                color: 'var(--portal-text)',
+                background: 'rgba(99, 214, 175, 0.14)',
+                border: '1px solid rgba(99, 214, 175, 0.28)',
+              }}>
+                {setupMessage}
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-medium uppercase tracking-wider mb-2"
-                style={{ color: '#8a7858' }}>
+                style={{ color: 'var(--portal-text-soft)' }}>
                 Email
               </label>
               <input
@@ -71,20 +144,13 @@ export default function Login() {
                 onChange={e => setEmail(e.target.value)}
                 required
                 placeholder="you@studio.com"
-                className="w-full rounded-xl px-4 py-3 text-sm transition-all duration-200 focus:outline-none"
-                style={{
-                  background: '#252015',
-                  border: '1px solid #3d3420',
-                  color: '#f8f2e4',
-                }}
-                onFocus={e => e.target.style.borderColor = '#d4a83a'}
-                onBlur={e => e.target.style.borderColor = '#3d3420'}
+                className="portal-input px-4 py-3 text-sm"
               />
             </div>
 
             <div>
               <label className="block text-xs font-medium uppercase tracking-wider mb-2"
-                style={{ color: '#8a7858' }}>
+                style={{ color: 'var(--portal-text-soft)' }}>
                 Password
               </label>
               <input
@@ -93,20 +159,12 @@ export default function Login() {
                 onChange={e => setPassword(e.target.value)}
                 required
                 placeholder="••••••••"
-                className="w-full rounded-xl px-4 py-3 text-sm transition-all duration-200 focus:outline-none"
-                style={{
-                  background: '#252015',
-                  border: '1px solid #3d3420',
-                  color: '#f8f2e4',
-                }}
-                onFocus={e => e.target.style.borderColor = '#d4a83a'}
-                onBlur={e => e.target.style.borderColor = '#3d3420'}
+                className="portal-input px-4 py-3 text-sm"
               />
             </div>
 
             {error && (
-              <div className="rounded-xl px-4 py-3 text-sm flex items-center gap-2"
-                style={{ background: 'rgba(196,85,110,0.10)', border: '1px solid rgba(196,85,110,0.25)', color: '#e8899a' }}>
+              <div className="portal-status-danger flex items-center gap-2 rounded-2xl px-4 py-3 text-sm">
                 {error}
               </div>
             )}
@@ -114,12 +172,11 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-px active:translate-y-0"
-              style={{ background: '#d4a83a', color: '#0d0b08' }}
+              className="portal-button-primary flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   Signing in…
                 </>
               ) : (
@@ -129,16 +186,17 @@ export default function Login() {
           </form>
         </div>
 
-        <p className="text-center text-xs mt-6" style={{ color: '#4e4228' }}>
+        <p className="mt-6 text-center text-xs" style={{ color: 'var(--portal-text-soft)' }}>
           Need access?{' '}
           <a
-            href="mailto:billing@myautomationpartner.com"
-            className="transition-colors hover:text-brand-gold"
-            style={{ color: '#8a7858' }}
+            href={`mailto:${tenant.supportEmail}`}
+            className="transition-colors hover:text-[var(--portal-primary)]"
+            style={{ color: 'var(--portal-text-muted)' }}
           >
-            Contact your account manager
+            Contact support
           </a>
         </p>
+        </div>
       </div>
     </div>
   )

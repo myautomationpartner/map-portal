@@ -1,9 +1,13 @@
 name = "dancescapes-portal"
+main = "worker.js"
 compatibility_date = "2025-01-01"
+workers_dev = true
+
+[[routes]]
+pattern = "dancescapes.portal.myautomationpartner.com"
+custom_domain = true
 
 [assets]
 directory = "./dist"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
-
-[[custom_domains]]
-pattern = "dancescapesportal.myautomationpartner.com"
