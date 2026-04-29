@@ -1,4 +1,5 @@
 import { supabase, supabaseUrl } from './supabase'
+import { portalPath } from './portalPath'
 
 const FUNCTION_BASE = `${supabaseUrl}/functions/v1`
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
@@ -438,7 +439,7 @@ export async function fetchPostBoosts(clientId, options = {}) {
 
 export async function launchPostBoost(input) {
   const accessToken = await getAccessToken()
-  const response = await fetch('/api/post-boosts', {
+  const response = await fetch(portalPath('/api/post-boosts'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -693,7 +694,7 @@ export async function deleteSocialDraft(draftId) {
 
 export async function deletePost(postId) {
   const accessToken = await getAccessToken()
-  const response = await fetch(`/api/posts/${encodeURIComponent(postId)}/delete`, {
+  const response = await fetch(portalPath(`/api/posts/${encodeURIComponent(postId)}/delete`), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

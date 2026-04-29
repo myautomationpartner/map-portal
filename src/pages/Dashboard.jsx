@@ -9,6 +9,7 @@ import {
   fetchWorkspacePreferences,
   upsertWorkspacePreferences,
 } from '../lib/portalApi'
+import { portalPath } from '../lib/portalPath'
 import { DASHBOARD_PLATFORMS, PLATFORM_CATALOG } from '../lib/platformCatalog'
 import {
   ArrowUpRight,
@@ -942,7 +943,7 @@ export default function Dashboard() {
 
   function buildSettingsRedirectUrl(platform) {
     if (typeof window === 'undefined') return ''
-    const url = new URL('/settings', window.location.origin)
+    const url = new URL(portalPath('/settings'), window.location.origin)
     url.searchParams.set('connected', platform)
     url.searchParams.set('cid', clientId)
     url.searchParams.set('source', 'workspace')
@@ -971,7 +972,7 @@ export default function Dashboard() {
     setConnectorStatus(null)
 
     try {
-      const res = await fetch(SETTINGS_CONNECT_ENDPOINT, {
+      const res = await fetch(portalPath(SETTINGS_CONNECT_ENDPOINT), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

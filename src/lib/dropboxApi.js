@@ -17,6 +17,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { portalPath } from './portalPath'
+
 const DROPBOX_APP_KEY = 's0hnp0b7frldcbb'
 const DROPBOX_WEEK_MEDIA_ENDPOINT = '/api/dropbox/week-media'
 
@@ -168,7 +170,7 @@ export async function fetchDropboxWeekSuggestions({ dateString, postType = '', m
     }
   }
 
-  const url = new URL(DROPBOX_WEEK_MEDIA_ENDPOINT, window.location.origin)
+  const url = new URL(portalPath(DROPBOX_WEEK_MEDIA_ENDPOINT), window.location.origin)
   url.searchParams.set('date', dateString)
   if (postType) url.searchParams.set('postType', postType)
   if (mediaHint) url.searchParams.set('mediaHint', mediaHint)

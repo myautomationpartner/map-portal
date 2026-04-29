@@ -5,6 +5,7 @@ import { supabase } from './lib/supabase'
 import { createBillingCheckoutSession, createBillingPortalSession, fetchProfile, getSessionClaims } from './lib/portalApi'
 import { buildTenantConfig } from './lib/tenantConfig'
 import { buildReadOnlyMessage, resolveBillingAccess } from './lib/portalBilling'
+import { inferPathTenant } from './lib/portalPath'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
@@ -58,6 +59,14 @@ function resolveExpectedHost(profile) {
 
   const slug = String(client?.slug || '').trim().toLowerCase()
   return slug ? `${slug}.myautomationpartner.com` : ''
+}
+
+function resolvePathTenantMismatch(profile) {
+  const clientSlug = String(profile?.clients?.slug || '').trim().toLowerCase()
+  const pathTenant = inferPathTenant()
+
+  if (!clientSlug || !pathTenant.clientSlug) return false
+  return pathTenant.clientSlug !== clientSlug
 }
 
 function AuthProvider({ children }) {
@@ -143,13 +152,16 @@ function ProtectedLayout({ session }) {
   const billingAccess = useMemo(() => resolveBillingAccess(tenant), [tenant])
   const currentHost = typeof window === 'undefined' ? '' : normalizeHost(window.location.hostname)
   const expectedHost = useMemo(() => resolveExpectedHost(profile), [profile])
+  const pathTenantMismatch = useMemo(() => resolvePathTenantMismatch(profile), [profile])
   const tenantHostMismatch = Boolean(
     session &&
     profile?.clients &&
     !isRelaxedHost(currentHost) &&
     expectedHost &&
-    currentHost !== expectedHost,
+    currentHost !== expectedHost &&
+    !pathTenantMismatch,
   )
+  const tenantRouteMismatch = Boolean(session && profile?.clients && pathTenantMismatch)
 
   useEffect(() => {
     const url = new URL(window.location.href)
@@ -161,11 +173,11 @@ function ProtectedLayout({ session }) {
   }, [queryClient])
 
   useEffect(() => {
-    if (!tenantHostMismatch) return
+    if (!tenantHostMismatch && !tenantRouteMismatch) return
 
     queryClient.clear()
     void supabase.auth.signOut()
-  }, [queryClient, tenantHostMismatch])
+  }, [queryClient, tenantHostMismatch, tenantRouteMismatch])
 
   function requireWriteAccess(actionLabel = 'make changes') {
     if (!billingAccess.readOnly) return true
@@ -218,7 +230,9 @@ function ProtectedLayout({ session }) {
 
   if (!session) return <Navigate to="/login" replace />
 
-  if (tenantHostMismatch) {
+  if (tenantHostMismatch || tenantRouteMismatch) {
+    const loginPath = `${inferPathTenant().basename || ''}/login`
+
     return (
       <div className="portal-shell flex min-h-screen items-center justify-center p-6">
         <div className="portal-surface max-w-md rounded-[28px] p-6 text-center">
@@ -229,7 +243,7 @@ function ProtectedLayout({ session }) {
             We signed out the stale browser session so this portal can load with the right customer account.
           </p>
           <a
-            href="/login"
+            href={loginPath}
             className="portal-button-primary mt-5 inline-flex rounded-2xl px-5 py-3 text-sm font-semibold"
           >
             Continue to login
@@ -273,9 +287,11 @@ function ProtectedLayout({ session }) {
 }
 
 export default function App() {
+  const pathTenant = inferPathTenant()
+
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={pathTenant.basename || undefined}>
         <AuthProvider>
           {(session) => (
             <Routes>

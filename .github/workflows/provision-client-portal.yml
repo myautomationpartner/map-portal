@@ -16,6 +16,19 @@ on:
         required: false
         type: boolean
         default: false
+      deployment_mode:
+        description: Portal deployment mode
+        required: false
+        type: choice
+        default: shared-path
+        options:
+          - shared-path
+          - dedicated-domain
+      deploy_shared_worker:
+        description: Rebuild and deploy the shared path Worker
+        required: false
+        type: boolean
+        default: false
   repository_dispatch:
     types:
       - provision-client-portal
@@ -43,6 +56,10 @@ jobs:
       CLIENT_SLUG: ${{ github.event.inputs.client_slug || github.event.client_payload.client_slug }}
       RUN_ID: ${{ github.event.inputs.run_id || github.event.client_payload.run_id }}
       DRY_RUN: ${{ github.event.inputs.dry_run || github.event.client_payload.dry_run || 'false' }}
+      DEPLOYMENT_MODE: ${{ github.event.inputs.deployment_mode || github.event.client_payload.deployment_mode || 'shared-path' }}
+      DEPLOY_SHARED_WORKER: ${{ github.event.inputs.deploy_shared_worker || github.event.client_payload.deploy_shared_worker || 'false' }}
+      MAP_SHARED_PORTAL_HOST: ${{ vars.MAP_SHARED_PORTAL_HOST || 'myautomationpartner.com' }}
+      MAP_SHARED_PORTAL_PATH_PREFIX: ${{ vars.MAP_SHARED_PORTAL_PATH_PREFIX || 'portal' }}
       PORTAL_TEMPLATE_REF: phase4-documents-share
     steps:
       - name: Checkout portal template
@@ -70,6 +87,16 @@ jobs:
 
           if [ -n "$RUN_ID" ]; then
             args+=(--run-id "$RUN_ID")
+          fi
+
+          if [ "$DEPLOYMENT_MODE" = "dedicated-domain" ]; then
+            args+=(--dedicated-domain)
+          else
+            args+=(--shared-path)
+          fi
+
+          if [ "$DEPLOY_SHARED_WORKER" = "true" ]; then
+            args+=(--deploy-shared-worker)
           fi
 
           if [ "$DRY_RUN" = "true" ]; then

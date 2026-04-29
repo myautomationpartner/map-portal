@@ -1,3 +1,5 @@
+import { buildSharedPortalPath, inferPathTenant } from './portalPath'
+
 const DEFAULT_DISPLAY_NAME = 'My Automation Partner'
 const DEFAULT_PORTAL_LABEL = 'Client Portal'
 const DEFAULT_SUPPORT_EMAIL = 'info@myautomationpartner.com'
@@ -43,12 +45,16 @@ export function buildTenantConfig(input = {}) {
   const client = input.client || null
   const claims = input.claims || {}
   const sharePayload = input.sharePayload || {}
+  const pathTenant = typeof window === 'undefined'
+    ? { clientSlug: '', basename: '', routeModel: 'host' }
+    : inferPathTenant()
 
   const clientSlug =
     client?.slug ||
     claims.client_slug ||
     sharePayload.client_slug ||
     sharePayload.clientSlug ||
+    pathTenant.clientSlug ||
     ''
 
   const businessName =
@@ -84,6 +90,10 @@ export function buildTenantConfig(input = {}) {
     sharePayload.portal_domain ||
     client?.portal_domain ||
     ''
+  const canonicalPath =
+    sharePayload.portal_path ||
+    client?.portal_path ||
+    (clientSlug ? buildSharedPortalPath(clientSlug) : '')
 
   const workerName =
     import.meta.env.VITE_PORTAL_WORKER_NAME ||
@@ -125,8 +135,11 @@ export function buildTenantConfig(input = {}) {
     fallbackLogoUrl: DEFAULT_LOGO_URL,
     logoInitials: initialsFromName(displayName),
     canonicalHost,
+    canonicalPath,
     workerName,
     domainPattern: DEFAULT_DOMAIN_PATTERN,
+    routeModel: pathTenant.routeModel,
+    pathBasename: pathTenant.basename,
     theme,
     billingStatus,
     billingPortalUrl,

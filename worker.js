@@ -8,6 +8,7 @@ const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_xwASGbwUsZhX5CFNizTAmg_
 const DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME = 'Social Inbox'
 const CONTENT_PARTNER_CONTACT_NAME = 'MAP Content Partner'
 const TECHNICAL_HOST_SUFFIXES = ['.workers.dev', '.pages.dev']
+const DEFAULT_SHARED_PORTAL_PATH_PREFIX = 'portal'
 const SUPPORTED_MEDIA_EXTENSIONS = new Set([
   'jpg',
   'jpeg',
@@ -55,8 +56,58 @@ function getCanonicalPortalHost(env) {
   return String(env.PORTAL_CANONICAL_HOST || '').trim().toLowerCase()
 }
 
+function getSharedPortalPathPrefix(env) {
+  return String(env.PORTAL_SHARED_PATH_PREFIX || DEFAULT_SHARED_PORTAL_PATH_PREFIX)
+    .trim()
+    .toLowerCase()
+    .replace(/^\/+|\/+$/g, '')
+}
+
+function extractTenantSlugFromPath(pathname, env) {
+  const segments = String(pathname || '')
+    .split('/')
+    .map((segment) => segment.trim().toLowerCase())
+    .filter(Boolean)
+  const prefix = getSharedPortalPathPrefix(env)
+
+  if (prefix && segments[0] === prefix && segments[1]) return segments[1]
+  return ''
+}
+
+function normalizeSharedPortalRequest(request, env) {
+  const url = new URL(request.url)
+  const segments = url.pathname.split('/').filter(Boolean)
+  const prefix = getSharedPortalPathPrefix(env)
+
+  if (!prefix || segments[0]?.toLowerCase() !== prefix || !segments[1]) {
+    return { request, url, tenantSlug: '' }
+  }
+
+  const tenantSlug = decodeURIComponent(segments[1]).trim().toLowerCase()
+  const strippedSegments = segments.slice(2)
+  const normalizedUrl = new URL(request.url)
+  normalizedUrl.pathname = `/${strippedSegments.join('/')}`.replace(/\/+$/, '') || '/'
+
+  const headers = new Headers(request.headers)
+  headers.set('x-map-tenant-slug', tenantSlug)
+  headers.set('x-map-original-pathname', url.pathname)
+
+  return {
+    request: new Request(normalizedUrl.toString(), {
+      method: request.method,
+      headers,
+      body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
+      redirect: request.redirect,
+    }),
+    url: normalizedUrl,
+    tenantSlug,
+  }
+}
+
 function shouldBypassCanonicalRedirect(url) {
-  return url.pathname.startsWith('/api/')
+  const path = String(url.pathname || '')
+  if (path.startsWith('/api/')) return true
+  return /^\/[^/]+\/[^/]+\/api\//.test(path)
 }
 
 function buildCanonicalRedirect(request, env) {
@@ -213,7 +264,7 @@ function getSupabaseConfig(env) {
   const clientId = String(env.PORTAL_CLIENT_ID || '')
   const webhookSecret = String(env.ZERNIO_WEBHOOK_SECRET || '')
 
-  if (!url || !serviceRoleKey || !clientId || !webhookSecret) {
+  if (!url || !serviceRoleKey || !webhookSecret) {
     throw new Error('Missing worker secrets for Zernio webhook reconciliation.')
   }
 
@@ -226,7 +277,7 @@ function getPortalAuthConfig(env) {
   const publishableKey = String(env.SUPABASE_ANON_KEY || env.SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY || '')
   const clientId = String(env.PORTAL_CLIENT_ID || '')
 
-  if (!url || !serviceRoleKey || !clientId) {
+  if (!url || !serviceRoleKey) {
     throw new Error('Missing worker secrets for portal authentication.')
   }
 
@@ -283,12 +334,17 @@ async function authorizePortalUser(request, env) {
     return { error: json({ error: 'Invalid portal session.' }, { status: 401 }) }
   }
 
+  const requestedTenantSlug = String(
+    request.headers.get('x-map-tenant-slug')
+    || extractTenantSlugFromPath(new URL(request.url).pathname, env)
+    || '',
+  ).trim().toLowerCase()
   const filters = new URLSearchParams({
-    select: 'id,client_id,role,email',
+    select: 'id,client_id,role,email,clients(slug)',
     id: `eq.${authUserId}`,
-    client_id: `eq.${envConfig.clientId}`,
     limit: '1',
   })
+  if (envConfig.clientId) filters.set('client_id', `eq.${envConfig.clientId}`)
 
   let portalRows = []
   try {
@@ -303,10 +359,25 @@ async function authorizePortalUser(request, env) {
     return { error: json({ error: 'This portal session is not authorized for this tenant.' }, { status: 403 }) }
   }
 
-  return { user: portalUser, envConfig, bearerToken }
+  const profileSlug = String(portalUser?.clients?.slug || '').trim().toLowerCase()
+  if (requestedTenantSlug && profileSlug && requestedTenantSlug !== profileSlug) {
+    return { error: json({ error: 'This portal session is not authorized for this tenant path.' }, { status: 403 }) }
+  }
+
+  return {
+    user: portalUser,
+    envConfig: {
+      ...envConfig,
+      clientId: envConfig.clientId || portalUser.client_id,
+      clientSlug: profileSlug,
+    },
+    bearerToken,
+  }
 }
 
 function getChatwootConfig(env) {
+  if (env?.baseUrl && env?.accountId && env?.apiToken) return env
+
   const baseUrl = String(env.CHATWOOT_BASE_URL || DEFAULT_CHATWOOT_BASE_URL).replace(/\/$/, '')
   const accountId = String(env.CHATWOOT_ACCOUNT_ID || '').trim()
   const apiToken = String(env.CHATWOOT_API_ACCESS_TOKEN || '').trim()
@@ -317,6 +388,29 @@ function getChatwootConfig(env) {
   }
 
   return { baseUrl, accountId, apiToken, socialInboxId }
+}
+
+async function getChatwootConfigForClient(env, envConfig) {
+  if (env.CHATWOOT_ACCOUNT_ID) return getChatwootConfig(env)
+
+  const baseUrl = String(env.CHATWOOT_BASE_URL || DEFAULT_CHATWOOT_BASE_URL).replace(/\/$/, '')
+  const apiToken = String(env.CHATWOOT_API_ACCESS_TOKEN || '').trim()
+  if (!apiToken) {
+    throw new Error('Chatwoot API is not configured for this portal yet.')
+  }
+
+  const settings = await loadWebsiteChatSettings(envConfig)
+  const accountId = String(settings?.chatwoot_account_id || '').trim()
+  if (!accountId) {
+    throw new Error('Chatwoot account is not configured for this tenant yet.')
+  }
+
+  return {
+    baseUrl,
+    apiToken,
+    accountId,
+    socialInboxId: parsePositiveInteger(settings?.chatwoot_social_inbox_id) || parsePositiveInteger(env.CHATWOOT_SOCIAL_INBOX_ID),
+  }
 }
 
 function getZernioConfig(env) {
@@ -1097,18 +1191,20 @@ async function handleChatwootProxy(request, env) {
   const route = url.pathname.replace(/^\/api\/chatwoot\/?/, '')
 
   try {
+    const chatwootConfig = await getChatwootConfigForClient(env, auth.envConfig)
+
     if (route === 'health') {
-      getChatwootConfig(env)
+      getChatwootConfig(chatwootConfig)
       return json({ configured: true })
     }
 
     if (route === 'inboxes' && request.method === 'GET') {
-      const payload = await chatwootFetch(env, '/inboxes')
+      const payload = await chatwootFetch(chatwootConfig, '/inboxes')
       return json(payload)
     }
 
     if (route === 'agents' && request.method === 'GET') {
-      const payload = await chatwootFetch(env, '/agents')
+      const payload = await chatwootFetch(chatwootConfig, '/agents')
       return json(payload)
     }
 
@@ -1123,14 +1219,14 @@ async function handleChatwootProxy(request, env) {
       if (q) params.set('q', q.slice(0, 120))
       if (inboxId) params.set('inbox_id', String(inboxId))
 
-      const payload = await chatwootFetch(env, `/conversations?${params.toString()}`)
+      const payload = await chatwootFetch(chatwootConfig, `/conversations?${params.toString()}`)
       return json(payload)
     }
 
     const messagesMatch = /^conversations\/(\d+)\/messages$/.exec(route)
     if (messagesMatch && request.method === 'GET') {
       const conversationId = messagesMatch[1]
-      const payload = await chatwootFetch(env, `/conversations/${conversationId}/messages`)
+      const payload = await chatwootFetch(chatwootConfig, `/conversations/${conversationId}/messages`)
       return json(payload)
     }
 
@@ -1142,7 +1238,7 @@ async function handleChatwootProxy(request, env) {
         return json({ error: 'Reply content is required.' }, { status: 400 })
       }
 
-      const conversation = await chatwootFetch(env, `/conversations/${conversationId}`)
+      const conversation = await chatwootFetch(chatwootConfig, `/conversations/${conversationId}`)
       const shouldBridgeToZernio = isZernioBackedConversation(conversation) && !body.private
       const shouldRunContentPartner = isContentPartnerConversation(conversation) && !body.private
       let zernioResult = null
@@ -1157,7 +1253,7 @@ async function handleChatwootProxy(request, env) {
         zernioResult = await sendZernioConversationReply(env, conversation, content)
       }
 
-      const payload = await chatwootFetch(env, `/conversations/${conversationId}/messages`, {
+      const payload = await chatwootFetch(chatwootConfig, `/conversations/${conversationId}/messages`, {
         method: 'POST',
         body: JSON.stringify({
           content: content.slice(0, 5000),
@@ -1217,7 +1313,7 @@ async function handleChatwootProxy(request, env) {
         return json({ error: 'Status must be open, pending, or resolved.' }, { status: 400 })
       }
 
-      const payload = await chatwootFetch(env, `/conversations/${conversationId}/toggle_status`, {
+      const payload = await chatwootFetch(chatwootConfig, `/conversations/${conversationId}/toggle_status`, {
         method: 'POST',
         body: JSON.stringify({ status }),
       })
@@ -2892,6 +2988,20 @@ async function removeSocialConnection(envConfig, { platform, accountId }) {
   )
 }
 
+async function resolveClientIdFromTenantSlug(envConfig, tenantSlug) {
+  const slug = String(tenantSlug || '').trim().toLowerCase()
+  if (!slug) return ''
+
+  const filters = new URLSearchParams({
+    select: 'id',
+    slug: `eq.${slug}`,
+    limit: '1',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/clients?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) && rows[0]?.id ? String(rows[0].id) : ''
+}
+
 async function handleSocialConnectionDisconnect(request, env) {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
@@ -2965,6 +3075,15 @@ async function handleZernioAccountWebhook(request, env) {
 
   if (eventName === 'webhook.test') {
     return json({ success: true, message: 'Webhook test received.' })
+  }
+
+  if (!envConfig.clientId) {
+    const tenantSlug = request.headers.get('x-map-tenant-slug') || ''
+    const clientId = await resolveClientIdFromTenantSlug(envConfig, tenantSlug).catch(() => '')
+    if (!clientId) {
+      return json({ error: 'Could not resolve tenant for account webhook.' }, { status: 404 })
+    }
+    envConfig = { ...envConfig, clientId }
   }
 
   const platform = normalizePlatform(payload.platform)
@@ -3419,12 +3538,14 @@ export { getIsoWeekFolder }
 
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url)
     const canonicalRedirect = buildCanonicalRedirect(request, env)
-
     if (canonicalRedirect) {
       return canonicalRedirect
     }
+
+    const normalized = normalizeSharedPortalRequest(request, env)
+    request = normalized.request
+    const url = normalized.url
 
     if (url.pathname === '/api/n8n/zernio-connect-url') {
       return proxyN8nWebhook(request, env, 'zernio-connect-url')

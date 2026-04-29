@@ -159,9 +159,11 @@ function formatBytes(value) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function buildShareUrl(token, canonicalHost) {
+function buildShareUrl(token, tenant) {
+  const canonicalHost = tenant?.canonicalHost || ''
+  const canonicalPath = tenant?.canonicalPath || ''
   const baseOrigin = canonicalHost ? `https://${canonicalHost}` : window.location.origin
-  return `${baseOrigin}/share/${token}`
+  return `${baseOrigin}${canonicalPath}/share/${token}`.replace(/([^:]\/)\/+/g, '$1')
 }
 
 function isShareLinkActive(link) {
@@ -1278,7 +1280,7 @@ export default function Documents() {
   }
 
   async function handleCopySharedFileLink(link) {
-    const shareUrl = buildShareUrl(link.token, tenant.canonicalHost)
+    const shareUrl = buildShareUrl(link.token, tenant)
     try {
       await copyTextToClipboard(shareUrl)
       setShareNotice({ type: 'success', message: 'Share link copied to clipboard.' })

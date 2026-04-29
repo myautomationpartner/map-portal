@@ -27,6 +27,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { portalPath } from '../lib/portalPath'
 
 const DEFAULT_CHATWOOT_APP_URL = 'https://chatwoot.myautomationpartner.com/app'
 const CHATWOOT_APP_URL = stripTrailingSlash(import.meta.env.VITE_CHATWOOT_APP_URL || DEFAULT_CHATWOOT_APP_URL)
@@ -60,7 +61,7 @@ async function getAccessToken() {
 
 async function chatwootPortalFetch(path, options = {}) {
   const token = await getAccessToken()
-  const response = await fetch(`/api/chatwoot/${path.replace(/^\/+/, '')}`, {
+  const response = await fetch(portalPath(`/api/chatwoot/${path.replace(/^\/+/, '')}`), {
     ...options,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -84,7 +85,7 @@ async function fetchInboxes() {
 
 async function websiteChatPortalFetch(path, options = {}) {
   const token = await getAccessToken()
-  const response = await fetch(path, {
+  const response = await fetch(portalPath(path), {
     ...options,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -240,10 +241,11 @@ function isSafeContentPartnerPreviewUrl(value) {
   if (!value) return false
   try {
     const parsed = new URL(value, window.location.origin)
+    const previewPath = parsed.pathname.replace(/^\/portal\/[^/]+/, '')
     return parsed.protocol === 'https:'
       && parsed.hostname.endsWith('.myautomationpartner.com')
-      && parsed.pathname.startsWith('/api/content-partner/previews/')
-      && /\.(svg|png)$/i.test(parsed.pathname)
+      && previewPath.startsWith('/api/content-partner/previews/')
+      && /\.(svg|png)$/i.test(previewPath)
       && parsed.searchParams.has('token')
   } catch {
     return false

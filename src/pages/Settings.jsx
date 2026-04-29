@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useOutletContext, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { buildTenantConfig } from '../lib/tenantConfig'
+import { portalPath } from '../lib/portalPath'
 import { DASHBOARD_PLATFORMS } from '../lib/platformCatalog'
 import {
   User, Lock, Building2, CheckCircle2, Loader2, AlertCircle,
@@ -39,7 +40,7 @@ async function websiteChatPortalFetch(path, options = {}) {
   const token = sessionData?.session?.access_token
   if (!token) throw new Error('You need to be signed in to manage website chat.')
 
-  const response = await fetch(path, {
+  const response = await fetch(portalPath(path), {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -79,7 +80,7 @@ async function disconnectSocialConnection(platform) {
   const token = sessionData?.session?.access_token
   if (!token) throw new Error('You need to be signed in to disconnect accounts.')
 
-  const response = await fetch(SETTINGS_DISCONNECT_ENDPOINT, {
+  const response = await fetch(portalPath(SETTINGS_DISCONNECT_ENDPOINT), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -208,7 +209,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
 
   function buildSettingsRedirectUrl(platform) {
     if (typeof window === 'undefined') return ''
-    const url = new URL('/settings', window.location.origin)
+    const url = new URL(portalPath('/settings'), window.location.origin)
     url.searchParams.set('connected', platform)
     url.searchParams.set('cid', clientId)
     return url.toString()
@@ -235,7 +236,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
   async function syncZernioAccounts(platform = null) {
     if (!clientId) return { success: false, skipped: true }
 
-    const res = await fetch(SETTINGS_SYNC_ENDPOINT, {
+    const res = await fetch(portalPath(SETTINGS_SYNC_ENDPOINT), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -367,7 +368,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
     clearAutoSyncTimer()
 
     try {
-      const res = await fetch(SETTINGS_CONNECT_ENDPOINT, {
+      const res = await fetch(portalPath(SETTINGS_CONNECT_ENDPOINT), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

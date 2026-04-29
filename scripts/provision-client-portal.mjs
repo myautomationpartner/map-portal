@@ -23,6 +23,9 @@ const DEFAULT_CHATWOOT_ANDROID_URL = 'https://play.google.com/store/apps/details
 const DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME = 'Social Inbox'
 const DEFAULT_PORTAL_LABEL = 'Client Portal'
 const DEFAULT_SUPPORT_EMAIL = 'info@myautomationpartner.com'
+const DEFAULT_SHARED_PORTAL_HOST = 'myautomationpartner.com'
+const DEFAULT_SHARED_PORTAL_PATH_PREFIX = 'portal'
+const DEFAULT_SHARED_PORTAL_WORKER_NAME = 'map-shared-portal'
 
 function parseArgs(argv) {
   const args = {}
@@ -128,6 +131,62 @@ function compactObject(body) {
   return Object.fromEntries(
     Object.entries(body).filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== ''),
   )
+}
+
+function normalizeHost(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '')
+    .replace(/:\d+$/, '')
+}
+
+function normalizePathSegment(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^\/+|\/+$/g, '')
+}
+
+function getSharedPortalHost() {
+  return normalizeHost(envValue(['MAP_SHARED_PORTAL_HOST', 'PORTAL_SHARED_HOST'], DEFAULT_SHARED_PORTAL_HOST))
+}
+
+function getSharedPortalZoneName() {
+  return normalizeHost(envValue(['MAP_SHARED_PORTAL_ZONE_NAME', 'CLOUDFLARE_ZONE_NAME'], getSharedPortalHost()))
+}
+
+function getSharedPortalPathPrefix() {
+  return normalizePathSegment(envValue(['MAP_SHARED_PORTAL_PATH_PREFIX', 'PORTAL_SHARED_PATH_PREFIX'], DEFAULT_SHARED_PORTAL_PATH_PREFIX))
+}
+
+function buildPortalPath(client) {
+  const slug = normalizePathSegment(client?.slug || client?.portal_subdomain)
+  if (!slug) return '/'
+
+  const prefix = getSharedPortalPathPrefix()
+  return prefix ? `/${prefix}/${slug}` : `/${slug}`
+}
+
+function buildPortalUrl(client, options = {}) {
+  const mode = options.deploymentMode || resolvePortalDeploymentMode({}, client)
+  const host = mode === 'shared-path' ? getSharedPortalHost() : normalizeHost(client.portal_domain)
+  const path = mode === 'shared-path' ? buildPortalPath(client) : ''
+  return `https://${host}${path}`
+}
+
+function resolvePortalDeploymentMode(args, client) {
+  const explicit = normalizePathSegment(args['deployment-mode'] || envValue(['MAP_PORTAL_DEPLOYMENT_MODE']))
+  if (args['shared-path'] || explicit === 'shared-path' || explicit === 'path') return 'shared-path'
+  if (args['dedicated-domain'] || explicit === 'dedicated-domain' || explicit === 'domain') return 'dedicated-domain'
+
+  const clientHost = normalizeHost(client?.portal_domain)
+  if (client?.worker_name === DEFAULT_SHARED_PORTAL_WORKER_NAME || clientHost === getSharedPortalHost()) {
+    return 'shared-path'
+  }
+
+  return 'dedicated-domain'
 }
 
 async function fetchJson(url, init = {}) {
@@ -317,7 +376,7 @@ async function createOrUpdateWebsiteInbox(accountId, client) {
       enable_auto_assignment: true,
       channel: {
         type: 'web_widget',
-        website_url: client.website_url || `https://${client.portal_domain}`,
+        website_url: client.website_url || buildPortalUrl(client),
         widget_color: '#C9A84C',
       },
     }),
@@ -335,7 +394,7 @@ async function createOrUpdateSocialInbox(accountId, client, callbackSecret) {
       enable_auto_assignment: true,
       channel: {
         type: 'api',
-        webhook_url: `https://${client.portal_domain}/api/chatwoot/webhooks/messages/${encodeURIComponent(callbackSecret)}`,
+        webhook_url: `${buildPortalUrl(client)}/api/chatwoot/webhooks/messages/${encodeURIComponent(callbackSecret)}`,
       },
     }),
   })
@@ -702,20 +761,24 @@ async function loadRun(args, clientId) {
   return Array.isArray(rows) && rows.length ? rows[0] : null
 }
 
-function buildPublicEnv(client) {
+function buildPublicEnv(client, options = {}) {
+  const sharedMode = options.deploymentMode === 'shared-path'
   return {
     NEXT_PUBLIC_SUPABASE_URL: requiredValue(['NEXT_PUBLIC_SUPABASE_URL', 'VITE_SUPABASE_URL', 'SUPABASE_URL'], 'public Supabase URL', FALLBACK_SUPABASE_URL),
     NEXT_PUBLIC_SUPABASE_ANON_KEY: envValue(
       ['NEXT_PUBLIC_SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY', 'SUPABASE_ANON_KEY'],
       FALLBACK_SUPABASE_ANON_KEY,
     ),
-    VITE_PORTAL_DISPLAY_NAME: client.business_name || DEFAULT_PORTAL_LABEL,
+    VITE_PORTAL_DISPLAY_NAME: sharedMode ? DEFAULT_PORTAL_LABEL : (client.business_name || DEFAULT_PORTAL_LABEL),
     VITE_PORTAL_LABEL: DEFAULT_PORTAL_LABEL,
-    VITE_PORTAL_SUPPORT_EMAIL: client.support_email || DEFAULT_SUPPORT_EMAIL,
-    VITE_PORTAL_LOGO_URL: client.logo_url || '',
-    VITE_PORTAL_CANONICAL_HOST: client.portal_domain || '',
-    VITE_PORTAL_WORKER_NAME: client.worker_name || '',
-    VITE_PORTAL_BILLING_STATUS: client.billing_status || '',
+    VITE_PORTAL_SUPPORT_EMAIL: sharedMode ? DEFAULT_SUPPORT_EMAIL : (client.support_email || DEFAULT_SUPPORT_EMAIL),
+    VITE_PORTAL_LOGO_URL: sharedMode ? '' : (client.logo_url || ''),
+    VITE_PORTAL_CANONICAL_HOST: sharedMode ? getSharedPortalHost() : (client.portal_domain || ''),
+    VITE_PORTAL_CANONICAL_PATH: sharedMode ? buildPortalPath(client) : '',
+    VITE_PORTAL_SHARED_PATH_PREFIX: getSharedPortalPathPrefix(),
+    VITE_PORTAL_ASSET_BASE: sharedMode ? './' : '/',
+    VITE_PORTAL_WORKER_NAME: sharedMode ? DEFAULT_SHARED_PORTAL_WORKER_NAME : (client.worker_name || ''),
+    VITE_PORTAL_BILLING_STATUS: sharedMode ? '' : (client.billing_status || ''),
     VITE_N8N_BASE_URL: envValue(['VITE_N8N_BASE_URL', 'N8N_BASE_URL'], DEFAULT_N8N_BASE_URL),
     VITE_CHATWOOT_APP_URL: envValue(['VITE_CHATWOOT_APP_URL', 'CHATWOOT_APP_URL'], DEFAULT_CHATWOOT_APP_URL),
     VITE_CHATWOOT_MOBILE_APPS_URL: envValue(['VITE_CHATWOOT_MOBILE_APPS_URL'], DEFAULT_CHATWOOT_MOBILE_APPS_URL),
@@ -736,6 +799,7 @@ function deploymentSecret(keys, label, options = {}) {
 }
 
 function buildSecretEnv(client, chatwootProvisioning = {}, options = {}) {
+  const sharedMode = options.deploymentMode === 'shared-path'
   return {
     SUPABASE_URL: requiredValue(['SUPABASE_URL'], 'SUPABASE_URL', FALLBACK_SUPABASE_URL),
     SUPABASE_SERVICE_ROLE_KEY: requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY'),
@@ -743,13 +807,25 @@ function buildSecretEnv(client, chatwootProvisioning = {}, options = {}) {
       ['SUPABASE_ANON_KEY', 'SUPABASE_PUBLISHABLE_KEY', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY'],
       FALLBACK_SUPABASE_ANON_KEY,
     ),
-    PORTAL_CLIENT_ID: client.id,
-    PORTAL_CANONICAL_HOST: client.portal_domain || '',
+    PORTAL_CLIENT_ID: sharedMode ? '' : client.id,
+    PORTAL_CANONICAL_HOST: sharedMode ? getSharedPortalHost() : (client.portal_domain || ''),
+    PORTAL_SHARED_PATH_PREFIX: getSharedPortalPathPrefix(),
     N8N_BASE_URL: envValue(['N8N_BASE_URL'], DEFAULT_N8N_BASE_URL),
     CHATWOOT_BASE_URL: envValue(['CHATWOOT_BASE_URL'], DEFAULT_CHATWOOT_BASE_URL),
-    CHATWOOT_ACCOUNT_ID: chatwootProvisioning.accountId || envValue(['CHATWOOT_ACCOUNT_ID'], '1'),
-    CHATWOOT_API_ACCESS_TOKEN: deploymentSecret(['CHATWOOT_API_ACCESS_TOKEN'], 'CHATWOOT_API_ACCESS_TOKEN', options),
-    CHATWOOT_SOCIAL_INBOX_ID: chatwootProvisioning.socialInboxId || envValue(['CHATWOOT_SOCIAL_INBOX_ID'], ''),
+    CHATWOOT_ACCOUNT_ID: sharedMode ? '' : (chatwootProvisioning.accountId || envValue(['CHATWOOT_ACCOUNT_ID'], '1')),
+    CHATWOOT_API_ACCESS_TOKEN: options.allowDeploymentPlaceholders || options.allowPlaceholders
+      ? deploymentSecret(['CHATWOOT_API_ACCESS_TOKEN'], 'CHATWOOT_API_ACCESS_TOKEN', {
+          ...options,
+          allowPlaceholders: options.allowDeploymentPlaceholders || options.allowPlaceholders,
+        })
+      : requiredValue(
+          ['CHATWOOT_API_ACCESS_TOKEN'],
+          'CHATWOOT_API_ACCESS_TOKEN',
+          secretValue(['CHATWOOT_API_ACCESS_TOKEN'], {
+            keychainServices: ['MAP_CHATWOOT_API_ACCESS_TOKEN', 'CHATWOOT_API_ACCESS_TOKEN'],
+          }),
+        ),
+    CHATWOOT_SOCIAL_INBOX_ID: sharedMode ? '' : (chatwootProvisioning.socialInboxId || envValue(['CHATWOOT_SOCIAL_INBOX_ID'], '')),
     CHATWOOT_WEBHOOK_BRIDGE_SECRET: envValue(
       ['CHATWOOT_WEBHOOK_BRIDGE_SECRET'],
       chatwootProvisioning.callbackSecret || secretValue(['CHATWOOT_WEBHOOK_BRIDGE_SECRET'], {
@@ -780,16 +856,22 @@ function buildSecretEnv(client, chatwootProvisioning = {}, options = {}) {
   }
 }
 
-function buildWranglerConfig(client, assetsDirectory) {
+function buildWranglerConfig(client, assetsDirectory, options = {}) {
+  const sharedMode = options.deploymentMode === 'shared-path'
+  const workerName = sharedMode ? DEFAULT_SHARED_PORTAL_WORKER_NAME : client.worker_name
+  const routePattern = sharedMode
+    ? `${getSharedPortalHost()}/${getSharedPortalPathPrefix()}/*`
+    : client.portal_domain
+
   return [
-    `name = "${client.worker_name}"`,
+    `name = "${workerName}"`,
     `main = "${join(PORTAL_ROOT, 'worker.js')}"`,
     'compatibility_date = "2025-01-01"',
     'workers_dev = true',
     '',
     '[[routes]]',
-    `pattern = "${client.portal_domain}"`,
-    'custom_domain = true',
+    `pattern = "${routePattern}"`,
+    ...(sharedMode ? [`zone_name = "${getSharedPortalZoneName()}"`] : ['custom_domain = true']),
     '',
     '[assets]',
     `directory = "${assetsDirectory}"`,
@@ -799,13 +881,13 @@ function buildWranglerConfig(client, assetsDirectory) {
   ].join('\n')
 }
 
-async function configureZernioWebhook(client, secretEnv) {
+async function configureZernioWebhook(client, secretEnv, options = {}) {
   const webhookSecret = String(secretEnv.ZERNIO_WEBHOOK_SECRET || '').trim()
 
   const baseUrl = envValue(['PORTAL_WEBHOOK_BASE_URL'])
   const targetUrl = baseUrl
     ? `${baseUrl.replace(/\/$/, '')}/api/zernio/account-events`
-    : `https://${client.portal_domain}/api/zernio/account-events`
+    : `${buildPortalUrl(client, options)}/api/zernio/account-events`
 
   const requestBody = {
     url: targetUrl,
@@ -866,7 +948,7 @@ function summarizeChatwootProvisioning(result) {
   }
 }
 
-async function syncDeploymentState({ client, signup, run, webhookResult, chatwootProvisioning, dryRun }) {
+async function syncDeploymentState({ client, signup, run, webhookResult, chatwootProvisioning, dryRun, deploymentMode }) {
   if (dryRun || !run?.id || !signup?.id) {
     return {
       skipped: true,
@@ -882,15 +964,18 @@ async function syncDeploymentState({ client, signup, run, webhookResult, chatwoo
   const chatwootReady = chatwootProvisioning?.skipped
     ? 'Chatwoot tenant provisioning skipped.'
     : `Chatwoot account ${chatwootProvisioning?.accountId} and inboxes provisioned.`
+  const portalDeploymentLabel = deploymentMode === 'shared-path'
+    ? `Shared portal path ${buildPortalPath(client)} is active`
+    : 'Portal worker deployed and custom domain attached'
   const stageNote = webhookResult?.configured
-    ? `Portal worker deployed, custom domain attached, Zernio account webhook registered, and ${chatwootReady}`
-    : `Portal worker deployed and custom domain attached; Zernio webhook setup still needs follow-up. ${chatwootReady}`
+    ? `${portalDeploymentLabel}, Zernio account webhook registered, and ${chatwootReady}`
+    : `${portalDeploymentLabel}; Zernio webhook setup still needs follow-up. ${chatwootReady}`
 
   const advanced = await callSupabaseRpc('advance_onboarding_provisioning_run', {
     p_run_id: run.id,
     p_current_stage: runStage,
     p_run_status: runStatus,
-    p_domain_status: 'map_managed_domain_live',
+    p_domain_status: deploymentMode === 'shared-path' ? 'shared_portal_path_live' : 'map_managed_domain_live',
     p_deployment_status: 'live',
     p_client_id: client.id,
     p_client_slug: client.slug,
@@ -936,6 +1021,8 @@ async function main() {
   const skipChatwootProvisioning = Boolean(args['skip-chatwoot-provisioning'])
   const skipChatwootPasswordReset = !Boolean(args['send-chatwoot-password-reset']) || Boolean(args['skip-chatwoot-password-reset'])
   const client = await loadClient(args)
+  const deploymentMode = resolvePortalDeploymentMode(args, client)
+  const shouldDeployWorker = deploymentMode === 'dedicated-domain' || Boolean(args['deploy-shared-worker'])
 
   if (!client.portal_domain || !client.worker_name || !client.portal_subdomain) {
     throw new Error('Client is missing portal runtime fields. Run derive-tenant-bootstrap first.')
@@ -943,29 +1030,27 @@ async function main() {
 
   const signup = await loadSignupForClient(client.id)
   const run = await loadRun(args, client.id)
-  const cloudflareToken = requiredValue(['CLOUDFLARE_API_TOKEN'], 'CLOUDFLARE_API_TOKEN')
-  const accountId = await resolveCloudflareAccountId(cloudflareToken)
+  const cloudflareToken = shouldDeployWorker ? requiredValue(['CLOUDFLARE_API_TOKEN'], 'CLOUDFLARE_API_TOKEN') : ''
+  const accountId = shouldDeployWorker ? await resolveCloudflareAccountId(cloudflareToken) : ''
   const chatwootProvisioning = await provisionChatwootTenant({
     client,
     dryRun,
     skipChatwootProvisioning,
     skipChatwootPasswordReset,
   })
-  const publicEnv = buildPublicEnv(client)
-  const secretEnv = buildSecretEnv(client, chatwootProvisioning, { allowPlaceholders: dryRun })
+  const publicEnv = buildPublicEnv(client, { deploymentMode })
+  const secretEnv = buildSecretEnv(client, chatwootProvisioning, {
+    allowPlaceholders: dryRun,
+    allowDeploymentPlaceholders: !shouldDeployWorker,
+    deploymentMode,
+  })
   const tempDir = mkdtempSync(join(tmpdir(), 'map-portal-provision-'))
   const distDir = join(tempDir, 'dist')
-
-  shell(['npx', 'vite', 'build', '--outDir', distDir], {
-    cwd: PORTAL_ROOT,
-    env: publicEnv,
-    stdio: 'inherit',
-  })
 
   const configPath = join(tempDir, 'wrangler.auto.toml')
   const secretsPath = join(tempDir, 'worker-secrets.env')
 
-  writeFileSync(configPath, buildWranglerConfig(client, distDir))
+  writeFileSync(configPath, buildWranglerConfig(client, distDir, { deploymentMode }))
   writeFileSync(secretsPath, `${toEnvFile(secretEnv)}\n`)
 
   let webhookResult = {
@@ -975,27 +1060,35 @@ async function main() {
   }
 
   try {
-    shell([
-      'npx',
-      'wrangler',
-      'deploy',
-      '--config',
-      configPath,
-      '--keep-vars',
-      '--secrets-file',
-      secretsPath,
-      ...(dryRun ? ['--dry-run'] : []),
-    ], {
-      cwd: PORTAL_ROOT,
-      env: {
-        CLOUDFLARE_API_TOKEN: cloudflareToken,
-        CLOUDFLARE_ACCOUNT_ID: accountId,
-      },
-      stdio: 'inherit',
-    })
+    if (shouldDeployWorker) {
+      shell(['npx', 'vite', 'build', '--outDir', distDir, '--emptyOutDir'], {
+        cwd: PORTAL_ROOT,
+        env: publicEnv,
+        stdio: 'inherit',
+      })
+
+      shell([
+        'npx',
+        'wrangler',
+        'deploy',
+        '--config',
+        configPath,
+        '--keep-vars',
+        '--secrets-file',
+        secretsPath,
+        ...(dryRun ? ['--dry-run'] : []),
+      ], {
+        cwd: PORTAL_ROOT,
+        env: {
+          CLOUDFLARE_API_TOKEN: cloudflareToken,
+          CLOUDFLARE_ACCOUNT_ID: accountId,
+        },
+        stdio: 'inherit',
+      })
+    }
 
     if (!dryRun && !skipWebhookConfig) {
-      webhookResult = await configureZernioWebhook(client, secretEnv)
+      webhookResult = await configureZernioWebhook(client, secretEnv, { deploymentMode })
     } else if (skipWebhookConfig) {
       webhookResult = {
         configured: false,
@@ -1011,6 +1104,7 @@ async function main() {
       webhookResult,
       chatwootProvisioning,
       dryRun,
+      deploymentMode,
     })
     const initialOpportunityRadar = await runInitialOpportunityRadar({
       client,
@@ -1020,11 +1114,17 @@ async function main() {
     })
     printSummary('Portal deployment summary', {
       dryRun,
+      deploymentMode,
+      workerDeployment: shouldDeployWorker
+        ? { skipped: false, workerName: deploymentMode === 'shared-path' ? DEFAULT_SHARED_PORTAL_WORKER_NAME : client.worker_name }
+        : { skipped: true, reason: 'Shared portal worker deployment is reused. Pass --deploy-shared-worker to rebuild it.' },
       clientId: client.id,
       clientSlug: client.slug,
-      workerName: client.worker_name,
-      portalDomain: client.portal_domain,
-      cloudflareAccountId: accountId,
+      workerName: deploymentMode === 'shared-path' ? DEFAULT_SHARED_PORTAL_WORKER_NAME : client.worker_name,
+      portalDomain: deploymentMode === 'shared-path' ? getSharedPortalHost() : client.portal_domain,
+      portalPath: deploymentMode === 'shared-path' ? buildPortalPath(client) : undefined,
+      portalUrl: buildPortalUrl(client, { deploymentMode }),
+      cloudflareAccountId: accountId || undefined,
       chatwootProvisioning: summarizeChatwootProvisioning(chatwootProvisioning),
       webhookResult,
       deploymentState,
