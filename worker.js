@@ -641,6 +641,139 @@ async function handlePostBoosts(request, env) {
   }
 }
 
+function isMissingRemoteScheduledDelete(payload, raw) {
+  const message = [
+    payload?.message,
+    payload?.error,
+    raw,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  return message.includes('404') && message.includes('post not found')
+}
+
+async function loadTenantPostForDelete(envConfig, postId) {
+  const filters = new URLSearchParams({
+    select: 'id,client_id,status,n8n_execution_id',
+    id: `eq.${postId}`,
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/posts?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function cancelRemoteScheduledPost(env, envConfig, post) {
+  if (!post.n8n_execution_id) {
+    return { attempted: false, skipped: true, reason: 'No Zernio scheduled post id was stored.' }
+  }
+
+  const response = await fetch(`${getN8nBaseUrl(env)}/webhook/social-publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'delete',
+      postId: post.id,
+      clientId: envConfig.clientId,
+      zernioPostId: post.n8n_execution_id,
+    }),
+  })
+  const raw = await response.text()
+  let payload = {}
+  try {
+    payload = raw ? JSON.parse(raw) : {}
+  } catch {
+    payload = {}
+  }
+
+  if (!response.ok || payload?.success === false) {
+    if (isMissingRemoteScheduledDelete(payload, raw)) {
+      return {
+        attempted: true,
+        ignoredMissingRemotePost: true,
+        message: payload?.message || payload?.error || raw || 'Remote scheduled post was already missing.',
+      }
+    }
+    const error = new Error(payload?.message || payload?.error || raw || 'Could not cancel this scheduled post in the publisher workflow.')
+    error.status = response.status || 502
+    error.payload = payload
+    throw error
+  }
+
+  return {
+    attempted: true,
+    success: true,
+    message: payload?.message || 'Remote scheduled post cancelled.',
+  }
+}
+
+async function deleteTenantPost(envConfig, postId) {
+  const filters = new URLSearchParams({
+    select: 'id',
+    id: `eq.${postId}`,
+    client_id: `eq.${envConfig.clientId}`,
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/posts?${filters.toString()}`, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=representation' },
+  })
+  const rows = await response.json().catch(() => [])
+  return Array.isArray(rows) ? rows : []
+}
+
+async function handleScheduledPostDelete(request, env, postId) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'POST, DELETE, OPTIONS' } })
+  }
+
+  if (!['POST', 'DELETE'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST, DELETE' } })
+  }
+
+  if (!isUuidLike(postId)) {
+    return json({ error: 'Invalid post id.' }, { status: 400 })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  if (auth.user.role !== 'admin') {
+    return json({ error: 'Only client admins can delete scheduled posts.' }, { status: 403 })
+  }
+
+  try {
+    const post = await loadTenantPostForDelete(auth.envConfig, postId)
+    if (!post) {
+      return json({ error: 'Scheduled post was not found for this portal.' }, { status: 404 })
+    }
+    if (post.status !== 'scheduled') {
+      return json({ error: 'Only scheduled posts can be deleted here.' }, { status: 409 })
+    }
+
+    const remoteDelete = await cancelRemoteScheduledPost(env, auth.envConfig, post)
+    const deletedRows = await deleteTenantPost(auth.envConfig, post.id)
+    if (!deletedRows.length) {
+      return json({ error: 'The scheduled post was not deleted. Please refresh and try again.' }, { status: 409 })
+    }
+
+    return json({
+      success: true,
+      deletedPostId: post.id,
+      remoteDelete,
+    })
+  } catch (error) {
+    return json({
+      error: error.message || 'Could not delete this scheduled post.',
+      details: error.payload || null,
+    }, { status: error.status || 502 })
+  }
+}
+
 function parsePositiveInteger(value) {
   const parsed = Number.parseInt(String(value || ''), 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null
@@ -3307,6 +3440,11 @@ export default {
 
     if (url.pathname === '/api/post-boosts') {
       return handlePostBoosts(request, env)
+    }
+
+    const scheduledPostDeleteMatch = /^\/api\/posts\/([^/]+)\/delete$/.exec(url.pathname)
+    if (scheduledPostDeleteMatch) {
+      return handleScheduledPostDelete(request, env, decodeURIComponent(scheduledPostDeleteMatch[1]))
     }
 
     if (url.pathname === '/api/zernio/account-events') {

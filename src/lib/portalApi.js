@@ -692,12 +692,24 @@ export async function deleteSocialDraft(draftId) {
 }
 
 export async function deletePost(postId) {
-  const { error } = await supabase
-    .from('posts')
-    .delete()
-    .eq('id', postId)
+  const accessToken = await getAccessToken()
+  const response = await fetch(`/api/posts/${encodeURIComponent(postId)}/delete`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
 
-  if (error) throw error
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || payload?.success === false) {
+    const error = new Error(payload?.error || payload?.message || `Delete request failed (${response.status}).`)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
 }
 
 export async function fetchDocuments() {
