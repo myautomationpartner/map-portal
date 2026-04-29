@@ -2035,15 +2035,29 @@ export default function ContentCalendar() {
                     })}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handlePrimaryAction(item)}
-                  disabled={isCreating}
-                  className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
-                >
-                  {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <PencilLine className="h-4 w-4" />}
-                  Edit post
-                </button>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePrimaryAction(item)}
+                    disabled={isCreating}
+                    className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
+                  >
+                    {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <PencilLine className="h-4 w-4" />}
+                    Edit post
+                  </button>
+                  {item.source === 'post' && item.badgeType === 'scheduled' ? (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteScheduledPostItem(item)}
+                      disabled={actionBusyId === item.id}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
+                      style={{ background: 'rgba(196, 85, 110, 0.10)', color: '#b44660', border: '1px solid rgba(196, 85, 110, 0.18)' }}
+                    >
+                      {actionBusyId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                      Delete
+                    </button>
+                  ) : null}
+                </div>
               </article>
             )) : (
               <div className="content-plan-status-empty">
