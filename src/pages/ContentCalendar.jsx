@@ -90,6 +90,8 @@ const BOOST_DURATIONS = [
   { value: 7, label: '7 days' },
 ]
 const BOOSTABLE_PLATFORMS = new Set(['facebook', 'instagram', 'tiktok', 'linkedin', 'twitter'])
+const WEEKLY_PARTNER_IDEA_LIMIT = 3
+const DAILY_PARTNER_IDEA_LIMIT = 1
 const RESEARCH_SOURCE_TYPES = [
   { value: 'local_event_calendar', label: 'Event calendar' },
   { value: 'client_website', label: 'Website page' },
@@ -281,6 +283,48 @@ function getRadarPriority(opportunity) {
       ? 0.1
       : 0
   return urgency + (confidence * 0.35) + adBoost
+}
+
+function getOpportunityPublishDateString(opportunity, fallbackDateString) {
+  const suggestion = getPrimarySuggestion(opportunity)
+  const suggestedDate = suggestion?.recommended_publish_at ||
+    opportunity?.starts_at ||
+    opportunity?.ends_at ||
+    opportunity?.expires_at ||
+    fallbackDateString
+  return toDateString(new Date(String(suggestedDate).includes('T') ? suggestedDate : `${suggestedDate}T12:00:00`))
+}
+
+function sortRadarOpportunitiesByPriority(items) {
+  return [...items].sort((a, b) => {
+    const scoreDelta = getRadarPriority(b) - getRadarPriority(a)
+    if (Math.abs(scoreDelta) > 0.01) return scoreDelta
+    return new Date(b.created_at) - new Date(a.created_at)
+  })
+}
+
+function selectWeeklyPartnerIdeas(opportunities, selectedWeekStart, fallbackDateString) {
+  const selected = []
+  const dateCounts = new Map()
+  const candidates = sortRadarOpportunitiesByPriority(opportunities)
+    .filter((opportunity) => isDateInWeek(getOpportunityPublishDateString(opportunity, fallbackDateString), selectedWeekStart))
+
+  for (const opportunity of candidates) {
+    const dateString = getOpportunityPublishDateString(opportunity, fallbackDateString)
+    const currentCount = dateCounts.get(dateString) || 0
+    if (currentCount >= DAILY_PARTNER_IDEA_LIMIT) continue
+
+    selected.push(opportunity)
+    dateCounts.set(dateString, currentCount + 1)
+    if (selected.length >= WEEKLY_PARTNER_IDEA_LIMIT) break
+  }
+
+  return selected.sort((a, b) => {
+    const dateDelta = new Date(`${getOpportunityPublishDateString(a, fallbackDateString)}T12:00:00`) -
+      new Date(`${getOpportunityPublishDateString(b, fallbackDateString)}T12:00:00`)
+    if (dateDelta !== 0) return dateDelta
+    return getRadarPriority(b) - getRadarPriority(a)
+  })
 }
 
 function nextDefaultPublishDate() {
@@ -1167,31 +1211,17 @@ export default function ContentCalendar() {
   }, [trainAssistantOpen, profile?.clients, researchProfile])
 
   const radarItems = useMemo(() => (
-    opportunities
+    selectWeeklyPartnerIdeas(
+      opportunities
       .filter((opportunity) => !HIDDEN_RADAR_STATES.has(opportunity.review_state))
-      .filter((opportunity) => getActiveSuggestions(opportunity).length > 0)
-      .filter((opportunity) => (
-        weekOffset === 0 ||
-        isDateInWeek(opportunity.expires_at, selectedWeekStart) ||
-        isDateInWeek(opportunity.starts_at, selectedWeekStart) ||
-        isDateInWeek(opportunity.ends_at, selectedWeekStart) ||
-        getActiveSuggestions(opportunity).some((suggestion) => isDateInWeek(suggestion.recommended_publish_at, selectedWeekStart))
-      ))
-      .sort((a, b) => {
-        const scoreDelta = getRadarPriority(b) - getRadarPriority(a)
-        if (Math.abs(scoreDelta) > 0.01) return scoreDelta
-        return new Date(b.created_at) - new Date(a.created_at)
-      })
-      .slice(0, 5)
+      .filter((opportunity) => getActiveSuggestions(opportunity).length > 0),
+      selectedWeekStart,
+      selectedWeekStartString,
+    )
       .map((opportunity, index) => {
         const suggestion = getPrimarySuggestion(opportunity)
         const action = buildRadarAction(opportunity, suggestion)
-        const suggestedDate = suggestion?.recommended_publish_at ||
-          opportunity.starts_at ||
-          opportunity.ends_at ||
-          opportunity.expires_at ||
-          selectedWeekStartString
-        const dateString = toDateString(new Date(String(suggestedDate).includes('T') ? suggestedDate : `${suggestedDate}T12:00:00`))
+        const dateString = getOpportunityPublishDateString(opportunity, selectedWeekStartString)
         return {
           id: `radar:${opportunity.id}`,
           source: 'radar',
@@ -1212,7 +1242,7 @@ export default function ContentCalendar() {
           suggestion,
         }
       })
-  ), [opportunities, selectedWeekStart, selectedWeekStartString, weekOffset])
+  ), [opportunities, selectedWeekStart, selectedWeekStartString])
 
   const draftItems = useMemo(() => (
     drafts
