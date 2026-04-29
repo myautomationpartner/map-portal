@@ -4,6 +4,7 @@ const DROPBOX_OAUTH_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token'
 const DEFAULT_CHATWOOT_BASE_URL = 'https://chatwoot.myautomationpartner.com'
 const DEFAULT_N8N_BASE_URL = 'https://n8n.myautomationpartner.com'
 const DEFAULT_ZERNIO_API_BASE_URL = 'https://zernio.com/api/v1'
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_xwASGbwUsZhX5CFNizTAmg_U50hkD7o'
 const DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME = 'Social Inbox'
 const CONTENT_PARTNER_CONTACT_NAME = 'MAP Content Partner'
 const TECHNICAL_HOST_SUFFIXES = ['.workers.dev', '.pages.dev']
@@ -171,6 +172,10 @@ function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase()
 }
 
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
+}
+
 function safeCompareHex(left, right) {
   if (left.length !== right.length) return false
   let mismatch = 0
@@ -204,6 +209,7 @@ async function verifyZernioWebhookSignature(rawBody, signature, secret) {
 function getSupabaseConfig(env) {
   const url = String(env.SUPABASE_URL || '').replace(/\/$/, '')
   const serviceRoleKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '')
+  const publishableKey = String(env.SUPABASE_ANON_KEY || env.SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY || '')
   const clientId = String(env.PORTAL_CLIENT_ID || '')
   const webhookSecret = String(env.ZERNIO_WEBHOOK_SECRET || '')
 
@@ -211,19 +217,20 @@ function getSupabaseConfig(env) {
     throw new Error('Missing worker secrets for Zernio webhook reconciliation.')
   }
 
-  return { url, serviceRoleKey, clientId, webhookSecret }
+  return { url, serviceRoleKey, publishableKey, clientId, webhookSecret }
 }
 
 function getPortalAuthConfig(env) {
   const url = String(env.SUPABASE_URL || '').replace(/\/$/, '')
   const serviceRoleKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '')
+  const publishableKey = String(env.SUPABASE_ANON_KEY || env.SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY || '')
   const clientId = String(env.PORTAL_CLIENT_ID || '')
 
   if (!url || !serviceRoleKey || !clientId) {
     throw new Error('Missing worker secrets for portal authentication.')
   }
 
-  return { url, serviceRoleKey, clientId }
+  return { url, serviceRoleKey, publishableKey, clientId }
 }
 
 async function supabaseRest(envConfig, path, init = {}) {
@@ -369,11 +376,12 @@ async function chatwootFetch(env, path, init = {}) {
 }
 
 async function callSupabaseFunction(envConfig, functionName, body, gatewayToken = '') {
+  const gatewayJwt = gatewayToken || envConfig.publishableKey || envConfig.serviceRoleKey
   const response = await fetch(`${envConfig.url}/functions/v1/${functionName}`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${gatewayToken || envConfig.serviceRoleKey}`,
-      apikey: envConfig.serviceRoleKey,
+      Authorization: `Bearer ${gatewayJwt}`,
+      apikey: envConfig.publishableKey || envConfig.serviceRoleKey,
       'x-map-service-role': envConfig.serviceRoleKey,
       'content-type': 'application/json',
     },
@@ -1284,6 +1292,13 @@ function getChatwootConversationId(conversation) {
   ))
 }
 
+function getChatwootConversationStatus(conversation) {
+  return firstString(
+    conversation?.status,
+    conversation?.payload?.status,
+  ).toLowerCase()
+}
+
 function getChatwootConversationAssigneeId(conversation) {
   return parsePositiveInteger(firstString(
     conversation?.assignee_id,
@@ -1329,6 +1344,20 @@ async function assignChatwootContentPartnerConversation(env, conversation, porta
   return { assigned: true, alreadyAssigned: false, assigneeId }
 }
 
+async function ensureChatwootConversationOpen(env, conversation) {
+  const conversationId = getChatwootConversationId(conversation)
+  if (!conversationId || getChatwootConversationStatus(conversation) === 'open') {
+    return { reopened: false }
+  }
+
+  await chatwootFetch(env, `/conversations/${conversationId}/toggle_status`, {
+    method: 'POST',
+    body: JSON.stringify({ status: 'open' }),
+  })
+
+  return { reopened: true, conversationId }
+}
+
 async function findOrCreateChatwootContentPartnerConversation(env, envConfig, portalUser = null) {
   const inbox = await resolveChatwootSocialInbox(env)
   const contact = await findOrCreateChatwootContentPartnerContact(env, inbox.id, envConfig)
@@ -1336,12 +1365,16 @@ async function findOrCreateChatwootContentPartnerConversation(env, envConfig, po
 
   const existing = await findChatwootContentPartnerConversation(env, contact.id, inbox.id, envConfig)
   if (existing?.id) {
+    const reopen = await ensureChatwootConversationOpen(env, existing).catch((error) => ({
+      reopened: false,
+      reason: sanitizeChatwootError(error?.message || 'Could not reopen Content Partner conversation.'),
+    }))
     const assignment = await assignChatwootContentPartnerConversation(env, existing, portalUser).catch((error) => ({
       assigned: false,
       alreadyAssigned: false,
       reason: sanitizeChatwootError(error?.message || 'Could not assign Content Partner conversation.'),
     }))
-    return { conversation: existing, contact, inbox, assignment }
+    return { conversation: existing, contact, inbox, assignment, reopen }
   }
 
   const conversation = await createChatwootContentPartnerConversation(env, contact, inbox.id, envConfig)
@@ -1389,16 +1422,11 @@ function getContentPartnerPreviewUrl(env, draftId, requestId) {
   return `${origin}${path}?token=${encodeURIComponent(requestId)}`
 }
 
-function getContentPartnerPreviewChatImageUrl(previewUrl) {
-  if (!previewUrl) return ''
-
-  try {
-    const url = new URL(previewUrl)
-    url.searchParams.set('cw_image_height', '360px')
-    return url.toString()
-  } catch {
-    return previewUrl
-  }
+function getContentPartnerReviewUrl(env, draftId, requestId) {
+  const origin = getPortalOrigin(env)
+  if (!origin || !draftId || !requestId) return ''
+  const path = `/content-preview/${encodeURIComponent(draftId)}`
+  return `${origin}${path}?token=${encodeURIComponent(requestId)}`
 }
 
 function normalizeChatwootMessageAttachments(payload, message) {
@@ -1414,6 +1442,15 @@ function escapeSvgText(value) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 function wrapPreviewText(value, maxChars, maxLines) {
@@ -1579,6 +1616,8 @@ function renderContentPartnerPreviewSvg({
 }
 
 async function loadContentPartnerPreview(envConfig, draftId, requestId) {
+  if (!isUuidLike(draftId) || !isUuidLike(requestId)) return null
+
   const requestParams = new URLSearchParams({
     select: 'id,generated_draft_id,ai_metadata_json,created_at',
     id: `eq.${requestId}`,
@@ -1641,25 +1680,513 @@ async function handleContentPartnerPreview(request, env, draftId) {
   try {
     const preview = await loadContentPartnerPreview(envConfig, draftId, requestId)
     if (!preview) return json({ error: 'Preview was not found.' }, { status: 404 })
-    const svg = renderContentPartnerPreviewSvg(preview)
+    const contentType = 'image/svg+xml; charset=utf-8'
 
     if (request.method === 'HEAD') {
       return new Response(null, {
         headers: {
-          'content-type': 'image/svg+xml; charset=utf-8',
+          'content-type': contentType,
           'cache-control': 'private, max-age=900',
         },
       })
     }
 
-    return new Response(svg, {
+    return new Response(renderContentPartnerPreviewSvg(preview), {
       headers: {
-        'content-type': 'image/svg+xml; charset=utf-8',
+        'content-type': contentType,
         'cache-control': 'private, max-age=900',
       },
     })
   } catch (error) {
     return json({ error: error.message || 'Could not render the preview.' }, { status: error?.status || 502 })
+  }
+}
+
+function htmlResponse(markup, init = {}) {
+  return new Response(markup, {
+    ...init,
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'content-security-policy': "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+      ...(init.headers || {}),
+    },
+  })
+}
+
+function platformLabel(platform) {
+  const labels = {
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+    tiktok: 'TikTok',
+    linkedin: 'LinkedIn',
+    twitter: 'X / Twitter',
+  }
+  return labels[platform] || String(platform || '').replace(/_/g, ' ')
+}
+
+function formatReviewDate(value) {
+  const date = new Date(value || '')
+  if (Number.isNaN(date.getTime())) return 'Ready to schedule'
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function jsonArray(value) {
+  if (Array.isArray(value)) return value
+  if (typeof value !== 'string' || !value.trim()) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function extractReviewMediaAssets(draft) {
+  const reviewNotes = parseJsonObject(draft?.review_notes)
+  const requirements = jsonArray(draft?.asset_requirements_json)
+  const assets = []
+  const seen = new Set()
+
+  const addAsset = (asset = {}) => {
+    const url = firstString(asset.url, asset.link, asset.download_url, asset.file_url, asset.data_url)
+    if (!url || seen.has(url)) return
+    seen.add(url)
+    assets.push({
+      url,
+      name: firstString(asset.name, asset.fileName, asset.filename, asset.suggestion, 'Attached media'),
+      thumbnail: firstString(asset.thumbnail, asset.thumb_url, asset.previewUrl),
+      contentType: firstString(asset.contentType, asset.content_type, asset.file_type),
+    })
+  }
+
+  jsonArray(reviewNotes.mediaAssets).forEach(addAsset)
+  requirements
+    .filter((item) => item?.type === 'source_media' || item?.url)
+    .forEach(addAsset)
+
+  return assets
+}
+
+function normalizeReviewPlatforms(aiMeta, reviewNotes) {
+  const fromAi = normalizePreviewPlatforms(aiMeta?.recommendedPlatforms)
+  if (fromAi.length) return fromAi
+  const fromNotes = normalizePreviewPlatforms(reviewNotes?.recommendedPlatforms)
+  if (fromNotes.length) return fromNotes
+  return ['facebook', 'instagram']
+}
+
+async function loadContentPartnerReview(envConfig, draftId, requestId) {
+  if (!isUuidLike(draftId) || !isUuidLike(requestId)) return null
+
+  const requestParams = new URLSearchParams({
+    select: 'id,client_id,chatwoot_conversation_id,chatwoot_message_id,generated_draft_id,status,ai_metadata_json,created_at',
+    id: `eq.${requestId}`,
+    generated_draft_id: `eq.${draftId}`,
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const requestRowsResponse = await supabaseRest(envConfig, `/rest/v1/content_partner_requests?${requestParams.toString()}`)
+  const requestRows = await requestRowsResponse.json()
+  const requestRow = Array.isArray(requestRows) ? requestRows[0] : null
+  if (!requestRow?.id) return null
+
+  const draftParams = new URLSearchParams({
+    select: 'id,client_id,draft_title,draft_body,draft_caption,scheduled_for,review_notes,asset_requirements_json,review_state,approved_at,published_reference,source_workflow,created_at',
+    id: `eq.${draftId}`,
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const draftRowsResponse = await supabaseRest(envConfig, `/rest/v1/social_drafts?${draftParams.toString()}`)
+  const draftRows = await draftRowsResponse.json()
+  const draft = Array.isArray(draftRows) ? draftRows[0] : null
+  if (!draft?.id) return null
+
+  const clientParams = new URLSearchParams({
+    select: 'id,business_name,slug,portal_domain',
+    id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const clientRowsResponse = await supabaseRest(envConfig, `/rest/v1/clients?${clientParams.toString()}`)
+  const clientRows = await clientRowsResponse.json()
+  const client = Array.isArray(clientRows) ? clientRows[0] || {} : {}
+  const aiMeta = parseJsonObject(requestRow.ai_metadata_json)
+  const reviewNotes = parseJsonObject(draft.review_notes)
+
+  return {
+    request: requestRow,
+    draft,
+    client,
+    aiMeta,
+    reviewNotes,
+    businessName: firstString(client.business_name, client.slug, 'Your business'),
+    title: firstString(draft.draft_title, 'Publisher draft'),
+    caption: firstString(draft.draft_caption, draft.draft_body, 'A new social post draft is ready for review.'),
+    scheduledFor: draft.scheduled_for,
+    mediaSuggestion: extractMediaSuggestionFromDraft(draft),
+    mediaAssets: extractReviewMediaAssets(draft),
+    platforms: normalizeReviewPlatforms(aiMeta, reviewNotes),
+  }
+}
+
+function renderQuickReviewPage(env, context) {
+  const approveUrl = `/api/content-partner/reviews/${encodeURIComponent(context.draft.id)}/approve?token=${encodeURIComponent(context.request.id)}`
+  const editorUrl = getPortalReviewUrl(env, context.draft.id)
+  const previewUrl = getContentPartnerPreviewUrl(env, context.draft.id, context.request.id)
+  const alreadyScheduled = Boolean(context.draft.published_reference)
+  const platformChips = context.platforms.map((platform) => (
+    `<span class="chip">${escapeHtml(platformLabel(platform))}</span>`
+  )).join('')
+  const firstMedia = context.mediaAssets[0]
+  const mediaHtml = firstMedia?.url
+    ? `<img class="media" src="${escapeHtml(firstMedia.thumbnail || firstMedia.url)}" alt="${escapeHtml(firstMedia.name || 'Selected media')}">`
+    : `<img class="preview" src="${escapeHtml(previewUrl)}" alt="Publisher draft preview">`
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(context.title)} · MAP Content Partner</title>
+  <style>
+    :root { color-scheme: light; --ink:#171717; --muted:#756d62; --line:#e5dfd4; --paper:#fffdf8; --gold:#f3c316; --gold-dark:#9f7318; --purple:#7c3aed; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #f2eee6; color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { width: min(980px, calc(100vw - 28px)); margin: 18px auto; background: var(--paper); border: 1px solid var(--line); border-radius: 28px; overflow: hidden; box-shadow: 0 22px 60px rgba(50, 36, 16, 0.13); }
+    header { display: flex; justify-content: space-between; gap: 18px; padding: 28px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,0.68); }
+    .eyebrow { margin: 0 0 8px; color: var(--muted); font-size: 13px; font-weight: 900; letter-spacing: 0.18em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(34px, 6vw, 64px); line-height: 0.97; letter-spacing: 0; max-width: 760px; }
+    .badge { align-self: flex-start; white-space: nowrap; border: 1px solid #cfb65b; background: #fff4c2; color: #7b5915; border-radius: 999px; padding: 11px 15px; font-weight: 900; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.65fr); gap: 0; }
+    .copy { padding: 28px; border-right: 1px solid var(--line); }
+    .side { padding: 28px; background: #fbf8f1; }
+    label { display: block; margin: 0 0 12px; color: var(--muted); font-size: 13px; font-weight: 900; letter-spacing: 0.18em; text-transform: uppercase; }
+    .caption { white-space: pre-wrap; border: 1px solid var(--line); border-radius: 18px; background: #fff; padding: 20px; font-size: 22px; line-height: 1.45; }
+    .meta { display: grid; gap: 18px; margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--line); }
+    .value { margin: 0; color: #3f3a32; font-size: 19px; line-height: 1.45; }
+    .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+    .chip { display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid #c8d6eb; background: #edf4ff; color: #2d5f9f; padding: 8px 12px; font-weight: 900; }
+    .media, .preview { width: 100%; display: block; border-radius: 20px; border: 1px solid var(--line); background: #fff; object-fit: contain; max-height: 430px; }
+    .actions { display: grid; gap: 12px; margin-top: 22px; }
+    button, .secondary { width: 100%; border-radius: 16px; padding: 16px 18px; font: inherit; font-size: 18px; font-weight: 950; text-align: center; text-decoration: none; cursor: pointer; }
+    button { border: 1px solid #caa333; background: linear-gradient(135deg, var(--gold), #d4aa35); color: #111; box-shadow: 0 12px 28px rgba(197, 151, 20, 0.22); }
+    button:disabled { cursor: default; opacity: 0.58; box-shadow: none; }
+    .secondary { display: block; border: 1px solid var(--line); background: #fff; color: #201d19; }
+    .note { margin: 12px 0 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
+    @media (max-width: 760px) {
+      main { width: 100%; min-height: 100vh; margin: 0; border-radius: 0; border-left: 0; border-right: 0; }
+      header, .grid { display: block; }
+      header { padding: 22px; }
+      .badge { display: inline-flex; margin-top: 16px; }
+      .copy, .side { padding: 22px; border-right: 0; }
+      .copy { border-bottom: 1px solid var(--line); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">${escapeHtml(context.businessName)} · Content Partner</p>
+        <h1>${escapeHtml(context.title)}</h1>
+      </div>
+      <div class="badge">${alreadyScheduled ? 'Scheduled' : 'Ready for approval'}</div>
+    </header>
+    <section class="grid">
+      <div class="copy">
+        <label>Post copy</label>
+        <div class="caption">${escapeHtml(context.caption)}</div>
+        <div class="meta">
+          <div>
+            <label>Recommended time</label>
+            <p class="value">${escapeHtml(formatReviewDate(context.scheduledFor))}</p>
+          </div>
+          <div>
+            <label>Publishing to</label>
+            <div class="chips">${platformChips}</div>
+          </div>
+          <div>
+            <label>Image idea</label>
+            <p class="value">${escapeHtml(context.mediaSuggestion)}</p>
+          </div>
+        </div>
+      </div>
+      <aside class="side">
+        ${mediaHtml}
+        <div class="actions">
+          <form method="post" action="${escapeHtml(approveUrl)}">
+            <button type="submit" ${alreadyScheduled ? 'disabled' : ''}>${alreadyScheduled ? 'Already scheduled' : 'Approve and schedule'}</button>
+          </form>
+          ${editorUrl ? `<a class="secondary" href="${escapeHtml(editorUrl)}">Open full editor</a>` : ''}
+        </div>
+        <p class="note">Approving schedules this draft at the recommended time. Need changes first? Use the full editor.</p>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>`
+}
+
+function renderQuickReviewResultPage({ title, message, linkHref = '', linkLabel = 'Back to preview', ok = true }) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)}</title>
+  <style>
+    body { margin:0; min-height:100vh; display:grid; place-items:center; background:#f2eee6; color:#171717; font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    section { width:min(680px, calc(100vw - 32px)); background:#fffdf8; border:1px solid #e5dfd4; border-radius:28px; padding:34px; box-shadow:0 22px 60px rgba(50,36,16,.13); }
+    .badge { display:inline-flex; border-radius:999px; padding:8px 13px; font-weight:900; background:${ok ? '#dcfce7' : '#fee2e2'}; color:${ok ? '#166534' : '#991b1b'}; }
+    h1 { margin:20px 0 10px; font-size:clamp(34px, 6vw, 58px); line-height:1; }
+    p { margin:0; color:#5f574c; font-size:20px; line-height:1.45; }
+    a { display:inline-flex; margin-top:24px; border-radius:16px; border:1px solid #caa333; background:linear-gradient(135deg,#f3c316,#d4aa35); color:#111; padding:15px 18px; text-decoration:none; font-weight:950; }
+  </style>
+</head>
+<body>
+  <section>
+    <span class="badge">${ok ? 'Scheduled' : 'Needs attention'}</span>
+    <h1>${escapeHtml(title)}</h1>
+    <p>${escapeHtml(message)}</p>
+    ${linkHref ? `<a href="${escapeHtml(linkHref)}">${escapeHtml(linkLabel)}</a>` : ''}
+  </section>
+</body>
+</html>`
+}
+
+function normalizeApprovalSchedule(value) {
+  const date = new Date(value || '')
+  const minimum = new Date(Date.now() + (10 * 60 * 1000))
+  if (Number.isNaN(date.getTime())) {
+    return { scheduledFor: minimum.toISOString(), adjusted: true }
+  }
+  if (date.getTime() < minimum.getTime()) {
+    return { scheduledFor: minimum.toISOString(), adjusted: true }
+  }
+  return { scheduledFor: date.toISOString(), adjusted: false }
+}
+
+async function sendContentPartnerApprovalNotice(env, context, post, scheduledFor) {
+  const conversationId = parsePositiveInteger(context.request?.chatwoot_conversation_id)
+  if (!conversationId) return
+
+  await chatwootFetch(env, `/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      content: `Approved and scheduled for ${formatReviewDate(scheduledFor)}.`,
+      message_type: 'incoming',
+      private: false,
+      content_type: 'text',
+      source_id: `map-content-partner:approved:${context.draft.id}`,
+      content_attributes: {
+        map_content_partner_system: true,
+        map_content_partner_approved: true,
+        map_content_partner_request_id: context.request.id,
+        map_content_partner_draft_id: context.draft.id,
+        map_content_partner_post_id: post?.id || null,
+      },
+    }),
+  })
+}
+
+async function scheduleApprovedContentPartnerDraft(env, envConfig, context) {
+  const content = firstString(context.caption, context.title)
+  if (!content) throw new Error('This draft does not have post copy to schedule.')
+
+  const platforms = context.platforms.length ? context.platforms : ['facebook', 'instagram']
+  const { scheduledFor, adjusted } = normalizeApprovalSchedule(context.scheduledFor)
+  const mediaAssets = context.mediaAssets
+  const mediaUrls = mediaAssets.map((asset) => asset.url).filter(Boolean)
+  const mediaUrl = mediaUrls[0] || null
+  const platformVariants = parseJsonObject(context.reviewNotes?.platformVariants)
+
+  const insertResponse = await supabaseRest(envConfig, '/rest/v1/posts?select=id,client_id,content,media_url,platforms,status,scheduled_for,n8n_execution_id', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({
+      client_id: envConfig.clientId,
+      content,
+      media_url: mediaUrl,
+      platforms,
+      status: 'draft',
+      scheduled_for: scheduledFor,
+      platform_variants_json: platformVariants,
+    }),
+  })
+  const insertedRows = await insertResponse.json()
+  const post = Array.isArray(insertedRows) ? insertedRows[0] : null
+  if (!post?.id) throw new Error('The approved post could not be saved.')
+
+  const n8nResponse = await fetch(`${getN8nBaseUrl(env)}/webhook/social-publish`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      postId: post.id,
+      clientId: envConfig.clientId,
+      content,
+      platformVariants,
+      mediaVariants: {},
+      mediaUrl,
+      mediaUrls,
+      mediaAssets,
+      dropboxLinks: [],
+      platforms,
+      scheduledFor,
+    }),
+  })
+  const n8nRawText = await n8nResponse.text()
+  const n8nData = (() => {
+    try {
+      return n8nRawText ? JSON.parse(n8nRawText) : {}
+    } catch {
+      return {}
+    }
+  })()
+  const publishedPlatforms = Array.isArray(n8nData?.publishedPlatforms) ? n8nData.publishedPlatforms : []
+  const skippedPlatforms = Array.isArray(n8nData?.skippedPlatforms) ? n8nData.skippedPlatforms : []
+  const effectivePublishedPlatforms = publishedPlatforms.length
+    ? publishedPlatforms
+    : platforms.filter((platform) => !skippedPlatforms.includes(platform))
+  const n8nSuccess = n8nResponse.ok && n8nData?.success !== false && effectivePublishedPlatforms.length > 0
+
+  await supabaseRest(envConfig, `/rest/v1/posts?id=eq.${encodeURIComponent(post.id)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      status: n8nSuccess ? 'scheduled' : 'failed',
+      n8n_execution_id: n8nSuccess ? (n8nData?.zernioPostId ?? post.n8n_execution_id ?? null) : (post.n8n_execution_id || null),
+      published_at: null,
+    }),
+  })
+
+  if (!n8nSuccess) {
+    throw new Error(n8nData?.message || n8nData?.error || n8nRawText || 'The social publish workflow did not schedule this post.')
+  }
+
+  const updatedNotes = {
+    ...context.reviewNotes,
+    quickReviewApprovedAt: new Date().toISOString(),
+    quickReviewScheduledFor: scheduledFor,
+    quickReviewScheduleAdjusted: adjusted,
+    quickReviewPostId: post.id,
+    quickReviewPlatforms: platforms,
+    publishCount: (Number(context.reviewNotes?.publishCount) || 0) + 1,
+  }
+  await supabaseRest(envConfig, `/rest/v1/social_drafts?id=eq.${encodeURIComponent(context.draft.id)}&client_id=eq.${encodeURIComponent(envConfig.clientId)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      review_state: 'published_manually',
+      approved_at: updatedNotes.quickReviewApprovedAt,
+      published_reference: post.id,
+      review_notes: JSON.stringify(updatedNotes),
+    }),
+  })
+
+  await sendContentPartnerApprovalNotice(env, context, post, scheduledFor).catch((error) => {
+    console.warn('Content Partner approval notice skipped.', sanitizeChatwootError(error?.message || error))
+  })
+
+  return { post, scheduledFor, adjusted, platforms }
+}
+
+async function handleContentPartnerReviewPage(request, env, draftId) {
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET, HEAD' } })
+  }
+
+  const url = new URL(request.url)
+  const requestId = String(url.searchParams.get('token') || '').trim()
+  if (!draftId || !requestId) return json({ error: 'Review token is required.' }, { status: 400 })
+
+  let envConfig
+  try {
+    envConfig = getPortalAuthConfig(env)
+  } catch (error) {
+    return json({ error: error.message || 'Portal review is not configured.' }, { status: 500 })
+  }
+
+  try {
+    const context = await loadContentPartnerReview(envConfig, draftId, requestId)
+    if (!context) return json({ error: 'Review was not found.' }, { status: 404 })
+    if (request.method === 'HEAD') return htmlResponse('', { status: 200 })
+    return htmlResponse(renderQuickReviewPage(env, context))
+  } catch (error) {
+    return json({ error: error.message || 'Could not load this review.' }, { status: error?.status || 502 })
+  }
+}
+
+async function handleContentPartnerReviewApprove(request, env, draftId) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'POST, OPTIONS' } })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const url = new URL(request.url)
+  const requestId = String(url.searchParams.get('token') || '').trim()
+  const backUrl = getContentPartnerReviewUrl(env, draftId, requestId)
+  if (!draftId || !requestId) return htmlResponse(renderQuickReviewResultPage({
+    title: 'Missing review token',
+    message: 'This approval link is missing the secure review token.',
+    linkHref: backUrl,
+    ok: false,
+  }), { status: 400 })
+
+  let envConfig
+  try {
+    envConfig = getPortalAuthConfig(env)
+  } catch (error) {
+    return htmlResponse(renderQuickReviewResultPage({
+      title: 'Portal is not configured',
+      message: error.message || 'This portal cannot schedule posts right now.',
+      ok: false,
+    }), { status: 500 })
+  }
+
+  try {
+    const context = await loadContentPartnerReview(envConfig, draftId, requestId)
+    if (!context) {
+      return htmlResponse(renderQuickReviewResultPage({
+        title: 'Review not found',
+        message: 'This review link is no longer valid.',
+        ok: false,
+      }), { status: 404 })
+    }
+
+    if (context.draft.published_reference) {
+      return htmlResponse(renderQuickReviewResultPage({
+        title: 'Already scheduled',
+        message: `This draft was already approved and scheduled for ${formatReviewDate(context.draft.scheduled_for)}.`,
+        linkHref: backUrl,
+        linkLabel: 'View preview',
+      }))
+    }
+
+    const result = await scheduleApprovedContentPartnerDraft(env, envConfig, context)
+    const adjustedCopy = result.adjusted ? ' The original recommended time had passed, so MAP moved it to the next safe posting window.' : ''
+    return htmlResponse(renderQuickReviewResultPage({
+      title: 'Post scheduled',
+      message: `Your post is scheduled for ${formatReviewDate(result.scheduledFor)} on ${result.platforms.map(platformLabel).join(', ')}.${adjustedCopy}`,
+      linkHref: getPortalReviewUrl(env, context.draft.id),
+      linkLabel: 'Open full editor',
+    }))
+  } catch (error) {
+    return htmlResponse(renderQuickReviewResultPage({
+      title: 'Could not schedule',
+      message: error.message || 'MAP could not schedule this post. Please open the full editor and try again.',
+      linkHref: backUrl,
+      linkLabel: 'Back to preview',
+      ok: false,
+    }), { status: error?.status || 502 })
   }
 }
 
@@ -1679,13 +2206,13 @@ async function createContentPartnerDraft(env, envConfig, payload, message, conve
 }
 
 async function sendContentPartnerChatwootReply(env, conversationId, triggerMessageId, result) {
-  const reviewUrl = getPortalReviewUrl(env, result?.draftId)
+  const reviewUrl = getContentPartnerReviewUrl(env, result?.draftId, result?.requestId)
+  const editorUrl = getPortalReviewUrl(env, result?.draftId)
   const previewUrl = getContentPartnerPreviewUrl(env, result?.draftId, result?.requestId)
-  const previewChatImageUrl = getContentPartnerPreviewChatImageUrl(previewUrl)
   const lines = [
     firstString(result?.partnerReply) || 'I created a Publisher draft from your message.',
-    previewChatImageUrl ? `![Publisher draft preview](${previewChatImageUrl})` : '',
-    reviewUrl ? `Review it here: ${reviewUrl}` : '',
+    reviewUrl ? `Preview and approve it here: ${reviewUrl}` : '',
+    editorUrl ? `Need edits first? Open the full editor: ${editorUrl}` : '',
   ].filter(Boolean)
   const content = lines.join('\n\n').slice(0, 5000)
   const contentAttributes = {
@@ -1693,6 +2220,8 @@ async function sendContentPartnerChatwootReply(env, conversationId, triggerMessa
     map_content_partner_trigger_message_id: String(triggerMessageId),
     map_content_partner_request_id: result?.requestId || null,
     map_content_partner_draft_id: result?.draftId || null,
+    map_content_partner_review_url: reviewUrl || null,
+    map_content_partner_editor_url: editorUrl || null,
     map_content_partner_preview_url: previewUrl || null,
   }
 
@@ -2086,7 +2615,7 @@ async function sendZernioReplyThroughN8n(env, webhookUrl, body) {
   return payload
 }
 
-async function handleChatwootMessageWebhook(request, env) {
+async function handleChatwootMessageWebhook(request, env, ctx = null) {
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -2127,9 +2656,28 @@ async function handleChatwootMessageWebhook(request, env) {
   const isContentPartnerMessage = shouldProcessContentPartnerWebhookMessage(message, conversation)
 
   if (isContentPartnerMessage) {
-    try {
+    const processContentPartner = async () => {
       const envConfig = getPortalAuthConfig(env)
-      const result = await processContentPartnerMessage(env, envConfig, payload, message, conversation)
+      await ensureChatwootConversationOpen(env, conversation).catch((error) => {
+        console.warn('Content Partner conversation reopen skipped.', sanitizeChatwootError(error?.message || error))
+      })
+      return processContentPartnerMessage(env, envConfig, payload, message, conversation)
+    }
+
+    if (ctx?.waitUntil) {
+      ctx.waitUntil(processContentPartner().catch((error) => {
+        console.error('Content Partner async webhook failed.', sanitizeChatwootError(error?.message || error))
+      }))
+      return json({
+        success: true,
+        queued: true,
+        event: eventName || 'message_created',
+        contentPartner: true,
+      })
+    }
+
+    try {
+      const result = await processContentPartner()
       return json({
         success: true,
         event: eventName || 'message_created',
@@ -2737,7 +3285,7 @@ async function handleDropboxThumbnail(request, env) {
 export { getIsoWeekFolder }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url)
     const canonicalRedirect = buildCanonicalRedirect(request, env)
 
@@ -2771,12 +3319,26 @@ export default {
 
     const chatwootMessageWebhookMatch = /^\/api\/chatwoot\/webhooks\/messages(?:\/[^/]+)?$/.exec(url.pathname)
     if (chatwootMessageWebhookMatch) {
-      return handleChatwootMessageWebhook(request, env)
+      return handleChatwootMessageWebhook(request, env, ctx)
+    }
+
+    const contentPartnerReviewMatch = /^\/content-preview\/([^/]+)$/.exec(url.pathname)
+    if (contentPartnerReviewMatch) {
+      return handleContentPartnerReviewPage(request, env, decodeURIComponent(contentPartnerReviewMatch[1]))
+    }
+
+    const contentPartnerApproveMatch = /^\/api\/content-partner\/reviews\/([^/]+)\/approve$/.exec(url.pathname)
+    if (contentPartnerApproveMatch) {
+      return handleContentPartnerReviewApprove(request, env, decodeURIComponent(contentPartnerApproveMatch[1]))
     }
 
     const contentPartnerPreviewMatch = /^\/api\/content-partner\/previews\/([^/]+)\.svg$/.exec(url.pathname)
     if (contentPartnerPreviewMatch) {
-      return handleContentPartnerPreview(request, env, decodeURIComponent(contentPartnerPreviewMatch[1]))
+      return handleContentPartnerPreview(
+        request,
+        env,
+        decodeURIComponent(contentPartnerPreviewMatch[1]),
+      )
     }
 
     if (url.pathname === '/api/content-partner/conversation') {

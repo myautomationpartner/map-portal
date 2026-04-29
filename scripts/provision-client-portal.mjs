@@ -739,6 +739,10 @@ function buildSecretEnv(client, chatwootProvisioning = {}, options = {}) {
   return {
     SUPABASE_URL: requiredValue(['SUPABASE_URL'], 'SUPABASE_URL', FALLBACK_SUPABASE_URL),
     SUPABASE_SERVICE_ROLE_KEY: requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY'),
+    SUPABASE_ANON_KEY: envValue(
+      ['SUPABASE_ANON_KEY', 'SUPABASE_PUBLISHABLE_KEY', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY'],
+      FALLBACK_SUPABASE_ANON_KEY,
+    ),
     PORTAL_CLIENT_ID: client.id,
     PORTAL_CANONICAL_HOST: client.portal_domain || '',
     N8N_BASE_URL: envValue(['N8N_BASE_URL'], DEFAULT_N8N_BASE_URL),

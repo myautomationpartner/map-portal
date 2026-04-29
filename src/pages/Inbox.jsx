@@ -243,7 +243,7 @@ function isSafeContentPartnerPreviewUrl(value) {
     return parsed.protocol === 'https:'
       && parsed.hostname.endsWith('.myautomationpartner.com')
       && parsed.pathname.startsWith('/api/content-partner/previews/')
-      && parsed.pathname.endsWith('.svg')
+      && /\.(svg|png)$/i.test(parsed.pathname)
       && parsed.searchParams.has('token')
   } catch {
     return false
@@ -255,9 +255,37 @@ function extractContentPartnerPreviewUrl(message) {
   if (isSafeContentPartnerPreviewUrl(direct)) return direct
 
   const content = String(message?.content || '')
-  const match = content.match(/https:\/\/[^\s)]+\/api\/content-partner\/previews\/[^\s)]+\.svg\?token=[^\s)]+/i)
+  const match = content.match(/https:\/\/[^\s)]+\/api\/content-partner\/previews\/[^\s)]+\.(?:svg|png)\?token=[^\s)]+/i)
   const url = match?.[0]?.replace(/[.,;]+$/, '')
   return isSafeContentPartnerPreviewUrl(url) ? url : ''
+}
+
+function attachmentImageUrl(attachment) {
+  return String(
+    attachment?.data_url
+    || attachment?.download_url
+    || attachment?.file_url
+    || attachment?.thumb_url
+    || attachment?.thumbnail
+    || attachment?.url
+    || '',
+  ).trim()
+}
+
+function imageAttachmentsForMessage(message) {
+  const attachments = Array.isArray(message?.attachments) ? message.attachments : []
+  return attachments
+    .map((attachment) => {
+      const url = attachmentImageUrl(attachment)
+      const fileType = String(attachment?.file_type || attachment?.content_type || '').toLowerCase()
+      const name = String(attachment?.file_name || attachment?.filename || '').toLowerCase()
+      const looksLikeImage = fileType.startsWith('image')
+        || fileType === 'image'
+        || /\.(png|jpe?g|webp|gif|bmp)(?:$|\?)/i.test(url)
+        || /\.(png|jpe?g|webp|gif|bmp)$/.test(name)
+      return url && looksLikeImage ? { ...attachment, url } : null
+    })
+    .filter(Boolean)
 }
 
 function messageDisplayContent(message, previewUrl) {
@@ -1235,6 +1263,7 @@ export default function Inbox() {
                       {messages.map((message) => {
                         const outgoing = isOutgoing(message)
                         const previewUrl = extractContentPartnerPreviewUrl(message)
+                        const imageAttachments = previewUrl ? [] : imageAttachmentsForMessage(message)
                         const displayContent = messageDisplayContent(message, previewUrl)
                         return (
                           <div key={message.id || `${message.created_at}-${message.content}`} className={`flex ${outgoing ? 'justify-end' : 'justify-start'}`}>
@@ -1272,6 +1301,23 @@ export default function Inbox() {
                                     />
                                   </a>
                                 )}
+                                {imageAttachments.map((attachment, index) => (
+                                  <a
+                                    key={attachment.id || attachment.url || index}
+                                    href={attachment.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="mt-3 block overflow-hidden rounded-2xl border bg-white shadow-sm"
+                                    style={{ borderColor: outgoing ? 'rgba(255,255,255,0.35)' : 'var(--portal-border)' }}
+                                  >
+                                    <img
+                                      src={attachment.url}
+                                      alt={attachment.file_name || attachment.filename || 'Message attachment'}
+                                      className="block w-full max-w-[560px] bg-white"
+                                      loading="lazy"
+                                    />
+                                  </a>
+                                ))}
                               </div>
                               <span className="px-1.5 text-[11px]" style={{ color: 'var(--portal-text-muted)' }}>
                                 {senderName(message)} · {formatRelativeTime(message.created_at)}
