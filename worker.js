@@ -104,6 +104,27 @@ function normalizeSharedPortalRequest(request, env) {
   }
 }
 
+function buildSharedPortalTrailingSlashRedirect(request, env) {
+  if (!['GET', 'HEAD'].includes(request.method)) return null
+
+  const url = new URL(request.url)
+  const segments = url.pathname.split('/').filter(Boolean)
+  const prefix = getSharedPortalPathPrefix(env)
+
+  if (!prefix || segments.length !== 2 || segments[0]?.toLowerCase() !== prefix) return null
+  if (url.pathname.endsWith('/')) return null
+
+  url.pathname = `${url.pathname}/`
+
+  return new Response(null, {
+    status: 308,
+    headers: {
+      location: url.toString(),
+      'cache-control': 'no-store',
+    },
+  })
+}
+
 function shouldBypassCanonicalRedirect(url) {
   const path = String(url.pathname || '')
   if (path.startsWith('/api/')) return true
@@ -3541,6 +3562,11 @@ export default {
     const canonicalRedirect = buildCanonicalRedirect(request, env)
     if (canonicalRedirect) {
       return canonicalRedirect
+    }
+
+    const sharedPortalTrailingSlashRedirect = buildSharedPortalTrailingSlashRedirect(request, env)
+    if (sharedPortalTrailingSlashRedirect) {
+      return sharedPortalTrailingSlashRedirect
     }
 
     const normalized = normalizeSharedPortalRequest(request, env)
