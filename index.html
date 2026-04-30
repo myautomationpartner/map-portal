@@ -7,6 +7,14 @@
     <title>map-portal</title>
     <script>
       (function () {
+        var params = new URLSearchParams(window.location.search)
+        if (params.get('theme') !== 'default') {
+          document.documentElement.dataset.portalTheme = 'map-dark'
+        }
+      })()
+    </script>
+    <script>
+      (function () {
         var canonicalHost = String('%VITE_PORTAL_CANONICAL_HOST%' || '').trim().toLowerCase()
         if (!canonicalHost) return
 

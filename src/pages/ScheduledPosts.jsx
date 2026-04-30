@@ -227,7 +227,7 @@ export default function ScheduledPosts() {
                   <Link
                     to={`/post?editPost=${post.id}&date=${post.localDate}`}
                     className="inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
-                    style={{ background: 'linear-gradient(135deg, var(--portal-primary), #ddc275)', color: 'var(--portal-dark)' }}
+                    style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}
                   >
                     <PencilLine className="h-4 w-4" />
                     Edit post

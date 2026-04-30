@@ -9,8 +9,8 @@ export default function PortalBillingBanner({ billingAccess, onAction, actionPen
     <section
       className="mb-5 w-full max-w-none rounded-[28px] border px-5 py-4 md:px-6"
       style={{
-        background: 'linear-gradient(135deg, rgba(201,168,76,0.18), rgba(232,213,160,0.08))',
-        borderColor: 'rgba(201,168,76,0.28)',
+        background: 'linear-gradient(135deg, color-mix(in srgb, var(--portal-primary) 18%, transparent), color-mix(in srgb, var(--portal-cyan) 8%, transparent))',
+        borderColor: 'color-mix(in srgb, var(--portal-primary) 28%, transparent)',
         boxShadow: '0 18px 40px rgba(26,24,20,0.08)',
       }}
     >
@@ -41,7 +41,7 @@ export default function PortalBillingBanner({ billingAccess, onAction, actionPen
             onClick={onAction}
             disabled={actionPending}
             className="inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
-            style={{ background: 'linear-gradient(135deg, var(--portal-primary), #ddc275)', color: 'var(--portal-dark)' }}
+            style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}
           >
             {actionPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {billingAccess.ctaLabel || 'Open billing'}

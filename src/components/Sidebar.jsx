@@ -26,7 +26,7 @@ export default function Sidebar({ session, tenant: providedTenant, billingAccess
     }
 
     image.style.display = 'none'
-    image.parentElement.innerHTML = `<span style="color:#c9a84c;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;width:100%;height:100%">${tenant.logoInitials}</span>`
+    image.parentElement.innerHTML = `<span style="color:var(--portal-primary);font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;width:100%;height:100%">${tenant.logoInitials}</span>`
   }
 
   async function handleLogout() {
@@ -36,14 +36,14 @@ export default function Sidebar({ session, tenant: providedTenant, billingAccess
   return (
     <aside
       className="hidden fixed left-0 top-0 z-40 h-full w-[188px] flex-col border-r md:flex"
-      style={{ background: 'linear-gradient(180deg, var(--portal-nav) 0%, var(--portal-nav-strong) 100%)', borderColor: 'rgba(201, 168, 76, 0.18)' }}
+      style={{ background: 'linear-gradient(180deg, var(--portal-nav) 0%, var(--portal-nav-strong) 100%)', borderColor: 'var(--portal-border)' }}
     >
       <div className="flex items-center gap-2.5 border-b px-3.5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
-        <div className="h-9 w-9 shrink-0 overflow-hidden rounded-xl border bg-white shadow-sm" style={{ borderColor: 'rgba(201, 168, 76, 0.24)' }}>
+        <div className="h-9 w-11 shrink-0 overflow-hidden rounded-xl border bg-black/20 p-0.5 shadow-sm" style={{ borderColor: 'rgba(112, 228, 255, 0.24)' }}>
           <img
             src={tenant.logoUrl}
             alt={tenant.displayName}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain"
             onError={handleLogoError}
           />
         </div>
@@ -51,7 +51,7 @@ export default function Sidebar({ session, tenant: providedTenant, billingAccess
           <p className="truncate font-display text-sm font-semibold leading-tight" style={{ color: '#ffffff' }}>
             {tenant.displayName}
           </p>
-          <p className="truncate text-[9px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'rgba(201, 168, 76, 0.9)' }}>
+          <p className="truncate text-[9px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-primary)' }}>
             {tenant.portalLabel}
           </p>
         </div>
@@ -69,7 +69,7 @@ export default function Sidebar({ session, tenant: providedTenant, billingAccess
               }`
             }
             style={({ isActive }) => isActive
-              ? { background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.1))', color: '#fff', border: '1px solid rgba(201, 168, 76, 0.24)', boxShadow: '0 12px 24px rgba(0, 0, 0, 0.18)' }
+              ? { background: 'linear-gradient(135deg, color-mix(in srgb, var(--portal-primary) 18%, transparent), color-mix(in srgb, var(--portal-cyan) 10%, transparent))', color: '#fff', border: '1px solid color-mix(in srgb, var(--portal-primary) 24%, transparent)', boxShadow: '0 12px 24px rgba(0, 0, 0, 0.18)' }
               : { color: 'rgba(255,255,255,0.72)', border: '1px solid transparent' }
             }
           >
@@ -90,7 +90,7 @@ export default function Sidebar({ session, tenant: providedTenant, billingAccess
                 </div>
                 {label}
                 {isActive && (
-                  <div className="ml-auto h-2.5 w-1 rounded-full" style={{ background: 'linear-gradient(180deg, var(--portal-primary), #f0ddb0)', boxShadow: '0 0 12px rgba(201, 168, 76, 0.35)' }} />
+                  <div className="ml-auto h-2.5 w-1 rounded-full" style={{ background: 'linear-gradient(180deg, var(--portal-primary), var(--portal-cyan))', boxShadow: '0 0 12px color-mix(in srgb, var(--portal-cyan) 35%, transparent)' }} />
                 )}
               </>
             )}
@@ -104,9 +104,9 @@ export default function Sidebar({ session, tenant: providedTenant, billingAccess
             disabled={billingActionPending}
             className="mt-3 flex items-center gap-2.5 rounded-2xl px-3 py-2.5 text-[13px] font-semibold transition-all duration-200"
             style={{
-              background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.1))',
+              background: 'linear-gradient(135deg, color-mix(in srgb, var(--portal-primary) 18%, transparent), color-mix(in srgb, var(--portal-cyan) 10%, transparent))',
               color: '#fff',
-              border: '1px solid rgba(201, 168, 76, 0.24)',
+              border: '1px solid color-mix(in srgb, var(--portal-primary) 24%, transparent)',
               boxShadow: '0 12px 24px rgba(0, 0, 0, 0.18)',
             }}
           >
@@ -118,10 +118,10 @@ export default function Sidebar({ session, tenant: providedTenant, billingAccess
         ) : null}
       </nav>
 
-      <div className="px-2.5 py-4" style={{ borderTop: '1px solid rgba(201, 168, 76, 0.15)' }}>
-        <div className="mb-2.5 flex items-center gap-2.5 rounded-[18px] px-2.5 py-2.5" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(201, 168, 76, 0.16)' }}>
+      <div className="px-2.5 py-4" style={{ borderTop: '1px solid var(--portal-border)' }}>
+        <div className="mb-2.5 flex items-center gap-2.5 rounded-[18px] px-2.5 py-2.5" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--portal-border)' }}>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
-            style={{ background: 'linear-gradient(135deg, var(--portal-primary), #e8d5a0)', color: 'var(--portal-dark)' }}>
+            style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}>
             {session?.user?.email?.[0]?.toUpperCase() ?? '?'}
           </div>
           <div className="flex-1 min-w-0">

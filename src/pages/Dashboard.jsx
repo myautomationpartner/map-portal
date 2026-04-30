@@ -343,7 +343,7 @@ function ToolForm({
   }
 
   return (
-    <div className="overflow-hidden rounded-[34px] border" style={{ borderColor: 'rgba(26, 24, 20, 0.08)', background: 'linear-gradient(135deg, rgba(255,255,255,0.98), rgba(246,250,255,0.94))', boxShadow: '0 24px 60px rgba(26, 24, 20, 0.08)' }}>
+    <div className="workspace-tool-library overflow-hidden rounded-[34px] border" style={{ borderColor: 'rgba(26, 24, 20, 0.08)', background: 'linear-gradient(135deg, rgba(255,255,255,0.98), rgba(246,250,255,0.94))', boxShadow: '0 24px 60px rgba(26, 24, 20, 0.08)' }}>
       <div className="relative border-b px-5 py-5 md:px-6" style={{ borderColor: 'rgba(26, 24, 20, 0.07)' }}>
         <div className="absolute right-6 top-5 hidden h-24 w-24 rounded-full blur-2xl md:block" style={{ background: 'rgba(78, 149, 255, 0.18)' }} />
         <div className="relative flex items-start justify-between gap-4">
@@ -385,8 +385,9 @@ function ToolForm({
                 <button
                   key={category.id}
                   type="button"
+                  data-active={activeCategory === category.id}
                   onClick={() => setActiveCategory(category.id)}
-                  className="shrink-0 rounded-full px-3 py-2 text-xs font-semibold transition-all"
+                  className="workspace-category-pill shrink-0 rounded-full px-3 py-2 text-xs font-semibold transition-all"
                   style={activeCategory === category.id
                     ? { background: 'var(--portal-text)', color: 'white' }
                     : { background: 'rgba(26, 24, 20, 0.06)', color: 'var(--portal-text-muted)' }}
@@ -428,7 +429,7 @@ function ToolForm({
                     if (!alreadyPinned) addPreset(preset)
                   }}
                   disabled={isConnected || isConnecting || (!canConnect && alreadyPinned)}
-                  className="group flex min-h-[116px] items-start gap-3 rounded-[24px] border p-4 text-left transition-all enabled:hover:-translate-y-0.5 disabled:cursor-default"
+                  className="workspace-preset-card group flex min-h-[116px] items-start gap-3 rounded-[24px] border p-4 text-left transition-all enabled:hover:-translate-y-0.5 disabled:cursor-default"
                   style={{
                     borderColor: (alreadyPinned || isConnected) ? 'rgba(31, 169, 113, 0.22)' : 'rgba(26, 24, 20, 0.08)',
                     background: (alreadyPinned || isConnected) ? 'rgba(31, 169, 113, 0.08)' : 'rgba(255,255,255,0.82)',
@@ -463,7 +464,7 @@ function ToolForm({
           )}
         </div>
 
-        <form onSubmit={handleSubmit} className="border-t p-5 md:p-6 lg:border-l lg:border-t-0" style={{ borderColor: 'rgba(26, 24, 20, 0.07)', background: 'rgba(250, 247, 241, 0.72)' }}>
+        <form onSubmit={handleSubmit} className="workspace-tool-sidebar border-t p-5 md:p-6 lg:border-l lg:border-t-0" style={{ borderColor: 'rgba(26, 24, 20, 0.07)', background: 'rgba(250, 247, 241, 0.72)' }}>
         <div>
           <h4 className="font-display text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Custom shortcut</h4>
           <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
@@ -500,7 +501,7 @@ function ToolForm({
             Icon preview
           </p>
           <div className="mt-3 flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl border bg-white" style={{ borderColor: 'rgba(201, 168, 76, 0.18)' }}>
+            <div className="workspace-icon-preview flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl border bg-white" style={{ borderColor: 'rgba(201, 168, 76, 0.18)' }}>
               {faviconPreview ? (
                 <img src={faviconPreview} alt="" className="h-8 w-8 object-contain" />
               ) : (
@@ -1059,7 +1060,7 @@ export default function Dashboard() {
         ))}
       </section>
 
-      <section className="portal-panel overflow-visible rounded-[24px] p-0">
+      <section className="workspace-launcher-panel portal-panel overflow-visible rounded-[24px] p-0">
         <div className="border-b px-3 py-2.5 md:px-4" style={{ borderColor: 'var(--portal-border)' }}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -1125,8 +1126,9 @@ export default function Dashboard() {
               <button
                 key={group.id}
                 type="button"
+                data-active={activeWorkspaceGroup === group.id}
                 onClick={() => setActiveWorkspaceGroup(group.id)}
-                className="rounded-full px-2.5 py-1.5 text-[11px] font-semibold transition-all"
+                className="workspace-group-pill rounded-full px-2.5 py-1.5 text-[11px] font-semibold transition-all"
                 style={activeWorkspaceGroup === group.id
                   ? { background: 'var(--portal-text)', color: 'white', boxShadow: '0 10px 22px rgba(26, 24, 20, 0.12)' }
                   : { background: 'rgba(255,255,255,0.78)', color: 'var(--portal-text-muted)', border: '1px solid rgba(26, 24, 20, 0.07)' }}

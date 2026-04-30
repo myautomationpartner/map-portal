@@ -34,6 +34,22 @@ const queryClient = new QueryClient({
   },
 })
 
+function PortalTheme() {
+  useEffect(() => {
+    const root = document.documentElement
+    const params = new URLSearchParams(window.location.search)
+
+    if (params.get('theme') === 'default') {
+      delete root.dataset.portalTheme
+      return
+    }
+
+    root.dataset.portalTheme = 'map-dark'
+  }, [])
+
+  return null
+}
+
 function normalizeHost(value) {
   return String(value || '')
     .trim()
@@ -291,6 +307,7 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <PortalTheme />
       <BrowserRouter basename={pathTenant.basename || undefined}>
         <AuthProvider>
           {(session) => (

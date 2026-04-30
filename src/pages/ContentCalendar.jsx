@@ -51,18 +51,18 @@ const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationp
 const HIDDEN_RADAR_STATES = new Set(['dismissed', 'archived', 'converted_to_draft'])
 const BADGE_STYLES = {
   radar: { label: 'Partner Idea', background: 'rgba(53,104,166,0.1)', color: '#3568a6', border: 'rgba(53,104,166,0.18)' },
-  open: { label: 'Open', background: 'rgba(201,168,76,0.12)', color: '#8c6d1c', border: 'rgba(201,168,76,0.24)' },
-  draft: { label: 'Draft', background: 'rgba(93,121,104,0.12)', color: '#4d6c5b', border: 'rgba(93,121,104,0.2)' },
-  scheduled: { label: 'Scheduled', background: 'rgba(31,169,113,0.1)', color: '#17875b', border: 'rgba(31,169,113,0.2)' },
-  published: { label: 'Posted', background: 'rgba(31,169,113,0.12)', color: '#17875b', border: 'rgba(31,169,113,0.22)' },
-  pending: { label: 'Pending', background: 'rgba(201,168,76,0.12)', color: '#8c6d1c', border: 'rgba(201,168,76,0.24)' },
+  open: { label: 'Open', background: 'rgba(56,189,248,0.12)', color: '#38bdf8', border: 'rgba(56,189,248,0.24)' },
+  draft: { label: 'Draft', background: 'rgba(255,122,184,0.12)', color: '#ff7ab8', border: 'rgba(255,122,184,0.22)' },
+  scheduled: { label: 'Scheduled', background: 'rgba(112,228,255,0.1)', color: '#70e4ff', border: 'rgba(112,228,255,0.22)' },
+  published: { label: 'Posted', background: 'rgba(112,228,255,0.12)', color: '#70e4ff', border: 'rgba(112,228,255,0.24)' },
+  pending: { label: 'Pending', background: 'rgba(56,189,248,0.12)', color: '#38bdf8', border: 'rgba(56,189,248,0.24)' },
   ad: { label: 'Ad idea', background: 'rgba(216,95,152,0.1)', color: '#b5487b', border: 'rgba(216,95,152,0.2)' },
 }
 const STATUS_MARKERS = {
   radar: { label: 'Partner Idea', color: '#3568a6' },
-  draft: { label: 'Draft', color: '#c87628' },
-  scheduled: { label: 'Scheduled', color: '#1fa971' },
-  published: { label: 'Posted', color: '#c9a84c' },
+  draft: { label: 'Draft', color: '#ff7ab8' },
+  scheduled: { label: 'Scheduled', color: '#70e4ff' },
+  published: { label: 'Posted', color: '#70e4ff' },
 }
 const STATUS_VIEW_CONFIG = {
   scheduled: { label: 'Scheduled', title: 'Scheduled posts', badgeType: 'scheduled', description: 'Posts waiting for their publish time.' },

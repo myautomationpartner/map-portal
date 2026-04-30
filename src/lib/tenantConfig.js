@@ -4,7 +4,7 @@ const DEFAULT_DISPLAY_NAME = 'My Automation Partner'
 const DEFAULT_PORTAL_LABEL = 'Client Portal'
 const DEFAULT_SUPPORT_EMAIL = 'info@myautomationpartner.com'
 const DEFAULT_DOMAIN_PATTERN = '<client-slug>.portal.myautomationpartner.com'
-const DEFAULT_LOGO_URL = 'https://myautomationpartner.com/assets/MyAutomationPartner-Logo.png'
+const DEFAULT_LOGO_URL = '/assets/map-option-b-mark.png'
 
 function titleCaseFromSlug(value) {
   const normalized = String(value || '')
@@ -79,8 +79,14 @@ export function buildTenantConfig(input = {}) {
     sharePayload.support_email ||
     DEFAULT_SUPPORT_EMAIL
 
+  const isMapWorkspace = String(clientSlug || businessName || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-') === 'my-automation-partner'
+
   const logoUrl =
     import.meta.env.VITE_PORTAL_LOGO_URL ||
+    (isMapWorkspace ? DEFAULT_LOGO_URL : '') ||
     client?.logo_url ||
     sharePayload.logo_url ||
     DEFAULT_LOGO_URL

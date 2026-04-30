@@ -1089,7 +1089,7 @@ function ReviewModal({
             onClick={onConfirm}
             disabled={isSubmitting || activePlatforms.length === 0}
             className="inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold disabled:opacity-60"
-            style={{ background: 'linear-gradient(135deg, var(--portal-primary), #ddc275)', color: 'var(--portal-dark)' }}
+            style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}
           >
             {isSubmitting ? (
               <>
@@ -3030,7 +3030,7 @@ export default function CreatePost() {
                   onClick={openReview}
                   disabled={isSubmitting || charOver}
                   className="mt-5 inline-flex w-full items-center justify-center gap-3 rounded-2xl py-4 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40"
-                  style={{ background: 'linear-gradient(135deg, var(--portal-primary), #ddc275)', color: 'var(--portal-dark)' }}
+                  style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}
                 >
                   {isSubmitting ? (
                     <>
@@ -3630,7 +3630,7 @@ export default function CreatePost() {
                           </h3>
                         </div>
                         <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                          Blue dots are recommended openings, green are already scheduled, and gold are saved drafts you can reopen.
+                          Blue dots are recommended openings, cyan are already scheduled, and magenta are saved drafts you can reopen.
                         </p>
                       </div>
 

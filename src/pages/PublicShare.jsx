@@ -49,7 +49,7 @@ export default function PublicShare() {
     <div className="portal-shell relative min-h-screen px-4 py-8 md:px-6 md:py-12">
       <div
         className="pointer-events-none absolute inset-0"
-        style={{ background: 'radial-gradient(ellipse 78% 58% at 50% 0%, rgba(201, 168, 76, 0.18) 0%, transparent 68%)' }}
+        style={{ background: 'radial-gradient(ellipse 78% 58% at 50% 0%, color-mix(in srgb, var(--portal-cyan) 18%, transparent) 0%, transparent 68%)' }}
       />
 
       <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6">
@@ -71,7 +71,7 @@ export default function PublicShare() {
               <div className="flex items-start gap-3">
                 <div
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl"
-                  style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary)' }}
+                  style={{ background: 'color-mix(in srgb, var(--portal-cyan) 12%, transparent)', color: 'var(--portal-primary)' }}
                 >
                   <Clock3 className="h-5 w-5" />
                 </div>
@@ -132,7 +132,7 @@ export default function PublicShare() {
                   <div className="mb-4 flex flex-wrap items-center gap-3">
                     <div
                       className="flex h-12 w-12 items-center justify-center rounded-[18px]"
-                      style={{ background: 'rgba(245, 240, 235, 0.98)', color: 'var(--portal-primary)' }}
+                      style={{ background: 'var(--portal-surface-muted)', color: 'var(--portal-primary)' }}
                     >
                       <Share2 className="h-5 w-5" />
                     </div>

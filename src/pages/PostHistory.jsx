@@ -36,7 +36,7 @@ async function fetchPosts(clientId) {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG = {
-  draft:     { label: 'Draft',     style: 'rgba(201,168,76,0.12)',  textColor: '#8c6d1c', borderColor: 'rgba(201,168,76,0.2)'   },
+  draft:     { label: 'Draft',     style: 'rgba(255,122,184,0.12)', textColor: '#ff7ab8', borderColor: 'rgba(255,122,184,0.22)' },
   scheduled: { label: 'Scheduled', style: 'rgba(26,24,20,0.08)',    textColor: '#5e554d', borderColor: 'rgba(26,24,20,0.12)'    },
   published: { label: 'Published', style: 'rgba(107,193,142,0.12)', textColor: '#2f8f57', borderColor: 'rgba(107,193,142,0.2)'  },
   failed:    { label: 'Failed',    style: 'rgba(196,85,110,0.12)',  textColor: '#c4556e', borderColor: 'rgba(196,85,110,0.2)'   },
@@ -244,7 +244,7 @@ export default function PostHistory() {
           <Link
             to="/post"
             className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:-translate-y-px"
-            style={{ background: 'linear-gradient(135deg, var(--portal-primary), #ddc275)', color: 'var(--portal-dark)' }}>
+            style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}>
             Create New Post
           </Link>
         </div>

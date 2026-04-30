@@ -889,7 +889,7 @@ function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant 
           onClick={handleSave}
           disabled={saving || billingAccess?.readOnly}
           className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:-translate-y-px active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ background: 'linear-gradient(135deg, var(--portal-primary), #ddc275)', color: 'var(--portal-dark)' }}
+          style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           Save website chat
@@ -1083,7 +1083,7 @@ export default function Settings() {
               type="submit"
               disabled={pwLoading}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:-translate-y-px active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ background: 'linear-gradient(135deg, var(--portal-primary), #ddc275)', color: 'var(--portal-dark)' }}>
+              style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}>
               {pwLoading ? (
                 <><Loader2 className="w-4 h-4 animate-spin" />Updating…</>
               ) : (

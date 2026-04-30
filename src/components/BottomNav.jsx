@@ -11,7 +11,7 @@ const navItems = [
 export default function BottomNav({ billingAccess, onBillingAction, billingActionPending = false }) {
   return (
     <nav className="fixed bottom-3 left-3 right-3 z-50 rounded-[28px] border shadow-2xl md:hidden"
-      style={{ background: 'rgba(10,10,10,0.94)', borderColor: 'rgba(201, 168, 76, 0.22)', backdropFilter: 'blur(20px)' }}>
+      style={{ background: 'var(--portal-nav)', borderColor: 'var(--portal-border)', backdropFilter: 'blur(20px)' }}>
       <div className="flex items-center">
         {navItems.map(({ to, icon: Icon, label }) => (
           <NavLink
@@ -24,7 +24,7 @@ export default function BottomNav({ billingAccess, onBillingAction, billingActio
             {({ isActive }) => (
               <>
                 <div className="relative rounded-2xl p-2.5 transition-all duration-200"
-                  style={{ background: isActive ? 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.08))' : 'transparent' }}>
+                  style={{ background: isActive ? 'linear-gradient(135deg, color-mix(in srgb, var(--portal-primary) 18%, transparent), color-mix(in srgb, var(--portal-cyan) 10%, transparent))' : 'transparent' }}>
                   <Icon className="h-5 w-5" strokeWidth={isActive ? 2.5 : 2} />
                   {to === '/inbox' && (
                     <span className="absolute -right-1 -top-1 z-10 flex h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 px-1 text-[9px] font-black shadow-lg"
@@ -34,7 +34,7 @@ export default function BottomNav({ billingAccess, onBillingAction, billingActio
                   )}
                   {isActive && (
                     <div className="absolute -bottom-1 left-1/2 h-0.5 w-4 -translate-x-1/2 rounded-full"
-                      style={{ background: 'linear-gradient(90deg, var(--portal-primary), #f0ddb0)', boxShadow: '0 0 12px rgba(201, 168, 76, 0.4)' }} />
+                      style={{ background: 'linear-gradient(90deg, var(--portal-primary), var(--portal-cyan))', boxShadow: '0 0 12px color-mix(in srgb, var(--portal-cyan) 40%, transparent)' }} />
                   )}
                 </div>
                 <span className="text-[9px] font-semibold uppercase tracking-[0.24em]">{label}</span>
@@ -52,7 +52,7 @@ export default function BottomNav({ billingAccess, onBillingAction, billingActio
           >
             <div
               className="relative rounded-2xl p-2.5 transition-all duration-200"
-              style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.08))' }}
+              style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--portal-primary) 18%, transparent), color-mix(in srgb, var(--portal-cyan) 10%, transparent))' }}
             >
               <CreditCard className="h-5 w-5" strokeWidth={2.5} />
             </div>

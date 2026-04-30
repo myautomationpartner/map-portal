@@ -45,7 +45,7 @@ const STATUS_OPTIONS = [
 
 const STATUS_STYLES = {
   open: { color: '#2f8f57', background: 'rgba(31,169,113,0.1)', borderColor: 'rgba(31,169,113,0.22)' },
-  pending: { color: '#8c6d1c', background: 'rgba(201,168,76,0.1)', borderColor: 'rgba(201,168,76,0.24)' },
+  pending: { color: '#38bdf8', background: 'rgba(56,189,248,0.1)', borderColor: 'rgba(56,189,248,0.24)' },
   resolved: { color: '#64748b', background: 'rgba(100,116,139,0.1)', borderColor: 'rgba(100,116,139,0.18)' },
 }
 

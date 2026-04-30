@@ -19,7 +19,7 @@ export default function Login() {
     image.parentElement.style.alignItems = 'center'
     image.parentElement.style.justifyContent = 'center'
     image.parentElement.textContent = tenant.logoInitials
-    image.parentElement.style.color = '#c9a84c'
+    image.parentElement.style.color = 'var(--portal-primary)'
     image.parentElement.style.fontSize = '28px'
     image.parentElement.style.fontFamily = 'Sora,Georgia,serif'
     image.parentElement.style.fontWeight = '600'
@@ -58,18 +58,18 @@ export default function Login() {
   return (
     <div className="portal-shell relative flex min-h-screen items-center justify-center p-4">
       <div className="pointer-events-none absolute inset-0"
-        style={{ background: 'radial-gradient(ellipse 80% 55% at 50% 0%, rgba(201, 168, 76, 0.16) 0%, transparent 68%)' }} />
+        style={{ background: 'radial-gradient(ellipse 80% 55% at 50% 0%, color-mix(in srgb, var(--portal-cyan) 18%, transparent) 0%, transparent 68%)' }} />
 
       <div className="relative z-10 grid w-full max-w-5xl gap-8 lg:grid-cols-[1.1fr_430px] lg:items-center">
         <div className="hidden lg:block">
           <div className="portal-panel rounded-[40px] p-8">
             <div className="mb-8 flex items-center gap-4">
-              <div className="inline-flex h-20 w-20 items-center justify-center overflow-hidden rounded-[28px] border bg-white p-1 shadow-sm"
-                style={{ borderColor: 'rgba(201, 168, 76, 0.2)' }}>
+              <div className="inline-flex h-20 w-28 items-center justify-center overflow-hidden rounded-[28px] border bg-black/20 p-2 shadow-sm"
+                style={{ borderColor: 'color-mix(in srgb, var(--portal-cyan) 22%, transparent)' }}>
                 <img
                   src={tenant.logoUrl}
                   alt={tenant.displayName}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-contain"
                   onError={handleLogoError}
                 />
               </div>
@@ -98,12 +98,12 @@ export default function Login() {
 
         <div className="w-full max-w-sm justify-self-center lg:max-w-none">
           <div className="mb-10 text-center lg:hidden">
-          <div className="mb-5 inline-block h-20 w-20 overflow-hidden rounded-[26px] border bg-white p-1 shadow-lg"
-            style={{ borderColor: 'rgba(201, 168, 76, 0.2)' }}>
+          <div className="mb-5 inline-block h-20 w-28 overflow-hidden rounded-[26px] border bg-black/20 p-2 shadow-lg"
+            style={{ borderColor: 'color-mix(in srgb, var(--portal-cyan) 22%, transparent)' }}>
             <img
               src={tenant.logoUrl}
               alt={tenant.displayName}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               onError={handleLogoError}
             />
           </div>

@@ -68,11 +68,11 @@ const STATUS_LABELS = {
   archived: 'Archived',
 }
 const POST_STATUS_MARKERS = {
-  planned: { label: 'Draft', color: '#c87628' },
-  draft: { label: 'Draft', color: '#c87628' },
-  added_to_calendar: { label: 'Draft', color: '#c87628' },
-  scheduled: { label: 'Scheduled', color: '#1fa971' },
-  published: { label: 'Posted', color: '#c9a84c' },
+  planned: { label: 'Draft', color: '#ff7ab8' },
+  draft: { label: 'Draft', color: '#ff7ab8' },
+  added_to_calendar: { label: 'Draft', color: '#ff7ab8' },
+  scheduled: { label: 'Scheduled', color: '#70e4ff' },
+  published: { label: 'Posted', color: '#70e4ff' },
 }
 const PLATFORM_MARKERS = {
   facebook: { label: 'Facebook', Icon: SiFacebook, color: '#1877f2' },
