@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { deployPortalUpdate, loadDeployableClients } from './deploy-portal-update.mjs'
+import { deployPortalUpdate, isProtectedMainSiteDomain, loadDeployableClients } from './deploy-portal-update.mjs'
 
 function parseArgs(argv) {
   const args = {}
@@ -28,9 +28,17 @@ async function main() {
     throw new Error('Deploying all customer portals requires --yes. Run with --dry-run first, then rerun with --yes after testing.')
   }
 
-  const clients = await loadDeployableClients()
+  const deployableClients = await loadDeployableClients()
+  const skipped = deployableClients.filter((client) => isProtectedMainSiteDomain(client.portal_domain))
+  const clients = deployableClients.filter((client) => !isProtectedMainSiteDomain(client.portal_domain))
+
+  if (skipped.length) {
+    process.stdout.write('\nProtected main website domains skipped\n')
+    process.stdout.write(`${skipped.map((client) => `- ${client.slug} -> ${client.portal_domain} (${client.worker_name})`).join('\n')}\n`)
+  }
+
   if (!clients.length) {
-    throw new Error('No deployable customer portals were found.')
+    throw new Error('No deployable customer portals were found after excluding protected main website domains.')
   }
 
   process.stdout.write('\nCustomer portals queued for update\n')
@@ -56,7 +64,17 @@ async function main() {
 
   const failed = results.filter((result) => !result.ok)
   process.stdout.write('\nAll-portal update summary\n')
-  process.stdout.write(`${JSON.stringify({ dryRun, total: results.length, failed: failed.length, results }, null, 2)}\n`)
+  process.stdout.write(`${JSON.stringify({
+    dryRun,
+    total: results.length,
+    skippedProtectedMainSiteDomains: skipped.map((client) => ({
+      clientSlug: client.slug,
+      workerName: client.worker_name,
+      portalDomain: client.portal_domain,
+    })),
+    failed: failed.length,
+    results,
+  }, null, 2)}\n`)
 
   if (failed.length) process.exit(1)
 }

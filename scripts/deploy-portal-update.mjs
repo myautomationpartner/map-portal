@@ -23,6 +23,7 @@ const DEFAULT_PORTAL_LABEL = 'Client Portal'
 const DEFAULT_SUPPORT_EMAIL = 'info@myautomationpartner.com'
 const DEFAULT_TEST_CLIENT_SLUG = 'dancescapes-performing-arts'
 const INACTIVE_BILLING_STATUSES = new Set(['canceled', 'cancelled', 'deleted', 'inactive'])
+const PROTECTED_MAIN_SITE_DOMAINS = new Set(['myautomationpartner.com', 'www.myautomationpartner.com'])
 
 function parseArgs(argv) {
   const args = {}
@@ -207,6 +208,31 @@ function validateDeployableClient(client) {
   }
 }
 
+function normalizeDomainHost(domain) {
+  const value = String(domain || '').trim().toLowerCase()
+  if (!value) return ''
+
+  try {
+    return new URL(value.includes('://') ? value : `https://${value}`).hostname.replace(/\.$/, '')
+  } catch {
+    return value.replace(/\.$/, '')
+  }
+}
+
+export function isProtectedMainSiteDomain(domain) {
+  return PROTECTED_MAIN_SITE_DOMAINS.has(normalizeDomainHost(domain))
+}
+
+function assertPortalDomainSafe(client, options = {}) {
+  if (!isProtectedMainSiteDomain(client?.portal_domain)) return
+  if (options.allowProtectedMainSiteDomain) return
+
+  throw new Error(
+    `Refusing to deploy ${client.slug || client.id || 'portal'} to protected main website domain ${client.portal_domain}. `
+      + 'Use a portal subdomain or pass --allow-main-site-domain only for an intentional homepage-route migration.',
+  )
+}
+
 export async function loadClient(args = {}) {
   if (args['client-id']) {
     return fetchSupabaseObject(`/rest/v1/clients?select=*&id=eq.${encodeURIComponent(args['client-id'])}`)
@@ -227,6 +253,7 @@ export async function loadDeployableClients() {
 
 export async function deployPortalUpdate(client, options = {}) {
   validateDeployableClient(client)
+  assertPortalDomainSafe(client, options)
 
   const dryRun = Boolean(options.dryRun)
   const cloudflareToken = requiredValue(['CLOUDFLARE_API_TOKEN'], 'CLOUDFLARE_API_TOKEN')
@@ -279,7 +306,10 @@ export async function deployPortalUpdate(client, options = {}) {
 export async function deploySinglePortalFromArgs(rawArgs = process.argv.slice(2)) {
   const args = parseArgs(rawArgs)
   const client = await loadClient(args)
-  const result = await deployPortalUpdate(client, { dryRun: Boolean(args['dry-run']) })
+  const result = await deployPortalUpdate(client, {
+    dryRun: Boolean(args['dry-run']),
+    allowProtectedMainSiteDomain: Boolean(args['allow-main-site-domain']),
+  })
 
   process.stdout.write('\nPortal update summary\n')
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
