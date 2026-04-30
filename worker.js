@@ -169,6 +169,25 @@ function getN8nBaseUrl(env) {
   return String(env.N8N_BASE_URL || DEFAULT_N8N_BASE_URL).replace(/\/$/, '')
 }
 
+function buildSafeN8nRedirectUrl(request, env, requestedRedirectUrl, tenantSlug = '') {
+  const requestUrl = new URL(request.url)
+  const prefix = getSharedPortalPathPrefix(env)
+  const safePath = prefix && tenantSlug
+    ? `/${prefix}/${tenantSlug}/settings`
+    : '/settings'
+  const fallbackUrl = new URL(safePath, requestUrl.origin)
+
+  if (!requestedRedirectUrl) return fallbackUrl.toString()
+
+  try {
+    const parsed = new URL(String(requestedRedirectUrl), requestUrl.origin)
+    if (parsed.origin !== requestUrl.origin) return fallbackUrl.toString()
+    return parsed.toString()
+  } catch {
+    return fallbackUrl.toString()
+  }
+}
+
 async function proxyN8nWebhook(request, env, webhookPath) {
   if (request.method === 'OPTIONS') {
     return new Response(null, {
@@ -185,11 +204,30 @@ async function proxyN8nWebhook(request, env, webhookPath) {
 
   const targetUrl = `${getN8nBaseUrl(env)}/webhook/${webhookPath}`
 
-  let bodyText = ''
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+  if (auth.user.role !== 'admin') {
+    return json({ error: 'Only client admins can manage social connections.' }, { status: 403 })
+  }
+
+  let body = {}
   try {
-    bodyText = await request.text()
+    body = await request.json()
   } catch {
-    return json({ error: 'Could not read request body.' }, { status: 400 })
+    return json({ error: 'Could not read request body as JSON.' }, { status: 400 })
+  }
+
+  const requestedClientId = String(body?.clientId || '').trim()
+  if (requestedClientId && requestedClientId !== String(auth.user.client_id || '')) {
+    return json({ error: 'This portal session is not authorized for the requested tenant.' }, { status: 403 })
+  }
+
+  const tenantSlug = String(auth.user?.clients?.slug || '').trim().toLowerCase()
+  const securedBody = {
+    ...(body && typeof body === 'object' ? body : {}),
+    clientId: auth.user.client_id,
+    tenantSlug,
+    redirectUrl: buildSafeN8nRedirectUrl(request, env, body?.redirectUrl, tenantSlug),
   }
 
   try {
@@ -198,7 +236,7 @@ async function proxyN8nWebhook(request, env, webhookPath) {
       headers: {
         'content-type': 'application/json',
       },
-      body: bodyText || '{}',
+      body: JSON.stringify(securedBody),
     })
 
     const responseText = await response.text()

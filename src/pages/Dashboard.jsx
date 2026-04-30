@@ -9,6 +9,7 @@ import {
   fetchWorkspacePreferences,
   upsertWorkspacePreferences,
 } from '../lib/portalApi'
+import { supabase } from '../lib/supabase'
 import { portalPath } from '../lib/portalPath'
 import { DASHBOARD_PLATFORMS, PLATFORM_CATALOG } from '../lib/platformCatalog'
 import {
@@ -973,9 +974,16 @@ export default function Dashboard() {
     setConnectorStatus(null)
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData?.session?.access_token
+      if (!token) throw new Error('You need to be signed in to connect social accounts.')
+
       const res = await fetch(portalPath(SETTINGS_CONNECT_ENDPOINT), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           clientId,
           platform,

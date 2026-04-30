@@ -95,6 +95,17 @@ async function disconnectSocialConnection(platform) {
   return payload
 }
 
+async function portalAuthHeaders() {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData?.session?.access_token
+  if (!token) throw new Error('You need to be signed in to manage social accounts.')
+
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  }
+}
+
 // ── Shared components ─────────────────────────────────────────────────────────
 
 function Section({ title, description, icon: Icon, children }) {
@@ -238,7 +249,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
 
     const res = await fetch(portalPath(SETTINGS_SYNC_ENDPOINT), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await portalAuthHeaders(),
       body: JSON.stringify({
         clientId,
         platform: platform ? normalizeConnectionPlatform(platform) : undefined,
@@ -370,7 +381,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
     try {
       const res = await fetch(portalPath(SETTINGS_CONNECT_ENDPOINT), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await portalAuthHeaders(),
         body: JSON.stringify({
           clientId,
           platform: normalizedPlatform,
