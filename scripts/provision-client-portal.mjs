@@ -21,6 +21,8 @@ const DEFAULT_CHATWOOT_MOBILE_APPS_URL = 'https://www.chatwoot.com/mobile-apps'
 const DEFAULT_CHATWOOT_IOS_URL = 'https://apps.apple.com/us/app/chatwoot/id1495796682'
 const DEFAULT_CHATWOOT_ANDROID_URL = 'https://play.google.com/store/apps/details?id=com.chatwoot.app'
 const DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME = 'Social Inbox'
+const CHATWOOT_CONTENT_PARTNER_CONTACT_NAME = 'My Partner'
+const CHATWOOT_CONTENT_PARTNER_GREETING = 'Send me a rough note, photos, or both. I will turn it into a Publisher draft for you to review before anything posts.'
 const DEFAULT_PORTAL_LABEL = 'Client Portal'
 const DEFAULT_SUPPORT_EMAIL = 'info@myautomationpartner.com'
 const DEFAULT_SHARED_PORTAL_HOST = 'myautomationpartner.com'
@@ -414,21 +416,233 @@ async function createOrUpdateWebsiteInbox(accountId, client) {
   })
 }
 
-async function createOrUpdateSocialInbox(accountId, client, callbackSecret) {
-  const existing = await findInboxByName(accountId, DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME)
-  if (existing?.id) return existing
+function buildChatwootWebhookUrl(client, callbackSecret) {
+  return `${buildPortalUrl(client)}/api/chatwoot/webhooks/messages/${encodeURIComponent(callbackSecret)}`
+}
 
-  return chatwootAccountFetch(accountId, '/inboxes', {
+function resolveChatwootInboxWebhookUrl(inbox) {
+  return String(inbox?.webhook_url || inbox?.callback_webhook_url || inbox?.channel?.webhook_url || '').trim()
+}
+
+async function ensureSocialInboxWebhook(accountId, inbox, webhookUrl) {
+  if (!inbox?.id) return inbox
+
+  if (resolveChatwootInboxWebhookUrl(inbox) === webhookUrl) {
+    return { ...inbox, callbackWebhookVerified: true }
+  }
+
+  await chatwootAccountFetch(accountId, `/inboxes/${inbox.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      webhook_url: webhookUrl,
+      channel: {
+        webhook_url: webhookUrl,
+      },
+    }),
+  })
+
+  const refreshed = await findInboxByName(accountId, DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME)
+  if (resolveChatwootInboxWebhookUrl(refreshed) !== webhookUrl) {
+    throw new Error(`Chatwoot Social Inbox ${inbox.id} for account ${accountId} kept an out-of-date callback URL after update.`)
+  }
+
+  return { ...refreshed, callbackWebhookVerified: true }
+}
+
+async function createOrUpdateSocialInbox(accountId, client, callbackSecret) {
+  const webhookUrl = buildChatwootWebhookUrl(client, callbackSecret)
+  const existing = await findInboxByName(accountId, DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME)
+  if (existing?.id) return ensureSocialInboxWebhook(accountId, existing, webhookUrl)
+
+  const created = await chatwootAccountFetch(accountId, '/inboxes', {
     method: 'POST',
     body: JSON.stringify({
       name: DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME,
       enable_auto_assignment: true,
       channel: {
         type: 'api',
-        webhook_url: `${buildPortalUrl(client)}/api/chatwoot/webhooks/messages/${encodeURIComponent(callbackSecret)}`,
+        webhook_url: webhookUrl,
       },
     }),
   })
+
+  return ensureSocialInboxWebhook(accountId, created, webhookUrl)
+}
+
+function chatwootPayloadList(response) {
+  if (Array.isArray(response?.payload)) return response.payload
+  if (Array.isArray(response)) return response
+  if (response?.payload?.contact) return [response.payload.contact]
+  if (response?.payload) return [response.payload]
+  if (response?.contact) return [response.contact]
+  return response ? [response] : []
+}
+
+function chatwootPayloadRecord(response) {
+  return chatwootPayloadList(response)[0] || null
+}
+
+function buildChatwootContentPartnerIdentifier(clientId) {
+  return `map-content-partner:${clientId}`.slice(0, 255)
+}
+
+async function findChatwootContentPartnerContact(accountId, client) {
+  const identifier = buildChatwootContentPartnerIdentifier(client.id)
+  const response = await chatwootAccountFetch(accountId, `/contacts/search?q=${encodeURIComponent(identifier)}`)
+  return chatwootPayloadList(response).find((contact) => contact?.identifier === identifier) || null
+}
+
+function getChatwootContactInboxSourceId(contact, inboxId) {
+  const contactInboxes = Array.isArray(contact?.contact_inboxes) ? contact.contact_inboxes : []
+  return contactInboxes.find((contactInbox) => (
+    Number(contactInbox?.inbox?.id || contactInbox?.inbox_id) === Number(inboxId)
+  ))?.source_id || ''
+}
+
+async function ensureChatwootContentPartnerContact(accountId, client, inboxId) {
+  const identifier = buildChatwootContentPartnerIdentifier(client.id)
+  let contact = await findChatwootContentPartnerContact(accountId, client)
+
+  if (!contact?.id) {
+    contact = chatwootPayloadRecord(await chatwootAccountFetch(accountId, '/contacts', {
+      method: 'POST',
+      body: JSON.stringify({
+        inbox_id: inboxId,
+        name: CHATWOOT_CONTENT_PARTNER_CONTACT_NAME,
+        identifier,
+        additional_attributes: {
+          source: 'map_content_partner',
+        },
+        custom_attributes: {
+          source: 'map_content_partner',
+          map_content_partner: true,
+          portal_client_id: client.id,
+          portal_client_slug: client.slug,
+        },
+      }),
+    }))
+  } else if (contact.name !== CHATWOOT_CONTENT_PARTNER_CONTACT_NAME) {
+    contact = chatwootPayloadRecord(await chatwootAccountFetch(accountId, `/contacts/${contact.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name: CHATWOOT_CONTENT_PARTNER_CONTACT_NAME }),
+    })) || contact
+  }
+
+  if (!contact?.id) throw new Error('Chatwoot Content Partner contact could not be created.')
+
+  if (!getChatwootContactInboxSourceId(contact, inboxId)) {
+    await chatwootAccountFetch(accountId, `/contacts/${contact.id}/contact_inboxes`, {
+      method: 'POST',
+      body: JSON.stringify({
+        inbox_id: inboxId,
+        source_id: identifier,
+      }),
+    }).catch((error) => {
+      const message = String(error.message || '')
+      if (!message.includes('409') && !message.includes('422') && !message.includes('already')) throw error
+      return null
+    })
+    contact = await findChatwootContentPartnerContact(accountId, client) || contact
+  }
+
+  return contact
+}
+
+function isChatwootContentPartnerConversation(conversation, client, inboxId) {
+  const customAttributes = conversation?.custom_attributes || {}
+  const additionalAttributes = conversation?.additional_attributes || {}
+  return Number(conversation?.inbox_id) === Number(inboxId)
+    && (
+      customAttributes.source === 'map_content_partner'
+      || customAttributes.map_content_partner === true
+      || additionalAttributes.source === 'map_content_partner'
+    )
+    && (!customAttributes.portal_client_id || String(customAttributes.portal_client_id) === String(client.id))
+}
+
+async function findChatwootContentPartnerConversation(accountId, contact, client, inboxId) {
+  const response = await chatwootAccountFetch(accountId, `/contacts/${contact.id}/conversations`)
+  const conversations = chatwootPayloadList(response)
+  return conversations.find((conversation) => (
+    isChatwootContentPartnerConversation(conversation, client, inboxId)
+    && String(conversation?.status || '').toLowerCase() !== 'resolved'
+  )) || conversations.find((conversation) => isChatwootContentPartnerConversation(conversation, client, inboxId)) || null
+}
+
+async function assignChatwootConversation(accountId, conversationId, assigneeId) {
+  if (!conversationId || !assigneeId) return { skipped: true, reason: 'Missing conversation or assignee id.' }
+
+  return chatwootAccountFetch(accountId, `/conversations/${conversationId}/assignments`, {
+    method: 'POST',
+    body: JSON.stringify({ assignee_id: assigneeId }),
+  })
+}
+
+async function ensureChatwootContentPartnerThread({ account, client, socialInbox, assigneeUserId }) {
+  const contact = await ensureChatwootContentPartnerContact(account.id, client, socialInbox.id)
+  const existing = await findChatwootContentPartnerConversation(account.id, contact, client, socialInbox.id)
+
+  if (existing?.id) {
+    if (String(existing.status || '').toLowerCase() === 'resolved') {
+      await chatwootAccountFetch(account.id, `/conversations/${existing.id}/toggle_status`, {
+        method: 'POST',
+        body: JSON.stringify({ status: 'open' }),
+      })
+    }
+    await assignChatwootConversation(account.id, existing.id, assigneeUserId)
+    return {
+      contactId: contact.id,
+      conversationId: existing.id,
+      created: false,
+      reopened: String(existing.status || '').toLowerCase() === 'resolved',
+      assignedToUserId: assigneeUserId || null,
+    }
+  }
+
+  const sourceId = getChatwootContactInboxSourceId(contact, socialInbox.id) || buildChatwootContentPartnerIdentifier(client.id)
+  const conversation = chatwootPayloadRecord(await chatwootAccountFetch(account.id, '/conversations', {
+    method: 'POST',
+    body: JSON.stringify({
+      source_id: sourceId,
+      inbox_id: socialInbox.id,
+      contact_id: contact.id,
+      status: 'open',
+      custom_attributes: {
+        source: 'map_content_partner',
+        map_content_partner: true,
+        portal_client_id: client.id,
+        portal_client_slug: client.slug,
+      },
+      additional_attributes: {
+        source: 'map_content_partner',
+      },
+    }),
+  }))
+  const conversationId = conversation?.id
+  if (!conversationId) throw new Error('Chatwoot Content Partner conversation could not be created.')
+
+  await chatwootAccountFetch(account.id, `/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      content: CHATWOOT_CONTENT_PARTNER_GREETING,
+      message_type: 'incoming',
+      private: false,
+      content_type: 'text',
+      source_id: `map-content-partner:greeting:${client.id}`,
+      content_attributes: {
+        map_content_partner_system: true,
+      },
+    }),
+  })
+  await assignChatwootConversation(account.id, conversationId, assigneeUserId)
+
+  return {
+    contactId: contact.id,
+    conversationId,
+    created: true,
+    reopened: false,
+    assignedToUserId: assigneeUserId || null,
+  }
 }
 
 async function setInboxMembers(accountId, inboxId, userIds) {
@@ -577,6 +791,12 @@ async function provisionChatwootTenant({ client, dryRun, skipChatwootProvisionin
   const inboxMemberIds = [...new Set([user.id, operatorUserId].filter(Boolean))]
   await setInboxMembers(account.id, websiteInbox.id, inboxMemberIds)
   await setInboxMembers(account.id, socialInbox.id, inboxMemberIds)
+  const contentPartnerThread = await ensureChatwootContentPartnerThread({
+    account,
+    client,
+    socialInbox,
+    assigneeUserId: user.id,
+  })
   const passwordReset = skipChatwootPasswordReset
     ? { skipped: true, reason: 'Chatwoot mobile setup email is sent on demand from Inbox setup.' }
     : await triggerChatwootPasswordReset(customerEmail)
@@ -588,6 +808,8 @@ async function provisionChatwootTenant({ client, dryRun, skipChatwootProvisionin
     userEmail: customerEmail,
     websiteInboxId: websiteInbox.id,
     socialInboxId: socialInbox.id,
+    socialInbox,
+    contentPartnerThread,
     websiteChatSettings,
     callbackSecret,
     passwordReset,
@@ -649,6 +871,22 @@ async function patchSupabase(path, body) {
       apikey: serviceRoleKey,
       Authorization: `Bearer ${serviceRoleKey}`,
       Prefer: 'return=representation',
+      ...jsonHeaders(),
+    },
+    body: JSON.stringify(body),
+  })
+}
+
+async function postSupabase(path, body, options = {}) {
+  const supabaseUrl = requiredValue(['SUPABASE_URL'], 'SUPABASE_URL', FALLBACK_SUPABASE_URL)
+  const serviceRoleKey = requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY')
+
+  return await fetchJson(`${supabaseUrl}${path}`, {
+    method: 'POST',
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Prefer: options.prefer || 'return=representation',
       ...jsonHeaders(),
     },
     body: JSON.stringify(body),
@@ -729,6 +967,194 @@ async function runInitialOpportunityRadar({ client, deploymentState, dryRun, ski
     skipped: false,
     monthlyFoundation,
     weeklyDeep,
+  }
+}
+
+function getDateParts(value, timeZone) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const parts = Object.fromEntries(formatter.formatToParts(value).map((part) => [part.type, part.value]))
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`,
+  }
+}
+
+function addMinutesToTime(time, minutes) {
+  const [hours, mins] = String(time || '09:00').split(':').map((part) => Number.parseInt(part, 10))
+  const total = ((Number.isFinite(hours) ? hours : 9) * 60) + (Number.isFinite(mins) ? mins : 0) + minutes
+  const normalized = ((total % 1440) + 1440) % 1440
+  return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}`
+}
+
+function postTypeForSuggestion(suggestion) {
+  const type = String(suggestion?.suggestion_type || '').trim()
+  if (type === 'ad_brief') return 'promotional_offer'
+  if (type === 'story_prompt') return 'community_story'
+  if (type === 'reel_prompt') return 'behind_the_scenes'
+  if (type === 'caption_starter') return 'expert_tip'
+  return 'signature_highlight'
+}
+
+function normalizeDraftCaption(suggestion) {
+  return String(suggestion?.caption_starter || suggestion?.creative_direction || suggestion?.title || '').trim()
+}
+
+function buildStarterDraftRow({ client, plannerProfile, suggestion, index }) {
+  const publishAt = suggestion?.recommended_publish_at
+    ? new Date(suggestion.recommended_publish_at)
+    : new Date(Date.now() + ((index + 1) * 24 * 60 * 60 * 1000))
+  const timezone = String(client.timezone || 'America/New_York')
+  const parts = getDateParts(publishAt, timezone)
+  const postType = postTypeForSuggestion(suggestion)
+  const caption = normalizeDraftCaption(suggestion)
+  const title = String(suggestion?.title || `Starter draft ${index + 1}`).trim()
+  const platformList = Array.isArray(suggestion?.recommended_platforms) ? suggestion.recommended_platforms : []
+
+  return {
+    client_id: client.id,
+    planner_client_slug: plannerProfile?.policy_template_key || client.slug,
+    planner_policy_version: plannerProfile?.policy_version || '2026-04-24',
+    source_workflow: 'initial_portal_setup',
+    slot_date_local: parts.date,
+    slot_label: `Starter Idea ${index + 1}`,
+    slot_start_local: parts.time,
+    slot_end_local: addMinutesToTime(parts.time, 30),
+    timezone,
+    scheduled_for: publishAt.toISOString(),
+    post_type: postType,
+    draft_title: title,
+    draft_body: [
+      caption,
+      suggestion?.creative_direction ? `Creative direction: ${suggestion.creative_direction}` : '',
+    ].filter(Boolean).join('\n\n'),
+    draft_caption: caption,
+    review_state: 'draft_created',
+    asset_requirements_json: [],
+    seasonal_modifier_context_json: [],
+    review_notes: JSON.stringify({
+      generationSource: 'initial_portal_setup',
+      generationMode: 'opportunity_radar_seed',
+      opportunitySuggestionId: suggestion?.id || null,
+      opportunityId: suggestion?.opportunity_id || null,
+      recommendedPlatforms: platformList,
+      creativeDirection: suggestion?.creative_direction || null,
+      seededAt: new Date().toISOString(),
+    }),
+  }
+}
+
+async function seedInitialSocialDrafts({ client, dryRun, skipInitialSocialDrafts }) {
+  if (dryRun || skipInitialSocialDrafts) {
+    return {
+      skipped: true,
+      reason: dryRun ? 'Dry run.' : 'Initial social draft seeding skipped by flag.',
+    }
+  }
+
+  const existingDrafts = await fetchSupabaseRows(
+    `/rest/v1/social_drafts?select=id&client_id=eq.${encodeURIComponent(client.id)}&limit=1`,
+  )
+  if (Array.isArray(existingDrafts) && existingDrafts.length > 0) {
+    return {
+      skipped: true,
+      reason: 'Client already has social drafts.',
+      existingDraftCount: existingDrafts.length,
+    }
+  }
+
+  const suggestions = await fetchSupabaseRows(
+    `/rest/v1/client_opportunity_suggestions?select=*&client_id=eq.${encodeURIComponent(client.id)}&review_state=eq.suggested&order=recommended_publish_at.asc.nullslast,created_at.asc&limit=5`,
+  )
+  if (!Array.isArray(suggestions) || suggestions.length === 0) {
+    return {
+      skipped: true,
+      reason: 'No Opportunity Radar suggestions were available to seed starter drafts.',
+    }
+  }
+
+  const plannerProfiles = await fetchSupabaseRows(
+    `/rest/v1/client_planner_profiles?select=policy_template_key,policy_version&client_id=eq.${encodeURIComponent(client.id)}&limit=1`,
+  )
+  const plannerProfile = Array.isArray(plannerProfiles) ? plannerProfiles[0] : null
+  const rows = suggestions.map((suggestion, index) => buildStarterDraftRow({
+    client,
+    plannerProfile,
+    suggestion,
+    index,
+  }))
+
+  const inserted = await postSupabase(
+    '/rest/v1/social_drafts?on_conflict=client_id,slot_date_local,slot_label',
+    rows,
+    { prefer: 'resolution=merge-duplicates,return=representation' },
+  )
+  const insertedRows = Array.isArray(inserted) ? inserted : []
+
+  await Promise.all(insertedRows.map((draft, index) => {
+    const suggestion = suggestions[index]
+    if (!draft?.id || !suggestion?.id) return null
+    return patchSupabase(
+      `/rest/v1/client_opportunity_suggestions?id=eq.${encodeURIComponent(suggestion.id)}`,
+      {
+        review_state: 'converted_to_draft',
+        converted_draft_id: draft.id,
+      },
+    )
+  }).filter(Boolean))
+
+  return {
+    skipped: false,
+    draftCount: insertedRows.length || rows.length,
+    suggestionIds: suggestions.map((suggestion) => suggestion.id).filter(Boolean),
+    draftIds: insertedRows.map((draft) => draft.id).filter(Boolean),
+  }
+}
+
+async function persistProvisioningSummary({ run, webhookResult, chatwootProvisioning, initialOpportunityRadar, initialSocialDrafts, dryRun }) {
+  if (dryRun || !run?.id) {
+    return {
+      skipped: true,
+      reason: dryRun ? 'Dry run.' : 'Missing provisioning run.',
+    }
+  }
+
+  const currentMetadata = run.deployment_metadata && typeof run.deployment_metadata === 'object'
+    ? run.deployment_metadata
+    : {}
+  const chatwootSummary = summarizeChatwootProvisioning(chatwootProvisioning)
+
+  await patchSupabase(
+    `/rest/v1/onboarding_provisioning_runs?id=eq.${encodeURIComponent(run.id)}`,
+    {
+      deployment_metadata: {
+        ...currentMetadata,
+        zernio_webhook: webhookResult?.skipped && currentMetadata.zernio_webhook
+          ? currentMetadata.zernio_webhook
+          : webhookResult || null,
+        chatwoot_provisioning: chatwootSummary?.skipped && currentMetadata.chatwoot_provisioning
+          ? currentMetadata.chatwoot_provisioning
+          : chatwootSummary,
+        initial_opportunity_radar: initialOpportunityRadar?.skipped && currentMetadata.initial_opportunity_radar
+          ? currentMetadata.initial_opportunity_radar
+          : initialOpportunityRadar || null,
+        initial_social_drafts: initialSocialDrafts?.skipped && currentMetadata.initial_social_drafts
+          ? currentMetadata.initial_social_drafts
+          : initialSocialDrafts || null,
+      },
+    },
+  )
+
+  return {
+    skipped: false,
+    runId: run.id,
   }
 }
 
@@ -964,6 +1390,15 @@ function summarizeChatwootProvisioning(result) {
     userEmail: result.userEmail || undefined,
     websiteInboxId: result.websiteInboxId || undefined,
     socialInboxId: result.socialInboxId || undefined,
+    callbackWebhookVerified: Boolean(result.socialInbox?.callbackWebhookVerified),
+    contentPartnerThread: result.contentPartnerThread
+      ? {
+          contactId: result.contentPartnerThread.contactId,
+          conversationId: result.contentPartnerThread.conversationId,
+          created: Boolean(result.contentPartnerThread.created),
+          reopened: Boolean(result.contentPartnerThread.reopened),
+        }
+      : undefined,
     websiteChatSettings: result.websiteChatSettings
       ? {
           tokenStored: Boolean(result.websiteChatSettings.websiteToken),
@@ -984,6 +1419,16 @@ async function syncDeploymentState({ client, signup, run, webhookResult, chatwoo
     return {
       skipped: true,
       reason: dryRun ? 'Dry run.' : 'Missing onboarding signup or provisioning run.',
+    }
+  }
+
+  if (run.run_status === 'completed' && run.current_stage === 'complete' && webhookResult?.skipped) {
+    return {
+      skipped: true,
+      reason: 'Provisioning run is already complete; skipped webhook configuration will not downgrade it.',
+      runStage: run.current_stage,
+      runStatus: run.run_status,
+      manualAttentionRequired: run.manual_attention_required === true,
     }
   }
 
@@ -1049,6 +1494,7 @@ async function main() {
   const dryRun = Boolean(args['dry-run'])
   const skipWebhookConfig = Boolean(args['skip-webhook-config'])
   const skipInitialRadar = Boolean(args['skip-initial-radar'])
+  const skipInitialSocialDrafts = Boolean(args['skip-initial-social-drafts'])
   const skipChatwootProvisioning = Boolean(args['skip-chatwoot-provisioning'])
   const skipChatwootPasswordReset = !Boolean(args['send-chatwoot-password-reset']) || Boolean(args['skip-chatwoot-password-reset'])
   const client = await loadClient(args)
@@ -1143,6 +1589,19 @@ async function main() {
       dryRun,
       skipInitialRadar,
     })
+    const initialSocialDrafts = await seedInitialSocialDrafts({
+      client,
+      dryRun,
+      skipInitialSocialDrafts,
+    })
+    const provisioningSummary = await persistProvisioningSummary({
+      run,
+      webhookResult,
+      chatwootProvisioning,
+      initialOpportunityRadar,
+      initialSocialDrafts,
+      dryRun,
+    })
     printSummary('Portal deployment summary', {
       dryRun,
       deploymentMode,
@@ -1160,6 +1619,8 @@ async function main() {
       webhookResult,
       deploymentState,
       initialOpportunityRadar,
+      initialSocialDrafts,
+      provisioningSummary,
       readyEmail: {
         skipped: true,
         reason: 'Ready email now sends after the customer completes password setup.',

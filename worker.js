@@ -6,7 +6,7 @@ const DEFAULT_N8N_BASE_URL = 'https://n8n.myautomationpartner.com'
 const DEFAULT_ZERNIO_API_BASE_URL = 'https://zernio.com/api/v1'
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_xwASGbwUsZhX5CFNizTAmg_U50hkD7o'
 const DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME = 'Social Inbox'
-const CONTENT_PARTNER_CONTACT_NAME = 'MAP Content Partner'
+const CONTENT_PARTNER_CONTACT_NAME = 'My Partner'
 const TECHNICAL_HOST_SUFFIXES = ['.workers.dev', '.pages.dev']
 const DEFAULT_SHARED_PORTAL_PATH_PREFIX = 'portal'
 const SUPPORTED_MEDIA_EXTENSIONS = new Set([
@@ -411,8 +411,12 @@ function getChatwootConfig(env) {
   return { baseUrl, accountId, apiToken, socialInboxId }
 }
 
-async function getChatwootConfigForClient(env, envConfig) {
-  if (env.CHATWOOT_ACCOUNT_ID) return getChatwootConfig(env)
+async function getChatwootConfigForClient(env, envConfig, options = {}) {
+  const overrideAccountId = String(options.accountId || '').trim()
+  if (env.CHATWOOT_ACCOUNT_ID) {
+    const config = getChatwootConfig(env)
+    return overrideAccountId ? { ...config, accountId: overrideAccountId } : config
+  }
 
   const baseUrl = String(env.CHATWOOT_BASE_URL || DEFAULT_CHATWOOT_BASE_URL).replace(/\/$/, '')
   const apiToken = String(env.CHATWOOT_API_ACCESS_TOKEN || '').trim()
@@ -421,7 +425,7 @@ async function getChatwootConfigForClient(env, envConfig) {
   }
 
   const settings = await loadWebsiteChatSettings(envConfig)
-  const accountId = String(settings?.chatwoot_account_id || '').trim()
+  const accountId = overrideAccountId || String(settings?.chatwoot_account_id || '').trim()
   if (!accountId) {
     throw new Error('Chatwoot account is not configured for this tenant yet.')
   }
@@ -432,6 +436,18 @@ async function getChatwootConfigForClient(env, envConfig) {
     accountId,
     socialInboxId: parsePositiveInteger(settings?.chatwoot_social_inbox_id) || parsePositiveInteger(env.CHATWOOT_SOCIAL_INBOX_ID),
   }
+}
+
+function getWebhookChatwootAccountId(payload, message, conversation) {
+  return firstString(
+    payload?.account?.id,
+    payload?.account_id,
+    payload?.accountId,
+    message?.account_id,
+    message?.accountId,
+    conversation?.account_id,
+    conversation?.accountId,
+  )
 }
 
 function getZernioConfig(env) {
@@ -938,6 +954,41 @@ async function loadWebsiteChatSettings(envConfig) {
   const response = await supabaseRest(envConfig, `/rest/v1/client_website_chat_settings?${params.toString()}`)
   const rows = await response.json()
   return Array.isArray(rows) ? rows[0] : null
+}
+
+async function loadPortalClientBySlug(envConfig, slug) {
+  const normalizedSlug = String(slug || '').trim().toLowerCase()
+  if (!normalizedSlug) return null
+
+  const params = new URLSearchParams({
+    select: 'id,slug,business_name,website_url,portal_domain',
+    slug: `eq.${normalizedSlug}`,
+    limit: '1',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/clients?${params.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function getPortalWebhookConfig(request, env) {
+  const envConfig = getPortalAuthConfig(env)
+  if (envConfig.clientId) return envConfig
+
+  const requestedTenantSlug = String(
+    request.headers.get('x-map-tenant-slug')
+    || extractTenantSlugFromPath(new URL(request.url).pathname, env)
+    || '',
+  ).trim().toLowerCase()
+  const client = await loadPortalClientBySlug(envConfig, requestedTenantSlug)
+  if (!client?.id) {
+    throw new Error('Could not resolve tenant for Chatwoot webhook.')
+  }
+
+  return {
+    ...envConfig,
+    clientId: client.id,
+    clientSlug: client.slug,
+  }
 }
 
 async function loadPortalClient(envConfig) {
@@ -1654,29 +1705,72 @@ function extractChatwootRecord(payload) {
   return payload && typeof payload === 'object' ? payload : null
 }
 
-function getPortalReviewUrl(env, draftId) {
+function getPortalReviewUrl(env, draftId, envConfig = null) {
   const canonicalHost = getCanonicalPortalHost(env)
   const path = draftId ? `/post?draftId=${encodeURIComponent(draftId)}` : '/post'
-  return canonicalHost ? `https://${canonicalHost}${path}` : path
+  const basePath = getPortalBasePath(envConfig)
+  return canonicalHost ? `https://${canonicalHost}${basePath}${path}` : `${basePath}${path}`
 }
 
-function getPortalOrigin(env) {
+function getPortalBasePath(envConfig = null) {
+  const slug = String(envConfig?.clientSlug || '').trim().toLowerCase()
+  const prefix = getSharedPortalPathPrefix({})
+  return slug ? `/${prefix}/${slug}` : ''
+}
+
+function getPortalOrigin(env, envConfig = null) {
   const canonicalHost = getCanonicalPortalHost(env)
-  return canonicalHost ? `https://${canonicalHost}` : ''
+  if (!canonicalHost) return ''
+  return `https://${canonicalHost}${getPortalBasePath(envConfig)}`
 }
 
-function getContentPartnerPreviewUrl(env, draftId, requestId) {
-  const origin = getPortalOrigin(env)
+function getContentPartnerPreviewUrl(env, draftId, requestId, envConfig = null) {
+  const origin = getPortalOrigin(env, envConfig)
   if (!origin || !draftId || !requestId) return ''
   const path = `/api/content-partner/previews/${encodeURIComponent(draftId)}.svg`
   return `${origin}${path}?token=${encodeURIComponent(requestId)}`
 }
 
-function getContentPartnerReviewUrl(env, draftId, requestId) {
-  const origin = getPortalOrigin(env)
+function uuidToShortToken(uuid) {
+  const normalized = String(uuid || '').trim().toLowerCase()
+  if (!isUuidLike(normalized)) return ''
+  const hex = normalized.replace(/-/g, '')
+  let binary = ''
+  for (let index = 0; index < hex.length; index += 2) {
+    binary += String.fromCharCode(parseInt(hex.slice(index, index + 2), 16))
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+function shortTokenToUuid(token) {
+  const normalized = String(token || '').trim().replace(/-/g, '+').replace(/_/g, '/')
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) return ''
+  const padded = `${normalized}${'='.repeat((4 - (normalized.length % 4)) % 4)}`
+  let binary = ''
+  try {
+    binary = atob(padded)
+  } catch {
+    return ''
+  }
+  if (binary.length !== 16) return ''
+  const hex = Array.from(binary, (char) => char.charCodeAt(0).toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+function getContentPartnerReviewUrl(env, draftId, requestId, envConfig = null) {
+  const origin = getPortalOrigin(env, envConfig)
   if (!origin || !draftId || !requestId) return ''
-  const path = `/content-preview/${encodeURIComponent(draftId)}`
-  return `${origin}${path}?token=${encodeURIComponent(requestId)}`
+  const shortToken = uuidToShortToken(requestId)
+  if (shortToken) return `${origin}/r/${encodeURIComponent(shortToken)}`
+  return `${origin}/content-preview/${encodeURIComponent(draftId)}?token=${encodeURIComponent(requestId)}`
+}
+
+function getContentPartnerQuickFixUrl(env, requestId, action, envConfig = null) {
+  const origin = getPortalOrigin(env, envConfig)
+  const shortToken = uuidToShortToken(requestId)
+  const normalizedAction = String(action || '').trim().toLowerCase()
+  if (!origin || !shortToken || !normalizedAction) return ''
+  return `${origin}/f/${encodeURIComponent(shortToken)}/${encodeURIComponent(normalizedAction)}`
 }
 
 function normalizeChatwootMessageAttachments(payload, message) {
@@ -1800,9 +1894,9 @@ function renderPreviewPlatformChips(platforms, x, y) {
     const label = labels[platform] || platform.replace(/_/g, ' ')
     const width = Math.max(104, Math.min(168, 46 + (label.length * 12)))
     const chip = [
-      `<rect x="${x + offset}" y="${y}" width="${width}" height="44" rx="22" fill="${colors[platform] || '#6b7280'}" opacity="0.12"/>`,
+      `<rect x="${x + offset}" y="${y}" width="${width}" height="44" rx="16" fill="${colors[platform] || '#70e4ff'}" opacity="0.18"/>`,
       `<circle cx="${x + offset + 24}" cy="${y + 22}" r="10" fill="${colors[platform] || '#6b7280'}"/>`,
-      `<text x="${x + offset + 44}" y="${y + 29}" font-size="20" font-weight="700" fill="${colors[platform] || '#3f3a32'}">${escapeSvgText(label)}</text>`,
+      `<text x="${x + offset + 44}" y="${y + 29}" font-size="20" font-weight="800" fill="#dbe3f4">${escapeSvgText(label)}</text>`,
     ].join('')
     offset += width + 14
     return chip
@@ -1829,38 +1923,45 @@ function renderContentPartnerPreviewSvg({
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
   <defs>
-    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#fffdf8"/>
-      <stop offset="1" stop-color="#f7f3ec"/>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#07090f"/>
+      <stop offset="0.54" stop-color="#0b0e18"/>
+      <stop offset="1" stop-color="#0f1320"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#172037" stop-opacity="0.98"/>
+      <stop offset="1" stop-color="#101627" stop-opacity="0.95"/>
     </linearGradient>
     <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#7c3aed"/>
-      <stop offset="1" stop-color="#d946ef"/>
+      <stop offset="0" stop-color="#70e4ff"/>
+      <stop offset="0.52" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#988cff"/>
     </linearGradient>
     <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#3f2d14" flood-opacity="0.14"/>
+      <feDropShadow dx="0" dy="24" stdDeviation="30" flood-color="#000000" flood-opacity="0.42"/>
     </filter>
   </defs>
-  <rect width="1200" height="900" fill="#f2eee6"/>
-  <rect x="72" y="58" width="1056" height="784" rx="42" fill="url(#paper)" filter="url(#shadow)"/>
-  <rect x="72" y="58" width="1056" height="784" rx="42" fill="none" stroke="#e2ddd3" stroke-width="2"/>
-  <rect x="106" y="92" width="988" height="124" rx="30" fill="#ffffff" opacity="0.9"/>
-  <circle cx="158" cy="154" r="31" fill="url(#accent)"/>
-  <text x="158" y="165" text-anchor="middle" font-size="26" font-weight="900" fill="#ffffff">AI</text>
-  <text x="210" y="142" font-size="27" font-weight="800" fill="#1f1f1f">${escapeSvgText(name)}</text>
-  <text x="210" y="176" font-size="20" font-weight="600" fill="#8a8377">Content Partner draft preview</text>
-  <rect x="812" y="122" width="236" height="64" rx="32" fill="#f3ead8" stroke="#dcc990" stroke-width="2"/>
-  <text x="930" y="162" text-anchor="middle" font-size="22" font-weight="800" fill="#846118">Manual review</text>
-  <text x="112" y="275" font-size="18" font-weight="800" fill="#8a8377" letter-spacing="6">PUBLISHER DRAFT</text>
-  ${renderTextLines(titleLines, { x: 112, y: 338, lineHeight: 58, size: 50, weight: 900, color: '#171717' })}
-  <rect x="112" y="516" width="976" height="216" rx="28" fill="#ffffff" stroke="#e2ddd3" stroke-width="2"/>
-  <text x="146" y="562" font-size="18" font-weight="800" fill="#8a8377" letter-spacing="5">POST COPY</text>
-  ${renderTextLines(captionLines, { x: 146, y: 606, lineHeight: 29, size: 24, weight: 500, color: '#292622' })}
-  <line x1="112" y1="744" x2="1088" y2="744" stroke="#e2ddd3" stroke-width="2"/>
-  <text x="112" y="778" font-size="18" font-weight="800" fill="#8a8377" letter-spacing="5">SUGGESTED TIME</text>
-  <text x="112" y="814" font-size="28" font-weight="800" fill="#292622">${escapeSvgText(scheduleLabel)}</text>
-  <text x="512" y="778" font-size="18" font-weight="800" fill="#8a8377" letter-spacing="5">IMAGE IDEA</text>
-  ${renderTextLines(mediaLines, { x: 512, y: 814, lineHeight: 26, size: 21, weight: 600, color: '#5f574c' })}
+  <rect width="1200" height="900" fill="url(#page)"/>
+  <path d="M0 118 H1200 M0 238 H1200 M0 358 H1200 M0 478 H1200 M0 598 H1200 M0 718 H1200 M120 0 V900 M240 0 V900 M360 0 V900 M480 0 V900 M600 0 V900 M720 0 V900 M840 0 V900 M960 0 V900 M1080 0 V900" stroke="#ffffff" stroke-opacity="0.035" stroke-width="1"/>
+  <rect x="72" y="58" width="1056" height="784" rx="22" fill="url(#panel)" filter="url(#shadow)"/>
+  <rect x="72" y="58" width="1056" height="784" rx="22" fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="2"/>
+  <rect x="106" y="92" width="988" height="124" rx="18" fill="#ffffff" opacity="0.055"/>
+  <rect x="126" y="116" width="76" height="76" rx="18" fill="url(#accent)"/>
+  <text x="164" y="164" text-anchor="middle" font-size="25" font-weight="900" fill="#071018">MAP</text>
+  <text x="230" y="142" font-size="27" font-weight="800" fill="#f5f7fb">${escapeSvgText(name)}</text>
+  <text x="230" y="176" font-size="20" font-weight="600" fill="#a6afc2">Content Partner draft preview</text>
+  <rect x="814" y="122" width="232" height="58" rx="16" fill="#70e4ff" fill-opacity="0.12" stroke="#70e4ff" stroke-opacity="0.34" stroke-width="2"/>
+  <text x="930" y="158" text-anchor="middle" font-size="21" font-weight="850" fill="#dbe3f4">Manual review</text>
+  <text x="112" y="275" font-size="18" font-weight="800" fill="#70e4ff">PUBLISHER DRAFT</text>
+  ${renderTextLines(titleLines, { x: 112, y: 338, lineHeight: 58, size: 50, weight: 900, color: '#f5f7fb' })}
+  <rect x="112" y="516" width="976" height="216" rx="18" fill="#ffffff" fill-opacity="0.065" stroke="#ffffff" stroke-opacity="0.13" stroke-width="2"/>
+  <text x="146" y="562" font-size="18" font-weight="800" fill="#70e4ff">POST COPY</text>
+  ${renderTextLines(captionLines, { x: 146, y: 606, lineHeight: 29, size: 24, weight: 500, color: '#dbe3f4' })}
+  <line x1="112" y1="744" x2="1088" y2="744" stroke="#ffffff" stroke-opacity="0.13" stroke-width="2"/>
+  <text x="112" y="778" font-size="18" font-weight="800" fill="#70e4ff">SUGGESTED TIME</text>
+  <text x="112" y="814" font-size="28" font-weight="800" fill="#f5f7fb">${escapeSvgText(scheduleLabel)}</text>
+  <text x="512" y="778" font-size="18" font-weight="800" fill="#70e4ff">IMAGE IDEA</text>
+  ${renderTextLines(mediaLines, { x: 512, y: 814, lineHeight: 26, size: 21, weight: 600, color: '#a6afc2' })}
   ${renderPreviewPlatformChips(platforms, 112, 454)}
 </svg>`
 }
@@ -1922,7 +2023,7 @@ async function handleContentPartnerPreview(request, env, draftId) {
 
   let envConfig
   try {
-    envConfig = getPortalAuthConfig(env)
+    envConfig = await getPortalWebhookConfig(request, env)
   } catch (error) {
     return json({ error: error.message || 'Portal preview is not configured.' }, { status: 500 })
   }
@@ -2086,9 +2187,13 @@ async function loadContentPartnerReview(envConfig, draftId, requestId) {
 }
 
 function renderQuickReviewPage(env, context) {
-  const approveUrl = `/api/content-partner/reviews/${encodeURIComponent(context.draft.id)}/approve?token=${encodeURIComponent(context.request.id)}`
-  const editorUrl = getPortalReviewUrl(env, context.draft.id)
-  const previewUrl = getContentPartnerPreviewUrl(env, context.draft.id, context.request.id)
+  const envConfig = { clientId: context.client?.id, clientSlug: context.client?.slug }
+  const approveUrl = `${getPortalBasePath(envConfig)}/api/content-partner/reviews/${encodeURIComponent(context.draft.id)}/approve?token=${encodeURIComponent(context.request.id)}`
+  const editorUrl = getPortalReviewUrl(env, context.draft.id, envConfig)
+  const previewUrl = getContentPartnerPreviewUrl(env, context.draft.id, context.request.id, envConfig)
+  const simplifyUrl = getContentPartnerQuickFixUrl(env, context.request.id, 's', envConfig)
+  const polishUrl = getContentPartnerQuickFixUrl(env, context.request.id, 'p', envConfig)
+  const imageUrl = getContentPartnerQuickFixUrl(env, context.request.id, 'i', envConfig)
   const alreadyScheduled = Boolean(context.draft.published_reference)
   const platformChips = context.platforms.map((platform) => (
     `<span class="chip">${escapeHtml(platformLabel(platform))}</span>`
@@ -2105,29 +2210,32 @@ function renderQuickReviewPage(env, context) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(context.title)} · MAP Content Partner</title>
   <style>
-    :root { color-scheme: light; --ink:#171717; --muted:#756d62; --line:#e5dfd4; --paper:#fffdf8; --gold:#f3c316; --gold-dark:#9f7318; --purple:#7c3aed; }
+    :root { color-scheme: dark; --ink:#f5f7fb; --muted:#a6afc2; --soft:#dbe3f4; --line:rgba(255,255,255,.12); --line-strong:rgba(255,255,255,.2); --paper:rgba(16,22,39,.78); --paper-strong:rgba(23,32,55,.92); --cyan:#70e4ff; --blue:#38bdf8; --purple:#988cff; --magenta:#ff7ab8; --dark:#07090f; }
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: #f2eee6; color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    main { width: min(980px, calc(100vw - 28px)); margin: 18px auto; background: var(--paper); border: 1px solid var(--line); border-radius: 28px; overflow: hidden; box-shadow: 0 22px 60px rgba(50, 36, 16, 0.13); }
-    header { display: flex; justify-content: space-between; gap: 18px; padding: 28px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,0.68); }
-    .eyebrow { margin: 0 0 8px; color: var(--muted); font-size: 13px; font-weight: 900; letter-spacing: 0.18em; text-transform: uppercase; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 50% -12%, rgba(112,228,255,.22), transparent 33rem), radial-gradient(circle at 85% 18%, rgba(56,189,248,.14), transparent 25rem), radial-gradient(circle at 12% 36%, rgba(152,140,255,.13), transparent 24rem), linear-gradient(180deg,#07090f 0%,#0b0e18 54%,#0f1320 100%); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body::before { content:""; position:fixed; inset:0; pointer-events:none; background-image:linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px); background-size:32px 32px; mask-image:linear-gradient(180deg, rgba(0,0,0,.36), transparent 82%); }
+    main { position:relative; width: min(980px, calc(100vw - 28px)); margin: 18px auto; background: var(--paper); border: 1px solid var(--line); border-radius: 20px; overflow: hidden; box-shadow: 0 34px 90px rgba(0,0,0,.45); backdrop-filter: blur(18px); }
+    header { display: flex; justify-content: space-between; gap: 18px; padding: 28px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg,rgba(23,32,55,.92),rgba(16,22,39,.72)); }
+    .eyebrow { margin: 0 0 8px; color: var(--cyan); font-size: 13px; font-weight: 900; text-transform: uppercase; }
     h1 { margin: 0; font-size: clamp(34px, 6vw, 64px); line-height: 0.97; letter-spacing: 0; max-width: 760px; }
-    .badge { align-self: flex-start; white-space: nowrap; border: 1px solid #cfb65b; background: #fff4c2; color: #7b5915; border-radius: 999px; padding: 11px 15px; font-weight: 900; }
+    .badge { align-self: flex-start; white-space: nowrap; border: 1px solid rgba(112,228,255,.36); background: rgba(112,228,255,.12); color: var(--soft); border-radius: 999px; padding: 11px 15px; font-weight: 900; }
     .grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.65fr); gap: 0; }
     .copy { padding: 28px; border-right: 1px solid var(--line); }
-    .side { padding: 28px; background: #fbf8f1; }
-    label { display: block; margin: 0 0 12px; color: var(--muted); font-size: 13px; font-weight: 900; letter-spacing: 0.18em; text-transform: uppercase; }
-    .caption { white-space: pre-wrap; border: 1px solid var(--line); border-radius: 18px; background: #fff; padding: 20px; font-size: 22px; line-height: 1.45; }
+    .side { padding: 28px; background: rgba(255,255,255,.045); }
+    label { display: block; margin: 0 0 12px; color: var(--cyan); font-size: 13px; font-weight: 900; text-transform: uppercase; }
+    .caption { white-space: pre-wrap; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.055); padding: 20px; font-size: 22px; line-height: 1.45; color: var(--soft); }
     .meta { display: grid; gap: 18px; margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--line); }
-    .value { margin: 0; color: #3f3a32; font-size: 19px; line-height: 1.45; }
+    .value { margin: 0; color: var(--soft); font-size: 19px; line-height: 1.45; }
     .chips { display: flex; flex-wrap: wrap; gap: 10px; }
-    .chip { display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid #c8d6eb; background: #edf4ff; color: #2d5f9f; padding: 8px 12px; font-weight: 900; }
-    .media, .preview { width: 100%; display: block; border-radius: 20px; border: 1px solid var(--line); background: #fff; object-fit: contain; max-height: 430px; }
+    .chip { display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid rgba(152,140,255,.32); background: rgba(152,140,255,.12); color: var(--soft); padding: 8px 12px; font-weight: 900; }
+    .media, .preview { width: 100%; display: block; border-radius: 16px; border: 1px solid var(--line); background: rgba(7,9,15,.55); object-fit: contain; max-height: 430px; }
     .actions { display: grid; gap: 12px; margin-top: 22px; }
+    .quick { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top: 22px; }
     button, .secondary { width: 100%; border-radius: 16px; padding: 16px 18px; font: inherit; font-size: 18px; font-weight: 950; text-align: center; text-decoration: none; cursor: pointer; }
-    button { border: 1px solid #caa333; background: linear-gradient(135deg, var(--gold), #d4aa35); color: #111; box-shadow: 0 12px 28px rgba(197, 151, 20, 0.22); }
+    button { border: 1px solid rgba(112,228,255,.42); background: linear-gradient(135deg,var(--cyan),var(--blue)); color: #071018; box-shadow: 0 18px 36px rgba(56,189,248,.22); }
     button:disabled { cursor: default; opacity: 0.58; box-shadow: none; }
-    .secondary { display: block; border: 1px solid var(--line); background: #fff; color: #201d19; }
+    .secondary { display: block; border: 1px solid var(--line); background: rgba(255,255,255,.055); color: var(--ink); }
+    .quick a { display:flex; min-height:52px; align-items:center; justify-content:center; border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,.055); color:var(--soft); text-align:center; text-decoration:none; font-weight:900; font-size:14px; line-height:1.15; }
     .note { margin: 12px 0 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
     @media (max-width: 760px) {
       main { width: 100%; min-height: 100vh; margin: 0; border-radius: 0; border-left: 0; border-right: 0; }
@@ -2136,6 +2244,7 @@ function renderQuickReviewPage(env, context) {
       .badge { display: inline-flex; margin-top: 16px; }
       .copy, .side { padding: 22px; border-right: 0; }
       .copy { border-bottom: 1px solid var(--line); }
+      .quick { grid-template-columns:1fr; }
     }
   </style>
 </head>
@@ -2169,6 +2278,11 @@ function renderQuickReviewPage(env, context) {
       </div>
       <aside class="side">
         ${mediaHtml}
+        <div class="quick">
+          ${simplifyUrl ? `<a href="${escapeHtml(simplifyUrl)}">Simplify text</a>` : ''}
+          ${polishUrl ? `<a href="${escapeHtml(polishUrl)}">Polish tone</a>` : ''}
+          ${imageUrl ? `<a href="${escapeHtml(imageUrl)}">Fix image idea</a>` : ''}
+        </div>
         <div class="actions">
           <form method="post" action="${escapeHtml(approveUrl)}">
             <button type="submit" ${alreadyScheduled ? 'disabled' : ''}>${alreadyScheduled ? 'Already scheduled' : 'Approve and schedule'}</button>
@@ -2191,12 +2305,12 @@ function renderQuickReviewResultPage({ title, message, linkHref = '', linkLabel 
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>
   <style>
-    body { margin:0; min-height:100vh; display:grid; place-items:center; background:#f2eee6; color:#171717; font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    section { width:min(680px, calc(100vw - 32px)); background:#fffdf8; border:1px solid #e5dfd4; border-radius:28px; padding:34px; box-shadow:0 22px 60px rgba(50,36,16,.13); }
-    .badge { display:inline-flex; border-radius:999px; padding:8px 13px; font-weight:900; background:${ok ? '#dcfce7' : '#fee2e2'}; color:${ok ? '#166534' : '#991b1b'}; }
+    body { margin:0; min-height:100vh; display:grid; place-items:center; background:radial-gradient(circle at 50% -12%, rgba(112,228,255,.22), transparent 33rem), radial-gradient(circle at 85% 18%, rgba(56,189,248,.14), transparent 25rem), linear-gradient(180deg,#07090f 0%,#0b0e18 54%,#0f1320 100%); color:#f5f7fb; font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    section { width:min(680px, calc(100vw - 32px)); background:rgba(16,22,39,.78); border:1px solid rgba(255,255,255,.12); border-radius:20px; padding:34px; box-shadow:0 34px 90px rgba(0,0,0,.45); backdrop-filter:blur(18px); }
+    .badge { display:inline-flex; border-radius:999px; padding:8px 13px; font-weight:900; background:${ok ? 'rgba(112,228,255,.12)' : 'rgba(255,122,184,.13)'}; color:${ok ? '#dbe3f4' : '#ffd7e8'}; border:1px solid ${ok ? 'rgba(112,228,255,.34)' : 'rgba(255,122,184,.34)'}; }
     h1 { margin:20px 0 10px; font-size:clamp(34px, 6vw, 58px); line-height:1; }
-    p { margin:0; color:#5f574c; font-size:20px; line-height:1.45; }
-    a { display:inline-flex; margin-top:24px; border-radius:16px; border:1px solid #caa333; background:linear-gradient(135deg,#f3c316,#d4aa35); color:#111; padding:15px 18px; text-decoration:none; font-weight:950; }
+    p { margin:0; color:#a6afc2; font-size:20px; line-height:1.45; }
+    a { display:inline-flex; margin-top:24px; border-radius:16px; border:1px solid rgba(112,228,255,.42); background:linear-gradient(135deg,#70e4ff,#38bdf8); color:#071018; padding:15px 18px; text-decoration:none; font-weight:950; }
   </style>
 </head>
 <body>
@@ -2208,6 +2322,149 @@ function renderQuickReviewResultPage({ title, message, linkHref = '', linkLabel 
   </section>
 </body>
 </html>`
+}
+
+function normalizeContentPartnerQuickFixAction(action) {
+  const normalized = String(action || '').trim().toLowerCase()
+  const aliases = {
+    s: 'simplify',
+    short: 'simplify',
+    shorter: 'simplify',
+    simplify: 'simplify',
+    p: 'polish',
+    polish: 'polish',
+    tone: 'polish',
+    i: 'image',
+    image: 'image',
+    media: 'image',
+  }
+  return aliases[normalized] || ''
+}
+
+function simplifyDraftCaption(caption) {
+  const source = String(caption || '').replace(/\s+/g, ' ').trim()
+  if (!source) return ''
+  const sentences = source.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [source]
+  const kept = sentences.map((sentence) => sentence.trim()).filter(Boolean).slice(0, 2).join(' ')
+  return trimText(kept || source, 360)
+}
+
+function polishDraftCaption(caption) {
+  const source = String(caption || '').trim()
+  if (!source) return ''
+  const cleaned = source.replace(/\n{3,}/g, '\n\n')
+  if (/learn more|take a look|contact us|let us know/i.test(cleaned)) return cleaned
+  return `${cleaned}\n\nTake a look and let us know what you think.`
+}
+
+function improveImageSuggestion(current, context) {
+  const base = firstString(current, context?.mediaSuggestion, 'Use a clear, high-quality image that supports the post.')
+  if (/bright|clean|crop|text overlay|mobile/i.test(base)) return base
+  return `${base} Use a bright, clean crop with the main subject centered, avoid heavy text overlays, and make sure it reads well on mobile.`
+}
+
+async function updateContentPartnerDraftQuickFix(envConfig, context, action) {
+  const normalizedAction = normalizeContentPartnerQuickFixAction(action)
+  if (!normalizedAction) {
+    const error = new Error('Unsupported quick fix.')
+    error.status = 400
+    throw error
+  }
+  if (context.draft.published_reference) {
+    const error = new Error('This draft is already scheduled.')
+    error.status = 409
+    throw error
+  }
+
+  const reviewNotes = {
+    ...context.reviewNotes,
+    quickFixes: [
+      ...(Array.isArray(context.reviewNotes.quickFixes) ? context.reviewNotes.quickFixes : []),
+      { action: normalizedAction, appliedAt: new Date().toISOString() },
+    ].slice(-12),
+  }
+  const patch = { review_notes: JSON.stringify(reviewNotes) }
+
+  if (normalizedAction === 'simplify') {
+    patch.draft_caption = simplifyDraftCaption(context.caption)
+  } else if (normalizedAction === 'polish') {
+    patch.draft_caption = polishDraftCaption(context.caption)
+  } else if (normalizedAction === 'image') {
+    const requirements = jsonArray(context.draft.asset_requirements_json)
+    const nextSuggestion = improveImageSuggestion(context.mediaSuggestion, context)
+    const conceptIndex = requirements.findIndex((item) => item?.type === 'media_concept')
+    if (conceptIndex >= 0) {
+      requirements[conceptIndex] = {
+        ...requirements[conceptIndex],
+        suggestion: nextSuggestion,
+        quickFix: true,
+      }
+    } else {
+      requirements.unshift({
+        type: 'media_concept',
+        suggestion: nextSuggestion,
+        source: 'chatwoot_content_partner',
+        quickFix: true,
+      })
+    }
+    reviewNotes.mediaSuggestion = nextSuggestion
+    patch.review_notes = JSON.stringify(reviewNotes)
+    patch.asset_requirements_json = requirements
+  }
+
+  const filters = new URLSearchParams({
+    id: `eq.${context.draft.id}`,
+    client_id: `eq.${envConfig.clientId}`,
+  })
+  await supabaseRest(envConfig, `/rest/v1/social_drafts?${filters.toString()}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify(patch),
+  })
+
+  return normalizedAction
+}
+
+async function handleContentPartnerQuickFix(request, env, token, action) {
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+
+  const requestId = shortTokenToUuid(token)
+  if (!requestId) return json({ error: 'Quick fix link is invalid.' }, { status: 400 })
+
+  let envConfig
+  try {
+    envConfig = await getPortalWebhookConfig(request, env)
+  } catch (error) {
+    return json({ error: error.message || 'Portal review is not configured.' }, { status: 500 })
+  }
+
+  try {
+    const requestParams = new URLSearchParams({
+      select: 'generated_draft_id',
+      id: `eq.${requestId}`,
+      client_id: `eq.${envConfig.clientId}`,
+      limit: '1',
+    })
+    const response = await supabaseRest(envConfig, `/rest/v1/content_partner_requests?${requestParams.toString()}`)
+    const rows = await response.json()
+    const draftId = Array.isArray(rows) ? rows[0]?.generated_draft_id : ''
+    if (!draftId) return json({ error: 'Draft was not found.' }, { status: 404 })
+
+    const context = await loadContentPartnerReview(envConfig, draftId, requestId)
+    if (!context) return json({ error: 'Draft was not found.' }, { status: 404 })
+    await updateContentPartnerDraftQuickFix(envConfig, context, action)
+    const refreshed = await loadContentPartnerReview(envConfig, draftId, requestId)
+    return htmlResponse(renderQuickReviewPage(env, refreshed || context))
+  } catch (error) {
+    return htmlResponse(renderQuickReviewResultPage({
+      title: 'Could not update draft',
+      message: error.message || 'MAP could not apply that quick fix.',
+      linkHref: getContentPartnerReviewUrl(env, '', requestId, envConfig),
+      ok: false,
+    }), { status: error?.status || 502 })
+  }
 }
 
 function normalizeApprovalSchedule(value) {
@@ -2357,12 +2614,48 @@ async function handleContentPartnerReviewPage(request, env, draftId) {
 
   let envConfig
   try {
-    envConfig = getPortalAuthConfig(env)
+    envConfig = await getPortalWebhookConfig(request, env)
   } catch (error) {
     return json({ error: error.message || 'Portal review is not configured.' }, { status: 500 })
   }
 
   try {
+    const context = await loadContentPartnerReview(envConfig, draftId, requestId)
+    if (!context) return json({ error: 'Review was not found.' }, { status: 404 })
+    if (request.method === 'HEAD') return htmlResponse('', { status: 200 })
+    return htmlResponse(renderQuickReviewPage(env, context))
+  } catch (error) {
+    return json({ error: error.message || 'Could not load this review.' }, { status: error?.status || 502 })
+  }
+}
+
+async function handleContentPartnerShortReview(request, env, token) {
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET, HEAD' } })
+  }
+
+  const requestId = shortTokenToUuid(token)
+  if (!requestId) return json({ error: 'Review link is invalid.' }, { status: 400 })
+
+  let envConfig
+  try {
+    envConfig = await getPortalWebhookConfig(request, env)
+  } catch (error) {
+    return json({ error: error.message || 'Portal review is not configured.' }, { status: 500 })
+  }
+
+  try {
+    const requestParams = new URLSearchParams({
+      select: 'generated_draft_id',
+      id: `eq.${requestId}`,
+      client_id: `eq.${envConfig.clientId}`,
+      limit: '1',
+    })
+    const response = await supabaseRest(envConfig, `/rest/v1/content_partner_requests?${requestParams.toString()}`)
+    const rows = await response.json()
+    const draftId = Array.isArray(rows) ? rows[0]?.generated_draft_id : ''
+    if (!draftId) return json({ error: 'Review was not found.' }, { status: 404 })
+
     const context = await loadContentPartnerReview(envConfig, draftId, requestId)
     if (!context) return json({ error: 'Review was not found.' }, { status: 404 })
     if (request.method === 'HEAD') return htmlResponse('', { status: 200 })
@@ -2393,7 +2686,7 @@ async function handleContentPartnerReviewApprove(request, env, draftId) {
 
   let envConfig
   try {
-    envConfig = getPortalAuthConfig(env)
+    envConfig = await getPortalWebhookConfig(request, env)
   } catch (error) {
     return htmlResponse(renderQuickReviewResultPage({
       title: 'Portal is not configured',
@@ -2426,7 +2719,7 @@ async function handleContentPartnerReviewApprove(request, env, draftId) {
     return htmlResponse(renderQuickReviewResultPage({
       title: 'Post scheduled',
       message: `Your post is scheduled for ${formatReviewDate(result.scheduledFor)} on ${result.platforms.map(platformLabel).join(', ')}.${adjustedCopy}`,
-      linkHref: getPortalReviewUrl(env, context.draft.id),
+      linkHref: getPortalReviewUrl(env, context.draft.id, envConfig),
       linkLabel: 'Open full editor',
     }))
   } catch (error) {
@@ -2440,11 +2733,12 @@ async function handleContentPartnerReviewApprove(request, env, draftId) {
   }
 }
 
-async function createContentPartnerDraft(env, envConfig, payload, message, conversation, gatewayToken = '') {
+async function createContentPartnerDraft(env, envConfig, payload, message, conversation, gatewayToken = '', chatwootContext = {}) {
   const sender = message.sender || payload.sender || {}
+  const chatwootConfig = await getChatwootConfigForClient(env, envConfig, chatwootContext)
   return callSupabaseFunction(envConfig, 'portal-content-partner', {
     clientId: envConfig.clientId,
-    chatwootAccountId: getChatwootConfig(env).accountId,
+    chatwootAccountId: chatwootConfig.accountId,
     chatwootInboxId: conversation?.inbox_id || message.inbox_id || null,
     chatwootConversationId: conversation?.id || message.conversation_id || null,
     chatwootMessageId: firstString(message.id, message.source_id),
@@ -2455,14 +2749,21 @@ async function createContentPartnerDraft(env, envConfig, payload, message, conve
   }, gatewayToken)
 }
 
-async function sendContentPartnerChatwootReply(env, conversationId, triggerMessageId, result) {
-  const reviewUrl = getContentPartnerReviewUrl(env, result?.draftId, result?.requestId)
-  const editorUrl = getPortalReviewUrl(env, result?.draftId)
-  const previewUrl = getContentPartnerPreviewUrl(env, result?.draftId, result?.requestId)
+async function sendContentPartnerChatwootReply(env, envConfig, conversationId, triggerMessageId, result, chatwootContext = {}) {
+  const reviewUrl = getContentPartnerReviewUrl(env, result?.draftId, result?.requestId, envConfig)
+  const editorUrl = `${getPortalOrigin(env, envConfig) || ''}${result?.draftId ? `/post?draftId=${encodeURIComponent(result.draftId)}` : '/post'}`
+  const previewUrl = getContentPartnerPreviewUrl(env, result?.draftId, result?.requestId, envConfig)
+  const simplifyUrl = getContentPartnerQuickFixUrl(env, result?.requestId, 's', envConfig)
+  const imageUrl = getContentPartnerQuickFixUrl(env, result?.requestId, 'i', envConfig)
+  const draftCaption = firstString(result?.caption, result?.draftCaption, result?.draft_caption)
+  const captionPreview = draftCaption
+    ? `${trimText(draftCaption, 320)}${draftCaption.length > 320 ? '...' : ''}`
+    : ''
   const lines = [
-    firstString(result?.partnerReply) || 'I created a Publisher draft from your message.',
-    reviewUrl ? `Preview and approve it here: ${reviewUrl}` : '',
-    editorUrl ? `Need edits first? Open the full editor: ${editorUrl}` : '',
+    'Draft ready.',
+    captionPreview ? `Copy preview:\n${captionPreview}` : firstString(result?.partnerReply) || 'I created a Publisher draft from your message.',
+    reviewUrl ? `Review and approve:\n${reviewUrl}` : '',
+    simplifyUrl && imageUrl ? `Quick fixes:\nSimplify: ${simplifyUrl}\nImage: ${imageUrl}` : '',
   ].filter(Boolean)
   const content = lines.join('\n\n').slice(0, 5000)
   const contentAttributes = {
@@ -2473,9 +2774,13 @@ async function sendContentPartnerChatwootReply(env, conversationId, triggerMessa
     map_content_partner_review_url: reviewUrl || null,
     map_content_partner_editor_url: editorUrl || null,
     map_content_partner_preview_url: previewUrl || null,
+    map_content_partner_caption: draftCaption || null,
+    map_content_partner_simplify_url: simplifyUrl || null,
+    map_content_partner_image_url: imageUrl || null,
   }
 
-  return chatwootFetch(env, `/conversations/${conversationId}/messages`, {
+  const chatwootConfig = await getChatwootConfigForClient(env, envConfig, chatwootContext)
+  return chatwootFetch(chatwootConfig, `/conversations/${conversationId}/messages`, {
     method: 'POST',
     body: JSON.stringify({
       content,
@@ -2488,7 +2793,7 @@ async function sendContentPartnerChatwootReply(env, conversationId, triggerMessa
   })
 }
 
-async function processContentPartnerMessage(env, envConfig, payload, message, conversation, gatewayToken = '') {
+async function processContentPartnerMessage(env, envConfig, payload, message, conversation, gatewayToken = '', chatwootContext = {}) {
   const triggerMessageId = firstString(message.id, message.source_id)
   const conversationId = firstString(conversation.id, message.conversation_id)
   if (!triggerMessageId || !conversationId) {
@@ -2497,13 +2802,14 @@ async function processContentPartnerMessage(env, envConfig, payload, message, co
     throw error
   }
 
-  const alreadyReplied = await contentPartnerReplyExists(env, conversationId, triggerMessageId)
+  const chatwootConfig = await getChatwootConfigForClient(env, envConfig, chatwootContext)
+  const alreadyReplied = await contentPartnerReplyExists(chatwootConfig, conversationId, triggerMessageId)
   if (alreadyReplied) {
     return { deduped: true, reason: 'Content Partner reply already exists.' }
   }
 
-  const result = await createContentPartnerDraft(env, envConfig, payload, message, conversation, gatewayToken)
-  await sendContentPartnerChatwootReply(env, conversationId, triggerMessageId, result)
+  const result = await createContentPartnerDraft(env, envConfig, payload, message, conversation, gatewayToken, chatwootContext)
+  await sendContentPartnerChatwootReply(env, envConfig, conversationId, triggerMessageId, result, chatwootContext)
   return result
 }
 
@@ -2907,11 +3213,14 @@ async function handleChatwootMessageWebhook(request, env, ctx = null) {
 
   if (isContentPartnerMessage) {
     const processContentPartner = async () => {
-      const envConfig = getPortalAuthConfig(env)
-      await ensureChatwootConversationOpen(env, conversation).catch((error) => {
+      const envConfig = await getPortalWebhookConfig(request, env)
+      const webhookAccountId = getWebhookChatwootAccountId(payload, message, conversation)
+      const chatwootContext = webhookAccountId ? { accountId: webhookAccountId } : {}
+      const chatwootConfig = await getChatwootConfigForClient(env, envConfig, chatwootContext)
+      await ensureChatwootConversationOpen(chatwootConfig, conversation).catch((error) => {
         console.warn('Content Partner conversation reopen skipped.', sanitizeChatwootError(error?.message || error))
       })
-      return processContentPartnerMessage(env, envConfig, payload, message, conversation)
+      return processContentPartnerMessage(env, envConfig, payload, message, conversation, '', chatwootContext)
     }
 
     if (ctx?.waitUntil) {
@@ -3610,6 +3919,21 @@ export default {
     const contentPartnerReviewMatch = /^\/content-preview\/([^/]+)$/.exec(url.pathname)
     if (contentPartnerReviewMatch) {
       return handleContentPartnerReviewPage(request, env, decodeURIComponent(contentPartnerReviewMatch[1]))
+    }
+
+    const contentPartnerShortReviewMatch = /^\/r\/([^/]+)$/.exec(url.pathname)
+    if (contentPartnerShortReviewMatch) {
+      return handleContentPartnerShortReview(request, env, decodeURIComponent(contentPartnerShortReviewMatch[1]))
+    }
+
+    const contentPartnerQuickFixMatch = /^\/f\/([^/]+)\/([^/]+)$/.exec(url.pathname)
+    if (contentPartnerQuickFixMatch) {
+      return handleContentPartnerQuickFix(
+        request,
+        env,
+        decodeURIComponent(contentPartnerQuickFixMatch[1]),
+        decodeURIComponent(contentPartnerQuickFixMatch[2]),
+      )
     }
 
     const contentPartnerApproveMatch = /^\/api\/content-partner\/reviews\/([^/]+)\/approve$/.exec(url.pathname)
