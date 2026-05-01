@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { CalendarDays, LayoutDashboard, MessageSquare, Settings, CreditCard } from 'lucide-react'
+import ThemeToggle from './ThemeToggle'
 
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
@@ -8,7 +9,13 @@ const navItems = [
   { to: '/settings', icon: Settings,        label: 'Settings'   },
 ]
 
-export default function BottomNav({ billingAccess, onBillingAction, billingActionPending = false }) {
+export default function BottomNav({
+  billingAccess,
+  onBillingAction,
+  billingActionPending = false,
+  portalTheme = 'dark',
+  onPortalThemeChange,
+}) {
   return (
     <nav className="fixed bottom-3 left-3 right-3 z-50 rounded-[28px] border shadow-2xl md:hidden"
       style={{ background: 'var(--portal-nav)', borderColor: 'var(--portal-border)', backdropFilter: 'blur(20px)' }}>
@@ -19,7 +26,7 @@ export default function BottomNav({ billingAccess, onBillingAction, billingActio
             to={to}
             end={to === '/'}
             className="flex-1 flex flex-col items-center gap-1 py-3 transition-all duration-200"
-            style={({ isActive }) => ({ color: isActive ? 'var(--portal-primary)' : 'rgba(255,255,255,0.55)' })}
+            style={({ isActive }) => ({ color: isActive ? 'var(--portal-primary)' : 'var(--portal-nav-text-muted)' })}
           >
             {({ isActive }) => (
               <>
@@ -59,6 +66,9 @@ export default function BottomNav({ billingAccess, onBillingAction, billingActio
             <span className="text-[9px] font-semibold uppercase tracking-[0.24em]">{billingActionPending ? '...' : 'Pay'}</span>
           </button>
         ) : null}
+        <div className="flex flex-1 items-center justify-center py-3">
+          <ThemeToggle theme={portalTheme} onToggle={onPortalThemeChange} compact />
+        </div>
       </div>
     </nav>
   )

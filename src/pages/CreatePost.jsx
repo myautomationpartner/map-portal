@@ -2540,9 +2540,15 @@ export default function CreatePost() {
         existingEditingPost = await fetchPostById(editCandidateId)
       }
       const resolvedEditingPostId = existingEditingPost?.id || editCandidateId || ''
-      const resolvedEditingRef = editingScheduledPostRef || existingEditingPost?.n8n_execution_id || ''
+      const existingEditingStatus = String(existingEditingPost?.status || '').trim().toLowerCase()
+      const shouldReuseExistingPost = Boolean(
+        resolvedEditingPostId && ['draft', 'scheduled'].includes(existingEditingStatus),
+      )
+      const resolvedEditingRef = shouldReuseExistingPost
+        ? (editingScheduledPostRef || existingEditingPost?.n8n_execution_id || '')
+        : ''
 
-      if (resolvedEditingPostId) {
+      if (shouldReuseExistingPost) {
         const { data: updatedPost, error: updateError } = await supabase
           .from('posts')
           .update({
@@ -2627,7 +2633,7 @@ export default function CreatePost() {
           status: n8nSuccess ? targetStatus : 'failed',
           n8n_execution_id: n8nSuccess
             ? (n8nData?.zernioPostId ?? resolvedEditingRef ?? post.n8n_execution_id ?? null)
-            : (resolvedEditingRef || post.n8n_execution_id || null),
+            : ((shouldReuseExistingPost ? resolvedEditingRef : '') || post.n8n_execution_id || null),
           published_at: n8nSuccess && targetStatus === 'published' ? new Date().toISOString() : null,
         })
         .eq('id', post.id)

@@ -35,18 +35,32 @@ const queryClient = new QueryClient({
   },
 })
 
-function PortalTheme() {
+const PORTAL_THEME_STORAGE_KEY = 'map.portal.theme'
+
+function resolveInitialPortalTheme() {
+  if (typeof window === 'undefined') return 'dark'
+
+  const params = new URLSearchParams(window.location.search)
+  const queryTheme = params.get('theme')
+
+  if (queryTheme === 'light' || queryTheme === 'default') return 'light'
+  if (queryTheme === 'dark' || queryTheme === 'map-dark') return 'dark'
+
+  const savedTheme = window.localStorage.getItem(PORTAL_THEME_STORAGE_KEY)
+  return savedTheme === 'light' ? 'light' : 'dark'
+}
+
+function PortalTheme({ theme }) {
   useEffect(() => {
     const root = document.documentElement
-    const params = new URLSearchParams(window.location.search)
 
-    if (params.get('theme') === 'default') {
+    if (theme === 'light') {
       delete root.dataset.portalTheme
       return
     }
 
     root.dataset.portalTheme = 'map-dark'
-  }, [])
+  }, [theme])
 
   return null
 }
@@ -174,7 +188,7 @@ function AuthProvider({ children }) {
   return children(session)
 }
 
-function ProtectedLayout({ session }) {
+function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
   const queryClient = useQueryClient()
   const { data: profile } = useQuery({
     queryKey: ['profile'],
@@ -301,6 +315,8 @@ function ProtectedLayout({ session }) {
         billingAccess={billingAccess}
         onBillingAction={handleBillingAction}
         billingActionPending={billingActionPending}
+        portalTheme={portalTheme}
+        onPortalThemeChange={onPortalThemeChange}
       />
 
       {/* Main content area */}
@@ -319,6 +335,8 @@ function ProtectedLayout({ session }) {
           billingAccess={billingAccess}
           onBillingAction={handleBillingAction}
           billingActionPending={billingActionPending}
+          portalTheme={portalTheme}
+          onPortalThemeChange={onPortalThemeChange}
         />
       </div>
     </div>
@@ -327,10 +345,17 @@ function ProtectedLayout({ session }) {
 
 export default function App() {
   const pathTenant = inferPathTenant()
+  const [portalTheme, setPortalTheme] = useState(resolveInitialPortalTheme)
+
+  function handlePortalThemeChange(nextTheme) {
+    const normalizedTheme = nextTheme === 'light' ? 'light' : 'dark'
+    window.localStorage.setItem(PORTAL_THEME_STORAGE_KEY, normalizedTheme)
+    setPortalTheme(normalizedTheme)
+  }
 
   return (
     <QueryClientProvider client={queryClient}>
-      <PortalTheme />
+      <PortalTheme theme={portalTheme} />
       <BrowserRouter basename={pathTenant.basename || undefined}>
         <AuthProvider>
           {(session) => (
@@ -342,7 +367,15 @@ export default function App() {
               <Route path="/share" element={<PublicShare />} />
               <Route path="/share/:token" element={<PublicShare />} />
               <Route path="/connect-return" element={<ConnectReturn />} />
-              <Route element={<ProtectedLayout session={session} />}>
+              <Route
+                element={(
+                  <ProtectedLayout
+                    session={session}
+                    portalTheme={portalTheme}
+                    onPortalThemeChange={handlePortalThemeChange}
+                  />
+                )}
+              >
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/calendar" element={<ContentCalendar />} />
                 <Route path="/campaigns" element={<CampaignPartner />} />

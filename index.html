@@ -13,9 +13,9 @@
         }
       })()
     </script>
-    <script>
+    <script type="module">
       (function () {
-        var canonicalHost = String('%VITE_PORTAL_CANONICAL_HOST%' || '').trim().toLowerCase()
+        var canonicalHost = String(import.meta.env.VITE_PORTAL_CANONICAL_HOST || '').trim().toLowerCase()
         if (!canonicalHost) return
 
         var currentHost = String(window.location.hostname || '').trim().toLowerCase()
