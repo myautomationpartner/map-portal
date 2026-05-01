@@ -173,15 +173,20 @@ function buildSafeN8nRedirectUrl(request, env, requestedRedirectUrl, tenantSlug 
   const requestUrl = new URL(request.url)
   const prefix = getSharedPortalPathPrefix(env)
   const safePath = prefix && tenantSlug
-    ? `/${prefix}/${tenantSlug}/settings`
-    : '/settings'
+    ? `/${prefix}/${tenantSlug}/connect-return`
+    : '/connect-return'
   const fallbackUrl = new URL(safePath, requestUrl.origin)
+  fallbackUrl.searchParams.set('source', 'settings')
 
   if (!requestedRedirectUrl) return fallbackUrl.toString()
 
   try {
     const parsed = new URL(String(requestedRedirectUrl), requestUrl.origin)
     if (parsed.origin !== requestUrl.origin) return fallbackUrl.toString()
+    if (/\/(?:settings|login)\/?$/i.test(parsed.pathname)) {
+      parsed.pathname = parsed.pathname.replace(/\/(?:settings|login)\/?$/i, '/connect-return')
+      parsed.searchParams.set('source', parsed.searchParams.get('source') || 'settings')
+    }
     return parsed.toString()
   } catch {
     return fallbackUrl.toString()
