@@ -10,7 +10,7 @@ import {
   upsertWorkspacePreferences,
 } from '../lib/portalApi'
 import { supabase } from '../lib/supabase'
-import { portalPath } from '../lib/portalPath'
+import { buildSharedPortalPath, portalPath } from '../lib/portalPath'
 import { DASHBOARD_PLATFORMS, PLATFORM_CATALOG } from '../lib/platformCatalog'
 import {
   ArrowUpRight,
@@ -159,6 +159,19 @@ function PlatformMetricCard({ platform, metrics, connectedPlatforms, connectingP
 }
 
 const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
+
+function buildTenantAwarePortalPath(path, clientSlug) {
+  const resolvedPath = portalPath(path)
+  if (resolvedPath !== path) return resolvedPath
+
+  if (typeof window === 'undefined') return resolvedPath
+  const host = window.location.hostname.replace(/^www\./, '').toLowerCase()
+  if (host === 'myautomationpartner.com' && clientSlug) {
+    return buildSharedPortalPath(clientSlug, path)
+  }
+
+  return resolvedPath
+}
 
 const TOOL_CATEGORIES = [
   { id: 'all', label: 'All' },
@@ -945,7 +958,7 @@ export default function Dashboard() {
 
   function buildSettingsRedirectUrl(platform) {
     if (typeof window === 'undefined') return ''
-    const url = new URL(portalPath('/settings'), window.location.origin)
+    const url = new URL(buildTenantAwarePortalPath('/settings', client?.slug), window.location.origin)
     url.searchParams.set('connected', platform)
     url.searchParams.set('cid', clientId)
     url.searchParams.set('source', 'workspace')

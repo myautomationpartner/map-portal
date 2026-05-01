@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useOutletContext, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { buildTenantConfig } from '../lib/tenantConfig'
-import { portalPath } from '../lib/portalPath'
+import { buildSharedPortalPath, portalPath } from '../lib/portalPath'
 import { DASHBOARD_PLATFORMS } from '../lib/platformCatalog'
 import {
   User, Lock, Building2, CheckCircle2, Loader2, AlertCircle,
@@ -15,6 +15,19 @@ const SETTINGS_SYNC_ENDPOINT = '/api/n8n/zernio-sync-accounts'
 const SETTINGS_DISCONNECT_ENDPOINT = '/api/social-connections/disconnect'
 
 const PLATFORMS = DASHBOARD_PLATFORMS
+
+function buildTenantAwarePortalPath(path, clientSlug) {
+  const resolvedPath = portalPath(path)
+  if (resolvedPath !== path) return resolvedPath
+
+  if (typeof window === 'undefined') return resolvedPath
+  const host = window.location.hostname.replace(/^www\./, '').toLowerCase()
+  if (host === 'myautomationpartner.com' && clientSlug) {
+    return buildSharedPortalPath(clientSlug, path)
+  }
+
+  return resolvedPath
+}
 
 async function fetchUserProfile() {
   const { data, error } = await supabase
@@ -211,7 +224,7 @@ function normalizeWorkflowError(data, fallbackMessage) {
 
 // ── Social Connections section ────────────────────────────────────────────────
 
-function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAccess, billingAccess }) {
+function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requireWriteAccess, billingAccess }) {
   const queryClient = useQueryClient()
   const [connectingPlatform, setConnectingPlatform] = useState(null)
   const [disconnectingPlatform, setDisconnectingPlatform] = useState(null)
@@ -220,7 +233,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform, requireWriteAcce
 
   function buildSettingsRedirectUrl(platform) {
     if (typeof window === 'undefined') return ''
-    const url = new URL(portalPath('/settings'), window.location.origin)
+    const url = new URL(buildTenantAwarePortalPath('/settings', clientSlug), window.location.origin)
     url.searchParams.set('connected', platform)
     url.searchParams.set('cid', clientId)
     return url.toString()
@@ -1030,6 +1043,7 @@ export default function Settings() {
         {profile?.client_id && (
           <SocialConnectionsSection
             clientId={profile.client_id}
+            clientSlug={client?.slug}
             returnedPlatform={returnedPlatform}
             requireWriteAccess={requireWriteAccess}
             billingAccess={billingAccess}

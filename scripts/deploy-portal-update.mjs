@@ -22,6 +22,9 @@ const DEFAULT_CHATWOOT_ANDROID_URL = 'https://play.google.com/store/apps/details
 const DEFAULT_PORTAL_LABEL = 'Client Portal'
 const DEFAULT_SUPPORT_EMAIL = 'info@myautomationpartner.com'
 const DEFAULT_TEST_CLIENT_SLUG = 'dancescapes-performing-arts'
+const DEFAULT_SHARED_PORTAL_HOST = 'myautomationpartner.com'
+const DEFAULT_SHARED_PORTAL_PATH_PREFIX = 'portal'
+const DEFAULT_SHARED_PORTAL_WORKER_NAME = 'map-shared-portal'
 const INACTIVE_BILLING_STATUSES = new Set(['canceled', 'cancelled', 'deleted', 'inactive'])
 const PROTECTED_MAIN_SITE_DOMAINS = new Set(['myautomationpartner.com', 'www.myautomationpartner.com'])
 
@@ -156,6 +159,7 @@ function shell(command, options = {}) {
 }
 
 function buildPublicEnv(client) {
+  const sharedMode = resolvePortalDeploymentMode(client) === 'shared-path'
   return {
     NEXT_PUBLIC_SUPABASE_URL: requiredValue(['NEXT_PUBLIC_SUPABASE_URL', 'VITE_SUPABASE_URL', 'SUPABASE_URL'], 'public Supabase URL', FALLBACK_SUPABASE_URL),
     NEXT_PUBLIC_SUPABASE_ANON_KEY: envValue(
@@ -167,6 +171,7 @@ function buildPublicEnv(client) {
     VITE_PORTAL_SUPPORT_EMAIL: client.support_email || DEFAULT_SUPPORT_EMAIL,
     VITE_PORTAL_LOGO_URL: client.logo_url || '',
     VITE_PORTAL_CANONICAL_HOST: client.portal_domain || '',
+    VITE_PORTAL_ASSET_BASE: sharedMode ? './' : '/',
     VITE_PORTAL_WORKER_NAME: client.worker_name || '',
     VITE_PORTAL_BILLING_STATUS: client.billing_status || '',
     VITE_N8N_BASE_URL: envValue(['VITE_N8N_BASE_URL', 'N8N_BASE_URL'], DEFAULT_N8N_BASE_URL),
@@ -181,15 +186,21 @@ function buildPublicEnv(client) {
 }
 
 function buildWranglerConfig(client, assetsDirectory) {
+  const sharedMode = resolvePortalDeploymentMode(client) === 'shared-path'
+  const workerName = sharedMode ? DEFAULT_SHARED_PORTAL_WORKER_NAME : client.worker_name
+  const routePattern = sharedMode
+    ? `${getSharedPortalHost()}/${getSharedPortalPathPrefix()}/*`
+    : client.portal_domain
+
   return [
-    `name = "${client.worker_name}"`,
+    `name = "${workerName}"`,
     `main = "${join(PORTAL_ROOT, 'worker.js')}"`,
     'compatibility_date = "2025-01-01"',
     'workers_dev = true',
     '',
     '[[routes]]',
-    `pattern = "${client.portal_domain}"`,
-    'custom_domain = true',
+    `pattern = "${routePattern}"`,
+    ...(sharedMode ? [`zone_name = "${getSharedPortalZoneName()}"`] : ['custom_domain = true']),
     '',
     '[assets]',
     `directory = "${assetsDirectory}"`,
@@ -217,6 +228,33 @@ function normalizeDomainHost(domain) {
   } catch {
     return value.replace(/\.$/, '')
   }
+}
+
+function normalizePathSegment(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^\/+|\/+$/g, '')
+}
+
+function getSharedPortalHost() {
+  return normalizeDomainHost(envValue(['MAP_SHARED_PORTAL_HOST', 'PORTAL_SHARED_HOST'], DEFAULT_SHARED_PORTAL_HOST))
+}
+
+function getSharedPortalZoneName() {
+  return normalizeDomainHost(envValue(['MAP_SHARED_PORTAL_ZONE_NAME', 'CLOUDFLARE_ZONE_NAME'], getSharedPortalHost()))
+}
+
+function getSharedPortalPathPrefix() {
+  return normalizePathSegment(envValue(['MAP_SHARED_PORTAL_PATH_PREFIX', 'PORTAL_SHARED_PATH_PREFIX'], DEFAULT_SHARED_PORTAL_PATH_PREFIX))
+}
+
+function resolvePortalDeploymentMode(client) {
+  const clientHost = normalizeDomainHost(client?.portal_domain)
+  if (client?.worker_name === DEFAULT_SHARED_PORTAL_WORKER_NAME || clientHost === getSharedPortalHost()) {
+    return 'shared-path'
+  }
+  return 'dedicated-domain'
 }
 
 export function isProtectedMainSiteDomain(domain) {

@@ -93,14 +93,6 @@ function AuthProvider({ children }) {
 
     async function bootstrapSession() {
       const url = new URL(window.location.href)
-      const shouldClearLoginSession = url.pathname.endsWith('/login') && url.searchParams.get('setup') === 'complete'
-
-      if (shouldClearLoginSession) {
-        await supabase.auth.signOut()
-        if (active) setSession(null)
-        return
-      }
-
       const hash = url.hash.startsWith('#') ? url.hash.slice(1) : ''
       const hashParams = new URLSearchParams(hash)
       const accessToken = hashParams.get('access_token')

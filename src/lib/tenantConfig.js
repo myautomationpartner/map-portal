@@ -65,8 +65,8 @@ export function buildTenantConfig(input = {}) {
 
   const displayName =
     businessName ||
-    import.meta.env.VITE_PORTAL_DISPLAY_NAME ||
     titleCaseFromSlug(clientSlug) ||
+    import.meta.env.VITE_PORTAL_DISPLAY_NAME ||
     DEFAULT_DISPLAY_NAME
 
   const portalLabel =
