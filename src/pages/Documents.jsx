@@ -49,6 +49,7 @@ import { buildTenantConfig } from '../lib/tenantConfig'
 const LOCAL_FOLDERS_PREFIX = 'map_document_folders'
 const ALL_FILES_FOLDER = 'All Files'
 const SHARED_FILES_FOLDER = 'Shared files'
+const DEFAULT_UPLOAD_FOLDER = 'General'
 const DESKTOP_PANE_BREAKPOINT = 1280
 const MIN_FOLDER_PANE = 220
 const MAX_FOLDER_PANE = 380
@@ -652,7 +653,7 @@ function UploadDialog({ isOpen, draft, folders, onChange, onClose, onSubmit, isS
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.34)] p-4">
-      <div className="w-full max-w-lg rounded-[32px] border bg-white shadow-2xl" style={{ borderColor: 'var(--portal-border)' }}>
+      <div className="document-upload-dialog w-full max-w-lg rounded-[32px] border bg-white shadow-2xl" style={{ borderColor: 'var(--portal-border)' }}>
         <div className="flex items-center justify-between border-b px-6 py-5" style={{ borderColor: 'var(--portal-border)' }}>
           <div>
             <h3 className="text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>File Upload</h3>
@@ -678,7 +679,7 @@ function UploadDialog({ isOpen, draft, folders, onChange, onClose, onSubmit, isS
               onChange={(event) => onChange((current) => ({ ...current, category: event.target.value }))}
               className="portal-input px-4 py-3 text-sm"
             >
-              <option value="">Choose folder</option>
+              <option value="" disabled>Choose folder</option>
               {folders.map((folder) => (
                 <option key={folder} value={folder}>{folder}</option>
               ))}
@@ -694,23 +695,23 @@ function UploadDialog({ isOpen, draft, folders, onChange, onClose, onSubmit, isS
           />
 
           <label
-            className="flex cursor-pointer items-center gap-3 rounded-[24px] border border-dashed px-4 py-4 transition-all"
+            className="document-upload-dropzone flex cursor-pointer items-center gap-3 rounded-[24px] border border-dashed px-4 py-4 transition-all"
             style={{ borderColor: 'rgba(201, 168, 76, 0.28)', background: 'linear-gradient(145deg, rgba(201, 168, 76, 0.08), rgba(232, 213, 160, 0.06))' }}
           >
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-white shadow-sm">
+            <div className="document-upload-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-white shadow-sm">
               <Upload className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Choose document</p>
               <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                Upload into the selected folder.
+                Upload into {draft.category || DEFAULT_UPLOAD_FOLDER}.
               </p>
             </div>
             <input
               type="file"
               className="hidden"
               onChange={onSubmit}
-              disabled={isSubmitting || !draft.category}
+              disabled={isSubmitting}
             />
           </label>
 
@@ -1002,26 +1003,28 @@ export default function Documents() {
   })
 
   const uploadMutation = useMutation({
-    mutationFn: async (file) => {
+    mutationFn: async ({ file, category, description }) => {
       const mimeType = resolveUploadMimeType(file)
-      const targetFolder = uploadForm.category
+      const targetFolder = category?.trim() || DEFAULT_UPLOAD_FOLDER
+      const uploadDescription = description?.trim() || ''
       const payload = await getUploadUrl({
         filename: file.name,
         mime_type: mimeType,
         size_bytes: file.size,
-        category: targetFolder || null,
-        description: uploadForm.description || null,
+        category: targetFolder,
+        description: uploadDescription || null,
       })
       await uploadFileToSignedUrl(payload.upload_url, file, mimeType)
-      return { ...payload, resolvedMimeType: mimeType, targetFolder }
+      return { ...payload, resolvedMimeType: mimeType, targetFolder, uploadDescription }
     },
-    onSuccess: async (payload, file) => {
+    onSuccess: async (payload, variables) => {
+      const file = variables.file
       const optimisticDocument = {
         id: payload.document_id,
         file_name: file.name,
         mime_type: payload.expected_mime || payload.resolvedMimeType || file.type,
         category: payload.targetFolder || null,
-        description: uploadForm.description || null,
+        description: payload.uploadDescription || null,
         size_bytes: file.size,
         storage_path: payload.storage_path,
         created_at: new Date().toISOString(),
@@ -1139,11 +1142,6 @@ export default function Documents() {
     const file = event.target.files?.[0]
     if (!file) return
 
-    if (!uploadForm.category) {
-      event.target.value = ''
-      return
-    }
-
     const mimeType = resolveUploadMimeType(file)
 
     if (!mimeType) {
@@ -1154,7 +1152,11 @@ export default function Documents() {
       return
     }
 
-    uploadMutation.mutate(file)
+    uploadMutation.mutate({
+      file,
+      category: uploadForm.category || DEFAULT_UPLOAD_FOLDER,
+      description: uploadForm.description,
+    })
     event.target.value = ''
   }
 
@@ -1317,7 +1319,9 @@ export default function Documents() {
   }, [folders, sharedDocuments.length, visibleDocuments])
 
   const folderSelectOptions = folders.filter((folder) => folder !== ALL_FILES_FOLDER && folder !== SHARED_FILES_FOLDER)
+  const uploadFolderOptions = folderSelectOptions.length > 0 ? folderSelectOptions : [DEFAULT_UPLOAD_FOLDER]
   const isSpecialFolderView = selectedFolder === ALL_FILES_FOLDER || selectedFolder === SHARED_FILES_FOLDER
+  const activeUploadFolder = !isSpecialFolderView ? selectedFolder : uploadFolderOptions[0]
 
   useEffect(() => {
     if (!openActionMenuId) return undefined
@@ -1408,7 +1412,7 @@ export default function Documents() {
       <UploadDialog
         isOpen={isUploadDialogOpen}
         draft={uploadForm}
-        folders={folderSelectOptions}
+        folders={uploadFolderOptions}
         onChange={setUploadForm}
         onClose={() => setIsUploadDialogOpen(false)}
         onSubmit={handleFileChange}
@@ -1454,7 +1458,7 @@ export default function Documents() {
               if (!requireWriteAccess('upload files')) return
               setUploadForm((current) => ({
                 ...current,
-                category: !isSpecialFolderView ? selectedFolder : current.category,
+                category: !isSpecialFolderView ? selectedFolder : (current.category || activeUploadFolder),
               }))
               setIsUploadDialogOpen(true)
             }}
