@@ -12,6 +12,7 @@ const RESERVED_ROOT_SEGMENTS = new Set([
   'post',
   'stats',
   'settings',
+  'connect-return',
 ])
 
 function cleanSegment(value) {

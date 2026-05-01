@@ -231,11 +231,13 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
   const [syncStatus, setSyncStatus] = useState(null)
   const autoSyncTimeoutRef = useRef(null)
 
-  function buildSettingsRedirectUrl(platform) {
+  function buildConnectReturnUrl(platform) {
     if (typeof window === 'undefined') return ''
-    const url = new URL(buildTenantAwarePortalPath('/settings', clientSlug), window.location.origin)
+    const url = new URL(buildTenantAwarePortalPath('/connect-return', clientSlug), window.location.origin)
     url.searchParams.set('connected', platform)
     url.searchParams.set('cid', clientId)
+    url.searchParams.set('source', 'settings')
+    url.searchParams.set('returnTo', buildTenantAwarePortalPath('/settings', clientSlug))
     return url.toString()
   }
 
@@ -398,7 +400,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
         body: JSON.stringify({
           clientId,
           platform: normalizedPlatform,
-          redirectUrl: buildSettingsRedirectUrl(normalizedPlatform),
+          redirectUrl: buildConnectReturnUrl(normalizedPlatform),
         }),
       })
       const data = await res.json().catch(() => ({}))

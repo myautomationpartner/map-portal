@@ -16,6 +16,7 @@ import ScheduledPosts from './pages/ScheduledPosts'
 import PlatformStats from './pages/PlatformStats'
 import Documents from './pages/Documents'
 import PublicShare from './pages/PublicShare'
+import ConnectReturn from './pages/ConnectReturn'
 import OpportunityRadar from './pages/OpportunityRadar'
 import ContentCalendar from './pages/ContentCalendar'
 import CampaignPartner from './pages/CampaignPartner'
@@ -310,6 +311,7 @@ export default function App() {
               />
               <Route path="/share" element={<PublicShare />} />
               <Route path="/share/:token" element={<PublicShare />} />
+              <Route path="/connect-return" element={<ConnectReturn />} />
               <Route element={<ProtectedLayout session={session} />}>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/calendar" element={<ContentCalendar />} />

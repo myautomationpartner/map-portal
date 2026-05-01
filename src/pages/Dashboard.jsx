@@ -956,12 +956,13 @@ export default function Dashboard() {
     window.open(tool.url, '_blank', 'noopener,noreferrer')
   }
 
-  function buildSettingsRedirectUrl(platform) {
+  function buildConnectReturnUrl(platform) {
     if (typeof window === 'undefined') return ''
-    const url = new URL(buildTenantAwarePortalPath('/settings', client?.slug), window.location.origin)
+    const url = new URL(buildTenantAwarePortalPath('/connect-return', client?.slug), window.location.origin)
     url.searchParams.set('connected', platform)
     url.searchParams.set('cid', clientId)
     url.searchParams.set('source', 'workspace')
+    url.searchParams.set('returnTo', buildTenantAwarePortalPath('/settings', client?.slug))
     return url.toString()
   }
 
@@ -1000,7 +1001,7 @@ export default function Dashboard() {
         body: JSON.stringify({
           clientId,
           platform,
-          redirectUrl: buildSettingsRedirectUrl(platform),
+          redirectUrl: buildConnectReturnUrl(platform),
         }),
       })
       const data = await res.json().catch(() => ({}))
