@@ -4563,6 +4563,156 @@ html[data-portal-theme="map-dark"] [style*="#e8d5a0"] {
   color: var(--portal-cyan) !important;
 }
 
+html[data-portal-theme="map-dark"] .portal-page [style*="color: #8c6d1c"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color:#8c6d1c"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color: #8a7858"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color:#8a7858"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color: #5e554d"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color:#5e554d"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color: rgb(140, 109, 28"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color: rgb(138, 120, 88"] {
+  color: var(--map-brand-cyan) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-page [style*="color: #2f8f57"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color:#2f8f57"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color: #2d876a"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color:#2d876a"] {
+  color: var(--portal-success) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-page [style*="color: #c4556e"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color:#c4556e"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color: #b44660"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color:#b44660"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color: #a83f58"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color:#a83f58"] {
+  color: var(--map-brand-magenta) !important;
+}
+
+/* Legacy portal pages still carry a few light inline surfaces. Keep them inside
+   the new dark/cyan skin without editing every older component at once. */
+html[data-portal-theme="map-dark"] .portal-page .bg-white,
+html[data-portal-theme="map-dark"] .portal-page .bg-white\/95,
+html[data-portal-theme="map-dark"] .portal-page .bg-white\/90,
+html[data-portal-theme="map-dark"] .portal-page .bg-white\/80,
+html[data-portal-theme="map-dark"] .portal-page [class*="bg-[rgba(255,255,255"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background: #fff"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background:#fff"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background: #ffffff"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background:#ffffff"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background: rgb(255, 255, 255)"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background: rgba(255, 255, 255"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background: rgba(255,255,255"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background-color: rgb(255, 255, 255)"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background-color: rgba(255, 255, 255"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background-color: rgba(255,255,255"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background: #f8fafc"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background:#f8fafc"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background: rgb(248, 250, 252)"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background: #eef2f7"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background:#eef2f7"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background: rgb(238, 242, 247)"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background: #eef5ff"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background:#eef5ff"] {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.072), rgba(255, 255, 255, 0.018)),
+    rgba(9, 14, 24, 0.84) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-page [style*="background: rgba(245,240,235"],
+html[data-portal-theme="map-dark"] .portal-page [style*="background: rgba(245, 240, 235"] {
+  background: rgba(9, 14, 24, 0.52) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-page [style*="color: #111"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color:#111"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color: rgb(17, 17, 17)"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color: #0f172a"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color:#0f172a"] {
+  color: var(--portal-text) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-page [style*="color: #1765ff"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color:#1765ff"],
+html[data-portal-theme="map-dark"] .portal-page [style*="color: rgb(23, 101, 255)"] {
+  color: var(--map-brand-cyan) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-page [style*="background: linear-gradient(90deg, rgba(47,111,234,0.10), #ffffff)"] {
+  background:
+    linear-gradient(90deg, rgba(56, 189, 248, 0.18), rgba(9, 14, 24, 0.88)) !important;
+}
+
+html[data-portal-theme="map-dark"] .content-plan-topbar,
+html[data-portal-theme="map-dark"] .create-post-ticket-card,
+html[data-portal-theme="map-dark"] .create-post-schedule-strip,
+html[data-portal-theme="map-dark"] .create-post-preview-section,
+html[data-portal-theme="map-dark"] .create-post-preview-section > .flex,
+html[data-portal-theme="map-dark"] .create-post-preview-shell,
+html[data-portal-theme="map-dark"] .platform-preview-card {
+  border-color: var(--portal-border) !important;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.072), rgba(255, 255, 255, 0.018)),
+    rgba(9, 14, 24, 0.84) !important;
+  color: var(--portal-text) !important;
+  box-shadow: var(--portal-shadow-soft) !important;
+}
+
+html[data-portal-theme="map-dark"] .content-plan-topbar::before,
+html[data-portal-theme="map-dark"] .portal-page > .portal-surface:first-child::before {
+  background: linear-gradient(90deg, var(--map-brand-cyan), rgba(112, 228, 255, 0.16), transparent) !important;
+}
+
+html[data-portal-theme="map-dark"] .create-post-phone-button,
+html[data-portal-theme="map-dark"] .create-post-ai-mode-grid button,
+html[data-portal-theme="map-dark"] .create-post-schedule-actions button,
+html[data-portal-theme="map-dark"] .create-post-preview-hint,
+html[data-portal-theme="map-dark"] .create-post-preview-tools .portal-ai-mini-action,
+html[data-portal-theme="map-dark"] .create-post-media-thumb,
+html[data-portal-theme="map-dark"] .platform-preview-icon,
+html[data-portal-theme="map-dark"] .platform-preview-title-row span,
+html[data-portal-theme="map-dark"] .platform-preview-media > span {
+  border-color: rgba(112, 228, 255, 0.22) !important;
+  background: rgba(112, 228, 255, 0.095) !important;
+  color: var(--map-brand-cyan) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+}
+
+html[data-portal-theme="map-dark"] .create-post-avatar,
+html[data-portal-theme="map-dark"] .create-post-media-stage,
+html[data-portal-theme="map-dark"] .create-post-ai-mode-panel,
+html[data-portal-theme="map-dark"] .platform-preview-media,
+html[data-portal-theme="map-dark"] .platform-preview-media[data-empty="true"],
+html[data-portal-theme="map-dark"] .platform-preview-gallery,
+html[data-portal-theme="map-dark"] .platform-preview-gallery figure {
+  border-color: var(--portal-border) !important;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.056), rgba(255, 255, 255, 0.014)),
+    rgba(4, 8, 16, 0.68) !important;
+}
+
+html[data-portal-theme="map-dark"] .create-post-ai-mode-grid button[data-active="true"],
+html[data-portal-theme="map-dark"] .create-post-schedule-actions button[data-active="true"],
+html[data-portal-theme="map-dark"] .create-post-preview-shell[data-active="true"] {
+  border-color: rgba(112, 228, 255, 0.42) !important;
+  background:
+    linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(152, 140, 255, 0.10)),
+    rgba(9, 14, 24, 0.88) !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(112, 228, 255, 0.1) inset !important;
+}
+
+html[data-portal-theme="map-dark"] .create-post-preview-tools .portal-ai-mini-action:hover:not(:disabled) {
+  border-color: rgba(112, 228, 255, 0.36) !important;
+  background: rgba(112, 228, 255, 0.16) !important;
+  color: var(--portal-text) !important;
+}
+
+html[data-portal-theme="map-dark"] .platform-preview-card[data-platform="instagram"] .platform-preview-icon {
+  background: linear-gradient(135deg, #38bdf8, #988cff 55%, #ff7ab8) !important;
+  color: var(--portal-text) !important;
+}
+
 /* Train your Partner modal: dark production treatment to match the new portal skin. */
 html[data-portal-theme="map-dark"] .assistant-train-overlay {
   background:

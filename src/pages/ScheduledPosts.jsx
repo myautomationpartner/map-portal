@@ -176,7 +176,7 @@ export default function ScheduledPosts() {
 
           <div
             className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold"
-            style={{ background: 'rgba(201,168,76,0.12)', color: 'var(--portal-primary)', border: '1px solid rgba(201,168,76,0.22)' }}
+            style={{ background: 'rgba(112,228,255,0.12)', color: 'var(--map-brand-cyan)', border: '1px solid rgba(112,228,255,0.26)' }}
           >
             <CalendarDays className="h-4 w-4" />
             {upcomingScheduledPosts.length} scheduled
@@ -197,14 +197,14 @@ export default function ScheduledPosts() {
             <section
               key={post.id}
               className="rounded-[28px] p-5 md:p-6"
-              style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}
+              style={{ background: 'rgba(9,14,24,0.78)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}
             >
               <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span
                       className="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                      style={{ background: 'rgba(55, 181, 140, 0.12)', color: '#2d876a', borderColor: 'rgba(55, 181, 140, 0.2)' }}
+                      style={{ background: 'rgba(133,247,169,0.10)', color: 'var(--portal-success)', borderColor: 'rgba(133,247,169,0.24)' }}
                     >
                       Scheduled
                     </span>
@@ -237,7 +237,7 @@ export default function ScheduledPosts() {
                     onClick={() => handleDeleteScheduledPost(post)}
                     disabled={deleteBusyId === post.id}
                     className="inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60"
-                    style={{ background: 'rgba(196, 85, 110, 0.10)', color: '#b44660', border: '1px solid rgba(196, 85, 110, 0.18)' }}
+                    style={{ background: 'rgba(255,122,184,0.10)', color: 'var(--map-brand-magenta)', border: '1px solid rgba(255,122,184,0.24)' }}
                   >
                     <Trash2 className="h-4 w-4" />
                     Delete
@@ -250,7 +250,7 @@ export default function ScheduledPosts() {
       ) : (
         <section
           className="rounded-[28px] p-8 text-center"
-          style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}
+          style={{ background: 'rgba(9,14,24,0.78)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}
         >
           <p className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>
             No scheduled posts yet

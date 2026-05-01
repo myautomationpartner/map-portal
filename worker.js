@@ -104,6 +104,27 @@ function normalizeSharedPortalRequest(request, env) {
   }
 }
 
+function normalizeNestedSpaAssetRequest(request, url) {
+  if (!['GET', 'HEAD'].includes(request.method)) return { request, url }
+
+  const segments = url.pathname.split('/').filter(Boolean)
+  const assetsIndex = segments.indexOf('assets')
+
+  if (assetsIndex <= 0) return { request, url }
+
+  const normalizedUrl = new URL(request.url)
+  normalizedUrl.pathname = `/${segments.slice(assetsIndex).join('/')}`
+
+  return {
+    request: new Request(normalizedUrl.toString(), {
+      method: request.method,
+      headers: request.headers,
+      redirect: request.redirect,
+    }),
+    url: normalizedUrl,
+  }
+}
+
 function buildSharedPortalTrailingSlashRedirect(request, env) {
   if (!['GET', 'HEAD'].includes(request.method)) return null
 
@@ -4045,6 +4066,7 @@ export default {
       return handleDropboxThumbnail(request, env)
     }
 
-    return env.ASSETS.fetch(request)
+    const assetNormalized = normalizeNestedSpaAssetRequest(request, url)
+    return env.ASSETS.fetch(assetNormalized.request)
   },
 }

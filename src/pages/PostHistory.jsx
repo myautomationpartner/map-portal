@@ -37,9 +37,9 @@ async function fetchPosts(clientId) {
 
 const STATUS_CONFIG = {
   draft:     { label: 'Draft',     style: 'rgba(255,122,184,0.12)', textColor: '#ff7ab8', borderColor: 'rgba(255,122,184,0.22)' },
-  scheduled: { label: 'Scheduled', style: 'rgba(26,24,20,0.08)',    textColor: '#5e554d', borderColor: 'rgba(26,24,20,0.12)'    },
-  published: { label: 'Published', style: 'rgba(107,193,142,0.12)', textColor: '#2f8f57', borderColor: 'rgba(107,193,142,0.2)'  },
-  failed:    { label: 'Failed',    style: 'rgba(196,85,110,0.12)',  textColor: '#c4556e', borderColor: 'rgba(196,85,110,0.2)'   },
+  scheduled: { label: 'Scheduled', style: 'rgba(56,189,248,0.12)',  textColor: '#70e4ff', borderColor: 'rgba(56,189,248,0.26)'  },
+  published: { label: 'Published', style: 'rgba(133,247,169,0.10)', textColor: '#85f7a9', borderColor: 'rgba(133,247,169,0.22)' },
+  failed:    { label: 'Failed',    style: 'rgba(255,122,184,0.12)', textColor: '#ff7ab8', borderColor: 'rgba(255,122,184,0.26)' },
 }
 
 const PLATFORMS = [
@@ -65,8 +65,8 @@ function PostCard({ post }) {
 
   return (
     <div className="rounded-2xl p-5 md:p-6 transition-all"
-      style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}
-      onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(201,168,76,0.24)'}
+      style={{ background: 'rgba(9,14,24,0.78)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(112,228,255,0.28)'}
       onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--portal-border)'}>
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4">
         <div className="flex flex-wrap gap-2">
@@ -75,7 +75,7 @@ function PostCard({ post }) {
             const Icon = platform?.icon || FileText
             return (
               <span key={platformId} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
-                style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.16)', color: '#8c6d1c' }}>
+                style={{ background: 'rgba(112,228,255,0.10)', border: '1px solid rgba(112,228,255,0.24)', color: 'var(--map-brand-cyan)' }}>
                 <Icon className="w-3.5 h-3.5" />
                 {platform?.label || platformId}
               </span>
@@ -97,7 +97,7 @@ function PostCard({ post }) {
       <div className="flex gap-4">
         {post.media_url && (
           <div className="shrink-0 w-24 h-24 rounded-lg overflow-hidden flex items-center justify-center"
-            style={{ background: 'rgba(245,240,235,0.95)', border: '1px solid var(--portal-border)' }}>
+            style={{ background: 'rgba(255,255,255,0.075)', border: '1px solid var(--portal-border)' }}>
             {post.media_url.match(/\.(mp4|mov|webm)$/i) ? (
               <Video className="w-6 h-6" style={{ color: 'var(--portal-text-muted)' }} />
             ) : (
@@ -153,7 +153,7 @@ export default function PostHistory() {
   })
 
   const filterTabBase = { padding: '6px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', border: 'none', transition: 'all .15s', whiteSpace: 'nowrap' }
-  const filterTabActive = { ...filterTabBase, background: 'rgba(201,168,76,0.12)', color: 'var(--portal-primary)' }
+  const filterTabActive = { ...filterTabBase, background: 'rgba(56,189,248,0.14)', color: 'var(--map-brand-cyan)' }
   const filterTabInactive = { ...filterTabBase, background: 'transparent', color: 'var(--portal-text-muted)' }
 
   return (
@@ -178,8 +178,8 @@ export default function PostHistory() {
           onClick={() => refetch()}
           disabled={isRefetching || isLoading}
           className="shrink-0 flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all disabled:opacity-50"
-          style={{ background: 'rgba(255,255,255,0.88)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
-          onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(201,168,76,0.25)'}
+          style={{ background: 'rgba(255,255,255,0.075)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(112,228,255,0.28)'}
           onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--portal-border)'}>
           <RefreshCw className={`w-4 h-4 ${isRefetching ? 'animate-spin' : ''}`} />
           Refresh
@@ -190,7 +190,7 @@ export default function PostHistory() {
       {/* Filters */}
       <div className="flex flex-col md:flex-row gap-3 mb-6">
         <div className="flex-1 p-1.5 rounded-xl overflow-x-auto flex gap-1"
-          style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}>
+          style={{ background: 'rgba(9,14,24,0.78)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}>
           <button onClick={() => setStatusFilter('all')}
             style={statusFilter === 'all' ? filterTabActive : filterTabInactive}>All Status</button>
           {Object.entries(STATUS_CONFIG).map(([key, config]) => (
@@ -202,7 +202,7 @@ export default function PostHistory() {
         </div>
 
         <div className="flex-1 p-1.5 rounded-xl overflow-x-auto flex gap-1"
-          style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}>
+          style={{ background: 'rgba(9,14,24,0.78)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}>
           <button onClick={() => setPlatformFilter('all')}
             style={platformFilter === 'all' ? filterTabActive : filterTabInactive}>All Platforms</button>
           {PLATFORMS.map(platform => (
@@ -221,7 +221,7 @@ export default function PostHistory() {
         <div className="space-y-4">
           {[1, 2, 3].map(i => (
             <div key={i} className="rounded-2xl p-6 h-40 animate-pulse"
-              style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)' }} />
+              style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }} />
           ))}
         </div>
       ) : filteredPosts?.length > 0 ? (
@@ -232,9 +232,9 @@ export default function PostHistory() {
         </div>
       ) : (
         <div className="rounded-2xl p-12 flex flex-col items-center text-center"
-          style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}>
+          style={{ background: 'rgba(9,14,24,0.78)', border: '1px solid var(--portal-border)', boxShadow: 'var(--portal-shadow-soft)' }}>
           <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4"
-            style={{ background: 'rgba(201,168,76,0.1)' }}>
+            style={{ background: 'rgba(112,228,255,0.12)' }}>
             <Search className="w-8 h-8" style={{ color: 'var(--portal-primary)' }} />
           </div>
           <h3 className="font-display text-xl font-semibold mb-2" style={{ color: 'var(--portal-text)' }}>No posts found</h3>

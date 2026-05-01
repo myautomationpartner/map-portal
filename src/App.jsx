@@ -86,6 +86,19 @@ function resolvePathTenantMismatch(profile) {
   return pathTenant.clientSlug !== clientSlug
 }
 
+function withAuthTimeout(promise, label) {
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = window.setTimeout(() => {
+      reject(new Error(`${label} timed out.`))
+    }, 5000)
+  })
+
+  return Promise.race([promise, timeout]).finally(() => {
+    window.clearTimeout(timer)
+  })
+}
+
 function AuthProvider({ children }) {
   const [session, setSession] = useState(undefined) // undefined = loading
 
@@ -93,29 +106,46 @@ function AuthProvider({ children }) {
     let active = true
 
     async function bootstrapSession() {
-      const url = new URL(window.location.href)
-      const hash = url.hash.startsWith('#') ? url.hash.slice(1) : ''
-      const hashParams = new URLSearchParams(hash)
-      const accessToken = hashParams.get('access_token')
-      const refreshToken = hashParams.get('refresh_token')
+      try {
+        const url = new URL(window.location.href)
+        const hash = url.hash.startsWith('#') ? url.hash.slice(1) : ''
+        const hashParams = new URLSearchParams(hash)
+        const accessToken = hashParams.get('access_token')
+        const refreshToken = hashParams.get('refresh_token')
 
-      if (accessToken && refreshToken) {
-        const { data, error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        })
+        if (accessToken && refreshToken) {
+          const { data, error } = await withAuthTimeout(
+            supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            }),
+            'Supabase session restore',
+          )
 
-        if (!error && data?.session && active) {
-          setSession(data.session)
+          if (error) throw error
+          if (data?.session && active) {
+            setSession(data.session)
+          }
+
+          url.hash = ''
+          window.history.replaceState({}, '', `${url.pathname}${url.search}`)
         }
 
-        url.hash = ''
-        window.history.replaceState({}, '', `${url.pathname}${url.search}`)
-      }
+        const { data: { session }, error } = await withAuthTimeout(
+          supabase.auth.getSession(),
+          'Supabase session check',
+        )
+        if (error) throw error
 
-      const { data: { session } } = await supabase.auth.getSession()
-      if (active) {
-        setSession(session)
+        if (active) {
+          setSession(session)
+        }
+      } catch (error) {
+        console.warn('MAP portal auth bootstrap cleared a stale session.', error)
+        await supabase.auth.signOut({ scope: 'local' }).catch(() => {})
+        if (active) {
+          setSession(null)
+        }
       }
     }
 

@@ -42,10 +42,10 @@
           if (root && root.childNodes.length > 0) return
 
           document.body.innerHTML =
-            '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(180deg,#f8faff 0%,#eef4ff 52%,#f7f8ff 100%);font-family:system-ui,sans-serif;color:#1f275c;">' +
-              '<div style="max-width:760px;width:100%;background:#fff;border:1px solid rgba(109,115,196,.18);border-radius:24px;box-shadow:0 20px 60px rgba(73,86,180,.14);padding:24px;">' +
-                '<p style="margin:0 0 12px;font-size:12px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#8b94bd;">Portal Startup Error</p>' +
-                '<pre style="margin:0;white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.6;color:#1f275c;">' + String(message) + '</pre>' +
+            '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(circle at 50% -12%,rgba(112,228,255,.22),transparent 33rem),radial-gradient(circle at 85% 18%,rgba(56,189,248,.14),transparent 25rem),linear-gradient(180deg,#07090f 0%,#0b0e18 54%,#0f1320 100%);font-family:system-ui,sans-serif;color:#f5f7fb;">' +
+              '<div style="max-width:760px;width:100%;background:linear-gradient(145deg,rgba(255,255,255,.12),rgba(255,255,255,.04)),rgba(12,16,29,.86);border:1px solid rgba(255,255,255,.14);border-radius:24px;box-shadow:0 30px 90px rgba(0,0,0,.48),inset 0 1px 0 rgba(255,255,255,.1);padding:24px;">' +
+                '<p style="margin:0 0 12px;font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#70e4ff;">Portal Startup Error</p>' +
+                '<pre style="margin:0;white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.6;color:#dbe3f4;">' + String(message) + '</pre>' +
               '</div>' +
             '</div>'
         }

@@ -126,8 +126,8 @@ function Section({ title, description, icon: Icon, children }) {
     <div className="portal-panel rounded-[32px] overflow-hidden">
       <div className="flex items-center gap-3 border-b px-6 py-5" style={{ borderColor: 'var(--portal-border)' }}>
         <div className="flex h-8 w-8 items-center justify-center rounded-lg"
-          style={{ background: 'rgba(201,168,76,0.10)', border: '1px solid rgba(201,168,76,0.20)' }}>
-          <Icon className="w-4 h-4" style={{ color: 'var(--portal-primary)' }} strokeWidth={2} />
+          style={{ background: 'rgba(112,228,255,0.12)', border: '1px solid rgba(112,228,255,0.28)' }}>
+          <Icon className="w-4 h-4" style={{ color: 'var(--map-brand-cyan)' }} strokeWidth={2} />
         </div>
         <div>
           <h2 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{title}</h2>
@@ -143,7 +143,7 @@ function Field({ label, value }) {
   return (
     <div>
       <label className="mb-2 block text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--portal-text-soft)' }}>{label}</label>
-      <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+      <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
         {value || <span style={{ color: 'var(--portal-text-soft)' }}>—</span>}
       </div>
     </div>
@@ -157,10 +157,10 @@ function StatusBadge({ status, message }) {
   return (
     <div className="flex items-center gap-2 text-sm rounded-xl px-4 py-3"
       style={isSuccess
-        ? { background: 'rgba(107,193,142,0.08)', border: '1px solid rgba(107,193,142,0.2)', color: '#2f8f57' }
+        ? { background: 'rgba(133,247,169,0.10)', border: '1px solid rgba(133,247,169,0.24)', color: 'var(--portal-success)' }
         : isInfo
-        ? { background: 'rgba(201,168,76,0.10)', border: '1px solid rgba(201,168,76,0.2)', color: '#8c6d1c' }
-        : { background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.2)', color: '#c4556e' }
+        ? { background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.28)', color: 'var(--map-brand-cyan)' }
+        : { background: 'rgba(255,122,184,0.12)', border: '1px solid rgba(255,122,184,0.28)', color: 'var(--map-brand-magenta)' }
       }>
       {isSuccess ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
       {message}
@@ -382,9 +382,11 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
     if (connectPopup && !connectPopup.closed) {
       connectPopup.document.write(`
         <title>Opening ${formatPlatformLabel(normalizedPlatform)}…</title>
-        <body style="font-family: ui-sans-serif, system-ui, sans-serif; padding: 24px; color: #1f2937;">
-          <p style="margin: 0 0 8px; font-size: 15px; font-weight: 600;">Opening ${formatPlatformLabel(normalizedPlatform)}…</p>
-          <p style="margin: 0; font-size: 14px; color: #6b7280;">If nothing happens in a moment, return to the portal and try again.</p>
+        <body style="min-height:100vh;margin:0;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:radial-gradient(circle at 50% 0%, rgba(112,228,255,.18), transparent 28rem),linear-gradient(180deg,#07090f,#0f1726);font-family: ui-sans-serif, system-ui, sans-serif;color:#f5f7fb;">
+          <main style="max-width:420px;width:100%;border:1px solid rgba(255,255,255,.14);border-radius:24px;background:linear-gradient(145deg,rgba(255,255,255,.10),rgba(255,255,255,.035)),rgba(12,16,29,.9);box-shadow:0 28px 80px rgba(0,0,0,.45);padding:24px;">
+            <p style="margin:0 0 8px;font-size:15px;font-weight:700;color:#70e4ff;">Opening ${formatPlatformLabel(normalizedPlatform)}…</p>
+            <p style="margin:0;font-size:14px;line-height:1.5;color:#a6afc2;">If nothing happens in a moment, return to the portal and try again.</p>
+          </main>
         </body>
       `)
     }
@@ -501,7 +503,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
       icon={Link2}
     >
       {connectionsLoading ? (
-        <div className="flex items-center gap-2" style={{ color: '#8a7858' }}>
+        <div className="flex items-center gap-2" style={{ color: 'var(--portal-text-muted)' }}>
           <Loader2 className="w-4 h-4 animate-spin" />
           <span className="text-sm">Loading connections…</span>
         </div>
@@ -518,7 +520,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
                 className="flex items-center gap-4 p-4 rounded-xl transition-all"
                 style={conn
                   ? { background: soft, border: `1px solid ${accent}30` }
-                  : { background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)' }
+                  : { background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }
                 }>
                 {/* Platform icon */}
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl shrink-0" style={{ background: accent }}>
@@ -554,7 +556,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
                     <>
                       <div
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
-                        style={{ background: 'rgba(107,193,142,0.10)', border: '1px solid rgba(107,193,142,0.22)', color: '#2f8f57' }}>
+                        style={{ background: 'rgba(133,247,169,0.10)', border: '1px solid rgba(133,247,169,0.24)', color: 'var(--portal-success)' }}>
                         <CheckCircle2 className="w-3 h-3" />
                         Connected
                       </div>
@@ -563,7 +565,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
                         onClick={() => handleDisconnect(id, label)}
                         disabled={!!disconnectingPlatform || !!connectingPlatform || billingAccess?.readOnly}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.18)', color: '#a83f58' }}
+                        style={{ background: 'rgba(255,122,184,0.10)', border: '1px solid rgba(255,122,184,0.24)', color: 'var(--map-brand-magenta)' }}
                       >
                         {isDisconnecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Unlink2 className="w-3 h-3" />}
                         {isDisconnecting ? 'Disconnecting…' : 'Disconnect'}
@@ -574,7 +576,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
                       onClick={() => connectionEnabled && handleConnect(id)}
                       disabled={!connectionEnabled || !!connectingPlatform || billingAccess?.readOnly}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.25)', color: 'var(--portal-primary)' }}>
+                      style={{ background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.28)', color: 'var(--map-brand-cyan)' }}>
                       {isConnecting ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
                       ) : (
@@ -636,7 +638,7 @@ function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant 
   useEffect(() => {
     if (!settings) return
     setForm({
-      widget_color: settings.widget_color || '#C9A84C',
+      widget_color: settings.widget_color || '#38BDF8',
       welcome_heading: settings.welcome_heading || 'Hi there',
       welcome_tagline: settings.welcome_tagline || 'Send us a message and we will get back to you soon.',
       greeting_enabled: settings.greeting_enabled ?? true,
@@ -740,7 +742,7 @@ function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant 
   return (
     <Section title="Website Chat" description="Install and manage your customer chat widget" icon={MessageCircle}>
       <div className="space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)' }}>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }}>
           <div>
             <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{formatInstallStatus(settings.install_status)}</p>
             <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
@@ -752,7 +754,7 @@ function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant 
             onClick={handleCheckInstall}
             disabled={checking}
             className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-all disabled:opacity-50"
-            style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.25)', color: 'var(--portal-primary)' }}
+            style={{ background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.28)', color: 'var(--map-brand-cyan)' }}
           >
             {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             Check installation
@@ -770,7 +772,7 @@ function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant 
                 onClick={handleCopySnippet}
                 disabled={!installSnippet || copying}
                 className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50"
-                style={{ background: 'rgba(255,255,255,0.86)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+                style={{ background: 'rgba(255,255,255,0.075)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
               >
                 {copying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />}
                 Copy script
@@ -778,7 +780,7 @@ function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant 
               <a
                 href={`mailto:?subject=${encodeURIComponent('Website chat install script')}&body=${encodeURIComponent(webPersonBody)}`}
                 className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all"
-                style={{ background: 'rgba(255,255,255,0.86)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+                style={{ background: 'rgba(255,255,255,0.075)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
               >
                 <Mail className="h-3 w-3" />
                 Email to web person
@@ -786,7 +788,7 @@ function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant 
               <a
                 href={`mailto:${tenant.supportEmail}?subject=${encodeURIComponent('Please install my website chat')}&body=${encodeURIComponent(`Please help install website chat for ${client?.business_name || 'my business'}: ${client?.website_url || ''}`)}`}
                 className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all"
-                style={{ background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.25)', color: 'var(--portal-primary)' }}
+                style={{ background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.28)', color: 'var(--map-brand-cyan)' }}
               >
                 <MessageCircle className="h-3 w-3" />
                 Request MAP install
@@ -848,7 +850,7 @@ function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant 
               />
             </div>
 
-            <label className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+            <label className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
               <input
                 type="checkbox"
                 checked={form.greeting_enabled}
@@ -858,7 +860,7 @@ function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant 
               Send an automatic greeting
             </label>
 
-            <label className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+            <label className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
               <input
                 type="checkbox"
                 checked={form.pre_chat_form_enabled}
@@ -887,7 +889,7 @@ function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant 
               </label>
               <div className="space-y-3">
                 {(form.saved_replies || []).slice(0, 3).map((reply, index) => (
-                  <div key={`${reply.title}-${index}`} className="grid gap-2 rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.82)', border: '1px solid var(--portal-border)' }}>
+                  <div key={`${reply.title}-${index}`} className="grid gap-2 rounded-xl p-3" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }}>
                     <input
                       value={reply.title || ''}
                       onChange={(event) => updateSavedReply(index, 'title', event.target.value)}
