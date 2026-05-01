@@ -158,7 +158,7 @@ export async function fetchResearchProfile(clientId) {
 
   const { data, error } = await supabase
     .from('client_research_profiles')
-    .select('id, client_id, service_area, audience_summary, offer_focus_json, preferred_platforms, blocked_topics_json, research_notes, cadence, is_active, created_at, updated_at')
+    .select('id, client_id, service_area, audience_summary, offer_focus_json, preferred_platforms, blocked_topics_json, research_notes, cadence, is_active, partner_training_verified_at, partner_training_verified_by, created_at, updated_at')
     .eq('client_id', clientId)
     .maybeSingle()
 
@@ -205,24 +205,33 @@ export async function upsertResearchProfile({
   blockedTopics,
   researchNotes,
   cadence = 'weekly',
+  partnerTrainingVerifiedAt,
+  partnerTrainingVerifiedBy,
 }) {
   if (!clientId) throw new Error('Client profile is still loading.')
 
+  const payload = {
+    client_id: clientId,
+    service_area: serviceArea?.trim() || null,
+    audience_summary: audienceSummary?.trim() || null,
+    offer_focus_json: Array.isArray(offerFocus) ? offerFocus : [],
+    blocked_topics_json: Array.isArray(blockedTopics) ? blockedTopics : [],
+    research_notes: researchNotes?.trim() || null,
+    cadence,
+    is_active: true,
+  }
+
+  if (partnerTrainingVerifiedAt) {
+    payload.partner_training_verified_at = partnerTrainingVerifiedAt
+    payload.partner_training_verified_by = partnerTrainingVerifiedBy || null
+  }
+
   const { data, error } = await supabase
     .from('client_research_profiles')
-    .upsert({
-      client_id: clientId,
-      service_area: serviceArea?.trim() || null,
-      audience_summary: audienceSummary?.trim() || null,
-      offer_focus_json: Array.isArray(offerFocus) ? offerFocus : [],
-      blocked_topics_json: Array.isArray(blockedTopics) ? blockedTopics : [],
-      research_notes: researchNotes?.trim() || null,
-      cadence,
-      is_active: true,
-    }, {
+    .upsert(payload, {
       onConflict: 'client_id',
     })
-    .select('id, client_id, service_area, audience_summary, offer_focus_json, preferred_platforms, blocked_topics_json, research_notes, cadence, is_active, created_at, updated_at')
+    .select('id, client_id, service_area, audience_summary, offer_focus_json, preferred_platforms, blocked_topics_json, research_notes, cadence, is_active, partner_training_verified_at, partner_training_verified_by, created_at, updated_at')
     .single()
 
   if (error) throw error

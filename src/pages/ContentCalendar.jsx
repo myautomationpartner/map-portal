@@ -101,6 +101,7 @@ const RESEARCH_SOURCE_TYPES = [
   { value: 'competitor_social', label: 'Competitor social' },
   { value: 'manual_reference', label: 'Reference page' },
 ]
+const PARTNER_TRAINING_REFRESH_DAYS = 60
 
 function isMissingRemoteDelete(payload, raw) {
   const message = [
@@ -130,6 +131,10 @@ function normalizeSourceUrl(value) {
 
 function listToText(value) {
   return Array.isArray(value) ? value.filter(Boolean).join('\n') : ''
+}
+
+function textToPreviewList(value, limit = 4) {
+  return textToList(value).slice(0, limit)
 }
 
 function textToList(value) {
@@ -175,6 +180,46 @@ function formatDate(value, options = {}) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
   return new Intl.DateTimeFormat('en-US', options).format(date)
+}
+
+function daysSince(value) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return Math.floor((Date.now() - date.getTime()) / (24 * 60 * 60 * 1000))
+}
+
+function getPartnerTrainingStatus(researchProfile) {
+  const verifiedAt = researchProfile?.partner_training_verified_at || ''
+  const ageDays = daysSince(verifiedAt)
+  const isVerified = Boolean(verifiedAt)
+  const isStale = isVerified && ageDays !== null && ageDays >= PARTNER_TRAINING_REFRESH_DAYS
+
+  return {
+    verifiedAt,
+    ageDays,
+    isVerified,
+    isStale,
+    shouldPrompt: !isVerified || isStale,
+    label: !isVerified
+      ? 'Needs first review'
+      : isStale
+        ? 'Review recommended'
+        : 'Verified',
+  }
+}
+
+function formatVerifiedDate(value) {
+  return formatDate(value, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function normalizeBrandColors(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 5)
+  if (typeof value === 'object') {
+    return Object.values(value).map((item) => String(item || '').trim()).filter((item) => /^#?[0-9a-f]{6}$/i.test(item)).slice(0, 5)
+  }
+  return []
 }
 
 function formatSlotDate(dateString) {
@@ -880,19 +925,23 @@ function ProofChip({ children, onClick, title }) {
 }
 
 function TrainPartnerModal({
+  client,
   form,
   sources,
+  trainingStatus,
   label,
   url,
   sourceType,
   isSaving,
   isSavingProfile,
+  isVerifying,
   busySourceId,
   error,
   notice,
   onClose,
   onFormChange,
   onSaveProfile,
+  onVerify,
   onLabelChange,
   onUrlChange,
   onSourceTypeChange,
@@ -900,6 +949,19 @@ function TrainPartnerModal({
   onToggleSource,
   onDeleteSource,
 }) {
+  const brandColors = normalizeBrandColors(client?.brand_colors)
+  const offerPreview = textToPreviewList(form.offerFocusText)
+  const avoidPreview = textToPreviewList(form.blockedTopicsText)
+  const sourceCount = sources.filter((source) => source.is_active).length
+  const verifiedLabel = trainingStatus?.isVerified
+    ? `Verified ${formatVerifiedDate(trainingStatus.verifiedAt)}`
+    : 'Not verified yet'
+  const statusDetail = trainingStatus?.isVerified
+    ? trainingStatus.isStale
+      ? `It has been ${trainingStatus.ageDays} days. Review it so future posts, campaigns, and images stay current.`
+      : 'Your Partner is using confirmed business context.'
+    : 'Review what MAP found and verify it once it looks right.'
+
   return createPortal(
     <div className="assistant-train-overlay" role="presentation" onMouseDown={onClose}>
       <div
@@ -918,8 +980,11 @@ function TrainPartnerModal({
               Train your Partner
             </p>
             <h2 id="assistant-train-title" className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-              Teach MAP what changed
+              Bring your Partner up to speed
             </h2>
+            <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+              MAP uses this confirmed profile to write sharper posts, build campaigns, and create better images.
+            </p>
           </div>
           <button type="button" className="assistant-train-close" onClick={onClose} aria-label="Close">
             <X className="h-4 w-4" />
@@ -927,14 +992,92 @@ function TrainPartnerModal({
         </div>
 
         <div className="assistant-train-body">
+          <section className="assistant-training-review">
+            <div className="assistant-training-status" data-state={trainingStatus?.shouldPrompt ? 'due' : 'verified'}>
+              <div>
+                <p className="assistant-training-kicker">Partner checkup</p>
+                <h3>{trainingStatus?.shouldPrompt ? 'Review what your Partner found' : 'Training is current'}</h3>
+                <p>{statusDetail}</p>
+              </div>
+              <div className="assistant-training-status-actions">
+                <span>{verifiedLabel}</span>
+                <button
+                  type="button"
+                  className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold"
+                  onClick={onVerify}
+                  disabled={isVerifying || isSavingProfile}
+                >
+                  {isVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  Verify training
+                </button>
+              </div>
+            </div>
+
+            <div className="assistant-training-card-grid">
+              <article className="assistant-training-card">
+                <p className="assistant-training-kicker">Brand found</p>
+                <div className="assistant-brand-found">
+                  {client?.logo_url ? (
+                    <img src={client.logo_url} alt="" />
+                  ) : (
+                    <div className="assistant-brand-placeholder">{String(client?.business_name || 'Your Business').slice(0, 1)}</div>
+                  )}
+                  <div>
+                    <h4>{client?.business_name || 'Your business'}</h4>
+                    <p>{form.websiteUrl || 'Add your website so MAP can keep learning from it.'}</p>
+                  </div>
+                </div>
+                {brandColors.length ? (
+                  <div className="assistant-color-row">
+                    {brandColors.map((color) => (
+                      <span key={color} style={{ background: color.startsWith('#') ? color : `#${color}` }} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="assistant-training-muted">Brand colors can be learned from the website/logo as we expand this screen.</p>
+                )}
+              </article>
+
+              <article className="assistant-training-card">
+                <p className="assistant-training-kicker">Business focus</p>
+                <h4>{form.businessSubtype || form.businessCategory || 'Confirm your main offering'}</h4>
+                <p>{form.audienceSummary || 'Add the customer type your Partner should write for most often.'}</p>
+                <p className="assistant-training-muted">{form.serviceArea || 'Service area not set yet.'}</p>
+              </article>
+
+              <article className="assistant-training-card">
+                <p className="assistant-training-kicker">Promote more</p>
+                {offerPreview.length ? (
+                  <ul>
+                    {offerPreview.map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                ) : (
+                  <p>Add current offers, services, events, or seasonal priorities.</p>
+                )}
+              </article>
+
+              <article className="assistant-training-card">
+                <p className="assistant-training-kicker">Guardrails</p>
+                {avoidPreview.length ? (
+                  <ul>
+                    {avoidPreview.map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                ) : (
+                  <p>Add anything your Partner should avoid, such as old services, stale offers, or unsupported claims.</p>
+                )}
+                <p className="assistant-training-muted">{sourceCount} active research source{sourceCount === 1 ? '' : 's'}</p>
+              </article>
+            </div>
+          </section>
+
           <form className="assistant-profile-form" onSubmit={onSaveProfile}>
             <div className="assistant-profile-section">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                  Business profile
+                  Confirm or correct
                 </p>
                 <p className="mt-1 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                  Update this when you move, expand your service area, or change what you offer.
+                  Your Partner works best when these notes match how your business looks right now.
                 </p>
               </div>
               <div className="assistant-profile-grid">
@@ -1111,6 +1254,49 @@ function TrainPartnerModal({
   )
 }
 
+function PartnerTrainingPrompt({
+  trainingStatus,
+  onReview,
+  onDismiss,
+}) {
+  const isStale = trainingStatus?.isStale
+  const title = isStale ? 'Your Partner may need a quick refresh' : 'Set up Train your Partner'
+  const body = isStale
+    ? `It has been ${trainingStatus.ageDays} days since this profile was verified. A quick review keeps posts, campaigns, and images aligned with what you offer now.`
+    : 'MAP can use your website, brand, services, sources, and guardrails to create better posts and images. Review what your Partner found, then verify it once it looks right.'
+
+  return createPortal(
+    <div className="assistant-training-prompt-overlay" role="presentation" onMouseDown={onDismiss}>
+      <section
+        className="assistant-training-prompt"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="assistant-training-prompt-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="assistant-training-prompt-icon">
+          <Sparkles className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="assistant-training-kicker">Train your Partner</p>
+          <h2 id="assistant-training-prompt-title">{title}</h2>
+          <p>{body}</p>
+        </div>
+        <div className="assistant-training-prompt-actions">
+          <button type="button" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onReview}>
+            <Sparkles className="h-4 w-4" />
+            Review training
+          </button>
+          <button type="button" className="portal-button-secondary inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold" onClick={onDismiss}>
+            Remind me later
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  )
+}
+
 export default function ContentCalendar() {
   const { requireWriteAccess } = useOutletContext()
   const queryClient = useQueryClient()
@@ -1121,6 +1307,8 @@ export default function ContentCalendar() {
   const [actionNotice, setActionNotice] = useState('')
   const [actionBusyId, setActionBusyId] = useState('')
   const [trainAssistantOpen, setTrainAssistantOpen] = useState(false)
+  const [trainingPromptOpen, setTrainingPromptOpen] = useState(false)
+  const trainingPromptShownRef = useRef(false)
   const [sourceLabel, setSourceLabel] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
   const [sourceType, setSourceType] = useState('local_event_calendar')
@@ -1190,6 +1378,8 @@ export default function ContentCalendar() {
     queryFn: () => fetchResearchProfile(clientId),
     enabled: !!clientId,
   })
+
+  const trainingStatus = useMemo(() => getPartnerTrainingStatus(researchProfile), [researchProfile])
 
   const launchBoost = useMutation({
     mutationFn: launchPostBoost,
@@ -1572,33 +1762,37 @@ export default function ContentCalendar() {
     },
   })
 
+  async function savePartnerProfileSnapshot({ verify = false } = {}) {
+    if (!requireWriteAccess(verify ? 'verify your Partner training' : 'update your Partner profile')) return null
+    const websiteUrl = partnerProfileForm.websiteUrl ? normalizeSourceUrl(partnerProfileForm.websiteUrl) : null
+
+    await updateClientPartnerProfile(clientId, {
+      business_type: partnerProfileForm.businessSubtype || partnerProfileForm.businessCategory,
+      business_category: partnerProfileForm.businessCategory,
+      business_subtype: partnerProfileForm.businessSubtype,
+      business_reach: partnerProfileForm.businessReach,
+      country_code: partnerProfileForm.countryCode,
+      state_code: partnerProfileForm.stateCode,
+      postal_code: partnerProfileForm.postalCode,
+      county: partnerProfileForm.county,
+      website_url: websiteUrl,
+    })
+
+    return upsertResearchProfile({
+      clientId,
+      serviceArea: partnerProfileForm.serviceArea,
+      audienceSummary: partnerProfileForm.audienceSummary,
+      offerFocus: textToList(partnerProfileForm.offerFocusText),
+      blockedTopics: textToList(partnerProfileForm.blockedTopicsText),
+      researchNotes: partnerProfileForm.researchNotes,
+      cadence: researchProfile?.cadence || 'weekly',
+      partnerTrainingVerifiedAt: verify ? new Date().toISOString() : undefined,
+      partnerTrainingVerifiedBy: verify ? profile?.id : undefined,
+    })
+  }
+
   const savePartnerProfile = useMutation({
-    mutationFn: async () => {
-      if (!requireWriteAccess('update your Partner profile')) return null
-      const websiteUrl = partnerProfileForm.websiteUrl ? normalizeSourceUrl(partnerProfileForm.websiteUrl) : null
-
-      await updateClientPartnerProfile(clientId, {
-        business_type: partnerProfileForm.businessSubtype || partnerProfileForm.businessCategory,
-        business_category: partnerProfileForm.businessCategory,
-        business_subtype: partnerProfileForm.businessSubtype,
-        business_reach: partnerProfileForm.businessReach,
-        country_code: partnerProfileForm.countryCode,
-        state_code: partnerProfileForm.stateCode,
-        postal_code: partnerProfileForm.postalCode,
-        county: partnerProfileForm.county,
-        website_url: websiteUrl,
-      })
-
-      return upsertResearchProfile({
-        clientId,
-        serviceArea: partnerProfileForm.serviceArea,
-        audienceSummary: partnerProfileForm.audienceSummary,
-        offerFocus: textToList(partnerProfileForm.offerFocusText),
-        blockedTopics: textToList(partnerProfileForm.blockedTopicsText),
-        researchNotes: partnerProfileForm.researchNotes,
-        cadence: researchProfile?.cadence || 'weekly',
-      })
-    },
+    mutationFn: () => savePartnerProfileSnapshot(),
     onSuccess: async (savedProfile) => {
       if (!savedProfile) return
       setSourceError('')
@@ -1614,6 +1808,24 @@ export default function ContentCalendar() {
     },
   })
 
+  const verifyPartnerTraining = useMutation({
+    mutationFn: () => savePartnerProfileSnapshot({ verify: true }),
+    onSuccess: async (savedProfile) => {
+      if (!savedProfile) return
+      setSourceError('')
+      setSourceNotice(`Partner training verified. MAP will remind you again in about ${PARTNER_TRAINING_REFRESH_DAYS} days.`)
+      setTrainingPromptOpen(false)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['profile'] }),
+        queryClient.invalidateQueries({ queryKey: ['research-profile', clientId] }),
+      ])
+    },
+    onError: (error) => {
+      setSourceNotice('')
+      setSourceError(error.message || 'Could not verify Partner training.')
+    },
+  })
+
   async function handleSaveSource(event) {
     event.preventDefault()
     setSourceError('')
@@ -1626,6 +1838,12 @@ export default function ContentCalendar() {
     setSourceError('')
     setSourceNotice('')
     savePartnerProfile.mutate()
+  }
+
+  function handleVerifyPartnerTraining() {
+    setSourceError('')
+    setSourceNotice('')
+    verifyPartnerTraining.mutate()
   }
 
   async function handleToggleSource(source) {
@@ -1916,6 +2134,12 @@ export default function ContentCalendar() {
   const isRefreshing = isRefetchingPosts || isRefetchingDrafts || isRefetchingRadar
   const isCreating = createRadarDraft.isPending
 
+  useEffect(() => {
+    if (isLoading || !clientId || !trainingStatus.shouldPrompt || trainingPromptShownRef.current) return
+    trainingPromptShownRef.current = true
+    setTrainingPromptOpen(true)
+  }, [clientId, isLoading, trainingStatus.shouldPrompt])
+
   if (isLoading) {
     return (
       <div className="portal-page flex min-h-[60vh] items-center justify-center">
@@ -1992,12 +2216,14 @@ export default function ContentCalendar() {
             onClick={() => {
               setSourceError('')
               setSourceNotice('')
+              setTrainingPromptOpen(false)
               setTrainAssistantOpen(true)
             }}
             className="portal-ai-action portal-ai-action-compact inline-flex items-center gap-2 rounded-full px-3.5 py-2.5 text-sm font-semibold"
           >
             <Sparkles className="h-4 w-4" />
             Train your Partner
+            {trainingStatus.shouldPrompt ? <span className="content-plan-train-badge">{trainingStatus.isStale ? 'Refresh' : 'Setup'}</span> : null}
           </button>
           <button
             type="button"
@@ -2314,25 +2540,41 @@ export default function ContentCalendar() {
 
       {trainAssistantOpen ? (
         <TrainPartnerModal
+          client={profile?.clients}
           form={partnerProfileForm}
           sources={researchSources}
+          trainingStatus={trainingStatus}
           label={sourceLabel}
           url={sourceUrl}
           sourceType={sourceType}
           isSaving={createSource.isPending}
           isSavingProfile={savePartnerProfile.isPending}
+          isVerifying={verifyPartnerTraining.isPending}
           busySourceId={busySourceId}
           error={sourceError}
           notice={sourceNotice}
           onClose={() => setTrainAssistantOpen(false)}
           onFormChange={(field, value) => setPartnerProfileForm((current) => ({ ...current, [field]: value }))}
           onSaveProfile={handleSavePartnerProfile}
+          onVerify={handleVerifyPartnerTraining}
           onLabelChange={setSourceLabel}
           onUrlChange={setSourceUrl}
           onSourceTypeChange={setSourceType}
           onSave={handleSaveSource}
           onToggleSource={handleToggleSource}
           onDeleteSource={handleDeleteSource}
+        />
+      ) : null}
+      {trainingPromptOpen ? (
+        <PartnerTrainingPrompt
+          trainingStatus={trainingStatus}
+          onReview={() => {
+            setTrainingPromptOpen(false)
+            setSourceError('')
+            setSourceNotice('')
+            setTrainAssistantOpen(true)
+          }}
+          onDismiss={() => setTrainingPromptOpen(false)}
         />
       ) : null}
       {boostItem ? (
