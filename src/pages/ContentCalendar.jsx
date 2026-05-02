@@ -38,6 +38,7 @@ import {
   fetchSocialDrafts,
   launchPostBoost,
   recordPlannerFeedbackEvent,
+  startOpportunityRadar,
   updateClientPartnerProfile,
   updateResearchSource,
   updateOpportunityState,
@@ -143,6 +144,152 @@ function textToList(value) {
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, 24)
+}
+
+function normalizeChoice(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function humanizeValue(value) {
+  return String(value || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function uniqueChoices(values, limit = 5) {
+  const seen = new Set()
+  const choices = []
+
+  for (const value of values) {
+    const label = String(value || '').trim()
+    if (!label) continue
+    const key = normalizeChoice(label)
+    if (seen.has(key)) continue
+    seen.add(key)
+    choices.push(label)
+    if (choices.length >= limit) break
+  }
+
+  return choices
+}
+
+function toggleTextListValue(current, value) {
+  const item = String(value || '').trim()
+  if (!item) return current || ''
+  const list = textToList(current)
+  const key = normalizeChoice(item)
+  const exists = list.some((entry) => normalizeChoice(entry) === key)
+  const next = exists
+    ? list.filter((entry) => normalizeChoice(entry) !== key)
+    : [...list, item]
+  return next.join('\n')
+}
+
+function listContainsValue(current, value) {
+  const key = normalizeChoice(value)
+  return Boolean(key) && textToList(current).some((entry) => normalizeChoice(entry) === key)
+}
+
+function hasRequiredPartnerTraining(form) {
+  return Boolean(
+    normalizeChoice(form.audienceSummary) &&
+    textToList(form.offerFocusText).length > 0,
+  )
+}
+
+function buildLocationSummary(form) {
+  return [
+    form.county,
+    form.stateCode,
+    form.postalCode,
+  ].filter(Boolean).join(', ')
+}
+
+function buildPartnerGuidedChoices({ client, form, sources }) {
+  const businessName = client?.business_name || 'your business'
+  const rawCategory = [
+    form.businessSubtype,
+    form.businessCategory,
+    client?.business_type,
+    client?.business_category,
+  ].filter(Boolean).join(' ')
+  const category = humanizeValue(form.businessSubtype || form.businessCategory || client?.business_type || '')
+  const locationSummary = buildLocationSummary(form)
+  const hasActiveSources = sources.some((source) => source.is_active)
+  const businessText = `${businessName} ${rawCategory} ${category}`.toLowerCase()
+  const isAutomation = /automation|consult|professional|service/i.test(businessText)
+  const isHomeService = /home|landscap|lawn|roof|plumb|hvac|clean|contract|remodel|repair/i.test(businessText)
+  const isFitness = /dance|fitness|gym|studio|class|coach|training/i.test(businessText)
+  const isRestaurant = /restaurant|cafe|food|bakery|bar|coffee/i.test(businessText)
+
+  const audienceOptions = uniqueChoices([
+    form.audienceSummary,
+    isAutomation ? 'Solo owners and lean small-business teams' : '',
+    isAutomation ? 'Local service businesses that need faster follow-up' : '',
+    isHomeService ? 'Local homeowners who need reliable service' : '',
+    isHomeService ? 'Existing customers who need seasonal reminders' : '',
+    isFitness ? 'Families and adults looking for classes or coaching' : '',
+    isFitness ? 'Current students, members, and parents' : '',
+    isRestaurant ? 'Local regulars and nearby first-time visitors' : '',
+    'Current customers who already trust the business',
+    'People comparing options and looking for a clear next step',
+    'Referral partners and community contacts',
+  ], 5)
+
+  const offerOptions = uniqueChoices([
+    ...textToList(form.offerFocusText),
+    isAutomation ? 'One place for customer messages' : '',
+    isAutomation ? 'Social posts and content ideas handled with MAP support' : '',
+    isAutomation ? 'Customer portal tools that reduce daily admin work' : '',
+    isHomeService ? 'Recent project wins and before-and-after work' : '',
+    isHomeService ? 'Seasonal maintenance reminders' : '',
+    isFitness ? 'Class openings, trial offers, and registration reminders' : '',
+    isFitness ? 'Student, member, or customer wins' : '',
+    isRestaurant ? 'Menu highlights, specials, and timely reminders' : '',
+    hasActiveSources ? 'Ideas from approved research sources' : '',
+    category ? `${category} services` : '',
+    'A simple next step to contact or book',
+    'Seasonal reminders and timely updates',
+  ], 6)
+
+  const guardrailOptions = uniqueChoices([
+    ...textToList(form.blockedTopicsText),
+    'Avoid unsupported guarantees',
+    'Avoid sounding like a large corporate agency',
+    'Avoid outdated services, stale offers, or sold-out availability',
+    'Keep claims practical and easy to prove',
+    'Do not overpromise response times or results',
+  ], 6)
+
+  const reachOptions = [
+    {
+      label: 'Local customers nearby',
+      detail: locationSummary ? `Use ${locationSummary} as the local context.` : 'Use nearby customers and local community context.',
+      updates: { businessReach: 'local', serviceArea: form.serviceArea || locationSummary },
+      active: form.businessReach === 'local',
+    },
+    {
+      label: 'Regional customers',
+      detail: 'Write for a wider service area without sounding national.',
+      updates: { businessReach: 'local', serviceArea: form.serviceArea || locationSummary || 'Regional service area' },
+      active: form.businessReach === 'local' && /regional/i.test(form.serviceArea),
+    },
+    {
+      label: 'Online or national customers',
+      detail: 'Focus less on geography and more on the problem the customer needs solved.',
+      updates: { businessReach: 'national_global', serviceArea: form.serviceArea || 'Online / national' },
+      active: form.businessReach === 'national_global',
+    },
+  ]
+
+  return {
+    audienceOptions,
+    offerOptions,
+    guardrailOptions,
+    reachOptions,
+  }
 }
 
 function buildPartnerProfileForm(client, researchProfile) {
@@ -924,6 +1071,56 @@ function ProofChip({ children, onClick, title }) {
   )
 }
 
+function GuidedChoiceGroup({
+  eyebrow,
+  title,
+  description,
+  options,
+  isSelected,
+  onChoose,
+  mode = 'single',
+  required = false,
+}) {
+  if (!options.length) return null
+
+  return (
+    <section className="assistant-guided-card">
+      <div className="assistant-guided-card-head">
+        <div className="assistant-guided-card-meta">
+          <p className="assistant-training-kicker">{eyebrow}</p>
+          {required ? <span>Required</span> : null}
+        </div>
+        <h4>{title}</h4>
+        <p>{description}</p>
+      </div>
+      <div className="assistant-choice-list" data-mode={mode}>
+        {options.map((option) => {
+          const value = typeof option === 'string' ? option : option.label
+          const detail = typeof option === 'string' ? '' : option.detail
+          const selected = isSelected(option)
+          return (
+            <button
+              key={value}
+              type="button"
+              className="assistant-choice-button"
+              data-active={selected}
+              onClick={() => onChoose(option)}
+            >
+              <span className="assistant-choice-check" aria-hidden="true">
+                {selected ? <CheckCircle2 className="h-4 w-4" /> : null}
+              </span>
+              <span>
+                <strong>{value}</strong>
+                {detail ? <small>{detail}</small> : null}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 function TrainPartnerModal({
   client,
   form,
@@ -948,22 +1145,29 @@ function TrainPartnerModal({
   onSave,
   onToggleSource,
   onDeleteSource,
+  isRequired,
+  isStartingRecommendations,
+  recommendationStatus,
 }) {
   const brandColors = normalizeBrandColors(client?.brand_colors)
   const offerPreview = textToPreviewList(form.offerFocusText)
   const avoidPreview = textToPreviewList(form.blockedTopicsText)
   const sourceCount = sources.filter((source) => source.is_active).length
+  const guidedChoices = buildPartnerGuidedChoices({ client, form, sources })
+  const requiredComplete = hasRequiredPartnerTraining(form)
   const verifiedLabel = trainingStatus?.isVerified
     ? `Verified ${formatVerifiedDate(trainingStatus.verifiedAt)}`
     : 'Not verified yet'
-  const statusDetail = trainingStatus?.isVerified
+  const statusDetail = isRequired
+    ? 'Answer the two required choices below so MAP can build stronger first recommendations.'
+    : trainingStatus?.isVerified
     ? trainingStatus.isStale
       ? `It has been ${trainingStatus.ageDays} days. Review it so future posts, campaigns, and images stay current.`
       : 'Your Partner is using confirmed business context.'
     : 'Review what MAP found and verify it once it looks right.'
 
   return createPortal(
-    <div className="assistant-train-overlay" role="presentation" onMouseDown={onClose}>
+    <div className="assistant-train-overlay" role="presentation" onMouseDown={isRequired ? undefined : onClose}>
       <div
         className="assistant-train-dialog"
         role="dialog"
@@ -980,15 +1184,19 @@ function TrainPartnerModal({
               Train your Partner
             </p>
             <h2 id="assistant-train-title" className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-              Bring your Partner up to speed
+              {isRequired ? 'Set up your Publisher recommendations' : 'Bring your Partner up to speed'}
             </h2>
             <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-              MAP uses this confirmed profile to write sharper posts, build campaigns, and create better images.
+              {isRequired
+                ? 'Pick two quick answers. MAP will use them with your website and business profile before creating AI post recommendations.'
+                : 'MAP uses this confirmed profile to write sharper posts, build campaigns, and create better images.'}
             </p>
           </div>
-          <button type="button" className="assistant-train-close" onClick={onClose} aria-label="Close">
-            <X className="h-4 w-4" />
-          </button>
+          {isRequired ? null : (
+            <button type="button" className="assistant-train-close" onClick={onClose} aria-label="Close">
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         <div className="assistant-train-body">
@@ -1005,12 +1213,17 @@ function TrainPartnerModal({
                   type="button"
                   className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold"
                   onClick={onVerify}
-                  disabled={isVerifying || isSavingProfile}
+                  disabled={isVerifying || isSavingProfile || isStartingRecommendations || (isRequired && !requiredComplete)}
                 >
-                  {isVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Verify training
+                  {isVerifying || isStartingRecommendations ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  {isRequired ? 'Verify and build recommendations' : 'Verify training'}
                 </button>
               </div>
+              {isRequired && !requiredComplete ? (
+                <p className="assistant-training-required-note">
+                  Choose one customer focus and at least one item to promote before Publisher recommendations start.
+                </p>
+              ) : null}
             </div>
 
             <div className="assistant-training-card-grid">
@@ -1040,7 +1253,7 @@ function TrainPartnerModal({
 
               <article className="assistant-training-card">
                 <p className="assistant-training-kicker">Business focus</p>
-                <h4>{form.businessSubtype || form.businessCategory || 'Confirm your main offering'}</h4>
+                <h4>{humanizeValue(form.businessSubtype || form.businessCategory) || 'Confirm your main offering'}</h4>
                 <p>{form.audienceSummary || 'Add the customer type your Partner should write for most often.'}</p>
                 <p className="assistant-training-muted">{form.serviceArea || 'Service area not set yet.'}</p>
               </article>
@@ -1070,14 +1283,90 @@ function TrainPartnerModal({
             </div>
           </section>
 
+          <section className="assistant-guided-training">
+            <div className="assistant-guided-intro">
+              <div>
+                <p className="assistant-training-kicker">Guided setup</p>
+                <h3>Choose what fits. Skip what does not.</h3>
+                <p>
+                  These choices are built from your website, saved profile, and research sources. They become more specific as your Partner learns.
+                </p>
+              </div>
+              <span>{sourceCount} active source{sourceCount === 1 ? '' : 's'}</span>
+            </div>
+
+            <div className="assistant-guided-grid">
+              <GuidedChoiceGroup
+                eyebrow="Customer focus"
+                title="Who should MAP write for most often?"
+                description="Pick the audience that should shape post ideas, captions, and images."
+                options={guidedChoices.audienceOptions}
+                isSelected={(option) => normalizeChoice(form.audienceSummary) === normalizeChoice(option)}
+                onChoose={(option) => onFormChange('audienceSummary', option)}
+                required
+              />
+
+              <GuidedChoiceGroup
+                eyebrow="Service area"
+                title="Where should the message feel relevant?"
+                description="This keeps posts from sounding too broad or too local."
+                options={guidedChoices.reachOptions}
+                isSelected={(option) => option.active}
+                onChoose={(option) => {
+                  Object.entries(option.updates).forEach(([field, value]) => onFormChange(field, value))
+                }}
+              />
+
+              <GuidedChoiceGroup
+                eyebrow="Promote more"
+                title="What should your Partner bring up more often?"
+                description="Choose several. MAP will use these as recurring content angles."
+                mode="multi"
+                options={guidedChoices.offerOptions}
+                isSelected={(option) => listContainsValue(form.offerFocusText, option)}
+                onChoose={(option) => onFormChange('offerFocusText', toggleTextListValue(form.offerFocusText, option))}
+                required
+              />
+
+              <GuidedChoiceGroup
+                eyebrow="Guardrails"
+                title="What should your Partner avoid?"
+                description="Choose several. These reduce generic, risky, or outdated suggestions."
+                mode="multi"
+                options={guidedChoices.guardrailOptions}
+                isSelected={(option) => listContainsValue(form.blockedTopicsText, option)}
+                onChoose={(option) => onFormChange('blockedTopicsText', toggleTextListValue(form.blockedTopicsText, option))}
+              />
+
+              <section className="assistant-guided-card assistant-guided-card-note">
+                <div className="assistant-guided-card-head">
+                  <p className="assistant-training-kicker">As MAP learns</p>
+                  <h4>These choices will get sharper.</h4>
+                  <p>
+                    Website details, saved sources, approved posts, edits, and rejected ideas should make future prompts more specific to this business.
+                  </p>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <details className="assistant-profile-advanced">
+            <summary>
+              <span>
+                <PencilLine className="h-4 w-4" />
+                Fine-tune exact details
+              </span>
+              <small>Optional</small>
+            </summary>
+
           <form className="assistant-profile-form" onSubmit={onSaveProfile}>
             <div className="assistant-profile-section">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                  Confirm or correct
+                  Advanced edits
                 </p>
                 <p className="mt-1 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                  Your Partner works best when these notes match how your business looks right now.
+                  Use this only when the choices above miss something important.
                 </p>
               </div>
               <div className="assistant-profile-grid">
@@ -1149,9 +1438,9 @@ function TrainPartnerModal({
               </div>
             </div>
 
-            {(error || notice) && (
+            {(error || notice || recommendationStatus) && (
               <div className="assistant-train-message" data-tone={error ? 'error' : 'success'}>
-                {error || notice}
+                {error || notice || recommendationStatus}
               </div>
             )}
 
@@ -1160,6 +1449,16 @@ function TrainPartnerModal({
               Save Partner profile
             </button>
           </form>
+          </details>
+
+          <details className="assistant-profile-advanced">
+            <summary>
+              <span>
+                <Link2 className="h-4 w-4" />
+                Add exact research sources
+              </span>
+              <small>Optional</small>
+            </summary>
 
           <div className="assistant-train-grid">
           <form className="assistant-train-form" onSubmit={onSave}>
@@ -1247,6 +1546,7 @@ function TrainPartnerModal({
             </div>
           </div>
           </div>
+          </details>
         </div>
       </div>
     </div>,
@@ -1314,6 +1614,8 @@ export default function ContentCalendar() {
   const [sourceType, setSourceType] = useState('local_event_calendar')
   const [sourceError, setSourceError] = useState('')
   const [sourceNotice, setSourceNotice] = useState('')
+  const [recommendationStatus, setRecommendationStatus] = useState('')
+  const [isStartingRecommendations, setIsStartingRecommendations] = useState(false)
   const [busySourceId, setBusySourceId] = useState('')
   const [partnerProfileForm, setPartnerProfileForm] = useState(() => buildPartnerProfileForm(null, null))
   const [hoverPreview, setHoverPreview] = useState(null)
@@ -1361,12 +1663,6 @@ export default function ContentCalendar() {
     enabled: !!clientId,
   })
 
-  const { data: opportunities = [], isLoading: radarLoading, refetch: refetchRadar, isRefetching: isRefetchingRadar } = useQuery({
-    queryKey: ['opportunity-radar', clientId],
-    queryFn: () => fetchOpportunityRadar(clientId),
-    enabled: !!clientId,
-  })
-
   const { data: researchSources = [], isLoading: researchSourcesLoading } = useQuery({
     queryKey: ['research-sources', clientId],
     queryFn: () => fetchResearchSources(clientId),
@@ -1380,6 +1676,13 @@ export default function ContentCalendar() {
   })
 
   const trainingStatus = useMemo(() => getPartnerTrainingStatus(researchProfile), [researchProfile])
+  const trainingIsRequired = !trainingStatus.isVerified
+
+  const { data: opportunities = [], isLoading: radarLoading, refetch: refetchRadar, isRefetching: isRefetchingRadar } = useQuery({
+    queryKey: ['opportunity-radar', clientId],
+    queryFn: () => fetchOpportunityRadar(clientId),
+    enabled: !!clientId && trainingStatus.isVerified,
+  })
 
   const launchBoost = useMutation({
     mutationFn: launchPostBoost,
@@ -1813,12 +2116,40 @@ export default function ContentCalendar() {
     onSuccess: async (savedProfile) => {
       if (!savedProfile) return
       setSourceError('')
-      setSourceNotice(`Partner training verified. MAP will remind you again in about ${PARTNER_TRAINING_REFRESH_DAYS} days.`)
+      setRecommendationStatus('')
+      const wasFirstVerification = !trainingStatus.isVerified
+      setSourceNotice(wasFirstVerification
+        ? 'Training verified. Building your first recommendations now.'
+        : `Partner training verified. MAP will remind you again in about ${PARTNER_TRAINING_REFRESH_DAYS} days.`)
       setTrainingPromptOpen(false)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['profile'] }),
         queryClient.invalidateQueries({ queryKey: ['research-profile', clientId] }),
       ])
+      if (!wasFirstVerification) return
+
+      try {
+        setIsStartingRecommendations(true)
+        setRecommendationStatus('MAP is researching your business and building better first post ideas.')
+        await startOpportunityRadar({
+          client_id: clientId,
+          mode: 'monthly_foundation',
+          max_results: 5,
+          firecrawl_limit: 2,
+          trigger: 'partner_training_verified',
+        })
+        await queryClient.invalidateQueries({ queryKey: ['opportunity-radar', clientId] })
+        await refetchRadar()
+        setRecommendationStatus('First recommendations are ready to review in Publisher.')
+        setTrainAssistantOpen(false)
+      } catch (error) {
+        const alreadyRunning = error?.status === 409 || /already in progress/i.test(error?.message || '')
+        setRecommendationStatus(alreadyRunning
+          ? 'Training is verified. Recommendations are already being built and will appear shortly.'
+          : 'Training is verified. Recommendations did not start automatically; use Refresh in a moment or run Radar again.')
+      } finally {
+        setIsStartingRecommendations(false)
+      }
     },
     onError: (error) => {
       setSourceNotice('')
@@ -1830,6 +2161,7 @@ export default function ContentCalendar() {
     event.preventDefault()
     setSourceError('')
     setSourceNotice('')
+    setRecommendationStatus('')
     createSource.mutate()
   }
 
@@ -1837,12 +2169,14 @@ export default function ContentCalendar() {
     event.preventDefault()
     setSourceError('')
     setSourceNotice('')
+    setRecommendationStatus('')
     savePartnerProfile.mutate()
   }
 
   function handleVerifyPartnerTraining() {
     setSourceError('')
     setSourceNotice('')
+    setRecommendationStatus('')
     verifyPartnerTraining.mutate()
   }
 
@@ -2137,8 +2471,13 @@ export default function ContentCalendar() {
   useEffect(() => {
     if (isLoading || !clientId || !trainingStatus.shouldPrompt || trainingPromptShownRef.current) return
     trainingPromptShownRef.current = true
+    if (!trainingStatus.isVerified) {
+      setTrainingPromptOpen(false)
+      setTrainAssistantOpen(true)
+      return
+    }
     setTrainingPromptOpen(true)
-  }, [clientId, isLoading, trainingStatus.shouldPrompt])
+  }, [clientId, isLoading, trainingStatus.isVerified, trainingStatus.shouldPrompt])
 
   if (isLoading) {
     return (
@@ -2550,10 +2889,16 @@ export default function ContentCalendar() {
           isSaving={createSource.isPending}
           isSavingProfile={savePartnerProfile.isPending}
           isVerifying={verifyPartnerTraining.isPending}
+          isRequired={trainingIsRequired}
+          isStartingRecommendations={isStartingRecommendations}
+          recommendationStatus={recommendationStatus}
           busySourceId={busySourceId}
           error={sourceError}
           notice={sourceNotice}
-          onClose={() => setTrainAssistantOpen(false)}
+          onClose={() => {
+            if (trainingIsRequired) return
+            setTrainAssistantOpen(false)
+          }}
           onFormChange={(field, value) => setPartnerProfileForm((current) => ({ ...current, [field]: value }))}
           onSaveProfile={handleSavePartnerProfile}
           onVerify={handleVerifyPartnerTraining}

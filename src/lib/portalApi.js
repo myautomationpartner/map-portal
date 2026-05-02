@@ -872,6 +872,10 @@ export async function generatePublisherAssist(input) {
   return callEdgeFunction('portal-ai-assist', input)
 }
 
+export async function startOpportunityRadar(input) {
+  return callEdgeFunction('opportunity-radar-run', input)
+}
+
 export async function resolveShareLink(token) {
   return callEdgeFunction('resolve-share-link', { token }, { public: true })
 }

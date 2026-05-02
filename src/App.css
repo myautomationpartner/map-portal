@@ -1736,6 +1736,210 @@
   margin-top: 1rem;
 }
 
+.assistant-guided-training {
+  display: grid;
+  gap: 0.9rem;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: var(--portal-radius-lg);
+  background:
+    linear-gradient(135deg, rgba(56, 189, 248, 0.1), rgba(152, 140, 255, 0.05)),
+    rgba(255, 255, 255, 0.68);
+  padding: 1rem;
+}
+
+.assistant-guided-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.assistant-guided-intro h3,
+.assistant-guided-card h4 {
+  margin: 0;
+  color: var(--portal-text);
+  letter-spacing: 0;
+}
+
+.assistant-guided-intro h3 {
+  font-size: 1.18rem;
+  font-weight: 950;
+}
+
+.assistant-guided-intro p,
+.assistant-guided-card p {
+  margin: 0.32rem 0 0;
+  color: var(--portal-text-muted);
+  line-height: 1.5;
+}
+
+.assistant-guided-intro > span {
+  flex: 0 0 auto;
+  border: 1px solid rgba(56, 189, 248, 0.24);
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--portal-primary-strong);
+  padding: 0.42rem 0.7rem;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.assistant-guided-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.assistant-guided-card {
+  display: grid;
+  align-content: start;
+  gap: 0.78rem;
+  border: 1px solid var(--portal-border);
+  border-radius: var(--portal-radius-lg);
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0.95rem;
+}
+
+.assistant-guided-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.assistant-guided-card-meta > span,
+.assistant-training-required-note {
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--portal-primary-strong);
+  font-size: 0.68rem;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.assistant-guided-card-meta > span {
+  flex: 0 0 auto;
+  padding: 0.24rem 0.55rem;
+}
+
+.assistant-training-required-note {
+  grid-column: 1 / -1;
+  margin: 0.65rem 0 0;
+  padding: 0.55rem 0.75rem;
+  line-height: 1.35;
+}
+
+.assistant-guided-card-head h4 {
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.assistant-choice-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.assistant-choice-list[data-mode="multi"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.assistant-choice-button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: 3.1rem;
+  border: 1px solid rgba(20, 19, 16, 0.12);
+  border-radius: var(--portal-radius-md);
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--portal-text);
+  padding: 0.72rem;
+  text-align: left;
+  transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.assistant-choice-button:hover,
+.assistant-choice-button:focus-visible,
+.assistant-choice-button[data-active="true"] {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.12);
+  outline: none;
+}
+
+.assistant-choice-button:hover {
+  transform: translateY(-1px);
+}
+
+.assistant-choice-check {
+  display: inline-flex;
+  width: 1.35rem;
+  height: 1.35rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 999px;
+  color: var(--portal-primary-strong);
+}
+
+.assistant-choice-button strong {
+  display: block;
+  color: inherit;
+  font-size: 0.84rem;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.assistant-choice-button small {
+  display: block;
+  margin-top: 0.18rem;
+  color: var(--portal-text-soft);
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.assistant-profile-advanced {
+  border: 1px solid var(--portal-border);
+  border-radius: var(--portal-radius-lg);
+  background: rgba(255, 255, 255, 0.54);
+  overflow: hidden;
+}
+
+.assistant-profile-advanced summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  padding: 0.95rem 1rem;
+  color: var(--portal-text);
+  font-size: 0.92rem;
+  font-weight: 900;
+  list-style: none;
+}
+
+.assistant-profile-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.assistant-profile-advanced summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.assistant-profile-advanced summary small {
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--portal-primary-strong);
+  padding: 0.24rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .assistant-source-empty {
   border: 1px dashed rgba(20, 19, 16, 0.16);
   border-radius: var(--portal-radius-md);
@@ -3797,6 +4001,14 @@
     justify-content: flex-start;
   }
 
+  .assistant-guided-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .assistant-choice-list[data-mode="multi"] {
+    grid-template-columns: 1fr;
+  }
+
   .campaign-library-layout,
   .campaign-create-layout,
   .campaign-board {
@@ -3867,6 +4079,10 @@
 
   .assistant-training-prompt-actions button {
     width: 100%;
+  }
+
+  .assistant-guided-intro {
+    flex-direction: column;
   }
 
   .campaign-partner-topbar,
@@ -5033,6 +5249,9 @@ html[data-portal-theme="map-dark"] .assistant-train-close:focus-visible {
 html[data-portal-theme="map-dark"] .assistant-profile-form,
 html[data-portal-theme="map-dark"] .assistant-train-form,
 html[data-portal-theme="map-dark"] .assistant-train-sources,
+html[data-portal-theme="map-dark"] .assistant-guided-training,
+html[data-portal-theme="map-dark"] .assistant-guided-card,
+html[data-portal-theme="map-dark"] .assistant-profile-advanced,
 html[data-portal-theme="map-dark"] .assistant-training-status,
 html[data-portal-theme="map-dark"] .assistant-training-card,
 html[data-portal-theme="map-dark"] .assistant-training-prompt {
@@ -5053,12 +5272,16 @@ html[data-portal-theme="map-dark"] .assistant-training-status[data-state="due"] 
 
 html[data-portal-theme="map-dark"] .assistant-training-status h3,
 html[data-portal-theme="map-dark"] .assistant-training-card h4,
+html[data-portal-theme="map-dark"] .assistant-guided-intro h3,
+html[data-portal-theme="map-dark"] .assistant-guided-card h4,
 html[data-portal-theme="map-dark"] .assistant-training-prompt h2 {
   color: var(--portal-text) !important;
 }
 
 html[data-portal-theme="map-dark"] .assistant-training-status p,
 html[data-portal-theme="map-dark"] .assistant-training-card p,
+html[data-portal-theme="map-dark"] .assistant-guided-intro p,
+html[data-portal-theme="map-dark"] .assistant-guided-card p,
 html[data-portal-theme="map-dark"] .assistant-training-prompt p,
 html[data-portal-theme="map-dark"] .assistant-training-status-actions span {
   color: var(--portal-text-muted) !important;
@@ -5069,11 +5292,43 @@ html[data-portal-theme="map-dark"] .assistant-training-kicker {
 }
 
 html[data-portal-theme="map-dark"] .assistant-training-card li,
+html[data-portal-theme="map-dark"] .assistant-choice-button,
 html[data-portal-theme="map-dark"] .assistant-brand-found img,
 html[data-portal-theme="map-dark"] .assistant-brand-placeholder {
   border-color: rgba(112, 228, 255, 0.2) !important;
   background: rgba(112, 228, 255, 0.095) !important;
   color: var(--map-brand-cyan) !important;
+}
+
+html[data-portal-theme="map-dark"] .assistant-choice-button {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018)),
+    rgba(5, 9, 18, 0.72) !important;
+  color: var(--portal-text) !important;
+}
+
+html[data-portal-theme="map-dark"] .assistant-choice-button:hover,
+html[data-portal-theme="map-dark"] .assistant-choice-button:focus-visible,
+html[data-portal-theme="map-dark"] .assistant-choice-button[data-active="true"] {
+  border-color: rgba(112, 228, 255, 0.42) !important;
+  background:
+    linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(152, 140, 255, 0.08)),
+    rgba(8, 14, 26, 0.88) !important;
+}
+
+html[data-portal-theme="map-dark"] .assistant-choice-check,
+html[data-portal-theme="map-dark"] .assistant-guided-intro > span,
+html[data-portal-theme="map-dark"] .assistant-profile-advanced summary small,
+html[data-portal-theme="map-dark"] .assistant-guided-card-meta > span,
+html[data-portal-theme="map-dark"] .assistant-training-required-note {
+  border-color: rgba(112, 228, 255, 0.3) !important;
+  background: rgba(112, 228, 255, 0.12) !important;
+  color: var(--map-brand-cyan) !important;
+}
+
+html[data-portal-theme="map-dark"] .assistant-choice-button small,
+html[data-portal-theme="map-dark"] .assistant-profile-advanced summary {
+  color: var(--portal-text-muted) !important;
 }
 
 html[data-portal-theme="map-dark"] .assistant-color-row span {
