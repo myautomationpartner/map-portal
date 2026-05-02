@@ -3045,7 +3045,8 @@
   border-radius: 0.65rem !important;
 }
 
-.create-post-creative-panel img {
+.create-post-creative-panel img,
+.create-post-creative-panel video {
   max-height: clamp(360px, 38vh, 560px) !important;
 }
 
@@ -3060,12 +3061,14 @@
     rgba(245, 240, 235, 0.78);
 }
 
-.create-post-media-stage > img {
+.create-post-media-stage > img,
+.create-post-media-stage > video {
   display: block;
   width: 100%;
   height: clamp(360px, 38vh, 560px);
   object-fit: contain;
   object-position: center;
+  background: rgba(4, 8, 16, 0.72);
 }
 
 .create-post-ai-mode-panel {
@@ -3217,10 +3220,26 @@
   box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.16), 0 12px 24px rgba(26, 24, 20, 0.1);
 }
 
-.create-post-media-thumb img {
+.create-post-media-thumb img,
+.create-post-media-thumb video {
   height: 100%;
   width: 100%;
   object-fit: cover;
+}
+
+.create-post-media-thumb-video {
+  position: absolute;
+  left: 0.35rem;
+  top: 0.35rem;
+  display: inline-flex;
+  height: 1.35rem;
+  width: 1.35rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(10, 15, 27, 0.72);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(20, 19, 16, 0.18);
 }
 
 .create-post-media-thumb span {
@@ -3546,7 +3565,8 @@
   background: rgba(245, 240, 235, 0.62);
 }
 
-.platform-preview-media img {
+.platform-preview-media img,
+.platform-preview-media video {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -3587,11 +3607,27 @@
   grid-row: 1 / span 2;
 }
 
-.platform-preview-gallery img {
+.platform-preview-gallery img,
+.platform-preview-gallery video {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.platform-preview-video-badge {
+  position: absolute;
+  left: 0.5rem;
+  top: 0.5rem;
+  display: inline-flex;
+  height: 1.5rem;
+  width: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(10, 15, 27, 0.72);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(20, 19, 16, 0.18);
 }
 
 .platform-preview-gallery figcaption {

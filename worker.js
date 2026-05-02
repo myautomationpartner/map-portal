@@ -2163,6 +2163,35 @@ function jsonArray(value) {
   }
 }
 
+function inferSocialMediaType(asset = {}) {
+  const explicit = String(asset.mediaType || asset.media_type || '').toLowerCase()
+  if (explicit === 'video' || explicit === 'image') return explicit
+  const typeField = String(asset.type || '').toLowerCase()
+  if (typeField === 'video' || typeField === 'image') return typeField
+
+  const contentType = String(
+    asset.contentType
+    || asset.content_type
+    || asset.mimeType
+    || asset.mime_type
+    || asset.file_type
+    || '',
+  ).toLowerCase()
+  if (contentType.startsWith('video/')) return 'video'
+  if (contentType.startsWith('image/')) return 'image'
+
+  const raw = firstString(asset.url, asset.link, asset.download_url, asset.file_url, asset.data_url, asset.name, asset.fileName, asset.filename)
+  const path = (() => {
+    try {
+      return new URL(raw).pathname
+    } catch {
+      return raw
+    }
+  })()
+  if (/\.(mp4|m4v|mov|webm)(?:$|[?#])/i.test(path)) return 'video'
+  return 'image'
+}
+
 function extractReviewMediaAssets(draft) {
   const reviewNotes = parseJsonObject(draft?.review_notes)
   const requirements = jsonArray(draft?.asset_requirements_json)
@@ -2178,6 +2207,8 @@ function extractReviewMediaAssets(draft) {
       name: firstString(asset.name, asset.fileName, asset.filename, asset.suggestion, 'Attached media'),
       thumbnail: firstString(asset.thumbnail, asset.thumb_url, asset.previewUrl),
       contentType: firstString(asset.contentType, asset.content_type, asset.file_type),
+      mimeType: firstString(asset.mimeType, asset.mime_type, asset.contentType, asset.content_type, asset.file_type),
+      mediaType: inferSocialMediaType(asset),
     })
   }
 
@@ -2264,7 +2295,9 @@ function renderQuickReviewPage(env, context) {
   )).join('')
   const firstMedia = context.mediaAssets[0]
   const mediaHtml = firstMedia?.url
-    ? `<img class="media" src="${escapeHtml(firstMedia.thumbnail || firstMedia.url)}" alt="${escapeHtml(firstMedia.name || 'Selected media')}">`
+    ? firstMedia.mediaType === 'video'
+      ? `<video class="media" src="${escapeHtml(firstMedia.url)}" controls muted playsinline preload="metadata"></video>`
+      : `<img class="media" src="${escapeHtml(firstMedia.thumbnail || firstMedia.url)}" alt="${escapeHtml(firstMedia.name || 'Selected media')}">`
     : `<img class="preview" src="${escapeHtml(previewUrl)}" alt="Publisher draft preview">`
 
   return `<!doctype html>

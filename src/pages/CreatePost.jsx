@@ -33,7 +33,7 @@ import {
 import {
   AlertCircle, ArrowUpRight, Calendar, CalendarDays, Check, CheckCircle2,
   ChevronLeft, ChevronRight, Clock3, History, Images, Loader2,
-  Send, Sparkles, UploadCloud, Wand2, X,
+  Play, Send, Sparkles, UploadCloud, Video, Wand2, X,
   Trash2,
 } from 'lucide-react'
 import { FaMicrosoft } from 'react-icons/fa'
@@ -156,8 +156,88 @@ const SLOT_STATE_STYLES = {
   },
 }
 
+const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|webp|gif|bmp|avif|heic|heif)$/i
+const VIDEO_EXTENSION_PATTERN = /\.(mp4|m4v|mov|webm)$/i
+const LOCAL_MEDIA_ACCEPT = 'image/*,video/mp4,video/quicktime,video/webm,video/x-m4v'
+
 function isImageAttachment(file) {
-  return /\.(png|jpe?g|webp|gif|bmp|avif|heic|heif)$/i.test(file?.name || '')
+  return IMAGE_EXTENSION_PATTERN.test(file?.name || '')
+}
+
+function isVideoAttachment(file) {
+  return VIDEO_EXTENSION_PATTERN.test(file?.name || '')
+}
+
+function isVideoMime(value) {
+  return /^video\//i.test(String(value || ''))
+}
+
+function isImageMime(value) {
+  return /^image\//i.test(String(value || ''))
+}
+
+function getExtensionFromUrl(value) {
+  const raw = String(value || '')
+  if (!raw) return ''
+  try {
+    const url = new URL(raw)
+    return url.pathname.split('.').pop()?.toLowerCase() || ''
+  } catch {
+    return raw.split('?')[0].split('#')[0].split('.').pop()?.toLowerCase() || ''
+  }
+}
+
+function inferMediaType(input = {}) {
+  const explicit = String(input.mediaType || input.media_type || '').toLowerCase()
+  if (explicit === 'video' || explicit === 'image') return explicit
+
+  const typeField = String(input.type || '').toLowerCase()
+  if (typeField === 'video' || typeField === 'image') return typeField
+
+  const mimeType = String(
+    input.mimeType
+    || input.mime_type
+    || input.contentType
+    || input.content_type
+    || input.file?.type
+    || '',
+  ).toLowerCase()
+  if (isVideoMime(mimeType)) return 'video'
+  if (isImageMime(mimeType)) return 'image'
+
+  const filename = String(input.name || input.fileName || input.filename || input.file?.name || '')
+  const url = String(input.url || input.link || input.previewUrl || input.preview_url || '')
+  if (VIDEO_EXTENSION_PATTERN.test(filename) || VIDEO_EXTENSION_PATTERN.test(url)) return 'video'
+  if (IMAGE_EXTENSION_PATTERN.test(filename) || IMAGE_EXTENSION_PATTERN.test(url)) return 'image'
+
+  const extension = getExtensionFromUrl(url)
+  if (['mp4', 'm4v', 'mov', 'webm'].includes(extension)) return 'video'
+  if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif', 'heic', 'heif', 'svg'].includes(extension)) return 'image'
+
+  return 'image'
+}
+
+function isSupportedLocalMedia(file) {
+  return isImageMime(file?.type) || isVideoMime(file?.type) || isImageAttachment(file) || isVideoAttachment(file)
+}
+
+function isSupportedExternalMedia(file) {
+  return isImageAttachment(file) || isVideoAttachment(file)
+}
+
+function getMediaLabel(mediaType = 'image') {
+  return mediaType === 'video' ? 'video' : 'image'
+}
+
+function getMediaMime(input = {}) {
+  return input.mimeType || input.mime_type || input.contentType || input.content_type || input.file?.type || ''
+}
+
+function createLocalPreviewUrl(file) {
+  if (isVideoMime(file?.type) || isVideoAttachment(file)) {
+    return URL.createObjectURL(file)
+  }
+  return readFileAsDataUrl(file)
 }
 
 function getDropboxRenderableImageUrl(link) {
@@ -177,9 +257,9 @@ function getDropboxRenderableImageUrl(link) {
 }
 
 function getDropboxPreviewSource(attachments) {
-  const imageAttachment = (attachments || []).find((file) => isImageAttachment(file))
-  if (!imageAttachment) return null
-  return getDropboxRenderableImageUrl(imageAttachment.link) || imageAttachment.thumbnail || null
+  const mediaAttachment = (attachments || []).find((file) => isSupportedExternalMedia(file))
+  if (!mediaAttachment) return null
+  return getDropboxRenderableImageUrl(mediaAttachment.link) || mediaAttachment.thumbnail || null
 }
 
 function getDropboxThumbSource(file) {
@@ -190,10 +270,17 @@ function getDropboxThumbSource(file) {
 function buildDropboxMediaItem(file, index = 0) {
   if (!file) return null
   const previewUrl = getDropboxRenderableImageUrl(file.link) || getDropboxThumbSource(file)
+  const mediaType = inferMediaType({
+    ...file,
+    url: file.link,
+    previewUrl,
+  })
   return {
     id: `dropbox:${file.link || file.name || index}`,
     type: 'dropbox',
-    name: file.name || `Dropbox image ${index + 1}`,
+    mediaType,
+    contentType: file.mimeType || file.contentType || '',
+    name: file.name || `Dropbox ${getMediaLabel(mediaType)} ${index + 1}`,
     previewUrl,
     thumbUrl: getDropboxThumbSource(file) || previewUrl,
     link: file.link,
@@ -203,10 +290,12 @@ function buildDropboxMediaItem(file, index = 0) {
 
 function buildExistingMediaItem(url) {
   if (!url) return null
+  const mediaType = inferMediaType({ url })
   return {
     id: `existing:${url}`,
     type: 'existing',
-    name: 'Current image',
+    mediaType,
+    name: `Current ${getMediaLabel(mediaType)}`,
     previewUrl: url,
     link: url,
   }
@@ -222,14 +311,17 @@ function buildPreviewMediaItems({ mediaItems = [], imagePreview = '', dropboxAtt
       id: item?.id || `media-${index}`,
       name: item?.name || `Creative ${index + 1}`,
       previewUrl: getPreviewSourceFromMediaItem(item),
+      mediaType: inferMediaType(item),
+      contentType: getMediaMime(item),
     }))
     .filter((item) => item.previewUrl)
 
   if (!selectedItems.length && imagePreview) {
     selectedItems.push({
       id: 'primary-preview',
-      name: 'Selected image',
+      name: 'Selected media',
       previewUrl: imagePreview,
+      mediaType: inferMediaType({ previewUrl: imagePreview }),
     })
   }
 
@@ -239,8 +331,13 @@ function buildPreviewMediaItems({ mediaItems = [], imagePreview = '', dropboxAtt
       if (previewUrl) {
         selectedItems.push({
           id: `dropbox-preview-${file.link || index}`,
-          name: file.name || `Dropbox image ${index + 1}`,
+          name: file.name || `Dropbox ${getMediaLabel(inferMediaType(file))} ${index + 1}`,
           previewUrl,
+          mediaType: inferMediaType({
+            ...file,
+            url: file.link,
+            previewUrl,
+          }),
         })
       }
     })
@@ -254,16 +351,39 @@ function buildPreviewMediaItems({ mediaItems = [], imagePreview = '', dropboxAtt
       id: `${selectedItems[replacementIndex].id}:platform-format`,
       name: `${selectedItems[replacementIndex].name} formatted`,
       previewUrl: platformImageUrl,
+      mediaType: 'image',
     }
   } else if (platformImageUrl) {
     selectedItems.push({
       id: 'platform-format',
       name: 'Platform formatted image',
       previewUrl: platformImageUrl,
+      mediaType: 'image',
     })
   }
 
   return selectedItems
+}
+
+function MediaPreviewAsset({ item, src, alt = '', className = '', controls = false }) {
+  const previewSrc = src || getPreviewSourceFromMediaItem(item)
+  if (!previewSrc) return null
+  const mediaType = inferMediaType(item || { previewUrl: previewSrc })
+
+  if (mediaType === 'video') {
+    return (
+      <video
+        src={previewSrc}
+        className={className}
+        controls={controls}
+        muted
+        playsInline
+        preload="metadata"
+      />
+    )
+  }
+
+  return <img src={previewSrc} alt={alt} className={className} />
 }
 
 function clampIndex(index, count) {
@@ -825,7 +945,9 @@ function PlatformPreview({
     activeMediaIndex,
   })
   const attachmentCount = mediaPreviews.length
-  const visualPreview = mediaPreviews[0]?.previewUrl || ''
+  const visualItem = mediaPreviews[0] || null
+  const visualPreview = visualItem?.previewUrl || ''
+  const hasVideo = mediaPreviews.some((item) => item.mediaType === 'video')
   const galleryItems = mediaPreviews.slice(0, 4)
   const extraMediaCount = Math.max(0, attachmentCount - galleryItems.length)
   const Icon = platform.Icon
@@ -871,7 +993,12 @@ function PlatformPreview({
           <div className="platform-preview-gallery" data-count={Math.min(galleryItems.length, 4)}>
             {galleryItems.map((item, index) => (
               <figure key={item.id || `${item.previewUrl}-${index}`}>
-                <img src={item.previewUrl} alt={`${platform.label} media ${index + 1}`} />
+                <MediaPreviewAsset item={item} alt={`${platform.label} media ${index + 1}`} />
+                {item.mediaType === 'video' && (
+                  <span className="platform-preview-video-badge">
+                    <Play className="h-3 w-3" />
+                  </span>
+                )}
                 {index === galleryItems.length - 1 && extraMediaCount > 0 && (
                   <figcaption>+{extraMediaCount}</figcaption>
                 )}
@@ -879,7 +1006,7 @@ function PlatformPreview({
             ))}
           </div>
         ) : visualPreview ? (
-          <img src={visualPreview} alt={`${platform.label} preview`} />
+          <MediaPreviewAsset item={visualItem} src={visualPreview} alt={`${platform.label} preview`} />
         ) : (
           <div>
             <Icon className="h-5 w-5" />
@@ -889,8 +1016,8 @@ function PlatformPreview({
         <span>{platformMeta.badge}</span>
         {attachmentCount > 1 && (
           <div className="platform-preview-media-count">
-            <Images className="h-3 w-3" />
-            {attachmentCount} photos
+            {hasVideo ? <Video className="h-3 w-3" /> : <Images className="h-3 w-3" />}
+            {attachmentCount} media
           </div>
         )}
       </div>
@@ -904,7 +1031,7 @@ function PlatformPreview({
 
       <footer className="platform-preview-footer">
         <span>{previewTime}</span>
-        <span>{attachmentCount > 1 ? `${attachmentCount} media assets` : rules.label || platform.label}</span>
+        <span>{attachmentCount > 1 ? `${attachmentCount} media assets` : hasVideo ? 'Video post' : rules.label || platform.label}</span>
       </footer>
     </div>
   )
@@ -1254,7 +1381,10 @@ export default function CreatePost() {
       items.push({
         id: 'image-preview',
         type: imageFile ? 'local' : 'generated',
-        name: imageFile?.name || 'Selected image',
+        mediaType: inferMediaType({ file: imageFile, previewUrl: imagePreview }),
+        contentType: imageFile?.type || '',
+        mimeType: imageFile?.type || '',
+        name: imageFile?.name || 'Selected media',
         previewUrl: imagePreview,
         file: imageFile,
       })
@@ -1273,7 +1403,9 @@ export default function CreatePost() {
     ? activeCreativeItem.previewUrl
     : getDropboxPreviewSource(dropboxAttachments)
   const mediaPreviewSource = activeCreativeItem?.previewUrl || imagePreview || existingMediaUrl
-  const canImproveImage = Boolean(clientId && mediaPreviewSource && !isSubmitting)
+  const activeCreativeMediaType = inferMediaType(activeCreativeItem || { file: imageFile, previewUrl: mediaPreviewSource })
+  const activeCreativeIsVideo = activeCreativeMediaType === 'video'
+  const canImproveImage = Boolean(clientId && mediaPreviewSource && !isSubmitting && !activeCreativeIsVideo)
   const selectedDaySlots = selectedDay ? (slotsByDate.get(selectedDay) || []) : []
   const selectableDaySlots = selectedDaySlots.filter((slot) => ['recommended_fill', 'occupied_draft'].includes(slot.state))
   const activeSlot = useMemo(() => {
@@ -1378,10 +1510,12 @@ export default function CreatePost() {
     const sourceMediaAssets = Array.isArray(meta.mediaAssets)
       ? meta.mediaAssets
         .map((asset, index) => ({
-          name: asset?.name || `Content Partner image ${index + 1}`,
+          name: asset?.name || `Content Partner media ${index + 1}`,
           link: asset?.url || asset?.link || '',
           thumbnail: asset?.thumbnail || asset?.previewUrl || asset?.url || '',
           size: Number(asset?.size || 0),
+          mediaType: inferMediaType(asset),
+          contentType: asset?.contentType || asset?.content_type || asset?.mimeType || asset?.mime_type || '',
           source: asset?.source || 'content_partner',
         }))
         .filter((asset) => asset.link)
@@ -1714,30 +1848,36 @@ export default function CreatePost() {
   async function handleFileChange(event) {
     const files = Array.from(event.target.files || [])
     if (!files.length) return
-    await addLocalImageFiles(files)
+    await addLocalMediaFiles(files)
     event.target.value = ''
   }
 
-  async function addLocalImageFiles(files, source = 'local') {
-    const imageFiles = files.filter((file) => file.type.startsWith('image/'))
-    if (!imageFiles.length) {
-      setErrorMsg('Only image files are supported.')
+  async function addLocalMediaFiles(files, source = 'local') {
+    const mediaFiles = files.filter((file) => isSupportedLocalMedia(file))
+    if (!mediaFiles.length) {
+      setErrorMsg('Choose an image or video file for post creative.')
       return
     }
 
-    if (imageFiles.length !== files.length) {
-      setErrorMsg('Some files were skipped because only image files are supported.')
+    if (mediaFiles.length !== files.length) {
+      setErrorMsg('Some files were skipped because they were not supported image or video files.')
     } else {
       setErrorMsg('')
     }
 
-    const items = await Promise.all(imageFiles.map(async (file, index) => ({
-      id: `${source}:${file.name}:${file.lastModified}:${index}:${Date.now()}`,
-      type: source === 'google' ? 'google' : 'local',
-      name: file.name || `Image ${index + 1}`,
-      file,
-      previewUrl: await readFileAsDataUrl(file),
-    })))
+    const items = await Promise.all(mediaFiles.map(async (file, index) => {
+      const mediaType = inferMediaType({ file })
+      return {
+        id: `${source}:${file.name}:${file.lastModified}:${index}:${Date.now()}`,
+        type: source === 'google' ? 'google' : 'local',
+        mediaType,
+        contentType: file.type || '',
+        mimeType: file.type || '',
+        name: file.name || `${mediaType === 'video' ? 'Video' : 'Image'} ${index + 1}`,
+        file,
+        previewUrl: await createLocalPreviewUrl(file),
+      }
+    }))
 
     setLocalImageItems(items)
     setImageFile(items[0]?.file || null)
@@ -1763,7 +1903,7 @@ export default function CreatePost() {
     try {
       const files = await openGoogleImagePicker()
       if (!files.length) return
-      await addLocalImageFiles(files, 'google')
+      await addLocalMediaFiles(files, 'google')
       setDraftStatus(`${files.length} Google image${files.length === 1 ? '' : 's'} added.`)
     } catch (error) {
       console.error('[GooglePicker]', error)
@@ -1784,9 +1924,9 @@ export default function CreatePost() {
         multiselect: true,
         linkType: 'preview',
       })
-      const imageFiles = selectedFiles.filter((file) => isImageAttachment(file))
-      if (!imageFiles.length) {
-        if (selectedFiles.length) setErrorMsg('Choose image files from Dropbox for post creative.')
+      const mediaFiles = selectedFiles.filter((file) => isSupportedExternalMedia(file))
+      if (!mediaFiles.length) {
+        if (selectedFiles.length) setErrorMsg('Choose image or video files from Dropbox for post creative.')
         return
       }
 
@@ -1794,12 +1934,12 @@ export default function CreatePost() {
         const existingLinks = new Set(previous.map((file) => file.link))
         return [
           ...previous,
-          ...imageFiles.filter((file) => file.link && !existingLinks.has(file.link)),
+          ...mediaFiles.filter((file) => file.link && !existingLinks.has(file.link)),
         ]
       })
       setMediaSlideIndex(creativeItems.length)
       clearPlatformImageVariants('')
-      setDraftStatus(`${imageFiles.length} Dropbox image${imageFiles.length === 1 ? '' : 's'} added.`)
+      setDraftStatus(`${mediaFiles.length} Dropbox media item${mediaFiles.length === 1 ? '' : 's'} added.`)
     } catch (error) {
       console.error('[DropboxChooser]', error)
       setErrorMsg(error.message || 'Could not open Dropbox chooser.')
@@ -2367,7 +2507,7 @@ export default function CreatePost() {
       body: formData,
     })
 
-    if (!response.ok) throw new Error('Image upload failed.')
+    if (!response.ok) throw new Error('Media upload failed.')
     const { publicUrl } = await response.json()
     return publicUrl
   }
@@ -2482,8 +2622,12 @@ export default function CreatePost() {
       if (localUploadItems.length) {
         setSubmitState('uploading')
         uploadedMedia = await Promise.all(localUploadItems.map(async (item) => ({
-          name: item.name || item.file?.name || 'Selected image',
+          name: item.name || item.file?.name || 'Selected media',
           source: item.type || 'computer',
+          mediaType: item.mediaType || inferMediaType(item),
+          contentType: item.contentType || item.mimeType || item.file?.type || '',
+          mimeType: item.mimeType || item.contentType || item.file?.type || '',
+          size: Number(item.file?.size || 0),
           url: await uploadToR2(item.file),
         })))
       }
@@ -2497,24 +2641,46 @@ export default function CreatePost() {
       const activeExistingUrl = activeCreativeItem?.type === 'existing' ? activeCreativeItem.link : null
       const dropboxMedia = dropboxAttachments
         .filter((file) => file.link)
-        .map(({ name, link, size, thumbnail }) => ({
-          name: name || 'Dropbox image',
-          link,
-          url: link,
-          size: size || 0,
-          thumbnail: thumbnail || null,
+        .map((file) => ({
+          name: file.name || 'Dropbox media',
+          link: file.link,
+          url: file.link,
+          size: file.size || 0,
+          thumbnail: file.thumbnail || null,
           source: 'dropbox',
+          mediaType: inferMediaType({
+            ...file,
+            url: file.link,
+            previewUrl: file.thumbnail,
+          }),
+          contentType: file.mimeType || file.contentType || '',
+          mimeType: file.mimeType || file.contentType || '',
         }))
       const uploadedMediaAssets = uploadedMedia.map((item) => ({
         name: item.name,
         link: item.url,
         url: item.url,
-        size: 0,
+        size: item.size || 0,
         source: item.source || 'computer',
+        mediaType: item.mediaType || inferMediaType(item),
+        contentType: item.contentType || item.mimeType || '',
+        mimeType: item.mimeType || item.contentType || '',
       }))
+      const existingMediaAssets = (activeExistingUrl || (!uploadedMediaAssets.length && !dropboxMedia.length && existingMediaUrl))
+        ? [{
+          name: `Current ${getMediaLabel(inferMediaType({ url: activeExistingUrl || existingMediaUrl }))}`,
+          link: activeExistingUrl || existingMediaUrl,
+          url: activeExistingUrl || existingMediaUrl,
+          source: 'existing',
+          mediaType: inferMediaType({ url: activeExistingUrl || existingMediaUrl }),
+          contentType: '',
+          mimeType: '',
+        }]
+        : []
       const mediaAssets = [
         ...uploadedMediaAssets,
         ...dropboxMedia,
+        ...existingMediaAssets,
       ]
       const mediaUrls = mediaAssets.map((item) => item.url).filter(Boolean)
       const effectiveMediaUrl = activeUploadedMedia?.url
@@ -2603,7 +2769,15 @@ export default function CreatePost() {
           mediaUrl: effectiveMediaUrl,
           mediaUrls,
           mediaAssets,
-          dropboxLinks: dropboxMedia.map(({ name, link, size, thumbnail }) => ({ name, link, size, thumbnail })),
+          dropboxLinks: dropboxMedia.map(({ name, link, size, thumbnail, mediaType, contentType, mimeType }) => ({
+            name,
+            link,
+            size,
+            thumbnail,
+            mediaType,
+            contentType,
+            mimeType,
+          })),
           platforms: targetPlatforms,
           scheduledFor: scheduledForIso,
         }),
@@ -3064,7 +3238,7 @@ export default function CreatePost() {
                   </h2>
                 </div>
                 <div className="rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: 'rgba(245,240,235,0.92)', color: imageGenerateState === 'generating' ? '#4058c9' : 'var(--portal-text-soft)' }}>
-                  {imageGenerateState === 'ready' ? 'Generated image attached' : imageGenerateState === 'generating' ? 'Working on it...' : 'Upload, generate, or choose'}
+                  {imageGenerateState === 'ready' ? 'Generated image attached' : imageGenerateState === 'generating' ? 'Working on it...' : activeCreativeIsVideo ? 'Video attached' : 'Upload, generate, or choose'}
                 </div>
               </div>
 
@@ -3161,7 +3335,13 @@ export default function CreatePost() {
               <div className="mt-3 overflow-hidden rounded-[24px]" style={{ border: '1px solid var(--portal-border)', background: 'rgba(255,255,255,0.78)' }}>
                 {mediaPreviewSource ? (
                   <div className="create-post-media-stage">
-                    <img src={mediaPreviewSource} alt={activeCreativeItem?.name || 'Upload preview'} className="w-full object-contain" />
+                    <MediaPreviewAsset
+                      item={activeCreativeItem || { previewUrl: mediaPreviewSource }}
+                      src={mediaPreviewSource}
+                      alt={activeCreativeItem?.name || 'Upload preview'}
+                      className="w-full object-contain"
+                      controls={activeCreativeIsVideo}
+                    />
                     {creativeItems.length > 1 && (
                       <>
                         <button
@@ -3170,7 +3350,7 @@ export default function CreatePost() {
                           disabled={isSubmitting}
                           className="create-post-media-arrow"
                           data-side="left"
-                          aria-label="Previous image"
+                          aria-label="Previous media"
                         >
                           <ChevronLeft className="h-5 w-5" />
                         </button>
@@ -3180,7 +3360,7 @@ export default function CreatePost() {
                           disabled={isSubmitting}
                           className="create-post-media-arrow"
                           data-side="right"
-                          aria-label="Next image"
+                          aria-label="Next media"
                         >
                           <ChevronRight className="h-5 w-5" />
                         </button>
@@ -3218,7 +3398,7 @@ export default function CreatePost() {
                         Add your main creative
                       </p>
                       <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
-                        Upload, generate with Partner, or grab one from a photo library.
+                        Upload a photo or video, generate with Partner, or grab media from a library.
                       </p>
                     </div>
                   </button>
@@ -3226,7 +3406,7 @@ export default function CreatePost() {
               </div>
 
               {creativeItems.length > 1 && (
-                <div className="create-post-media-strip" aria-label="Selected post images">
+                <div className="create-post-media-strip" aria-label="Selected post media">
                   {creativeItems.map((item, index) => (
                     <button
                       key={item.id || `${item.name}-${index}`}
@@ -3236,7 +3416,12 @@ export default function CreatePost() {
                       data-active={index === activeCreativeIndex}
                       title={item.name}
                     >
-                      <img src={item.thumbUrl || item.previewUrl} alt="" />
+                      <MediaPreviewAsset item={item} src={item.thumbUrl || item.previewUrl} alt="" />
+                      {item.mediaType === 'video' && (
+                        <i className="create-post-media-thumb-video">
+                          <Play className="h-3 w-3" />
+                        </i>
+                      )}
                       <span>{index + 1}</span>
                     </button>
                   ))}
@@ -3247,10 +3432,12 @@ export default function CreatePost() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                      Image tools
+                      Media tools
                     </p>
                     <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                      Improve the image, then format crops for the selected platforms.
+                      {activeCreativeIsVideo
+                        ? 'Videos publish as video media. Image cleanup and crop tools are available for photos.'
+                        : 'Improve the image, then format crops for the selected platforms.'}
                     </p>
                   </div>
                   <span className="rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: 'rgba(93,120,255,0.10)', color: '#4058c9' }}>
@@ -3304,8 +3491,10 @@ export default function CreatePost() {
                   <p className="partner-assist-note">Partner is improving the selected image...</p>
                 ) : imageFormatStatus ? (
                   <p className="partner-assist-note">{imageFormatStatus}</p>
-                ) : canImproveImage ? (
-                  <p className="partner-assist-note">JPG, PNG, and WebP work best. iPhone HEIC photos should be saved as JPG first.</p>
+	                ) : activeCreativeIsVideo ? (
+	                  <p className="partner-assist-note">Video is ready for publishing. Use MP4, MOV, or WebM for the most reliable social upload.</p>
+	                ) : canImproveImage ? (
+	                  <p className="partner-assist-note">JPG, PNG, and WebP work best. iPhone HEIC photos should be saved as JPG first.</p>
                 ) : (
                   <p className="partner-assist-note">Add or select an image to unlock image tools.</p>
                 )}
@@ -3363,7 +3552,7 @@ export default function CreatePost() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept={LOCAL_MEDIA_ACCEPT}
                 multiple
                 className="hidden"
                 onChange={handleFileChange}
@@ -3516,9 +3705,11 @@ export default function CreatePost() {
                           ? 'Partner is improving the selected image.'
                           : imageFormatState === 'formatting' && previewPlatform === id
                             ? `Creating a ${label} crop.`
-                            : platformImageVariants[id]
-                              ? `${label} crop applied.`
-                              : 'Actions use the selected main creative.'}
+	                            : platformImageVariants[id]
+	                              ? `${label} crop applied.`
+	                              : activeCreativeIsVideo
+	                                ? 'Video will publish as the selected main creative.'
+	                                : 'Actions use the selected main creative.'}
                       </p>
                     )}
                   </article>
