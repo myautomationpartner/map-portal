@@ -505,3 +505,34 @@ export function normalizePlannerBusinessType(value) {
   const normalized = String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
   return plannerBusinessTypeLabels[normalized] ? normalized : 'other_small_business'
 }
+
+function normalizeIndustrySlug(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+export function derivePlannerBusinessType({ businessType, businessSubtype, businessCategory } = {}) {
+  const normalizedType = normalizeIndustrySlug(businessType)
+  if (plannerBusinessTypeLabels[normalizedType]) return normalizedType
+
+  const normalizedSubtype = normalizeIndustrySlug(businessSubtype)
+  const normalizedCategory = normalizeIndustrySlug(businessCategory)
+  const subtypeCandidate = onboardingBusinessCategories
+    .flatMap((category) => category.options || [])
+    .find((option) => option.value === normalizedSubtype || option.value === normalizedType)
+  if (subtypeCandidate?.plannerType) return subtypeCandidate.plannerType
+
+  const categoryCandidate = onboardingBusinessCategories.find((category) =>
+    category.value === normalizedCategory ||
+    category.value === normalizedType ||
+    category.value === normalizedSubtype,
+  )
+  if (categoryCandidate?.value === 'sports_fitness') return 'gym_fitness'
+  if (categoryCandidate?.value === 'beauty_personal_care') return 'salon_spa'
+  if (categoryCandidate?.value === 'food_beverage') return 'restaurant_cafe'
+  if (categoryCandidate?.value === 'professional_services') return 'professional_services'
+  if (categoryCandidate?.value === 'home_services') return 'home_services'
+  if (categoryCandidate?.value === 'real_estate_housing') return 'real_estate'
+  if (categoryCandidate?.value === 'health_wellness') return 'medical_wellness'
+
+  return normalizedType || normalizedSubtype || normalizedCategory ? 'other_small_business' : ''
+}

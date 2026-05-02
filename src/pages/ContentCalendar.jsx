@@ -46,6 +46,7 @@ import {
   upsertResearchProfile,
   upsertSocialDraft,
 } from '../lib/portalApi'
+import { derivePlannerBusinessType } from '../lib/plannerIndustryCatalog'
 import { parseDraftMeta, stringifyDraftMeta } from '../lib/socialDrafting'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
@@ -1644,6 +1645,7 @@ export default function ContentCalendar() {
   })
 
   const clientId = profile?.client_id
+  const client = profile?.clients || {}
 
   const { data: calendarPosts = [], isLoading: postsLoading, refetch: refetchPosts, isRefetching: isRefetchingPosts } = useQuery({
     queryKey: ['calendar-posts', clientId],
@@ -2068,9 +2070,14 @@ export default function ContentCalendar() {
   async function savePartnerProfileSnapshot({ verify = false } = {}) {
     if (!requireWriteAccess(verify ? 'verify your Partner training' : 'update your Partner profile')) return null
     const websiteUrl = partnerProfileForm.websiteUrl ? normalizeSourceUrl(partnerProfileForm.websiteUrl) : null
+    const businessType = derivePlannerBusinessType({
+      businessType: client?.business_type,
+      businessSubtype: partnerProfileForm.businessSubtype,
+      businessCategory: partnerProfileForm.businessCategory,
+    })
 
     await updateClientPartnerProfile(clientId, {
-      business_type: partnerProfileForm.businessSubtype || partnerProfileForm.businessCategory,
+      business_type: businessType || null,
       business_category: partnerProfileForm.businessCategory,
       business_subtype: partnerProfileForm.businessSubtype,
       business_reach: partnerProfileForm.businessReach,
