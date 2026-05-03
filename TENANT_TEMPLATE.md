@@ -5,16 +5,19 @@ Last updated: 2026-04-23
 ## Purpose
 This document defines the reusable tenant-config shape for the shared MAP portal platform.
 
+## Current Product Policy
+Every customer receives the same shared MAP portal design. Customer brand, website, logo, color, audience, and business-profile data is collected for Partner training, recommendations, reporting, support context, and onboarding intelligence. It is not used to create a customer-specific portal theme, branded shell, or per-client UI fork.
+
 ## Runtime Config In The Portal App
 These values are safe to expose to the client bundle and can come from build-time env or a future DB-backed tenant-config fetch:
 
 - `displayName`
 - `portalLabel`
 - `supportEmail`
-- `logoUrl`
+- `logoUrl` (customer profile context only; do not use for default portal chrome)
 - `canonicalHost`
 - `workerName`
-- `theme`
+- `theme` (legacy/customer context only; not a default portal chrome theming input)
 - `clientSlug`
 - `billingStatus`
 - `billingPortalUrl`
@@ -50,9 +53,9 @@ The onboarding pipeline should ultimately provision and store:
 - `portal_subdomain`
 - `portal_domain`
 - `worker_name`
-- `branding_status`
-- `brand_colors`
-- `logo_upload_url` or resolved logo asset URL
+- `branding_status` (legacy name; means AI/customer profile context readiness)
+- `brand_colors` (legacy detected context; not default portal theme colors)
+- `logo_upload_url` or resolved logo asset URL (profile/content context, not default portal chrome)
 - future billing/runtime access values:
   - `billing_status`
   - `billing_portal_url`
@@ -139,7 +142,7 @@ The shared template now has a concrete provisioning helper for the current per-c
 Current automation coverage:
 - fetches the tenant runtime row from `public.clients`
 - provisions/reuses the tenant Chatwoot account, customer agent, Website Chat inbox, Social Inbox API inbox, and inbox memberships during non-dry-run onboarding deploys
-- builds the portal with tenant-facing branding env
+- builds the shared MAP portal with tenant runtime env
 - deploys a dedicated Cloudflare Worker named from `worker_name`
 - attaches the MAP-managed custom domain from `portal_domain`
 - uploads/refreshes the current worker secret set
