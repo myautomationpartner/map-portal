@@ -62,6 +62,11 @@ const ALL_FILES_FOLDER = 'All Files'
 const SHARED_ROOMS_FOLDER = 'In secure rooms'
 const ARCHIVED_FOLDER = 'Archived'
 const DEFAULT_UPLOAD_FOLDER = 'General'
+const DOCUMENTS_FILE_COLUMN_STORAGE_KEY = 'mapDocumentsFileColumnWidth'
+const DEFAULT_DOCUMENTS_FILE_COLUMN_WIDTH = 560
+const MIN_DOCUMENTS_FILE_COLUMN_WIDTH = 380
+const MAX_DOCUMENTS_FILE_COLUMN_WIDTH = 900
+const MIN_DOCUMENTS_PREVIEW_WIDTH = 440
 
 const TEXT_PREVIEW_MIME = new Set([
   'text/csv',
@@ -721,7 +726,7 @@ function SecureRoomDialog({
 function DocumentPreview({ selectedDocument, previewState, onRefreshPreview, onDownload }) {
   if (!selectedDocument) {
     return (
-      <div className="portal-panel flex min-h-[460px] flex-col items-center justify-center rounded-[32px] p-8 text-center">
+      <div className="portal-panel flex min-h-[360px] flex-col items-center justify-center rounded-[28px] p-6 text-center">
         <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-[22px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
           <FileText className="h-8 w-8" style={{ color: 'var(--portal-primary)' }} />
         </div>
@@ -734,13 +739,13 @@ function DocumentPreview({ selectedDocument, previewState, onRefreshPreview, onD
   }
 
   return (
-    <div className="portal-panel space-y-5 rounded-[32px] p-5 md:p-6">
+    <div className="portal-panel space-y-4 rounded-[28px] p-4 md:p-5">
       <div className="flex items-start gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
           <DocumentFileIcon mimeType={selectedDocument.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
         </div>
         <div className="min-w-0">
-          <h3 className="truncate text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedDocument.file_name}</h3>
+          <h3 className="truncate text-base font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedDocument.file_name}</h3>
           <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
             {documentFolder(selectedDocument)} - {formatVaultBytes(selectedDocument.size_bytes)} - {formatDate(selectedDocument.updated_at || selectedDocument.created_at)}
           </p>
@@ -774,13 +779,13 @@ function DocumentPreview({ selectedDocument, previewState, onRefreshPreview, onD
       {previewState.error ? <Notice kind="error" message={previewState.error} /> : null}
 
       {previewState.url && !previewState.loading && !previewState.error ? (
-        <div className="rounded-[30px] bg-[var(--portal-surface)]">
+        <div className="rounded-[24px] bg-[var(--portal-surface)]">
           {selectedDocument.mime_type === 'application/pdf' ? (
             <PdfDocumentViewer url={previewState.url} fileName={selectedDocument.file_name} />
           ) : TEXT_PREVIEW_MIME.has(selectedDocument.mime_type) ? (
             <TextDocumentViewer url={previewState.url} fileName={selectedDocument.file_name} mimeType={selectedDocument.mime_type === 'application/csv' ? 'text/csv' : selectedDocument.mime_type} />
           ) : NATIVE_IMAGE_PREVIEW_MIME.has(selectedDocument.mime_type) ? (
-            <img src={previewState.url} alt={selectedDocument.file_name} className="max-h-[70vh] w-full rounded-[28px] border bg-white object-contain" style={{ borderColor: 'var(--portal-border)' }} />
+            <img src={previewState.url} alt={selectedDocument.file_name} className="max-h-[72vh] w-full rounded-[22px] border bg-white object-contain" style={{ borderColor: 'var(--portal-border)' }} />
           ) : (
             <div className="portal-surface-strong rounded-[26px] p-5">
               <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Preview not available inline</p>
@@ -827,6 +832,15 @@ export default function Documents() {
   const [openActionMenuId, setOpenActionMenuId] = useState(null)
   const [auditQuery, setAuditQuery] = useState('')
   const [auditSort, setAuditSort] = useState({ field: 'accessed_at', direction: 'desc' })
+  const [fileColumnWidth, setFileColumnWidth] = useState(() => {
+    if (typeof window === 'undefined') return DEFAULT_DOCUMENTS_FILE_COLUMN_WIDTH
+    const storedWidth = Number(window.localStorage.getItem(DOCUMENTS_FILE_COLUMN_STORAGE_KEY))
+    return Number.isFinite(storedWidth) && storedWidth >= MIN_DOCUMENTS_FILE_COLUMN_WIDTH
+      ? Math.min(storedWidth, MAX_DOCUMENTS_FILE_COLUMN_WIDTH)
+      : DEFAULT_DOCUMENTS_FILE_COLUMN_WIDTH
+  })
+  const [isFileColumnResizing, setIsFileColumnResizing] = useState(false)
+  const documentsLayoutRef = useRef(null)
 
   const { data: documents = [], isLoading: documentsLoading, error: documentsError } = useQuery({
     queryKey: ['secure-vault-documents'],
@@ -848,6 +862,50 @@ export default function Documents() {
     queryKey: ['secure-vault-audit'],
     queryFn: fetchSecureVaultAudit,
   })
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(DOCUMENTS_FILE_COLUMN_STORAGE_KEY, String(fileColumnWidth))
+    }
+  }, [fileColumnWidth])
+
+  useEffect(() => {
+    if (!isFileColumnResizing) return undefined
+
+    const handlePointerMove = (event) => {
+      const layout = documentsLayoutRef.current
+      if (!layout) return
+
+      const rect = layout.getBoundingClientRect()
+      const styles = window.getComputedStyle(layout)
+      const columns = styles.gridTemplateColumns.split(' ').map((value) => Number.parseFloat(value)).filter(Number.isFinite)
+      const folderWidth = columns[0] || 260
+      const handleWidth = columns[2] || 14
+      const columnGap = Number.parseFloat(styles.columnGap) || 0
+      const availableWidth = rect.width - folderWidth - handleWidth - (columnGap * 3)
+      const maxFileWidth = Math.min(MAX_DOCUMENTS_FILE_COLUMN_WIDTH, Math.max(MIN_DOCUMENTS_FILE_COLUMN_WIDTH, availableWidth - MIN_DOCUMENTS_PREVIEW_WIDTH))
+      const pointerFileWidth = event.clientX - rect.left - folderWidth - columnGap
+      const nextWidth = Math.min(Math.max(pointerFileWidth, MIN_DOCUMENTS_FILE_COLUMN_WIDTH), maxFileWidth)
+
+      setFileColumnWidth(Math.round(nextWidth))
+    }
+
+    const stopResize = () => setIsFileColumnResizing(false)
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', stopResize)
+    window.addEventListener('pointercancel', stopResize)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', stopResize)
+      window.removeEventListener('pointercancel', stopResize)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+  }, [isFileColumnResizing])
 
   const usedBytes = useMemo(() => documents.reduce((sum, document) => sum + Number(document.size_bytes || 0), 0), [documents])
   const activeDocuments = useMemo(() => documents.filter((document) => !document.is_archived), [documents])
@@ -1502,16 +1560,20 @@ export default function Documents() {
           )}
         </section>
       ) : (
-        <div className="space-y-6 xl:grid xl:grid-cols-[260px_minmax(0,1fr)_400px] xl:items-start xl:gap-6 xl:space-y-0">
-          <aside className="space-y-6">
-            <section className="portal-panel overflow-hidden rounded-[34px]">
-              <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
+        <div
+          ref={documentsLayoutRef}
+          className="space-y-4 xl:grid xl:grid-cols-[260px_minmax(380px,var(--documents-file-column-width))_14px_minmax(440px,1fr)] xl:items-start xl:gap-4 xl:space-y-0"
+          style={{ '--documents-file-column-width': `${fileColumnWidth}px` }}
+        >
+          <aside className="space-y-4">
+            <section className="portal-panel overflow-hidden rounded-[28px]">
+              <div className="border-b px-4 py-4" style={{ borderColor: 'var(--portal-border)' }}>
                 <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Folders</h2>
               </div>
-              <div className="space-y-4 p-5">
+              <div className="space-y-3 p-4">
                 <form onSubmit={handleCreateFolder} className="flex gap-2">
-                  <input type="text" value={folderDraft} onChange={(event) => setFolderDraft(event.target.value)} placeholder={folderRows.some((folder) => folder.id === selectedFolder) ? 'New subfolder' : 'New folder'} className="portal-input px-4 py-3 text-sm" disabled={billingAccess?.readOnly} />
-                  <button type="submit" disabled={billingAccess?.readOnly || folderMutation.isPending} className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
+                  <input type="text" value={folderDraft} onChange={(event) => setFolderDraft(event.target.value)} placeholder={folderRows.some((folder) => folder.id === selectedFolder) ? 'New subfolder' : 'New folder'} className="portal-input px-3 py-2.5 text-sm" disabled={billingAccess?.readOnly} />
+                  <button type="submit" disabled={billingAccess?.readOnly || folderMutation.isPending} className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
                     <FolderPlus className="h-4 w-4" />
                   </button>
                 </form>
@@ -1522,7 +1584,7 @@ export default function Documents() {
                       key={folder.id}
                       type="button"
                       onClick={() => setSelectedFolder(folder.id)}
-                      className="flex w-full items-center justify-between rounded-2xl px-3 py-3 text-left transition-all"
+                      className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left transition-all"
                       style={selectedFolder === folder.id
                         ? folder.id === SHARED_ROOMS_FOLDER
                           ? { background: 'linear-gradient(135deg, rgba(31,169,113,0.18), rgba(201, 240, 223, 0.14))', border: '1px solid rgba(31,169,113,0.24)' }
@@ -1542,9 +1604,9 @@ export default function Documents() {
             </section>
           </aside>
 
-          <section className="portal-panel overflow-hidden rounded-[34px]">
-            <div className="border-b px-5 py-5 md:px-6" style={{ borderColor: 'var(--portal-border)' }}>
-              <div className="flex flex-wrap items-start justify-between gap-4">
+          <section className="portal-panel overflow-hidden rounded-[28px]">
+            <div className="border-b px-4 py-4 md:px-5" style={{ borderColor: 'var(--portal-border)' }}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedFolderRecord?.path || selectedFolder}</h2>
                   <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
@@ -1563,22 +1625,22 @@ export default function Documents() {
               </div>
             </div>
 
-            {documentsError ? <div className="p-5"><Notice kind="error" message={documentsError.message} /></div> : null}
-            {foldersError ? <div className="p-5"><Notice kind="error" message={foldersError.message} /></div> : null}
+            {documentsError ? <div className="p-4"><Notice kind="error" message={documentsError.message} /></div> : null}
+            {foldersError ? <div className="p-4"><Notice kind="error" message={foldersError.message} /></div> : null}
             {documentsLoading || foldersLoading ? (
-              <div className="flex items-center gap-3 px-6 py-10" style={{ color: 'var(--portal-text-muted)' }}>
+              <div className="flex items-center gap-3 px-5 py-8" style={{ color: 'var(--portal-text-muted)' }}>
                 <Loader2 className="h-4 w-4 animate-spin" />
                 <span className="text-sm">Loading documents...</span>
               </div>
             ) : filteredDocuments.length > 0 ? (
               libraryView === 'grid' ? (
-                <div className="grid gap-3 p-5 sm:grid-cols-2 2xl:grid-cols-3">
+                <div className="grid gap-2.5 p-4 sm:grid-cols-2 2xl:grid-cols-3">
                   {filteredDocuments.map((document) => {
                     const isSelected = selectedDocument?.id === document.id
                     const isChecked = selectedDocumentIds.includes(document.id)
 
                     return (
-                      <div key={document.id} className="relative rounded-[24px] p-4 text-left transition-all" style={isSelected ? { background: 'linear-gradient(145deg, rgba(201,168,76,0.14), rgba(232,213,160,0.08))', border: '1px solid rgba(201,168,76,0.24)', boxShadow: '0 14px 28px rgba(26,24,20,0.06)' } : { background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}>
+                      <div key={document.id} className="relative rounded-[20px] p-3.5 text-left transition-all" style={isSelected ? { background: 'linear-gradient(145deg, rgba(201,168,76,0.14), rgba(232,213,160,0.08))', border: '1px solid rgba(201,168,76,0.24)', boxShadow: '0 14px 28px rgba(26,24,20,0.06)' } : { background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}>
                         <label className="absolute left-3 top-3" onClick={(event) => event.stopPropagation()}>
                           <input type="checkbox" checked={isChecked} onChange={() => toggleSelectedDocument(document.id)} />
                         </label>
@@ -1612,7 +1674,7 @@ export default function Documents() {
                           </div>
                           <p className="mt-1 text-[11px]" style={{ color: 'var(--portal-text-muted)' }}>{folderPath(document.folder_id, foldersById) || documentFolder(document)} - {formatVaultBytes(document.size_bytes)}</p>
                         </button>
-                        <div className="mt-4 flex flex-wrap gap-2">
+                        <div className="mt-3 flex flex-wrap gap-2">
                           <button type="button" onClick={() => previewMutation.mutate({ documentId: document.id, action: 'view' })} className="portal-button-ghost inline-flex h-8 w-8 items-center justify-center rounded-full" aria-label={`Preview ${document.file_name}`}>
                             <Eye className="h-3.5 w-3.5" />
                           </button>
@@ -1635,7 +1697,7 @@ export default function Documents() {
                             onClick={() => { setSelectedId(document.id); previewMutation.mutate({ documentId: document.id, action: 'view' }) }}
                             style={isSelected ? { background: 'rgba(201, 168, 76, 0.1)' } : undefined}
                           >
-                            <td className="border-t px-4 py-2.5" style={{ borderColor: 'var(--portal-border)' }}>
+                            <td className="border-t px-4 py-2" style={{ borderColor: 'var(--portal-border)' }}>
                               <div className="flex min-w-0 items-center gap-3">
                                 <input
                                   type="checkbox"
@@ -1688,7 +1750,7 @@ export default function Documents() {
                 </div>
               )
             ) : (
-              <div className="px-5 py-12 text-center">
+              <div className="px-4 py-10 text-center">
                 <div className="mx-auto max-w-md rounded-[28px] border border-dashed px-6 py-10" style={{ borderColor: 'var(--portal-border-strong)', color: 'var(--portal-text-muted)' }}>
                   <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>No documents match this view</p>
                   <p className="mt-2 text-xs">Try another folder, clear your search, or upload the first file for this workspace.</p>
@@ -1697,7 +1759,32 @@ export default function Documents() {
             )}
           </section>
 
-          <aside className="space-y-6">
+          <div
+            className="hidden h-full min-h-[320px] cursor-col-resize items-stretch justify-center rounded-full transition-colors xl:flex"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize document preview panel"
+            tabIndex={0}
+            onPointerDown={(event) => {
+              event.preventDefault()
+              setIsFileColumnResizing(true)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowLeft') {
+                event.preventDefault()
+                setFileColumnWidth((current) => Math.max(MIN_DOCUMENTS_FILE_COLUMN_WIDTH, current - 32))
+              }
+              if (event.key === 'ArrowRight') {
+                event.preventDefault()
+                setFileColumnWidth((current) => Math.min(MAX_DOCUMENTS_FILE_COLUMN_WIDTH, current + 32))
+              }
+            }}
+            style={{ background: isFileColumnResizing ? 'rgba(29, 155, 240, 0.18)' : 'transparent' }}
+          >
+            <div className="my-4 w-1 rounded-full" style={{ background: isFileColumnResizing ? 'var(--portal-primary)' : 'var(--portal-border-strong)' }} />
+          </div>
+
+          <aside className="space-y-4">
             <DocumentPreview
               selectedDocument={selectedDocument}
               previewState={previewState}
@@ -1705,7 +1792,7 @@ export default function Documents() {
               onDownload={() => selectedDocument && previewMutation.mutate({ documentId: selectedDocument.id, action: 'download' })}
             />
 
-            <section className="portal-panel rounded-[28px] p-5">
+            <section className="portal-panel rounded-[24px] p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Selected for room</p>
