@@ -5588,3 +5588,418 @@ html[data-portal-theme="map-dark"] .partner-assist-suggestions i {
   background: rgba(112, 228, 255, 0.105) !important;
   color: var(--map-brand-cyan) !important;
 }
+
+/* X-readable dark theme normalization.
+   Keep this late in the file so older dark-skin glow rules cannot win on
+   legacy pages, inline-style-heavy subpages, modals, or publisher surfaces. */
+html[data-portal-theme="map-dark"],
+html[data-portal-theme="map-dark"] body {
+  background: #000000 !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-shell,
+html[data-portal-theme="map-dark"] .portal-page,
+html[data-portal-theme="map-dark"] .campaign-partner-page,
+html[data-portal-theme="map-dark"] .content-plan-page {
+  background: #000000 !important;
+  color: var(--portal-text) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-shell::before {
+  display: none !important;
+}
+
+html[data-portal-theme="map-dark"] aside {
+  border-color: var(--portal-border) !important;
+  background: #000000 !important;
+  box-shadow: none !important;
+}
+
+html[data-portal-theme="map-dark"] aside nav a {
+  color: var(--portal-nav-text) !important;
+}
+
+html[data-portal-theme="map-dark"] aside nav a.active-nav {
+  background: rgba(29, 155, 240, 0.14) !important;
+  color: var(--portal-nav-text-strong) !important;
+  box-shadow: none !important;
+}
+
+html[data-portal-theme="map-dark"] aside nav a.inactive-nav:hover,
+html[data-portal-theme="map-dark"] .portal-button-secondary:hover,
+html[data-portal-theme="map-dark"] .portal-button-ghost:hover,
+html[data-portal-theme="map-dark"] .content-plan-toolbar-button:hover,
+html[data-portal-theme="map-dark"] .content-plan-status-pill:hover,
+html[data-portal-theme="map-dark"] .content-plan-filter:hover,
+html[data-portal-theme="map-dark"] .campaign-folder-button:hover,
+html[data-portal-theme="map-dark"] .workspace-preset-card:hover,
+html[data-portal-theme="map-dark"] .assistant-source-row:hover,
+html[data-portal-theme="map-dark"] .partner-assist-suggestions button:hover {
+  border-color: var(--portal-border-strong) !important;
+  background: #1d1f23 !important;
+  color: var(--portal-text) !important;
+  box-shadow: none !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-surface,
+html[data-portal-theme="map-dark"] .portal-surface-strong,
+html[data-portal-theme="map-dark"] .portal-panel,
+html[data-portal-theme="map-dark"] .portal-card,
+html[data-portal-theme="map-dark"] .portal-command-bar,
+html[data-portal-theme="map-dark"] .portal-stat-card,
+html[data-portal-theme="map-dark"] .content-plan-topbar,
+html[data-portal-theme="map-dark"] .content-plan-slimbar,
+html[data-portal-theme="map-dark"] .content-plan-workspace,
+html[data-portal-theme="map-dark"] .content-plan-load-card,
+html[data-portal-theme="map-dark"] .content-plan-recommendations-card,
+html[data-portal-theme="map-dark"] .content-plan-status-page,
+html[data-portal-theme="map-dark"] .content-plan-side-stack,
+html[data-portal-theme="map-dark"] .content-plan-list,
+html[data-portal-theme="map-dark"] .content-plan-list-header,
+html[data-portal-theme="map-dark"] .content-plan-load-button,
+html[data-portal-theme="map-dark"] .content-plan-recommendation,
+html[data-portal-theme="map-dark"] .content-plan-post-row,
+html[data-portal-theme="map-dark"] .content-plan-status-empty,
+html[data-portal-theme="map-dark"] .campaign-partner-surface,
+html[data-portal-theme="map-dark"] .campaign-library-shell,
+html[data-portal-theme="map-dark"] .campaign-folder-pane,
+html[data-portal-theme="map-dark"] .campaign-detail-pane,
+html[data-portal-theme="map-dark"] .campaign-result-hero,
+html[data-portal-theme="map-dark"] .campaign-row,
+html[data-portal-theme="map-dark"] .campaign-result-card,
+html[data-portal-theme="map-dark"] .campaign-partner-shell,
+html[data-portal-theme="map-dark"] .campaign-wizard,
+html[data-portal-theme="map-dark"] .campaign-brief-pane,
+html[data-portal-theme="map-dark"] .campaign-plan-preview,
+html[data-portal-theme="map-dark"] .campaign-post-drafts-section,
+html[data-portal-theme="map-dark"] .workspace-launcher-panel,
+html[data-portal-theme="map-dark"] .workspace-tool-library,
+html[data-portal-theme="map-dark"] .workspace-tool-sidebar,
+html[data-portal-theme="map-dark"] .workspace-preset-card,
+html[data-portal-theme="map-dark"] .workspace-icon-preview,
+html[data-portal-theme="map-dark"] .create-post-ticket-card,
+html[data-portal-theme="map-dark"] .create-post-schedule-strip,
+html[data-portal-theme="map-dark"] .create-post-preview-section,
+html[data-portal-theme="map-dark"] .create-post-preview-section > .flex,
+html[data-portal-theme="map-dark"] .create-post-preview-shell,
+html[data-portal-theme="map-dark"] .create-post-ai-mode-panel,
+html[data-portal-theme="map-dark"] .create-post-media-stage,
+html[data-portal-theme="map-dark"] .create-post-creative-panel button.min-h-\[300px\],
+html[data-portal-theme="map-dark"] .create-post-creative-panel .min-h-\[300px\],
+html[data-portal-theme="map-dark"] .partner-assist-box,
+html[data-portal-theme="map-dark"] .image-assist-box,
+html[data-portal-theme="map-dark"] .partner-assist-suggestions button,
+html[data-portal-theme="map-dark"] .platform-preview-card,
+html[data-portal-theme="map-dark"] .platform-preview-media,
+html[data-portal-theme="map-dark"] .platform-preview-gallery,
+html[data-portal-theme="map-dark"] .platform-preview-gallery figure,
+html[data-portal-theme="map-dark"] .platform-preview-media[data-empty="true"],
+html[data-portal-theme="map-dark"] .document-upload-dialog,
+html[data-portal-theme="map-dark"] .document-upload-dialog > div,
+html[data-portal-theme="map-dark"] .document-upload-dropzone,
+html[data-portal-theme="map-dark"] .assistant-train-dialog,
+html[data-portal-theme="map-dark"] .assistant-train-header,
+html[data-portal-theme="map-dark"] .assistant-profile-form,
+html[data-portal-theme="map-dark"] .assistant-train-form,
+html[data-portal-theme="map-dark"] .assistant-train-sources,
+html[data-portal-theme="map-dark"] .assistant-guided-training,
+html[data-portal-theme="map-dark"] .assistant-guided-card,
+html[data-portal-theme="map-dark"] .assistant-profile-advanced,
+html[data-portal-theme="map-dark"] .assistant-training-status,
+html[data-portal-theme="map-dark"] .assistant-training-card,
+html[data-portal-theme="map-dark"] .assistant-training-prompt,
+html[data-portal-theme="map-dark"] .assistant-source-row,
+html[data-portal-theme="map-dark"] .assistant-source-empty,
+html[data-portal-theme="map-dark"] .portal-partner-panel,
+html[data-portal-theme="map-dark"] .portal-partner-controls button,
+html[data-portal-theme="map-dark"] .portal-partner-flow-grid button,
+html[data-portal-theme="map-dark"] .portal-partner-quick-prompts button,
+html[data-portal-theme="map-dark"] .portal-partner-action,
+html[data-portal-theme="map-dark"] .portal-partner-message.assistant,
+html[data-portal-theme="map-dark"] .portal-partner-training input,
+html[data-portal-theme="map-dark"] .portal-partner-training textarea,
+html[data-portal-theme="map-dark"] .portal-partner-composer textarea {
+  border-color: var(--portal-border) !important;
+  background: var(--portal-surface) !important;
+  color: var(--portal-text) !important;
+  box-shadow: none !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-panel,
+html[data-portal-theme="map-dark"] .portal-surface-strong,
+html[data-portal-theme="map-dark"] .workspace-launcher-panel,
+html[data-portal-theme="map-dark"] .create-post-preview-section > .flex,
+html[data-portal-theme="map-dark"] .platform-preview-card,
+html[data-portal-theme="map-dark"] .document-upload-dialog,
+html[data-portal-theme="map-dark"] .assistant-train-dialog {
+  background: var(--portal-surface-strong) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-page > .portal-surface:first-child::before,
+html[data-portal-theme="map-dark"] .content-plan-topbar::before {
+  background: var(--portal-primary) !important;
+  opacity: 0.85;
+}
+
+html[data-portal-theme="map-dark"] h1,
+html[data-portal-theme="map-dark"] h2,
+html[data-portal-theme="map-dark"] h3,
+html[data-portal-theme="map-dark"] h4,
+html[data-portal-theme="map-dark"] .portal-page-title,
+html[data-portal-theme="map-dark"] .content-plan-title,
+html[data-portal-theme="map-dark"] .platform-preview-title-row p,
+html[data-portal-theme="map-dark"] .assistant-source-row p,
+html[data-portal-theme="map-dark"] .partner-assist-suggestions strong {
+  color: var(--portal-text) !important;
+}
+
+html[data-portal-theme="map-dark"] p,
+html[data-portal-theme="map-dark"] label,
+html[data-portal-theme="map-dark"] small,
+html[data-portal-theme="map-dark"] .portal-page-subtitle,
+html[data-portal-theme="map-dark"] .content-plan-subtitle,
+html[data-portal-theme="map-dark"] .platform-preview-copy p,
+html[data-portal-theme="map-dark"] .platform-preview-footer,
+html[data-portal-theme="map-dark"] .platform-preview-subtitle,
+html[data-portal-theme="map-dark"] .assistant-training-status p,
+html[data-portal-theme="map-dark"] .assistant-training-card p,
+html[data-portal-theme="map-dark"] .assistant-guided-intro p,
+html[data-portal-theme="map-dark"] .assistant-guided-card p,
+html[data-portal-theme="map-dark"] .assistant-training-prompt p,
+html[data-portal-theme="map-dark"] .assistant-source-row span,
+html[data-portal-theme="map-dark"] .portal-partner-flow-grid button small,
+html[data-portal-theme="map-dark"] .portal-partner-quick-prompts button {
+  color: var(--portal-text-muted) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-page .text-slate-400,
+html[data-portal-theme="map-dark"] .portal-page .text-slate-500,
+html[data-portal-theme="map-dark"] .portal-page .text-slate-600,
+html[data-portal-theme="map-dark"] .portal-page .text-slate-700,
+html[data-portal-theme="map-dark"] .portal-page .text-stone-400,
+html[data-portal-theme="map-dark"] .portal-page .text-stone-500,
+html[data-portal-theme="map-dark"] .portal-page .text-stone-600,
+html[data-portal-theme="map-dark"] .portal-page .text-stone-700,
+html[data-portal-theme="map-dark"] .portal-page .text-gray-400,
+html[data-portal-theme="map-dark"] .portal-page .text-gray-500,
+html[data-portal-theme="map-dark"] .portal-page .text-gray-600,
+html[data-portal-theme="map-dark"] .portal-page .text-gray-700 {
+  color: var(--portal-text-muted) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-input,
+html[data-portal-theme="map-dark"] input,
+html[data-portal-theme="map-dark"] textarea,
+html[data-portal-theme="map-dark"] select {
+  color-scheme: dark;
+  border-color: var(--portal-border) !important;
+  background: #000000 !important;
+  color: var(--portal-text) !important;
+  box-shadow: none !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-input::placeholder,
+html[data-portal-theme="map-dark"] input::placeholder,
+html[data-portal-theme="map-dark"] textarea::placeholder {
+  color: var(--portal-text-soft) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-input:focus,
+html[data-portal-theme="map-dark"] input:focus,
+html[data-portal-theme="map-dark"] textarea:focus,
+html[data-portal-theme="map-dark"] select:focus {
+  border-color: var(--portal-primary) !important;
+  box-shadow: 0 0 0 3px rgba(29, 155, 240, 0.18) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-button-primary,
+html[data-portal-theme="map-dark"] .portal-partner-action.primary,
+html[data-portal-theme="map-dark"] .portal-partner-composer button,
+html[data-portal-theme="map-dark"] .portal-partner-launcher,
+html[data-portal-theme="map-dark"] .workspace-category-pill[data-active="true"],
+html[data-portal-theme="map-dark"] .workspace-group-pill[data-active="true"],
+html[data-portal-theme="map-dark"] .content-plan-toolbar-button[data-active="true"],
+html[data-portal-theme="map-dark"] .content-plan-status-pill[data-active="true"],
+html[data-portal-theme="map-dark"] .campaign-tab[data-active="true"],
+html[data-portal-theme="map-dark"] .create-post-schedule-actions button[data-active="true"],
+html[data-portal-theme="map-dark"] .create-post-ai-mode-grid button[data-active="true"],
+html[data-portal-theme="map-dark"] .partner-assist-actions button[data-active="true"],
+html[data-portal-theme="map-dark"] .portal-ai-mini-action[data-active="true"],
+html[data-portal-theme="map-dark"] .create-post-preview-shell[data-active="true"] {
+  border-color: rgba(29, 155, 240, 0.45) !important;
+  background: var(--portal-primary) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-button-secondary,
+html[data-portal-theme="map-dark"] .portal-button-ghost,
+html[data-portal-theme="map-dark"] .content-plan-toolbar-button,
+html[data-portal-theme="map-dark"] .content-plan-status-pill,
+html[data-portal-theme="map-dark"] .content-plan-filter,
+html[data-portal-theme="map-dark"] .campaign-tab,
+html[data-portal-theme="map-dark"] .campaign-folder-button,
+html[data-portal-theme="map-dark"] .workspace-category-pill,
+html[data-portal-theme="map-dark"] .workspace-group-pill,
+html[data-portal-theme="map-dark"] .create-post-phone-button,
+html[data-portal-theme="map-dark"] .create-post-schedule-actions button,
+html[data-portal-theme="map-dark"] .create-post-ai-mode-grid button,
+html[data-portal-theme="map-dark"] .create-post-preview-hint,
+html[data-portal-theme="map-dark"] .create-post-preview-tools .portal-ai-mini-action,
+html[data-portal-theme="map-dark"] .create-post-media-thumb,
+html[data-portal-theme="map-dark"] .partner-assist-actions button,
+html[data-portal-theme="map-dark"] .portal-ai-mini-action,
+html[data-portal-theme="map-dark"] .assistant-choice-button,
+html[data-portal-theme="map-dark"] .assistant-source-actions a,
+html[data-portal-theme="map-dark"] .assistant-source-actions button {
+  border-color: var(--portal-border) !important;
+  background: #0f1419 !important;
+  color: var(--portal-text) !important;
+  box-shadow: none !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-chip,
+html[data-portal-theme="map-dark"] .portal-status-info,
+html[data-portal-theme="map-dark"] .content-plan-next-best,
+html[data-portal-theme="map-dark"] .content-plan-filterbar,
+html[data-portal-theme="map-dark"] .create-post-avatar,
+html[data-portal-theme="map-dark"] .platform-preview-icon,
+html[data-portal-theme="map-dark"] .platform-preview-title-row span,
+html[data-portal-theme="map-dark"] .platform-preview-media > span,
+html[data-portal-theme="map-dark"] .partner-assist-head span,
+html[data-portal-theme="map-dark"] .assistant-choice-check,
+html[data-portal-theme="map-dark"] .assistant-guided-intro > span,
+html[data-portal-theme="map-dark"] .assistant-profile-advanced summary small,
+html[data-portal-theme="map-dark"] .assistant-guided-card-meta > span,
+html[data-portal-theme="map-dark"] .assistant-training-required-note,
+html[data-portal-theme="map-dark"] .assistant-train-icon,
+html[data-portal-theme="map-dark"] .assistant-train-close,
+html[data-portal-theme="map-dark"] .document-upload-icon {
+  border-color: rgba(29, 155, 240, 0.3) !important;
+  background: rgba(29, 155, 240, 0.12) !important;
+  color: var(--portal-primary) !important;
+  box-shadow: none !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-status-success,
+html[data-portal-theme="map-dark"] [style*="background: rgba(31, 169, 113"],
+html[data-portal-theme="map-dark"] [style*="background: rgba(31,169,113"] {
+  border-color: rgba(0, 186, 124, 0.34) !important;
+  background: rgba(0, 186, 124, 0.12) !important;
+  color: var(--portal-success) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-status-danger,
+html[data-portal-theme="map-dark"] .assistant-train-message[data-tone="error"],
+html[data-portal-theme="map-dark"] [style*="background: rgba(216, 95, 152"],
+html[data-portal-theme="map-dark"] [style*="background: rgba(216,95,152"] {
+  border-color: rgba(244, 33, 46, 0.34) !important;
+  background: rgba(244, 33, 46, 0.12) !important;
+  color: #ff8188 !important;
+}
+
+html[data-portal-theme="map-dark"] .platform-preview-card[data-platform="instagram"] .platform-preview-icon,
+html[data-portal-theme="map-dark"] .assistant-training-prompt-icon {
+  background: var(--portal-primary) !important;
+  color: #ffffff !important;
+}
+
+html[data-portal-theme="map-dark"] .platform-preview-header,
+html[data-portal-theme="map-dark"] .platform-preview-media,
+html[data-portal-theme="map-dark"] .platform-preview-footer,
+html[data-portal-theme="map-dark"] .create-post-phone-bar,
+html[data-portal-theme="map-dark"] .create-post-preview-section > .flex,
+html[data-portal-theme="map-dark"] .campaign-partner-topbar,
+html[data-portal-theme="map-dark"] .campaign-stat-grid,
+html[data-portal-theme="map-dark"] .campaign-list-head,
+html[data-portal-theme="map-dark"] .campaign-brief-head,
+html[data-portal-theme="map-dark"] .campaign-post-drafts-head,
+html[data-portal-theme="map-dark"] .content-plan-list-header,
+html[data-portal-theme="map-dark"] .content-plan-status-head {
+  border-color: var(--portal-border) !important;
+  background: transparent !important;
+}
+
+html[data-portal-theme="map-dark"] .fixed.inset-0.z-50,
+html[data-portal-theme="map-dark"] .assistant-train-overlay,
+html[data-portal-theme="map-dark"] .assistant-training-prompt-overlay {
+  background: rgba(0, 0, 0, 0.72) !important;
+  backdrop-filter: blur(14px);
+}
+
+html[data-portal-theme="map-dark"] .bg-white,
+html[data-portal-theme="map-dark"] .bg-\[white\],
+html[data-portal-theme="map-dark"] .portal-page [class*="bg-[rgba(255,255,255"],
+html[data-portal-theme="map-dark"] [style*="radial-gradient"],
+html[data-portal-theme="map-dark"] [style*="background: white"],
+html[data-portal-theme="map-dark"] [style*="background:white"],
+html[data-portal-theme="map-dark"] [style*="background: #fff"],
+html[data-portal-theme="map-dark"] [style*="background:#fff"],
+html[data-portal-theme="map-dark"] [style*="background: #ffffff"],
+html[data-portal-theme="map-dark"] [style*="background:#ffffff"],
+html[data-portal-theme="map-dark"] [style*="background: rgb(255, 255, 255)"],
+html[data-portal-theme="map-dark"] [style*="background: rgba(255,255,255"],
+html[data-portal-theme="map-dark"] [style*="background: rgba(255, 255, 255"],
+html[data-portal-theme="map-dark"] [style*="background-color: rgb(255, 255, 255)"],
+html[data-portal-theme="map-dark"] [style*="background-color: rgba(255,255,255"],
+html[data-portal-theme="map-dark"] [style*="background-color: rgba(255, 255, 255"],
+html[data-portal-theme="map-dark"] [style*="background: rgba(250,247,240"],
+html[data-portal-theme="map-dark"] [style*="background: rgba(250, 247, 240"],
+html[data-portal-theme="map-dark"] [style*="background: rgba(250, 247, 241"],
+html[data-portal-theme="map-dark"] [style*="background: rgba(253, 251, 247"],
+html[data-portal-theme="map-dark"] [style*="background: rgba(248,244,238"],
+html[data-portal-theme="map-dark"] [style*="background: rgba(248, 244, 238"],
+html[data-portal-theme="map-dark"] [style*="background: rgba(245,240,235"],
+html[data-portal-theme="map-dark"] [style*="background: rgba(245, 240, 235"],
+html[data-portal-theme="map-dark"] [style*="background: rgba(244, 247, 255"],
+html[data-portal-theme="map-dark"] [style*="background: #f8fafc"],
+html[data-portal-theme="map-dark"] [style*="background:#f8fafc"],
+html[data-portal-theme="map-dark"] [style*="background: #eef2f7"],
+html[data-portal-theme="map-dark"] [style*="background:#eef2f7"],
+html[data-portal-theme="map-dark"] [style*="background: #eef5ff"],
+html[data-portal-theme="map-dark"] [style*="background:#eef5ff"],
+html[data-portal-theme="map-dark"] [style*="background: linear-gradient(135deg"],
+html[data-portal-theme="map-dark"] [style*="background: linear-gradient(145deg"],
+html[data-portal-theme="map-dark"] [style*="background: linear-gradient(180deg"] {
+  border-color: var(--portal-border) !important;
+  background: var(--portal-surface) !important;
+  color: var(--portal-text) !important;
+  box-shadow: none !important;
+}
+
+html[data-portal-theme="map-dark"] [style*="color: #111"],
+html[data-portal-theme="map-dark"] [style*="color:#111"],
+html[data-portal-theme="map-dark"] [style*="color: rgb(17, 17, 17)"],
+html[data-portal-theme="map-dark"] [style*="color: #0f172a"],
+html[data-portal-theme="map-dark"] [style*="color:#0f172a"],
+html[data-portal-theme="map-dark"] [style*="color: #1a1814"],
+html[data-portal-theme="map-dark"] [style*="color:#1a1814"] {
+  color: var(--portal-text) !important;
+}
+
+html[data-portal-theme="map-dark"] [style*="color: #8c6d1c"],
+html[data-portal-theme="map-dark"] [style*="color:#8c6d1c"],
+html[data-portal-theme="map-dark"] [style*="color: #8a7858"],
+html[data-portal-theme="map-dark"] [style*="color:#8a7858"],
+html[data-portal-theme="map-dark"] [style*="color: #5e554d"],
+html[data-portal-theme="map-dark"] [style*="color:#5e554d"],
+html[data-portal-theme="map-dark"] [style*="color: #1765ff"],
+html[data-portal-theme="map-dark"] [style*="color:#1765ff"] {
+  color: var(--portal-primary) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-button-primary,
+html[data-portal-theme="map-dark"] .portal-partner-action.primary,
+html[data-portal-theme="map-dark"] .portal-partner-composer button,
+html[data-portal-theme="map-dark"] .portal-partner-launcher {
+  border-color: rgba(29, 155, 240, 0.45) !important;
+  background: var(--portal-primary) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+html[data-portal-theme="map-dark"] img[src*="map-option-b-mark"],
+html[data-portal-theme="map-dark"] div:has(> img[src*="map-option-b-mark"]) {
+  filter: none !important;
+  box-shadow: none !important;
+}

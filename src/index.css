@@ -46,41 +46,41 @@
 
 html[data-portal-theme="map-dark"] {
   color-scheme: dark;
-  --map-brand-cyan: #70e4ff;
-  --map-brand-purple: #988cff;
-  --map-brand-magenta: #ff7ab8;
-  --map-brand-blue: #38bdf8;
-  --map-brand-lime: var(--map-brand-blue);
-  --map-brand-orange: #ffb66c;
-  --portal-bg: #07090f;
-  --portal-bg-secondary: #0c1020;
-  --portal-surface: rgba(16, 22, 39, 0.76);
-  --portal-surface-strong: rgba(23, 32, 55, 0.92);
-  --portal-surface-muted: rgba(255, 255, 255, 0.055);
-  --portal-border: rgba(255, 255, 255, 0.12);
-  --portal-border-strong: rgba(255, 255, 255, 0.2);
-  --portal-text: #f5f7fb;
-  --portal-text-muted: #a6afc2;
-  --portal-text-soft: #dbe3f4;
-  --portal-primary: var(--map-brand-lime);
-  --portal-primary-strong: var(--map-brand-lime);
-  --portal-secondary: var(--map-brand-purple);
-  --portal-cyan: var(--map-brand-cyan);
-  --portal-blue: var(--map-brand-purple);
-  --portal-sage: var(--map-brand-cyan);
-  --portal-success: var(--map-brand-lime);
-  --portal-danger: var(--map-brand-magenta);
-  --portal-shadow: 0 34px 90px rgba(0, 0, 0, 0.45);
-  --portal-shadow-soft: 0 22px 56px rgba(0, 0, 0, 0.34);
-  --portal-nav: rgba(7, 10, 18, 0.92);
-  --portal-nav-strong: rgba(10, 14, 25, 0.96);
-  --portal-nav-text: rgba(255, 255, 255, 0.78);
-  --portal-nav-text-strong: #ffffff;
-  --portal-nav-text-muted: rgba(255, 255, 255, 0.56);
-  --portal-nav-icon-bg: rgba(255, 255, 255, 0.07);
-  --portal-nav-icon-active-bg: rgba(255, 255, 255, 0.12);
-  --portal-theme-toggle-bg: rgba(255, 255, 255, 0.08);
-  --portal-dark: #071018;
+  --map-brand-cyan: #1d9bf0;
+  --map-brand-purple: #1d9bf0;
+  --map-brand-magenta: #f4212e;
+  --map-brand-blue: #1d9bf0;
+  --map-brand-lime: #00ba7c;
+  --map-brand-orange: #ff7a00;
+  --portal-bg: #000000;
+  --portal-bg-secondary: #0f1419;
+  --portal-surface: #16181c;
+  --portal-surface-strong: #1d1f23;
+  --portal-surface-muted: #0f1419;
+  --portal-border: #2f3336;
+  --portal-border-strong: #3a3f45;
+  --portal-text: #e7e9ea;
+  --portal-text-muted: #8b98a5;
+  --portal-text-soft: #71767b;
+  --portal-primary: #1d9bf0;
+  --portal-primary-strong: #1d9bf0;
+  --portal-secondary: #8b98a5;
+  --portal-cyan: #1d9bf0;
+  --portal-blue: #1d9bf0;
+  --portal-sage: #00ba7c;
+  --portal-success: #00ba7c;
+  --portal-danger: #f4212e;
+  --portal-shadow: none;
+  --portal-shadow-soft: none;
+  --portal-nav: #000000;
+  --portal-nav-strong: #0f1419;
+  --portal-nav-text: #8b98a5;
+  --portal-nav-text-strong: #e7e9ea;
+  --portal-nav-text-muted: #71767b;
+  --portal-nav-icon-bg: #16181c;
+  --portal-nav-icon-active-bg: rgba(29, 155, 240, 0.16);
+  --portal-theme-toggle-bg: #16181c;
+  --portal-dark: #000000;
 }
 
 *, *::before, *::after {
@@ -99,11 +99,7 @@ body {
 }
 
 html[data-portal-theme="map-dark"] body {
-  background:
-    radial-gradient(circle at 50% -12%, rgba(112, 228, 255, 0.22), transparent 33rem),
-    radial-gradient(circle at 85% 18%, rgba(56, 189, 248, 0.14), transparent 25rem),
-    radial-gradient(circle at 12% 36%, rgba(152, 140, 255, 0.13), transparent 24rem),
-    linear-gradient(180deg, #07090f 0%, #0b0e18 54%, #0f1320 100%);
+  background: #000000;
   color: var(--portal-text);
 }
 
