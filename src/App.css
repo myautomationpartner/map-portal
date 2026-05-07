@@ -6003,3 +6003,54 @@ html[data-portal-theme="map-dark"] div:has(> img[src*="map-option-b-mark"]) {
   filter: none !important;
   box-shadow: none !important;
 }
+
+html[data-portal-theme="map-dark"] .portal-ai-action {
+  border: 1px solid rgba(174, 123, 255, 0.38) !important;
+  background:
+    linear-gradient(135deg, rgba(111, 76, 255, 0.92), rgba(166, 91, 255, 0.86) 52%, rgba(112, 228, 255, 0.72)) !important;
+  color: #ffffff !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    0 12px 26px rgba(93, 70, 220, 0.22) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-ai-action:hover:not(:disabled),
+html[data-portal-theme="map-dark"] .portal-ai-action:focus-visible {
+  border-color: rgba(194, 151, 255, 0.5) !important;
+  background:
+    linear-gradient(135deg, rgba(124, 87, 255, 0.96), rgba(178, 103, 255, 0.9) 52%, rgba(128, 231, 255, 0.78)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 14px 30px rgba(93, 70, 220, 0.28) !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-ai-action:disabled {
+  opacity: 0.7;
+}
+
+html[data-portal-theme="map-dark"] .partner-assist-actions .portal-ai-mini-action,
+html[data-portal-theme="map-dark"] .image-assist-box .portal-ai-mini-action {
+  border-color: rgba(174, 123, 255, 0.28) !important;
+  background:
+    linear-gradient(135deg, rgba(120, 87, 255, 0.14), rgba(178, 103, 255, 0.11) 54%, rgba(112, 228, 255, 0.09)) !important;
+  color: #d8c7ff !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+}
+
+html[data-portal-theme="map-dark"] .partner-assist-actions .portal-ai-mini-action svg,
+html[data-portal-theme="map-dark"] .image-assist-box .portal-ai-mini-action svg {
+  color: #b996ff !important;
+}
+
+html[data-portal-theme="map-dark"] .partner-assist-actions .portal-ai-mini-action:hover:not(:disabled),
+html[data-portal-theme="map-dark"] .partner-assist-actions .portal-ai-mini-action[data-active="true"],
+html[data-portal-theme="map-dark"] .image-assist-box .portal-ai-mini-action:hover:not(:disabled),
+html[data-portal-theme="map-dark"] .image-assist-box .portal-ai-mini-action[data-active="true"] {
+  border-color: rgba(194, 151, 255, 0.42) !important;
+  background:
+    linear-gradient(135deg, rgba(120, 87, 255, 0.22), rgba(178, 103, 255, 0.17) 54%, rgba(112, 228, 255, 0.12)) !important;
+  color: #f2ecff !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 22px rgba(93, 70, 220, 0.14) !important;
+}
