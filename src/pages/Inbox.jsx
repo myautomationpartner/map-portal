@@ -1006,8 +1006,9 @@ export default function Inbox() {
   const messages = messagesQuery.data || selectedConversation?.messages || []
   const meta = conversationsQuery.data?.meta || {}
   const totalCount = meta.all_count ?? conversations.length
+  const chatwootAccountId = websiteChatQuery.data?.settings?.chatwoot_account_id
   const openChatwootUrl = activeConversationId
-    ? `${CHATWOOT_APP_URL}/accounts/1/conversations/${activeConversationId}`
+    ? `${CHATWOOT_APP_URL}/accounts/${chatwootAccountId || 1}/conversations/${activeConversationId}`
     : CHATWOOT_APP_URL
 
   function handleSubmit(event) {
