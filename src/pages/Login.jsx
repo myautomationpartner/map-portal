@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { Loader2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { buildTenantConfig } from '../lib/tenantConfig'
 
 export default function Login() {
@@ -42,6 +42,8 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [setupMessage] = useState(loginContext.setupMessage)
+  const [showPassword, setShowPassword] = useState(false)
+  const loginSupportEmail = 'support@myautomationpartner.com'
 
   async function handleLogin(e) {
     e.preventDefault()
@@ -56,16 +58,75 @@ export default function Login() {
   }
 
   return (
-    <div className="portal-shell relative flex min-h-screen items-center justify-center p-4">
-      <div className="pointer-events-none absolute inset-0"
-        style={{ background: 'radial-gradient(ellipse 80% 55% at 50% 0%, color-mix(in srgb, var(--portal-cyan) 18%, transparent) 0%, transparent 68%)' }} />
+    <div className="relative min-h-[100svh] overflow-x-hidden bg-[#05070c] text-[#f7f9ff]">
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(circle at 56% 20%, rgba(29,155,240,0.13), transparent 32%), radial-gradient(circle at 88% 30%, rgba(185,255,104,0.12), transparent 26%), linear-gradient(180deg, #071018 0%, #05070c 50%, #05070c 100%)',
+        }}
+      />
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.18]"
+        style={{
+          backgroundImage:
+            'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)',
+          backgroundSize: '72px 72px',
+          maskImage: 'linear-gradient(180deg, rgba(0,0,0,0.9), transparent 72%)',
+        }}
+      />
 
-      <div className="relative z-10 grid w-full max-w-5xl gap-8 lg:grid-cols-[1.1fr_430px] lg:items-center">
-        <div className="hidden lg:block">
-          <div className="portal-panel rounded-[40px] p-8">
-            <div className="mb-8 flex items-center gap-4">
-              <div className="inline-flex h-20 w-28 items-center justify-center overflow-hidden rounded-[28px] border bg-black/20 p-2 shadow-sm"
-                style={{ borderColor: 'color-mix(in srgb, var(--portal-cyan) 22%, transparent)' }}>
+      <header className="relative border-b border-white/10">
+        <div className="mx-auto flex h-[92px] w-full max-w-[1380px] items-center justify-between px-5 sm:px-8 lg:px-10">
+          <a href="https://myautomationpartner.com/" className="flex min-w-0 items-center gap-3 no-underline">
+            <div className="flex h-12 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/12 bg-white/[0.03] p-1.5">
+              <img
+                src={tenant.logoUrl}
+                alt={`${tenant.displayName} logo`}
+                className="h-full w-full object-contain"
+                onError={handleLogoError}
+              />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-[#8b98a5]">
+                Secure portal access
+              </p>
+              <p className="truncate text-base font-extrabold tracking-[-0.01em] text-white sm:text-lg">
+                {tenant.displayName}
+              </p>
+            </div>
+          </a>
+          <a
+            href="https://myautomationpartner.com/"
+            className="hidden rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-bold text-[#d7dde7] no-underline transition hover:bg-white/[0.1] sm:inline-flex"
+          >
+            Back to homepage
+          </a>
+        </div>
+      </header>
+
+      <main className="relative mx-auto grid min-h-[calc(100svh-92px)] w-full max-w-[1380px] grid-cols-1 items-center gap-10 overflow-x-hidden px-5 py-10 sm:px-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(520px,0.78fr)] lg:px-10 lg:py-14">
+        <section className="w-full max-w-full min-w-0" style={{ maxWidth: 'calc(100vw - 40px)' }}>
+          <h1 className="text-[clamp(3rem,12.5vw,7.7rem)] font-black leading-[0.92] tracking-[-0.055em] text-white">
+            <span className="block">One front</span>
+            <span className="block">door for</span>
+            <span className="block">every</span>
+            <span className="block pt-5 text-[clamp(2.55rem,11vw,7.2rem)] text-[#c6ff72]" style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontWeight: 700, letterSpacing: '-0.065em' }}>
+              conversation.
+            </span>
+          </h1>
+          <p className="mt-9 max-w-full text-lg font-medium leading-[1.65] tracking-[-0.01em] text-[#c7cfdd] sm:max-w-[680px] sm:text-xl">
+            Sign in to review drafts, answer customers, approve posts, and keep the moving parts of your business from scattering across every channel.
+          </p>
+        </section>
+
+        <section className="w-full max-w-full justify-self-center sm:max-w-[580px] lg:justify-self-end" style={{ maxWidth: 'min(580px, calc(100vw - 40px))' }}>
+          <div className="rounded-[30px] border border-white/10 bg-[#1d2026]/80 p-7 shadow-[0_28px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-9">
+            <div className="mb-8 lg:hidden">
+              <div
+                className="mb-5 inline-flex h-16 w-20 items-center justify-center overflow-hidden rounded-2xl border bg-white/[0.03] p-2"
+                style={{ borderColor: 'rgba(255,255,255,0.12)' }}
+              >
                 <img
                   src={tenant.logoUrl}
                   alt={tenant.displayName}
@@ -73,69 +134,27 @@ export default function Login() {
                   onError={handleLogoError}
                 />
               </div>
-              <div>
-                <p className="font-display text-3xl font-semibold" style={{ color: 'var(--portal-text)' }}>{tenant.displayName}</p>
-                <p className="mt-1 text-sm font-medium" style={{ color: 'var(--portal-text-muted)' }}>{tenant.portalLabel}</p>
-              </div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#8b98a5]">
+                Secure portal access
+              </p>
+              <p className="mt-1 text-lg font-extrabold text-white">{tenant.displayName}</p>
             </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="portal-stat-card rounded-[24px] p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Documents</p>
-                <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>OneDrive-style file browsing</p>
-              </div>
-              <div className="portal-stat-card rounded-[24px] p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Sharing</p>
-                <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Signed previews and secure links</p>
-              </div>
-              <div className="portal-stat-card rounded-[24px] p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Daily Work</p>
-                <p className="mt-2 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Dashboard tools in one place</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="w-full max-w-sm justify-self-center lg:max-w-none">
-          <div className="mb-10 text-center lg:hidden">
-          <div className="mb-5 inline-block h-20 w-28 overflow-hidden rounded-[26px] border bg-black/20 p-2 shadow-lg"
-            style={{ borderColor: 'color-mix(in srgb, var(--portal-cyan) 22%, transparent)' }}>
-            <img
-              src={tenant.logoUrl}
-              alt={tenant.displayName}
-              className="w-full h-full object-contain"
-              onError={handleLogoError}
-            />
-          </div>
-          <h1 className="font-display mb-1 text-3xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-            {tenant.displayName}
-          </h1>
-          <p className="text-sm font-medium" style={{ color: 'var(--portal-text-muted)' }}>{tenant.portalLabel}</p>
-        </div>
-
-        <div className="portal-surface rounded-[32px] p-8">
-          <div className="mb-7">
-            <span className="portal-chip inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
-              Secure client access
-            </span>
-            <h2 className="font-display mt-4 text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>Welcome back</h2>
-            <p className="mt-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>Sign in to your portal dashboard and documents workspace.</p>
-          </div>
+            <h2 className="text-[clamp(2.15rem,3.2vw,2.95rem)] font-black leading-none tracking-[-0.055em] text-white lg:whitespace-nowrap">
+              Sign in to your portal.
+            </h2>
+            <p className="mt-5 text-base font-medium text-[#a8b3c2]">
+              Everything MAP is helping with lives here.
+            </p>
 
           <form onSubmit={handleLogin} className="space-y-5">
             {setupMessage && (
-              <div className="rounded-2xl px-4 py-3 text-sm" style={{
-                color: 'var(--portal-text)',
-                background: 'rgba(99, 214, 175, 0.14)',
-                border: '1px solid rgba(99, 214, 175, 0.28)',
-              }}>
+              <div className="rounded-2xl border border-[#00ba7c]/30 bg-[#00ba7c]/12 px-4 py-3 text-sm font-medium text-[#dff9ec]">
                 {setupMessage}
               </div>
             )}
 
             <div>
-              <label className="block text-xs font-medium uppercase tracking-wider mb-2"
-                style={{ color: 'var(--portal-text-soft)' }}>
+              <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-[#c7cfdd]">
                 Email
               </label>
               <input
@@ -143,28 +162,39 @@ export default function Login() {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
-                placeholder="you@studio.com"
-                className="portal-input px-4 py-3 text-sm"
+                placeholder="you@yourbusiness.com"
+                autoComplete="email"
+                className="h-[58px] w-full rounded-[18px] border border-white/10 bg-white/[0.08] px-5 text-base font-medium text-white outline-none transition placeholder:text-[#8b98a5] focus:border-[#76d7ee]/60 focus:bg-white/[0.1] focus:ring-4 focus:ring-[#76d7ee]/15"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium uppercase tracking-wider mb-2"
-                style={{ color: 'var(--portal-text-soft)' }}>
+              <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-[#c7cfdd]">
                 Password
               </label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                placeholder="••••••••"
-                className="portal-input px-4 py-3 text-sm"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  className="h-[58px] w-full rounded-[18px] border border-white/10 bg-white/[0.08] px-5 pr-13 text-base font-medium text-white outline-none transition placeholder:text-[#8b98a5] focus:border-[#76d7ee]/60 focus:bg-white/[0.1] focus:ring-4 focus:ring-[#76d7ee]/15"
+                />
+                <button
+                  type="button"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  onClick={() => setShowPassword(value => !value)}
+                  className="absolute right-4 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-[#9ca8b6] transition hover:bg-white/[0.08] hover:text-white"
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
             </div>
 
             {error && (
-              <div className="portal-status-danger flex items-center gap-2 rounded-2xl px-4 py-3 text-sm">
+              <div className="rounded-2xl border border-[#f4212e]/35 bg-[#f4212e]/12 px-4 py-3 text-sm font-medium text-[#ffd4d8]">
                 {error}
               </div>
             )}
@@ -172,7 +202,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="portal-button-primary flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-[58px] w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-[linear-gradient(100deg,#c6ff72_0%,#86e8f5_100%)] px-5 text-base font-black text-[#071018] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? (
                 <>
@@ -180,24 +210,30 @@ export default function Login() {
                   Signing in…
                 </>
               ) : (
-                'Sign in'
+                'Sign in to portal'
               )}
             </button>
           </form>
-        </div>
 
-        <p className="mt-6 text-center text-xs" style={{ color: 'var(--portal-text-soft)' }}>
-          Need access?{' '}
-          <a
-            href={`mailto:${tenant.supportEmail}`}
-            className="transition-colors hover:text-[var(--portal-primary)]"
-            style={{ color: 'var(--portal-text-muted)' }}
-          >
-            Contact support
-          </a>
-        </p>
+            <p className="mt-6 text-sm font-medium text-[#9ca8b6]">
+              Need help getting in? Contact{' '}
+              <a
+                href={`mailto:${loginSupportEmail}`}
+                className="font-extrabold text-[#86e8f5] no-underline transition hover:text-white"
+              >
+                {loginSupportEmail}
+              </a>
+              .
+            </p>
+          </div>
+        </section>
+      </main>
+      <footer className="pointer-events-none absolute bottom-6 left-0 right-0 hidden px-10 text-sm font-medium text-[#8b98a5] lg:block">
+        <div className="mx-auto flex max-w-[1380px] justify-between">
+          <span>© 2026 My Automation Partner</span>
+          <span>Secure login powered by Supabase.</span>
         </div>
-      </div>
+      </footer>
     </div>
   )
 }
