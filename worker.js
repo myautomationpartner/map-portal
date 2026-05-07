@@ -2986,6 +2986,8 @@ async function createContentPartnerDraft(env, envConfig, payload, message, conve
   const chatwootConfig = await getChatwootConfigForClient(env, envConfig, chatwootContext)
   return callSupabaseFunction(envConfig, 'portal-content-partner', {
     clientId: envConfig.clientId,
+    portalBaseUrl: getPortalOrigin(env, envConfig),
+    chatwootBaseUrl: chatwootConfig.baseUrl,
     chatwootAccountId: chatwootConfig.accountId,
     chatwootInboxId: conversation?.inbox_id || message.inbox_id || null,
     chatwootConversationId: conversation?.id || message.conversation_id || null,
@@ -3053,6 +3055,7 @@ async function processContentPartnerMessage(env, envConfig, payload, message, co
   }
 
   const result = await createContentPartnerDraft(env, envConfig, payload, message, conversation, gatewayToken, chatwootContext)
+  if (result?.chatwootReplySent) return result
   await sendContentPartnerChatwootReply(env, envConfig, conversationId, triggerMessageId, result, chatwootContext)
   return result
 }
