@@ -758,7 +758,24 @@ async function loadPrimaryPortalUser(clientId) {
   return Array.isArray(rows) && rows.length ? rows[0] : null
 }
 
-async function provisionChatwootTenant({ client, dryRun, skipChatwootProvisioning, skipChatwootPasswordReset }) {
+function resolveChatwootCallbackSecret({ deploymentMode }) {
+  const configured = secretValue(['CHATWOOT_WEBHOOK_BRIDGE_SECRET'], {
+    keychainServices: ['MAP_CHATWOOT_WEBHOOK_BRIDGE_SECRET', 'CHATWOOT_WEBHOOK_BRIDGE_SECRET'],
+  })
+
+  if (configured) return configured
+
+  if (deploymentMode === 'shared-path') {
+    throw new Error(
+      'CHATWOOT_WEBHOOK_BRIDGE_SECRET is required for shared-path portal provisioning. ' +
+      'The shared Worker and every shared-path Chatwoot Social Inbox must use the same stable callback token.',
+    )
+  }
+
+  return randomBytes(24).toString('hex')
+}
+
+async function provisionChatwootTenant({ client, dryRun, skipChatwootProvisioning, skipChatwootPasswordReset, deploymentMode }) {
   if (dryRun || skipChatwootProvisioning) {
     return {
       skipped: true,
@@ -772,10 +789,7 @@ async function provisionChatwootTenant({ client, dryRun, skipChatwootProvisionin
     throw new Error('No portal user/support email found for Chatwoot tenant provisioning.')
   }
 
-  const callbackSecret = secretValue(['CHATWOOT_WEBHOOK_BRIDGE_SECRET'], {
-    keychainServices: ['MAP_CHATWOOT_WEBHOOK_BRIDGE_SECRET', 'CHATWOOT_WEBHOOK_BRIDGE_SECRET'],
-    fallback: randomBytes(24).toString('hex'),
-  })
+  const callbackSecret = resolveChatwootCallbackSecret({ deploymentMode })
   const account = await createOrUpdateChatwootAccount(client)
   const operatorUserId = parsePositiveInteger(envValue(['CHATWOOT_OPERATOR_USER_ID'], '3'))
   if (operatorUserId) {
@@ -1257,6 +1271,20 @@ function deploymentSecret(keys, label, options = {}) {
 
 function buildSecretEnv(client, chatwootProvisioning = {}, options = {}) {
   const sharedMode = options.deploymentMode === 'shared-path'
+  const chatwootWebhookSecret = envValue(
+    ['CHATWOOT_WEBHOOK_BRIDGE_SECRET'],
+    chatwootProvisioning.callbackSecret || secretValue(['CHATWOOT_WEBHOOK_BRIDGE_SECRET'], {
+      keychainServices: ['MAP_CHATWOOT_WEBHOOK_BRIDGE_SECRET', 'CHATWOOT_WEBHOOK_BRIDGE_SECRET'],
+    }) || '',
+  )
+
+  if (sharedMode && !options.allowPlaceholders && !chatwootWebhookSecret) {
+    throw new Error(
+      'CHATWOOT_WEBHOOK_BRIDGE_SECRET is required before deploying the shared-path Worker. ' +
+      'Do not deploy map-shared-portal with an empty or generated Chatwoot callback token.',
+    )
+  }
+
   return {
     SUPABASE_URL: requiredValue(['SUPABASE_URL'], 'SUPABASE_URL', FALLBACK_SUPABASE_URL),
     SUPABASE_SERVICE_ROLE_KEY: requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY'),
@@ -1283,12 +1311,7 @@ function buildSecretEnv(client, chatwootProvisioning = {}, options = {}) {
           }),
         ),
     CHATWOOT_SOCIAL_INBOX_ID: sharedMode ? '' : (chatwootProvisioning.socialInboxId || envValue(['CHATWOOT_SOCIAL_INBOX_ID'], '')),
-    CHATWOOT_WEBHOOK_BRIDGE_SECRET: envValue(
-      ['CHATWOOT_WEBHOOK_BRIDGE_SECRET'],
-      chatwootProvisioning.callbackSecret || secretValue(['CHATWOOT_WEBHOOK_BRIDGE_SECRET'], {
-        keychainServices: ['MAP_CHATWOOT_WEBHOOK_BRIDGE_SECRET', 'CHATWOOT_WEBHOOK_BRIDGE_SECRET'],
-      }) || '',
-    ),
+    CHATWOOT_WEBHOOK_BRIDGE_SECRET: chatwootWebhookSecret,
     ZERNIO_API_BASE_URL: envValue(['ZERNIO_API_BASE_URL'], 'https://zernio.com/api/v1'),
     ZERNIO_API_KEY: envValue(
       ['ZERNIO_API_KEY'],
@@ -1514,6 +1537,7 @@ async function main() {
     dryRun,
     skipChatwootProvisioning,
     skipChatwootPasswordReset,
+    deploymentMode,
   })
   const publicEnv = buildPublicEnv(client, { deploymentMode })
   const secretEnv = buildSecretEnv(client, chatwootProvisioning, {
