@@ -1326,33 +1326,26 @@ export default function Documents() {
         isSubmitting={roomMutation.isPending}
       />
 
-      <section className="portal-command-bar rounded-[28px] px-4 py-3 md:px-5">
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-display text-2xl font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>Documents</h1>
-              <span className="portal-chip inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]">
-                <ShieldCheck className="h-3 w-3" />
-                Secure sharing
-              </span>
-            </div>
-            <p className="mt-1 max-w-3xl truncate text-xs md:text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-              Store files, create secure access rooms, and review access from one place.
-            </p>
-          </div>
+      <section className="portal-command-bar rounded-[22px] px-3 py-2 md:px-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h1 className="font-display text-xl font-semibold leading-none" style={{ color: 'var(--portal-text)' }}>Documents</h1>
+          <span className="portal-chip inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]">
+            <ShieldCheck className="h-3 w-3" />
+            Secure sharing
+          </span>
         </div>
 
         <div className="portal-command-bar-group">
-          <span className="inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)' }}>
-            <span className="uppercase tracking-[0.16em]" style={{ color: 'var(--portal-text-soft)' }}>Storage</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)' }}>
+            <span className="uppercase tracking-[0.14em]" style={{ color: 'var(--portal-text-soft)' }}>Storage</span>
             {usagePercent}%
           </span>
-          <span className="inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)' }}>
-            <FileText className="h-3.5 w-3.5" style={{ color: 'var(--portal-primary)' }} />
+          <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)' }}>
+            <FileText className="h-3 w-3" style={{ color: 'var(--portal-primary)' }} />
             {activeDocuments.length} files
           </span>
-          <span className="inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)' }}>
-            <Users className="h-3.5 w-3.5" style={{ color: 'var(--portal-primary)' }} />
+          <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)' }}>
+            <Users className="h-3 w-3" style={{ color: 'var(--portal-primary)' }} />
             {activeRooms.length} rooms
           </span>
         </div>
