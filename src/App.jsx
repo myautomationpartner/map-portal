@@ -24,6 +24,7 @@ import CampaignPartner from './pages/CampaignPartner'
 import Sidebar from './components/Sidebar'
 import BottomNav from './components/BottomNav'
 import PortalBillingBanner from './components/PortalBillingBanner'
+import PortalPartner from './components/PortalPartner'
 import { Loader2 } from 'lucide-react'
 import './App.css'
 
@@ -37,6 +38,9 @@ const queryClient = new QueryClient({
 })
 
 const PORTAL_THEME_STORAGE_KEY = 'map.portal.theme'
+const PORTAL_PARTNER_ENABLED =
+  import.meta.env.VITE_PORTAL_PARTNER_ENABLED !== 'false' &&
+  import.meta.env.VITE_PORTAL_COPILOT_ENABLED !== 'false'
 
 function resolveInitialPortalTheme() {
   if (typeof window === 'undefined') return 'dark'
@@ -329,6 +333,15 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
             actionPending={billingActionPending}
           />
           <Outlet context={{ session, profile, tenant, billingAccess, requireWriteAccess }} />
+          {PORTAL_PARTNER_ENABLED ? (
+            <PortalPartner
+              session={session}
+              profile={profile}
+              tenant={tenant}
+              billingAccess={billingAccess}
+              requireWriteAccess={requireWriteAccess}
+            />
+          ) : null}
         </main>
 
         {/* Mobile bottom nav */}

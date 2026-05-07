@@ -847,6 +847,55 @@ async function callEdgeFunction(path, body, options = {}) {
   return payload
 }
 
+async function callPortalWorker(path, options = {}) {
+  const accessToken = await getAccessToken()
+  const response = await fetch(portalPath(path), {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+      ...(options.headers || {}),
+    },
+  })
+
+  const payload = await response.json().catch(() => ({}))
+
+  if (!response.ok || payload?.success === false) {
+    const message = payload?.error || payload?.message || `Request failed with status ${response.status}`
+    const error = new Error(message)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}
+
+export async function sendPortalPartnerMessage(input) {
+  return callPortalWorker('/api/portal-partner/message', {
+    method: 'POST',
+    body: JSON.stringify(input ?? {}),
+  })
+}
+
+export async function fetchWebsiteChatSettings() {
+  return callPortalWorker('/api/website-chat/settings')
+}
+
+export async function checkWebsiteChatInstallation() {
+  return callPortalWorker('/api/website-chat/check-installation', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+export async function openContentPartnerConversation(input = {}) {
+  return callPortalWorker('/api/content-partner/conversation', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
 export async function getDocumentUrl(documentId) {
   return callEdgeFunction('get-document-url', { document_id: documentId })
 }

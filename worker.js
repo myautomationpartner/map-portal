@@ -1312,6 +1312,157 @@ async function handleContentPartnerConversation(request, env) {
   }
 }
 
+function classifyPortalPartnerIntent(message) {
+  const text = String(message || '').toLowerCase()
+  const hasAny = (terms) => terms.some((term) => text.includes(term))
+
+  if (
+    hasAny(['content partner', 'make a post for me', 'make a social post', 'make me a post', 'write a post for me', 'draft for me', 'map to make', 'map make'])
+    || (hasAny(['content request', 'request content']) && !hasAny(['how do i', 'help me create', 'help me post']))
+  ) {
+    return 'content_request'
+  }
+
+  if (hasAny(['create a post', 'create post', 'new post', 'help me post', 'help me create', 'publisher', 'schedule a post', 'schedule post', 'publish a post', 'post myself', 'write my post'])) {
+    return 'create_post'
+  }
+
+  if (hasAny(['caption', 'content', 'draft', 'social', 'facebook', 'instagram', 'tiktok', 'linkedin'])) {
+    return 'content_request'
+  }
+
+  if (hasAny(['website chat', 'chat widget', 'widget', 'install chat', 'chatwoot', 'mobile inbox', 'setup inbox'])) {
+    return 'website_chat'
+  }
+
+  if (hasAny(['training', 'train your partner', 'partner profile', 'moved', 'location', 'service area', 'audience', 'offer', 'avoid'])) {
+    return 'partner_training'
+  }
+
+  if (hasAny(['help', 'stuck', 'broken', 'error', 'issue', 'support', 'not working', 'problem'])) {
+    return 'support'
+  }
+
+  return 'general'
+}
+
+function buildPortalPartnerReply(intent, { message, currentPath, readOnly, clientName }) {
+  const safePath = trimText(currentPath || '/', 140)
+  const safeClientName = trimText(clientName || 'this portal', 100)
+  const contentText = trimText(message || '', 700)
+
+  if (intent === 'support') {
+    return {
+      reply: `I can hand this to support with the workspace and route attached. Current route: ${safePath}.`,
+      actions: [
+        { type: 'open_inbox' },
+      ],
+    }
+  }
+
+  if (intent === 'partner_training') {
+    return {
+      reply: readOnly
+        ? 'I can review Partner training, but this portal is read-only right now so I cannot save updates.'
+        : `I can help refresh the Partner profile for ${safeClientName}. I will show the editable fields first and save only after confirmation.`,
+      actions: readOnly
+        ? [{ type: 'open_inbox' }]
+        : [{ type: 'open_partner_training' }],
+    }
+  }
+
+  if (intent === 'website_chat') {
+    return {
+      reply: readOnly
+        ? 'I can explain Website Chat setup, but this portal is read-only right now so install checks and setting updates are blocked.'
+        : 'I can check whether Website Chat is installed, copy the install script, or open the full Website Chat settings.',
+      actions: readOnly
+        ? [{ type: 'open_settings_chat' }]
+        : [
+            { type: 'check_website_chat' },
+            { type: 'copy_website_chat_script' },
+            { type: 'open_settings_chat' },
+          ],
+    }
+  }
+
+  if (intent === 'create_post') {
+    return {
+      reply: readOnly
+        ? 'I can explain how Publisher works, but this portal is read-only right now so posting and scheduling actions are blocked.'
+        : 'I can guide you to Publisher. Start with the post idea, choose connected platforms, add media if needed, then preview before scheduling or publishing. I will not publish anything for you.',
+      actions: [
+        { type: 'open_create_post' },
+        ...(readOnly ? [] : [{ type: 'open_content_partner' }]),
+      ],
+    }
+  }
+
+  if (intent === 'content_request') {
+    return {
+      reply: readOnly
+        ? 'I can help shape the content request, but this portal is read-only right now so I cannot create a draft handoff.'
+        : contentText
+          ? 'I can hand this to Content Partner in Inbox. The request will stay draft-only for review.'
+          : 'Tell me the post idea, then I can hand it to Content Partner in Inbox for draft creation.',
+      actions: readOnly
+        ? [{ type: 'copy_content_request' }]
+        : [
+            { type: 'open_content_partner' },
+            { type: 'copy_content_request' },
+          ],
+    }
+  }
+
+  return {
+    reply: 'I can help with support, creating posts, Partner training, Website Chat setup, or content requests. Pick a guided action and I will keep it safe.',
+    actions: [
+      { type: 'open_inbox' },
+      { type: 'open_create_post' },
+      ...(readOnly ? [] : [{ type: 'open_partner_training' }]),
+      { type: 'open_settings_chat' },
+      ...(readOnly ? [] : [{ type: 'open_content_partner' }]),
+    ],
+  }
+}
+
+async function handlePortalPartnerMessage(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: { allow: 'POST, OPTIONS' },
+    })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const body = await request.json().catch(() => ({}))
+  const message = trimText(body?.message || '', 900)
+  const currentPath = trimText(body?.currentPath || '', 180)
+  const readOnly = Boolean(body?.readOnly)
+  const intent = classifyPortalPartnerIntent(message)
+  const clientName = firstString(auth.user?.clients?.business_name, auth.user?.clients?.slug)
+  const response = buildPortalPartnerReply(intent, {
+    message,
+    currentPath,
+    readOnly,
+    clientName,
+  })
+
+  return json({
+    success: true,
+    intent,
+    clientId: auth.envConfig.clientId,
+    clientSlug: auth.envConfig.clientSlug || null,
+    ...response,
+  })
+}
+
 async function handleChatwootProxy(request, env) {
   if (request.method === 'OPTIONS') {
     return new Response(null, {
@@ -4049,6 +4200,10 @@ export default {
 
     if (url.pathname === '/api/content-partner/conversation') {
       return handleContentPartnerConversation(request, env)
+    }
+
+    if (url.pathname === '/api/portal-partner/message' || url.pathname === '/api/portal-copilot/message') {
+      return handlePortalPartnerMessage(request, env)
     }
 
     if (url.pathname.startsWith('/api/chatwoot/')) {
