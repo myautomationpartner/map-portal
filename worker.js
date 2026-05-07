@@ -3004,14 +3004,10 @@ async function sendContentPartnerChatwootReply(env, envConfig, conversationId, t
   const simplifyUrl = getContentPartnerQuickFixUrl(env, result?.requestId, 's', envConfig)
   const imageUrl = getContentPartnerQuickFixUrl(env, result?.requestId, 'i', envConfig)
   const draftCaption = firstString(result?.caption, result?.draftCaption, result?.draft_caption)
-  const captionPreview = draftCaption
-    ? `${trimText(draftCaption, 320)}${draftCaption.length > 320 ? '...' : ''}`
-    : ''
+  const postUrl = reviewUrl || editorUrl
   const lines = [
-    'Draft ready.',
-    captionPreview ? `Copy preview:\n${captionPreview}` : firstString(result?.partnerReply) || 'I created a Publisher draft from your message.',
-    reviewUrl ? `Review and approve:\n${reviewUrl}` : '',
-    simplifyUrl && imageUrl ? `Quick fixes:\nSimplify: ${simplifyUrl}\nImage: ${imageUrl}` : '',
+    'Here ya go!',
+    postUrl ? `Review your post:\n${postUrl}` : '',
   ].filter(Boolean)
   const content = lines.join('\n\n').slice(0, 5000)
   const contentAttributes = {
