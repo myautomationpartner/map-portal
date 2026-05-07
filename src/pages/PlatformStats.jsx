@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link, useParams, useOutletContext } from 'react-router-dom'
+import { Link, Navigate, useParams, useOutletContext } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { getPlatformConfig, normalizePlatformId } from '../lib/platformCatalog'
+import { CUSTOMER_VISIBLE_PLATFORM_IDS, getPlatformConfig, normalizePlatformId } from '../lib/platformCatalog'
 import {
   Image,
   ArrowLeft, ChevronRight, Loader2
@@ -70,6 +70,7 @@ export default function PlatformStats() {
   const platform = normalizePlatformId(routePlatform)
   const config = getPlatformConfig(platform)
   const Icon = config.Icon
+  const platformIsVisible = CUSTOMER_VISIBLE_PLATFORM_IDS.includes(platform)
 
   const { data: profile } = useQuery({
     queryKey: ['profile'],
@@ -85,13 +86,13 @@ export default function PlatformStats() {
   const { data: rawMetrics = [] } = useQuery({
     queryKey: ['metrics', clientId, platform],
     queryFn: () => fetchMetricsByPlatform(clientId, platform),
-    enabled: !!clientId,
+    enabled: !!clientId && platformIsVisible,
   })
 
   const { data: recentPosts = [] } = useQuery({
     queryKey: ['recent-posts', clientId, platform],
     queryFn: () => fetchRecentPosts(clientId, platform),
-    enabled: !!clientId,
+    enabled: !!clientId && platformIsVisible,
   })
 
   const metrics = rawMetrics
@@ -104,6 +105,8 @@ export default function PlatformStats() {
   const change7d   = calcNetChange(metrics, 7, config.metricField)
   const change30d  = calcNetChange(metrics, 30, config.metricField)
   const changeYear = calcNetChange(metrics, 365, config.metricField)
+
+  if (!platformIsVisible) return <Navigate to="/" replace />
 
   return (
     <div className="portal-page w-full max-w-none space-y-6 md:p-5 xl:p-6">

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { PLATFORM_CATALOG } from '../lib/platformCatalog.jsx'
+import { CUSTOMER_VISIBLE_PUBLISHING_PLATFORMS } from '../lib/platformCatalog.jsx'
 import {
   deletePost,
   deleteSocialDraft,
@@ -48,9 +48,15 @@ const PHOTO_LIBRARY_LINKS = [
   { label: 'OneDrive', href: 'https://onedrive.live.com/', Icon: FaMicrosoft, color: '#00A4EF' },
 ]
 
-const PLATFORMS = ['facebook', 'instagram', 'google', 'tiktok', 'linkedin', 'twitter']
-  .map((id) => PLATFORM_CATALOG[id])
-  .filter(Boolean)
+const PLATFORMS = CUSTOMER_VISIBLE_PUBLISHING_PLATFORMS
+
+function formatVisiblePlatformLabels(platformIds = []) {
+  const labels = platformIds
+    .map((platformId) => PLATFORMS.find((platform) => platform.id === platformId)?.label)
+    .filter(Boolean)
+
+  return labels.join(', ')
+}
 
 const PLATFORM_FORMAT_RULES = {
   facebook: {
@@ -1265,9 +1271,7 @@ export default function CreatePost() {
   const [selectedPlatforms, setSelectedPlatforms] = useState({
     facebook: false,
     instagram: false,
-    google: false,
     tiktok: false,
-    linkedin: false,
     twitter: false,
   })
   const [scheduledFor, setScheduledFor] = useState('')
@@ -1367,7 +1371,7 @@ export default function CreatePost() {
   const connectedActivePlatforms = activePlatforms.filter((platformId) => connectedPlatformIds.has(platformId))
   const disconnectedActivePlatforms = activePlatforms.filter((platformId) => !connectedPlatformIds.has(platformId))
 
-  const charLimit = selectedPlatforms.google ? 1500 : 2200
+  const charLimit = 2200
   const charOver = content.length > charLimit
   const charPercent = Math.min((content.length / charLimit) * 100, 100)
   const isSubmitting = submitState === 'uploading' || submitState === 'posting'
@@ -1765,12 +1769,10 @@ export default function CreatePost() {
     setSelectedPlatforms({
       facebook: Boolean(post.platforms?.includes('facebook')),
       instagram: Boolean(post.platforms?.includes('instagram')),
-      google: Boolean(post.platforms?.includes('google')),
       tiktok: Boolean(post.platforms?.includes('tiktok')),
-      linkedin: Boolean(post.platforms?.includes('linkedin')),
       twitter: Boolean(post.platforms?.includes('twitter')),
     })
-    setPreviewPlatform(post.platforms?.[0] || 'facebook')
+    setPreviewPlatform(post.platforms?.find((platformId) => PLATFORMS.some((platform) => platform.id === platformId)) || 'facebook')
     setTimingMode('custom')
     setScheduledFor(isoToLocalInputValue(post.scheduled_for, timezone))
     setSelectedDay(post.localDate || selectedDay)
@@ -2222,7 +2224,7 @@ export default function CreatePost() {
     }
 
     const platformLabel = platformsToFormat
-      .map((platformId) => PLATFORM_CATALOG[platformId]?.label || platformId)
+      .map((platformId) => PLATFORMS.find((platform) => platform.id === platformId)?.label || platformId)
       .join(', ')
 
     setImageFormatState('formatting')
@@ -2990,7 +2992,7 @@ export default function CreatePost() {
                 <div className="create-post-avatar">D</div>
                 <div>
                   <strong>{profile?.clients?.business_name || 'Dancescapes Performing Arts'}</strong>
-                  <span>{activePlatforms.length ? activePlatforms.map((platformId) => PLATFORMS.find((platform) => platform.id === platformId)?.label).filter(Boolean).join(', ') : 'Choose platforms below'}</span>
+                  <span>{activePlatforms.length ? formatVisiblePlatformLabels(activePlatforms) : 'Choose platforms below'}</span>
                 </div>
               </div>
               <div className="create-post-compose-grid create-post-ticket-grid">
@@ -3935,7 +3937,7 @@ export default function CreatePost() {
                                   {post.localTime}
                                 </p>
                                 <p className="mt-0.5 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                                  {(post.platforms || []).join(', ') || post.status}
+                                  {formatVisiblePlatformLabels(post.platforms) || post.status}
                                 </p>
                               </div>
                               <div className="flex items-center gap-2">

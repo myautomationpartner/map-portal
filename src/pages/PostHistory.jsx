@@ -3,8 +3,9 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { reconcileScheduledPosts } from '../lib/portalApi'
-import { ArrowLeft, RefreshCw, Share2, Camera, Search,
-  MapPin, Video, ImageIcon, FileText, ChevronDown, ChevronUp
+import { CUSTOMER_VISIBLE_PUBLISHING_PLATFORMS } from '../lib/platformCatalog'
+import { ArrowLeft, RefreshCw, Search,
+  Video, ImageIcon, FileText, ChevronDown, ChevronUp
 } from 'lucide-react'
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
@@ -42,12 +43,7 @@ const STATUS_CONFIG = {
   failed:    { label: 'Failed',    style: 'rgba(255,122,184,0.12)', textColor: '#ff7ab8', borderColor: 'rgba(255,122,184,0.26)' },
 }
 
-const PLATFORMS = [
-  { id: 'facebook',  label: 'Facebook',  icon: Share2 },
-  { id: 'instagram', label: 'Instagram', icon: Camera },
-  { id: 'google',    label: 'Google',    icon: MapPin  },
-  { id: 'tiktok',    label: 'TikTok',    icon: Video   },
-]
+const PLATFORMS = CUSTOMER_VISIBLE_PUBLISHING_PLATFORMS
 
 // ── Post Card ────────────────────────────────────────────────────────────────
 
@@ -70,9 +66,9 @@ function PostCard({ post }) {
       onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--portal-border)'}>
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4">
         <div className="flex flex-wrap gap-2">
-          {post.platforms?.map(platformId => {
+          {post.platforms?.filter((platformId) => PLATFORMS.some((platform) => platform.id === platformId)).map(platformId => {
             const platform = PLATFORMS.find(p => p.id === platformId)
-            const Icon = platform?.icon || FileText
+            const Icon = platform?.Icon || FileText
             return (
               <span key={platformId} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
                 style={{ background: 'rgba(112,228,255,0.10)', border: '1px solid rgba(112,228,255,0.24)', color: 'var(--map-brand-cyan)' }}>
@@ -209,7 +205,7 @@ export default function PostHistory() {
             <button key={platform.id} onClick={() => setPlatformFilter(platform.id)}
               style={platformFilter === platform.id ? filterTabActive : filterTabInactive}
               className="flex items-center gap-1.5">
-              <platform.icon className="w-3.5 h-3.5" />
+              <platform.Icon className="w-3.5 h-3.5" />
               {platform.label}
             </button>
           ))}

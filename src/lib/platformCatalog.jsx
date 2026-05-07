@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { FaLinkedinIn } from 'react-icons/fa'
 import { SiFacebook, SiGoogle, SiInstagram, SiTiktok, SiX } from 'react-icons/si'
 
@@ -71,13 +72,15 @@ export const PLATFORM_CATALOG = {
 }
 
 export const DASHBOARD_PLATFORMS = [
-  PLATFORM_CATALOG.instagram,
   PLATFORM_CATALOG.facebook,
-  PLATFORM_CATALOG.tiktok,
-  PLATFORM_CATALOG.google,
-  PLATFORM_CATALOG.linkedin,
+  PLATFORM_CATALOG.instagram,
   PLATFORM_CATALOG.twitter,
+  PLATFORM_CATALOG.tiktok,
 ]
+
+export const CUSTOMER_VISIBLE_PUBLISHING_PLATFORMS = DASHBOARD_PLATFORMS
+
+export const CUSTOMER_VISIBLE_PLATFORM_IDS = CUSTOMER_VISIBLE_PUBLISHING_PLATFORMS.map((platform) => platform.id)
 
 export function getPlatformConfig(platformId) {
   return PLATFORM_CATALOG[platformId] || PLATFORM_CATALOG.instagram

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { AlertCircle, ArrowLeft, CalendarDays, Clock3, Loader2, PencilLine, Trash2 } from 'lucide-react'
 import { deletePost, fetchProfile, fetchScheduledPosts, reconcileScheduledPosts } from '../lib/portalApi'
+import { CUSTOMER_VISIBLE_PUBLISHING_PLATFORMS } from '../lib/platformCatalog'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 
@@ -53,6 +54,14 @@ function formatDetailedDateTime(value) {
   } catch {
     return value
   }
+}
+
+function formatVisiblePlatforms(platforms = []) {
+  const labels = platforms
+    .map((platformId) => CUSTOMER_VISIBLE_PUBLISHING_PLATFORMS.find((platform) => platform.id === platformId)?.label)
+    .filter(Boolean)
+
+  return labels.length ? labels.join(', ') : 'No visible platforms'
 }
 
 export default function ScheduledPosts() {
@@ -215,7 +224,7 @@ export default function ScheduledPosts() {
                   </div>
 
                   <p className="mt-3 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
-                    {(post.platforms || []).join(', ') || 'No platforms'}
+                    {formatVisiblePlatforms(post.platforms)}
                   </p>
 
                   <p className="mt-3 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
