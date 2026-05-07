@@ -3768,6 +3768,12 @@
   padding: 0.75rem;
 }
 
+.portal-ai-credit-pill {
+  border: 1px solid rgba(132, 72, 255, 0.2);
+  background: linear-gradient(135deg, rgba(132, 72, 255, 0.12), rgba(112, 228, 255, 0.1));
+  color: #5f30b2;
+}
+
 .create-post-creative-panel {
   align-self: start;
 }
@@ -6035,6 +6041,29 @@ html[data-portal-theme="map-dark"] .image-assist-box .portal-ai-mini-action {
     linear-gradient(135deg, rgba(120, 87, 255, 0.14), rgba(178, 103, 255, 0.11) 54%, rgba(112, 228, 255, 0.09)) !important;
   color: #d8c7ff !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+}
+
+html[data-portal-theme="map-dark"] .image-assist-box {
+  border-color: rgba(174, 123, 255, 0.22) !important;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(132, 72, 255, 0.15), transparent 18rem),
+    radial-gradient(circle at 90% 12%, rgba(112, 228, 255, 0.1), transparent 18rem),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.074), rgba(255, 255, 255, 0.024)),
+    rgba(10, 15, 27, 0.86) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.075),
+    0 14px 30px rgba(0, 0, 0, 0.18) !important;
+}
+
+html[data-portal-theme="map-dark"] .image-assist-box > .flex:first-child p:first-child {
+  color: #b996ff !important;
+}
+
+html[data-portal-theme="map-dark"] .portal-ai-credit-pill {
+  border-color: rgba(174, 123, 255, 0.26) !important;
+  background:
+    linear-gradient(135deg, rgba(120, 87, 255, 0.2), rgba(112, 228, 255, 0.1)) !important;
+  color: #d8c7ff !important;
 }
 
 html[data-portal-theme="map-dark"] .partner-assist-actions .portal-ai-mini-action svg,

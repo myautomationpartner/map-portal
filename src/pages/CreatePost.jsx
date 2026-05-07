@@ -3430,7 +3430,7 @@ export default function CreatePost() {
                 </div>
               )}
 
-              <div className="mt-3 rounded-[22px] p-3" style={{ background: 'rgba(255,255,255,0.72)', border: '1px solid var(--portal-border)' }}>
+              <div className="image-assist-box">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
@@ -3442,7 +3442,7 @@ export default function CreatePost() {
                         : 'Improve the image, then format crops for the selected platforms.'}
                     </p>
                   </div>
-                  <span className="rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: 'rgba(93,120,255,0.10)', color: '#4058c9' }}>
+                  <span className="portal-ai-credit-pill rounded-full px-3 py-1 text-[11px] font-semibold">
                     2 credits for AI edits
                   </span>
                 </div>
