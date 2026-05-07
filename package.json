@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test:secure-vault": "node --test src/lib/secureVault.test.mjs",
     "preview": "vite preview",
     "provision:client": "node ./scripts/provision-client-portal.mjs",
     "deploy:test-portal": "node ./scripts/deploy-portal-update.mjs --client-slug dancescapes-performing-arts",

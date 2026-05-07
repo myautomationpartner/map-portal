@@ -1,5 +1,12 @@
 import { supabase, supabaseUrl } from './supabase'
 import { portalPath } from './portalPath'
+import {
+  buildSecureVaultRoomUrl,
+  buildSecureVaultShareUrl,
+  generateRoomToken,
+  normalizeRoomExpiry,
+  sha256Hex,
+} from './secureVault'
 
 const FUNCTION_BASE = `${supabaseUrl}/functions/v1`
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
@@ -877,7 +884,12 @@ export async function startOpportunityRadar(input) {
 }
 
 export async function resolveShareLink(token) {
-  return callEdgeFunction('resolve-share-link', { token }, { public: true })
+  try {
+    return await callEdgeFunction('secure-resolve-share-link', { token }, { public: true })
+  } catch (error) {
+    if (!['invalid_token', 'missing_token'].includes(error?.payload?.error || error?.message)) throw error
+    return callEdgeFunction('resolve-share-link', { token }, { public: true })
+  }
 }
 
 export async function uploadFileToSignedUrl(uploadUrl, file, mimeType) {
@@ -923,4 +935,366 @@ export async function revokeShareLink(shareLinkId) {
 
   if (error) throw error
   return data
+}
+
+const SECURE_DOCUMENT_SELECT = 'id, client_id, uploaded_by, storage_path, file_name, mime_type, size_bytes, category, folder_id, description, is_archived, created_at, updated_at, secure_folders(id, name, parent_folder_id)'
+const SECURE_FOLDER_SELECT = 'id, client_id, parent_folder_id, created_by, name, is_archived, created_at, updated_at'
+const SECURE_SHARE_LINK_SELECT = 'id, document_id, client_id, created_by, token_hash, expires_at, max_uses, use_count, revoked_at, created_at, updated_at'
+const SECURE_ROOM_SELECT = 'id, client_id, created_by, name, expires_at, revoked_at, passcode_hash, access_mode, created_at, updated_at, secure_share_room_documents(document_id, secure_documents(id, file_name, mime_type, size_bytes, is_archived)), secure_share_room_folders(folder_id, secure_folders(id, name, parent_folder_id, is_archived)), secure_share_room_recipients(id, email, name, invited_at, last_opened_at)'
+
+export async function fetchSecureVaultDocuments() {
+  const { data, error } = await supabase
+    .from('secure_documents')
+    .select(SECURE_DOCUMENT_SELECT)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchSecureVaultFolders() {
+  const { data, error } = await supabase
+    .from('secure_folders')
+    .select(SECURE_FOLDER_SELECT)
+    .eq('is_archived', false)
+    .order('name', { ascending: true })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createSecureVaultFolder({ clientId, name, parentFolderId = null }) {
+  if (!clientId) throw new Error('Client profile is still loading.')
+  if (!name?.trim()) throw new Error('Folder name is required.')
+
+  const session = await supabase.auth.getSession()
+  const userId = session.data.session?.user?.id || null
+  const { data, error } = await supabase
+    .from('secure_folders')
+    .insert({
+      client_id: clientId,
+      parent_folder_id: parentFolderId || null,
+      created_by: userId,
+      name: name.trim(),
+    })
+    .select(SECURE_FOLDER_SELECT)
+    .single()
+
+  if (error) throw error
+
+  await supabase.from('secure_document_access_log').insert({
+    client_id: clientId,
+    accessed_by: userId,
+    action: 'folder_created',
+    metadata: { folder_id: data.id, name: data.name, parent_folder_id: data.parent_folder_id },
+  })
+
+  return data
+}
+
+export async function updateSecureVaultDocument(documentId, changes) {
+  const payload = {}
+
+  if (Object.prototype.hasOwnProperty.call(changes, 'file_name')) {
+    payload.file_name = changes.file_name ? changes.file_name.trim() : null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(changes, 'category')) {
+    payload.category = changes.category ? changes.category.trim() : null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(changes, 'folder_id')) {
+    payload.folder_id = changes.folder_id || null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(changes, 'description')) {
+    payload.description = changes.description ? changes.description.trim() : null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(changes, 'is_archived')) {
+    payload.is_archived = Boolean(changes.is_archived)
+  }
+
+  const { data, error } = await supabase
+    .from('secure_documents')
+    .update(payload)
+    .eq('id', documentId)
+    .select(SECURE_DOCUMENT_SELECT)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function fetchSecureVaultAudit() {
+  const { data, error } = await supabase
+    .from('secure_document_access_log')
+    .select('id, document_id, client_id, accessed_by, room_id, recipient_id, action, ip_address, user_agent, metadata, accessed_at, secure_documents(file_name), secure_share_rooms(name), secure_share_room_recipients(email)')
+    .order('accessed_at', { ascending: false })
+    .limit(200)
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchSecureVaultRooms() {
+  const { data, error } = await supabase
+    .from('secure_share_rooms')
+    .select(SECURE_ROOM_SELECT)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchSecureVaultShareLinks() {
+  const { data, error } = await supabase
+    .from('secure_share_links')
+    .select(SECURE_SHARE_LINK_SELECT)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function getSecureVaultUploadUrl(input) {
+  return callEdgeFunction('secure-get-upload-url', input)
+}
+
+export async function uploadSecureVaultFileToSignedUrl(uploadUrl, file, mimeType) {
+  return uploadFileToSignedUrl(uploadUrl, file, mimeType)
+}
+
+export async function getSecureVaultDocumentUrl(documentId, action = 'view') {
+  return callEdgeFunction('secure-get-document-url', {
+    document_id: documentId,
+    action,
+  })
+}
+
+export async function createSecureVaultRoom({
+  clientId,
+  name,
+  documentIds,
+  folderIds = [],
+  recipientEmails,
+  expiresAt,
+  accessMode = 'view_and_download',
+  passcode,
+}) {
+  if (!clientId) throw new Error('Client profile is still loading.')
+  if (!name?.trim()) throw new Error('Room name is required.')
+  if (!Array.isArray(documentIds) || documentIds.length === 0) throw new Error('Select at least one document.')
+  if (!expiresAt) throw new Error('Expiry date is required.')
+  if (!passcode?.trim()) throw new Error('Add a passcode for this secure room.')
+
+  const normalizedRecipients = Array.from(new Set((recipientEmails ?? [])
+    .map((email) => String(email || '').trim().toLowerCase())
+    .filter(Boolean)))
+  if (!normalizedRecipients.length) throw new Error('Add at least one recipient email.')
+
+  const token = generateRoomToken()
+  const tokenHash = await sha256Hex(token)
+  const passcodeValue = passcode?.trim() || ''
+  const passcodeHash = passcodeValue ? await sha256Hex(passcodeValue) : null
+  const expiresAtIso = normalizeRoomExpiry(expiresAt)
+  const session = await supabase.auth.getSession()
+  const userId = session.data.session?.user?.id || null
+
+  const { data: room, error: roomError } = await supabase
+    .from('secure_share_rooms')
+    .insert({
+      client_id: clientId,
+      created_by: userId,
+      name: name.trim(),
+      token_hash: tokenHash,
+      expires_at: expiresAtIso,
+      passcode_hash: passcodeHash,
+      access_mode: accessMode === 'view_only' ? 'view_only' : 'view_and_download',
+    })
+    .select('id, client_id, created_by, name, expires_at, revoked_at, passcode_hash, access_mode, created_at, updated_at')
+    .single()
+
+  if (roomError) throw roomError
+
+  const uniqueDocumentIds = Array.from(new Set(documentIds.filter(Boolean)))
+  const uniqueFolderIds = Array.from(new Set((folderIds ?? []).filter(Boolean)))
+  const documentRows = uniqueDocumentIds.map((documentId) => ({
+    room_id: room.id,
+    document_id: documentId,
+    client_id: clientId,
+    added_by: userId,
+  }))
+  const folderRows = uniqueFolderIds.map((folderId) => ({
+    room_id: room.id,
+    folder_id: folderId,
+    client_id: clientId,
+    added_by: userId,
+  }))
+
+  const recipientRows = normalizedRecipients.map((email) => ({
+    room_id: room.id,
+    client_id: clientId,
+    email,
+  }))
+
+  const [{ error: docsError }, { error: foldersError }, { error: recipientsError }] = await Promise.all([
+    supabase.from('secure_share_room_documents').insert(documentRows),
+    folderRows.length
+      ? supabase.from('secure_share_room_folders').insert(folderRows)
+      : Promise.resolve({ error: null }),
+    recipientRows.length
+      ? supabase.from('secure_share_room_recipients').insert(recipientRows)
+      : Promise.resolve({ error: null }),
+  ])
+
+  if (docsError || foldersError || recipientsError) {
+    await supabase.from('secure_share_rooms').delete().eq('id', room.id)
+    throw docsError || foldersError || recipientsError
+  }
+
+  const auditRows = [
+    {
+      client_id: clientId,
+      room_id: room.id,
+      accessed_by: userId,
+      action: 'room_created',
+      metadata: { name: room.name, document_count: uniqueDocumentIds.length, folder_count: uniqueFolderIds.length },
+    },
+    ...recipientRows.map((recipient) => ({
+      client_id: clientId,
+      room_id: room.id,
+      accessed_by: userId,
+      action: 'room_invite_created',
+      metadata: { email: recipient.email },
+    })),
+  ]
+
+  await supabase.from('secure_document_access_log').insert(auditRows)
+
+  const roomWithSecrets = {
+    ...room,
+    token,
+    passcode: passcodeValue,
+    share_url: buildSecureVaultRoomUrl(token, window.location.origin, portalPath('/').replace(/\/$/, '')),
+  }
+
+  try {
+    roomWithSecrets.invite_delivery = await sendSecureVaultRoomInvites({
+      roomId: room.id,
+      token,
+      passcode: passcodeValue,
+      shareUrl: roomWithSecrets.share_url,
+      recipientEmails: normalizedRecipients,
+    })
+  } catch (error) {
+    roomWithSecrets.invite_delivery = {
+      sent_count: 0,
+      failed_count: normalizedRecipients.length,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+
+  return roomWithSecrets
+}
+
+export async function createSecureVaultShareLink({ clientId, documentId, expiresAt, maxUses }) {
+  if (!clientId) throw new Error('Client profile is still loading.')
+  if (!documentId) throw new Error('Choose a document to share.')
+
+  const token = generateRoomToken()
+  const tokenHash = await sha256Hex(token)
+  const session = await supabase.auth.getSession()
+  const userId = session.data.session?.user?.id || null
+  const maxUsesValue = Number(maxUses)
+
+  const { data, error } = await supabase
+    .from('secure_share_links')
+    .insert({
+      client_id: clientId,
+      document_id: documentId,
+      created_by: userId,
+      token_hash: tokenHash,
+      expires_at: expiresAt ? normalizeRoomExpiry(expiresAt) : null,
+      max_uses: Number.isFinite(maxUsesValue) && maxUsesValue > 0 ? Math.floor(maxUsesValue) : null,
+    })
+    .select(SECURE_SHARE_LINK_SELECT)
+    .single()
+
+  if (error) throw error
+
+  await supabase.from('secure_document_access_log').insert({
+    client_id: clientId,
+    document_id: documentId,
+    accessed_by: userId,
+    action: 'share_link_created',
+    metadata: { share_link_id: data.id, expires_at: data.expires_at, max_uses: data.max_uses },
+  })
+
+  return {
+    ...data,
+    token,
+    share_url: buildSecureVaultShareUrl(token, window.location.origin, portalPath('/').replace(/\/$/, '')),
+  }
+}
+
+export async function revokeSecureVaultShareLink(shareLinkId) {
+  const { data, error } = await supabase
+    .from('secure_share_links')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('id', shareLinkId)
+    .is('revoked_at', null)
+    .select('id, client_id, document_id')
+    .single()
+
+  if (error) throw error
+
+  await supabase.from('secure_document_access_log').insert({
+    client_id: data.client_id,
+    document_id: data.document_id,
+    action: 'share_link_revoked',
+    metadata: { share_link_id: data.id },
+  })
+
+  return data
+}
+
+export async function sendSecureVaultRoomInvites({
+  roomId,
+  token,
+  passcode,
+  shareUrl,
+  recipientEmails,
+}) {
+  return callEdgeFunction('secure-send-room-invites', {
+    room_id: roomId,
+    token,
+    passcode,
+    share_url: shareUrl,
+    recipient_emails: recipientEmails,
+  })
+}
+
+export async function revokeSecureVaultRoom(roomId) {
+  const { data: room, error } = await supabase
+    .from('secure_share_rooms')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('id', roomId)
+    .is('revoked_at', null)
+    .select('id, client_id')
+    .single()
+
+  if (error) throw error
+
+  await supabase.from('secure_document_access_log').insert({
+    client_id: room.client_id,
+    room_id: room.id,
+    action: 'room_revoked',
+  })
+
+  return room
+}
+
+export async function resolveSecureVaultRoom(input) {
+  return callEdgeFunction('secure-resolve-room', input, { public: true })
 }

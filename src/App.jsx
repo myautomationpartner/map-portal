@@ -16,6 +16,7 @@ import ScheduledPosts from './pages/ScheduledPosts'
 import PlatformStats from './pages/PlatformStats'
 import Documents from './pages/Documents'
 import PublicShare from './pages/PublicShare'
+import SecureVaultRoom from './pages/SecureVaultRoom'
 import ConnectReturn from './pages/ConnectReturn'
 import OpportunityRadar from './pages/OpportunityRadar'
 import ContentCalendar from './pages/ContentCalendar'
@@ -366,6 +367,7 @@ export default function App() {
               />
               <Route path="/share" element={<PublicShare />} />
               <Route path="/share/:token" element={<PublicShare />} />
+              <Route path="/vault/:token" element={<SecureVaultRoom />} />
               <Route path="/connect-return" element={<ConnectReturn />} />
               <Route
                 element={(
@@ -380,6 +382,7 @@ export default function App() {
                 <Route path="/calendar" element={<ContentCalendar />} />
                 <Route path="/campaigns" element={<CampaignPartner />} />
                 <Route path="/documents" element={<Documents />} />
+                <Route path="/secure-vault" element={<Navigate to="/documents" replace />} />
                 <Route path="/opportunities" element={<OpportunityRadar />} />
                 <Route path="/inbox" element={<Inbox />} />
                 <Route path="/post" element={<CreatePost />} />

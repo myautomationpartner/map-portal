@@ -7,8 +7,9 @@ import {
   AlertCircle,
   CheckCircle2,
   Copy,
+  Download,
   ExternalLink,
-  FileBadge,
+  Eye,
   FileCode2,
   FileImage,
   FileSpreadsheet,
@@ -16,45 +17,51 @@ import {
   FolderOpen,
   FolderPlus,
   Grid2X2,
+  History,
   Link2,
   List,
   Loader2,
-  Maximize2,
+  LockKeyhole,
+  Mail,
   MoreHorizontal,
   Search,
   Share2,
-  Trash2,
+  ShieldCheck,
   Upload,
+  Users,
   X,
 } from 'lucide-react'
 import PdfDocumentViewer from '../components/PdfDocumentViewer'
 import TextDocumentViewer from '../components/TextDocumentViewer'
 import {
-  MAX_DOCUMENT_BYTES,
-  createShareLink,
-  deleteDocument,
-  fetchDocuments,
-  fetchProfile,
-  fetchShareLinks,
-  getDocumentUrl,
-  getSessionClaims,
-  getUploadUrl,
-  resolveUploadMimeType,
-  revokeShareLink,
-  updateDocumentMetadata,
-  uploadFileToSignedUrl,
+  createSecureVaultFolder,
+  createSecureVaultRoom,
+  createSecureVaultShareLink,
+  fetchSecureVaultAudit,
+  fetchSecureVaultDocuments,
+  fetchSecureVaultFolders,
+  fetchSecureVaultRooms,
+  fetchSecureVaultShareLinks,
+  getSecureVaultDocumentUrl,
+  getSecureVaultUploadUrl,
+  revokeSecureVaultShareLink,
+  revokeSecureVaultRoom,
+  updateSecureVaultDocument,
+  uploadSecureVaultFileToSignedUrl,
 } from '../lib/portalApi'
-import { buildTenantConfig } from '../lib/tenantConfig'
+import {
+  SECURE_VAULT_QUOTA_BYTES,
+  defaultRoomExpiryValue,
+  formatVaultBytes,
+  isRoomExpired,
+  validateSecureVaultFile,
+  vaultUsagePercent,
+} from '../lib/secureVault'
 
-const LOCAL_FOLDERS_PREFIX = 'map_document_folders'
 const ALL_FILES_FOLDER = 'All Files'
-const SHARED_FILES_FOLDER = 'Shared files'
+const SHARED_ROOMS_FOLDER = 'In secure rooms'
+const ARCHIVED_FOLDER = 'Archived'
 const DEFAULT_UPLOAD_FOLDER = 'General'
-const DESKTOP_PANE_BREAKPOINT = 1280
-const MIN_FOLDER_PANE = 220
-const MAX_FOLDER_PANE = 380
-const MIN_PREVIEW_PANE = 320
-const MAX_PREVIEW_PANE = 720
 
 const TEXT_PREVIEW_MIME = new Set([
   'text/csv',
@@ -76,134 +83,135 @@ const NATIVE_IMAGE_PREVIEW_MIME = new Set([
   'image/svg+xml',
 ])
 
-const OFFICE_VIEWER_MIME = new Set([
-  'application/msword',
-  'application/vnd.ms-excel',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.ms-word.document.macroEnabled.12',
-  'application/vnd.ms-excel.sheet.macroEnabled.12',
-  'application/vnd.ms-excel.template.macroEnabled.12',
-  'application/vnd.ms-powerpoint.presentation.macroEnabled.12',
-  'application/vnd.ms-powerpoint.slideshow.macroEnabled.12',
-  'application/vnd.ms-powerpoint.template.macroEnabled.12',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.template',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
-  'application/vnd.openxmlformats-officedocument.presentationml.template',
-])
-
-const GOOGLE_VIEWER_MIME = new Set([
-  'application/vnd.google-apps.document',
-  'application/vnd.google-apps.spreadsheet',
-  'application/vnd.google-apps.presentation',
-  'application/vnd.google-apps.drawing',
-  'application/vnd.oasis.opendocument.text',
-  'application/vnd.oasis.opendocument.spreadsheet',
-  'application/vnd.oasis.opendocument.presentation',
-  'application/rtf',
-])
-
-function getLocalFoldersKey(clientKey) {
-  return `${LOCAL_FOLDERS_PREFIX}:${clientKey || 'default'}`
-}
-
-function loadLocalFolders(clientKey) {
-  try {
-    const stored = localStorage.getItem(getLocalFoldersKey(clientKey))
-    const parsed = stored ? JSON.parse(stored) : []
-    return Array.isArray(parsed) ? parsed.filter(Boolean) : []
-  } catch {
-    return []
-  }
-}
-
-function saveLocalFolders(clientKey, folders) {
-  try {
-    localStorage.setItem(getLocalFoldersKey(clientKey), JSON.stringify(folders))
-  } catch {
-    return undefined
-  }
-}
-
-function getViewerSource(document, signedUrl) {
-  if (!signedUrl) return null
-
-  if (OFFICE_VIEWER_MIME.has(document.mime_type)) {
-    return {
-      label: 'Microsoft 365 viewer',
-      src: `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(signedUrl)}`,
-    }
-  }
-
-  if (GOOGLE_VIEWER_MIME.has(document.mime_type) || document.mime_type === 'image/heic' || document.mime_type === 'image/heif') {
-    return {
-      label: 'Google Docs viewer',
-      src: `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(signedUrl)}`,
-    }
-  }
-
-  return null
-}
-
 function formatDate(value) {
-  if (!value) return '—'
+  if (!value) return 'Not set'
   return new Date(value).toLocaleString()
 }
 
-function formatBytes(value) {
-  if (!value && value !== 0) return '—'
-  if (value < 1024) return `${value} B`
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`
+function documentFolder(document) {
+  return (document.secure_folders?.name || document.category || DEFAULT_UPLOAD_FOLDER).trim()
 }
 
-function buildShareUrl(token, tenant) {
-  const canonicalHost = tenant?.canonicalHost || ''
-  const canonicalPath = tenant?.canonicalPath || ''
-  const baseOrigin = canonicalHost ? `https://${canonicalHost}` : window.location.origin
-  return `${baseOrigin}${canonicalPath}/share/${token}`.replace(/([^:]\/)\/+/g, '$1')
+function buildFolderTree(folders) {
+  const byId = new Map(folders.map((folder) => [folder.id, folder]))
+  const childrenByParent = new Map()
+  for (const folder of folders) {
+    const parentKey = folder.parent_folder_id || 'root'
+    const siblings = childrenByParent.get(parentKey) || []
+    siblings.push(folder)
+    childrenByParent.set(parentKey, siblings)
+  }
+
+  for (const siblings of childrenByParent.values()) {
+    siblings.sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  const rows = []
+  function visit(folder, depth, parentPath) {
+    const path = parentPath ? `${parentPath} / ${folder.name}` : folder.name
+    rows.push({ ...folder, depth, path })
+    for (const child of childrenByParent.get(folder.id) || []) {
+      visit(child, depth + 1, path)
+    }
+  }
+
+  for (const root of childrenByParent.get('root') || []) {
+    visit(root, 0, '')
+  }
+
+  return { rows, byId }
 }
 
-function isShareLinkActive(link) {
-  if (!link || link.revoked_at) return false
-  if (link.expires_at && new Date(link.expires_at).getTime() <= Date.now()) return false
-  if (link.max_uses !== null && link.use_count >= link.max_uses) return false
-  return true
+function folderPath(folderId, foldersById) {
+  const parts = []
+  let current = foldersById.get(folderId)
+  const seen = new Set()
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id)
+    parts.unshift(current.name)
+    current = current.parent_folder_id ? foldersById.get(current.parent_folder_id) : null
+  }
+  return parts.join(' / ')
 }
 
-async function copyTextToClipboard(value) {
-  if (!value) throw new Error('Nothing to copy.')
+function descendantFolderIds(folderId, folders) {
+  const ids = new Set([folderId])
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const folder of folders) {
+      if (folder.parent_folder_id && ids.has(folder.parent_folder_id) && !ids.has(folder.id)) {
+        ids.add(folder.id)
+        changed = true
+      }
+    }
+  }
+  return ids
+}
 
+function DocumentFileIcon({ mimeType, className, style }) {
+  if (mimeType?.startsWith('image/')) return <FileImage className={className} style={style} />
+  if (TEXT_PREVIEW_MIME.has(mimeType)) return <FileCode2 className={className} style={style} />
+  if (mimeType?.includes('sheet') || mimeType?.includes('excel')) return <FileSpreadsheet className={className} style={style} />
+  return <FileText className={className} style={style} />
+}
+
+function actionLabel(action) {
+  const labels = {
+    room_open: 'Shared room opened',
+    room_view: 'Shared room document viewed',
+    room_download: 'Shared room document downloaded',
+    room_created: 'Shared room created',
+    room_invite_created: 'Shared room invite created',
+    room_revoked: 'Shared room revoked',
+    portal_view: 'Portal document viewed',
+    portal_download: 'Portal document downloaded',
+    upload_requested: 'Upload requested',
+  }
+  return labels[action] || String(action || '').replace(/_/g, ' ')
+}
+
+function auditRecipientLabel(event) {
+  return event.secure_share_room_recipients?.email || event.metadata?.recipient_email || event.metadata?.email || '-'
+}
+
+function roomStatus(room) {
+  if (room.revoked_at) return 'Revoked'
+  if (isRoomExpired(room)) return 'Expired'
+  return 'Active'
+}
+
+function getRoomDocumentCount(room) {
+  return room.secure_share_room_documents?.length || 0
+}
+
+function getRoomRecipientEmails(room) {
+  return (room.secure_share_room_recipients || []).map((recipient) => recipient.email).filter(Boolean)
+}
+
+async function copyText(value) {
+  if (!value) return
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(value)
     return
   }
-
-  const fallbackInput = window.document.createElement('textarea')
-  fallbackInput.value = value
-  fallbackInput.setAttribute('readonly', '')
-  fallbackInput.style.position = 'absolute'
-  fallbackInput.style.left = '-9999px'
-  window.document.body.appendChild(fallbackInput)
-  fallbackInput.select()
-
+  const textarea = window.document.createElement('textarea')
+  textarea.value = value
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'absolute'
+  textarea.style.left = '-9999px'
+  window.document.body.appendChild(textarea)
+  textarea.select()
   try {
-    const copied = window.document.execCommand('copy')
-    if (!copied) throw new Error('Clipboard copy failed.')
+    window.document.execCommand('copy')
   } finally {
-    window.document.body.removeChild(fallbackInput)
+    window.document.body.removeChild(textarea)
   }
 }
 
 async function downloadSignedFile(signedUrl, fileName) {
   const response = await fetch(signedUrl)
-  if (!response.ok) {
-    throw new Error('Could not download this file right now.')
-  }
-
+  if (!response.ok) throw new Error('Could not download this file right now.')
   const blob = await response.blob()
   const objectUrl = window.URL.createObjectURL(blob)
   const anchor = window.document.createElement('a')
@@ -215,101 +223,42 @@ async function downloadSignedFile(signedUrl, fileName) {
   window.URL.revokeObjectURL(objectUrl)
 }
 
-function DocumentIcon({ mimeType, className, style }) {
-  if (mimeType?.startsWith('image/')) {
-    return <FileImage className={className} style={style} />
-  }
-  if (TEXT_PREVIEW_MIME.has(mimeType)) {
-    return <FileCode2 className={className} style={style} />
-  }
-  if (mimeType?.includes('sheet')) {
-    return <FileSpreadsheet className={className} style={style} />
-  }
-  if (mimeType?.includes('presentation')) {
-    return <FileBadge className={className} style={style} />
-  }
-  return <FileText className={className} style={style} />
-}
-
-function documentFolder(document) {
-  return (document.category || 'General').trim()
-}
-
-function Notice({ kind, message }) {
+function Notice({ kind = 'info', message }) {
   if (!message) return null
-
   const className = kind === 'success' ? 'portal-status-success' : kind === 'info' ? 'portal-status-info' : 'portal-status-danger'
   const Icon = kind === 'success' ? CheckCircle2 : AlertCircle
 
   return (
     <div className={`${className} flex items-start gap-3 rounded-2xl p-4 text-sm`}>
       <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-      <p className="break-all">{message}</p>
+      <p className="break-words">{message}</p>
     </div>
   )
 }
 
-function EmbeddedDocumentViewer({ document, signedUrl }) {
-  const viewer = getViewerSource(document, signedUrl)
-
-  if (!viewer) return null
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
-          <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-            Previewing through {viewer.label} for broader document compatibility.
-          </p>
-        </div>
-        <a
-          href={signedUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all"
-        >
-          Open original
-          <ExternalLink className="h-3.5 w-3.5" />
-        </a>
-      </div>
-
-      <div className="overflow-hidden rounded-[28px] border bg-white" style={{ borderColor: 'var(--portal-border)' }}>
-        <iframe
-          src={viewer.src}
-          title={`${document.file_name} preview`}
-          className="min-h-[70vh] w-full bg-white"
-        />
-      </div>
-    </div>
-  )
-}
-
-function EmptyPreviewState() {
-  return (
-    <div className="portal-panel flex h-full min-h-[460px] flex-col items-center justify-center rounded-[32px] p-8 text-center">
-      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-[22px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
-        <FileText className="h-8 w-8" style={{ color: 'var(--portal-primary)' }} />
-      </div>
-      <h3 className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>Choose a document</h3>
-      <p className="mt-3 max-w-md text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-        Select a file to load a preview on the right.
-      </p>
-    </div>
-  )
-}
-
-function DocumentActionMenu({ document, isOpen, canManage, availableFolders, currentFolder, activeShareLink, onOpen, onMove, onRename, onShare, onCopyShare, onRevokeShare, onDownload, onDelete }) {
+function DocumentActionMenu({
+  document,
+  isOpen,
+  canManage,
+  availableFolders,
+  currentFolder,
+  onOpen,
+  onClose,
+  onMove,
+  onRename,
+  onRoom,
+  onShareLink,
+  onDownload,
+  onArchive,
+}) {
   const [showFolderChooser, setShowFolderChooser] = useState(false)
-  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, direction: 'down' })
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
   const buttonRef = useRef(null)
   const menuRef = useRef(null)
 
   useEffect(() => {
     if (!isOpen) {
-      const timeoutId = window.setTimeout(() => {
-        setShowFolderChooser(false)
-      }, 0)
+      const timeoutId = window.setTimeout(() => setShowFolderChooser(false), 0)
       return () => window.clearTimeout(timeoutId)
     }
 
@@ -319,34 +268,40 @@ function DocumentActionMenu({ document, isOpen, canManage, availableFolders, cur
       if (!buttonRect) return
 
       const estimatedMenuWidth = menuRect?.width || 220
-      const estimatedMenuHeight = menuRect?.height || (showFolderChooser ? 320 : 360)
-      const horizontalPadding = 12
-      const verticalGap = 8
+      const estimatedMenuHeight = menuRect?.height || (showFolderChooser ? 280 : 300)
+      const edgePadding = 12
+      const gap = 8
       const spaceBelow = window.innerHeight - buttonRect.bottom
       const spaceAbove = buttonRect.top
-      const direction = spaceBelow < estimatedMenuHeight + 20 && spaceAbove > spaceBelow ? 'up' : 'down'
-      const unclampedLeft = buttonRect.right - estimatedMenuWidth
+      const openUp = spaceBelow < estimatedMenuHeight + 20 && spaceAbove > spaceBelow
       const left = Math.min(
-        Math.max(horizontalPadding, unclampedLeft),
-        window.innerWidth - estimatedMenuWidth - horizontalPadding,
+        Math.max(edgePadding, buttonRect.right - estimatedMenuWidth),
+        window.innerWidth - estimatedMenuWidth - edgePadding,
       )
-      const top = direction === 'up'
-        ? Math.max(horizontalPadding, buttonRect.top - estimatedMenuHeight - verticalGap)
-        : Math.min(window.innerHeight - estimatedMenuHeight - horizontalPadding, buttonRect.bottom + verticalGap)
+      const top = openUp
+        ? Math.max(edgePadding, buttonRect.top - estimatedMenuHeight - gap)
+        : Math.min(window.innerHeight - estimatedMenuHeight - edgePadding, buttonRect.bottom + gap)
 
-      setMenuPosition({ top, left, direction })
+      setMenuPosition({ top, left })
+    }
+
+    function handlePointerDown(event) {
+      if (event.target instanceof Element && event.target.closest('[data-document-action-menu="true"]')) return
+      onClose()
     }
 
     const frameId = window.requestAnimationFrame(updateMenuPosition)
     window.addEventListener('resize', updateMenuPosition)
     window.addEventListener('scroll', updateMenuPosition, true)
+    window.document.addEventListener('pointerdown', handlePointerDown)
 
     return () => {
       window.cancelAnimationFrame(frameId)
       window.removeEventListener('resize', updateMenuPosition)
       window.removeEventListener('scroll', updateMenuPosition, true)
+      window.document.removeEventListener('pointerdown', handlePointerDown)
     }
-  }, [isOpen, showFolderChooser])
+  }, [isOpen, onClose, showFolderChooser])
 
   return (
     <div className="relative" data-document-action-menu="true">
@@ -369,7 +324,8 @@ function DocumentActionMenu({ document, isOpen, canManage, availableFolders, cur
       {isOpen ? createPortal(
         <div
           ref={menuRef}
-          className="fixed z-[120] min-w-[180px] rounded-[20px] border p-2 shadow-lg"
+          data-document-action-menu="true"
+          className="fixed z-[120] min-w-[210px] rounded-[20px] border p-2 shadow-lg"
           style={{
             top: `${menuPosition.top}px`,
             left: `${menuPosition.left}px`,
@@ -380,132 +336,94 @@ function DocumentActionMenu({ document, isOpen, canManage, availableFolders, cur
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
         >
-          {canManage ? (
-            showFolderChooser ? (
-              <div className="space-y-1">
+          {showFolderChooser ? (
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() => setShowFolderChooser(false)}
+                className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-[0.18em] transition-all"
+                style={{ color: 'var(--portal-text-soft)' }}
+              >
+                Back
+              </button>
+              {availableFolders.map((folder) => (
                 <button
+                  key={folder.id}
                   type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    setShowFolderChooser(false)
-                  }}
-                  className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-[0.18em] transition-all"
-                  style={{ color: 'var(--portal-text-soft)' }}
+                  onClick={() => onMove(document, folder)}
+                  className="flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                  style={folder.id === currentFolder
+                    ? { background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary)' }
+                    : { color: 'var(--portal-text)' }}
                 >
-                  Back
+                  <span className="truncate" style={{ paddingLeft: `${folder.depth * 10}px` }}>{folder.path}</span>
+                  {folder.id === currentFolder ? <span className="text-[11px] font-semibold">Current</span> : null}
                 </button>
-                {availableFolders.map((folder) => (
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {canManage ? (
+                <>
                   <button
-                    key={folder}
                     type="button"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onMove(document, folder)
-                    }}
-                    className="flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
-                    style={folder === currentFolder
-                      ? { background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary)' }
-                      : { color: 'var(--portal-text)' }}
+                    onClick={() => setShowFolderChooser(true)}
+                    className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                    style={{ color: 'var(--portal-text)' }}
                   >
-                    <span className="truncate">{folder}</span>
-                    {folder === currentFolder ? <span className="text-[11px] font-semibold">Current</span> : null}
+                    <FolderOpen className="h-4 w-4" />
+                    Move to folder
                   </button>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => onRoom(document)}
+                    className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                    style={{ color: 'var(--portal-text)' }}
+                  >
+                    <Link2 className="h-4 w-4" />
+                    Create secure room
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onShareLink(document)}
+                    className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                    style={{ color: 'var(--portal-text)' }}
+                  >
+                    <Share2 className="h-4 w-4" />
+                    Share link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRename(document)}
+                    className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                    style={{ color: 'var(--portal-text)' }}
+                  >
+                    <FileText className="h-4 w-4" />
+                    Rename
+                  </button>
+                </>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => onDownload(document)}
+                className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                style={{ color: 'var(--portal-text)' }}
+              >
+                <Download className="h-4 w-4" />
+                Download
+              </button>
+              {canManage ? (
                 <button
                   type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    setShowFolderChooser(true)
-                  }}
-                  className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
-                  style={{ color: 'var(--portal-text)' }}
-                >
-                  Move to folder
-                </button>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onShare(document)
-                  }}
-                  className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
-                  style={{ color: 'var(--portal-text)' }}
-                >
-                  <Share2 className="h-4 w-4" />
-                  Share file
-                </button>
-                {activeShareLink ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onCopyShare(document)
-                      }}
-                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
-                      style={{ color: 'var(--portal-text)' }}
-                    >
-                      <Copy className="h-4 w-4" />
-                      Copy share link
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onRevokeShare(document)
-                      }}
-                      className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
-                      style={{ color: 'var(--portal-danger)', background: 'rgba(223, 95, 143, 0.06)' }}
-                    >
-                      <Archive className="h-4 w-4" />
-                      Revoke share
-                    </button>
-                  </>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onRename(document)
-                  }}
-                  className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
-                  style={{ color: 'var(--portal-text)' }}
-                >
-                  Rename
-                </button>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onDownload(document)
-                  }}
-                  className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
-                  style={{ color: 'var(--portal-text)' }}
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Download
-                </button>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onDelete(document)
-                  }}
+                  onClick={() => onArchive(document)}
                   className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
                   style={{ color: 'var(--portal-danger)', background: 'rgba(223, 95, 143, 0.06)' }}
                 >
-                  <Trash2 className="h-4 w-4" />
-                  Delete
+                  <Archive className="h-4 w-4" />
+                  {document.is_archived ? 'Restore' : 'Archive'}
                 </button>
-              </div>
-            )
-          ) : (
-            <p className="px-3 py-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-              Admin access required
-            </p>
+              ) : null}
+            </div>
           )}
         </div>,
         window.document.body,
@@ -514,11 +432,77 @@ function DocumentActionMenu({ document, isOpen, canManage, availableFolders, cur
   )
 }
 
-function ShareDialog({
+function UploadDialog({ isOpen, draft, folders, onChange, onClose, onSubmit, isSubmitting }) {
+  if (!isOpen) return null
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.34)] p-4">
+      <div className="document-upload-dialog w-full max-w-lg rounded-[32px] border bg-white shadow-2xl" style={{ borderColor: 'var(--portal-border)' }}>
+        <div className="flex items-center justify-between border-b px-6 py-5" style={{ borderColor: 'var(--portal-border)' }}>
+          <div>
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Upload document</h3>
+            <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>Files are stored in the secure document library.</p>
+          </div>
+          <button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-full border" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-6 py-6">
+          <div>
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>Folder</label>
+            <select
+              value={draft.folderId || ''}
+              onChange={(event) => {
+                const folder = folders.find((item) => item.id === event.target.value)
+                onChange((current) => ({ ...current, folderId: event.target.value, category: folder?.name || DEFAULT_UPLOAD_FOLDER }))
+              }}
+              className="portal-input px-4 py-3 text-sm"
+            >
+              <option value="">No folder</option>
+              {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.path}</option>)}
+            </select>
+          </div>
+
+          <input
+            type="text"
+            value={draft.description}
+            onChange={(event) => onChange((current) => ({ ...current, description: event.target.value }))}
+            placeholder="Optional internal note"
+            className="portal-input px-4 py-3 text-sm"
+          />
+
+          <label className="document-upload-dropzone flex cursor-pointer items-center gap-3 rounded-[24px] border border-dashed px-4 py-4 transition-all" style={{ borderColor: 'rgba(201, 168, 76, 0.28)', background: 'linear-gradient(145deg, rgba(201, 168, 76, 0.08), rgba(232, 213, 160, 0.06))' }}>
+            <div className="document-upload-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-white shadow-sm">
+              {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} /> : <Upload className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Choose document</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                25 MB max file size. Counts against the 100 MB document quota.
+              </p>
+            </div>
+            <input type="file" className="hidden" onChange={onSubmit} disabled={isSubmitting} />
+          </label>
+
+          <div className="flex justify-end">
+            <button type="button" onClick={onClose} className="portal-button-secondary rounded-2xl px-4 py-3 text-sm font-semibold">
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    window.document.body,
+  )
+}
+
+function ShareLinkDialog({
   document,
-  draft,
   activeShareLink,
-  shareNotice,
+  createdShareLink,
+  draft,
+  notice,
   onChange,
   onClose,
   onSubmit,
@@ -529,75 +513,63 @@ function ShareDialog({
 }) {
   if (!document) return null
 
-  const activeShareUrl = activeShareLink ? buildShareUrl(activeShareLink.token) : ''
+  const shareUrl = createdShareLink?.share_url || activeShareLink?.share_url || ''
+  const visibleLink = createdShareLink || activeShareLink
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.34)] p-4">
       <div className="w-full max-w-lg rounded-[32px] border bg-white shadow-2xl" style={{ borderColor: 'var(--portal-border)' }}>
         <div className="flex items-center justify-between border-b px-6 py-5" style={{ borderColor: 'var(--portal-border)' }}>
-          <div>
-            <h3 className="text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Share file</h3>
-            <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>{document.file_name}</p>
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Share link</h3>
+            <p className="mt-1 truncate text-sm" style={{ color: 'var(--portal-text-muted)' }}>{document.file_name}</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border"
-            style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}
-          >
+          <button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-full border" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4 px-6 py-6">
-          {activeShareLink ? (
+          {visibleLink ? (
             <div className="space-y-3 rounded-[24px] border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(247, 244, 236, 0.72)' }}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Share link ready</p>
-                  <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                    Copy the URL below and send it however you like.
-                  </p>
+                  <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>Copy this link from the portal and send it manually.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={onRevoke}
-                  disabled={isRevoking}
-                  className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all disabled:opacity-60"
-                  style={{ color: 'var(--portal-danger)', background: 'rgba(223, 95, 143, 0.08)' }}
-                >
-                  <Archive className="h-3.5 w-3.5" />
-                  Revoke
-                </button>
+                {activeShareLink ? (
+                  <button type="button" onClick={onRevoke} disabled={isRevoking} className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all disabled:opacity-60" style={{ color: 'var(--portal-danger)', background: 'rgba(223, 95, 143, 0.08)' }}>
+                    <Archive className="h-3.5 w-3.5" />
+                    Revoke
+                  </button>
+                ) : null}
               </div>
 
               <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  type="text"
-                  readOnly
-                  value={activeShareUrl}
-                  onFocus={(event) => event.target.select()}
-                  className="portal-input min-w-0 flex-1 px-4 py-3 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={onCopy}
-                  className="portal-button-primary inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
-                >
-                  <Copy className="h-4 w-4" />
-                  Copy
-                </button>
+                {shareUrl ? (
+                  <>
+                    <input type="text" readOnly value={shareUrl} onFocus={(event) => event.target.select()} className="portal-input min-w-0 flex-1 px-4 py-3 text-sm" />
+                    <button type="button" onClick={onCopy} className="portal-button-primary inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
+                      <Copy className="h-4 w-4" />
+                      Copy
+                    </button>
+                  </>
+                ) : (
+                  <p className="rounded-2xl border px-4 py-3 text-sm" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
+                    An active link exists, but the original URL is only shown when it is first created. Create a replacement link to copy a fresh URL.
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-wrap gap-3 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                <span>Created {formatDate(activeShareLink.created_at)}</span>
-                <span>Expires {activeShareLink.expires_at ? formatDate(activeShareLink.expires_at) : 'Never'}</span>
-                <span>Uses {activeShareLink.max_uses !== null ? `${activeShareLink.use_count}/${activeShareLink.max_uses}` : `${activeShareLink.use_count} / Unlimited`}</span>
+                <span>Created {formatDate(visibleLink.created_at)}</span>
+                <span>Expires {visibleLink.expires_at ? formatDate(visibleLink.expires_at) : 'Never'}</span>
+                <span>Uses {visibleLink.max_uses !== null ? `${visibleLink.use_count}/${visibleLink.max_uses}` : `${visibleLink.use_count || 0} / Unlimited`}</span>
               </div>
             </div>
           ) : null}
 
-          {shareNotice?.message ? <Notice kind={shareNotice.type} message={shareNotice.message} /> : null}
+          {notice?.message ? <Notice kind={notice.type} message={notice.message} /> : null}
 
           <div>
             <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
@@ -626,797 +598,674 @@ function ShareDialog({
           </div>
 
           <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="portal-button-secondary rounded-2xl px-4 py-3 text-sm font-semibold"
-            >
+            <button type="button" onClick={onClose} className="portal-button-secondary rounded-2xl px-4 py-3 text-sm font-semibold">
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60"
-            >
+            <button type="submit" disabled={isSubmitting} className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60">
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
               {activeShareLink ? 'Create new link' : 'Create link'}
             </button>
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    window.document.body,
   )
 }
 
-function UploadDialog({ isOpen, draft, folders, onChange, onClose, onSubmit, isSubmitting }) {
+function SecureRoomDialog({
+  isOpen,
+  documents,
+  selectedIds,
+  draft,
+  onChange,
+  onClose,
+  onSubmit,
+  isSubmitting,
+}) {
   if (!isOpen) return null
 
-  return (
+  const selectedDocuments = documents.filter((document) => selectedIds.includes(document.id))
+
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(26,24,20,0.34)] p-4">
-      <div className="document-upload-dialog w-full max-w-lg rounded-[32px] border bg-white shadow-2xl" style={{ borderColor: 'var(--portal-border)' }}>
+      <div className="w-full max-w-2xl rounded-[32px] border bg-white shadow-2xl" style={{ borderColor: 'var(--portal-border)' }}>
         <div className="flex items-center justify-between border-b px-6 py-5" style={{ borderColor: 'var(--portal-border)' }}>
           <div>
-            <h3 className="text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>File Upload</h3>
-            <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>Choose a folder and upload a file.</p>
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Create secure access room</h3>
+            <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+              Email recipients a secure link and a separate passcode.
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border"
-            style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}
-          >
+          <button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-full border" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="space-y-4 px-6 py-6">
-          <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
-              Folder
-            </label>
-            <select
-              value={draft.category}
-              onChange={(event) => onChange((current) => ({ ...current, category: event.target.value }))}
+        <form onSubmit={onSubmit} className="grid gap-5 px-6 py-6 lg:grid-cols-[1fr_0.9fr]">
+          <div className="space-y-4">
+            <input
               className="portal-input px-4 py-3 text-sm"
-            >
-              <option value="" disabled>Choose folder</option>
-              {folders.map((folder) => (
-                <option key={folder} value={folder}>{folder}</option>
-              ))}
-            </select>
+              placeholder="Room name, e.g. Bank loan review"
+              value={draft.name}
+              onChange={(event) => onChange((current) => ({ ...current, name: event.target.value }))}
+            />
+            <textarea
+              className="portal-input min-h-24 px-4 py-3 text-sm"
+              placeholder="Recipient emails required, separated by commas or lines"
+              value={draft.recipientEmails}
+              onChange={(event) => onChange((current) => ({ ...current, recipientEmails: event.target.value }))}
+            />
+            <input
+              className="portal-input px-4 py-3 text-sm"
+              placeholder="Passcode required"
+              value={draft.passcode}
+              onChange={(event) => onChange((current) => ({ ...current, passcode: event.target.value }))}
+            />
+            <input
+              className="portal-input px-4 py-3 text-sm"
+              type="datetime-local"
+              value={draft.expiresAt}
+              onChange={(event) => onChange((current) => ({ ...current, expiresAt: event.target.value }))}
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className={`rounded-2xl px-3 py-2 text-sm font-semibold ${draft.accessMode === 'view_and_download' ? 'portal-button-primary' : 'portal-button-secondary'}`}
+                onClick={() => onChange((current) => ({ ...current, accessMode: 'view_and_download' }))}
+              >
+                View + download
+              </button>
+              <button
+                type="button"
+                className={`rounded-2xl px-3 py-2 text-sm font-semibold ${draft.accessMode === 'view_only' ? 'portal-button-primary' : 'portal-button-secondary'}`}
+                onClick={() => onChange((current) => ({ ...current, accessMode: 'view_only' }))}
+              >
+                View only
+              </button>
+            </div>
           </div>
 
-          <input
-            type="text"
-            value={draft.description}
-            onChange={(event) => onChange((current) => ({ ...current, description: event.target.value }))}
-            placeholder="Optional internal note"
-            className="portal-input px-4 py-3 text-sm"
-          />
-
-          <label
-            className="document-upload-dropzone flex cursor-pointer items-center gap-3 rounded-[24px] border border-dashed px-4 py-4 transition-all"
-            style={{ borderColor: 'rgba(201, 168, 76, 0.28)', background: 'linear-gradient(145deg, rgba(201, 168, 76, 0.08), rgba(232, 213, 160, 0.06))' }}
-          >
-            <div className="document-upload-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-white shadow-sm">
-              <Upload className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
+          <div className="rounded-[24px] border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(247, 244, 236, 0.72)' }}>
+            <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Included documents</p>
+            <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>{selectedDocuments.length} selected</p>
+            <div className="mt-4 max-h-72 space-y-2 overflow-auto pr-1">
+              {selectedDocuments.map((document) => (
+                <div key={document.id} className="rounded-2xl border bg-white px-3 py-2" style={{ borderColor: 'var(--portal-border)' }}>
+                  <p className="truncate text-xs font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                  <p className="text-[11px]" style={{ color: 'var(--portal-text-muted)' }}>{formatVaultBytes(document.size_bytes)}</p>
+                </div>
+              ))}
+              {!selectedDocuments.length ? (
+                <p className="text-sm" style={{ color: 'var(--portal-text-muted)' }}>Select one or more documents before creating a room.</p>
+              ) : null}
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Choose document</p>
-              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                Upload into {draft.category || DEFAULT_UPLOAD_FOLDER}.
-              </p>
-            </div>
-            <input
-              type="file"
-              className="hidden"
-              onChange={onSubmit}
-              disabled={isSubmitting}
-            />
-          </label>
+          </div>
 
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              className="portal-button-secondary rounded-2xl px-4 py-3 text-sm font-semibold"
-            >
-              Close
+          <div className="flex justify-end gap-3 lg:col-span-2">
+            <button type="button" onClick={onClose} className="portal-button-secondary rounded-2xl px-4 py-3 text-sm font-semibold">
+              Cancel
+            </button>
+            <button type="submit" disabled={isSubmitting || selectedDocuments.length === 0} className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+              Send secure access
             </button>
           </div>
-        </div>
+        </form>
       </div>
-    </div>
+    </div>,
+    window.document.body,
   )
 }
 
-function getPreviewPopoutUrl(document, signedUrl) {
-  if (!document || !signedUrl) return ''
-  const viewer = getViewerSource(document, signedUrl)
-  return viewer?.src || signedUrl
-}
-
-function DocumentPreview({ selectedDocument, previewState, onRefreshPreview }) {
-  const previewFrameRef = useRef(null)
-
-  async function handleFullscreenPreview() {
-    if (!previewFrameRef.current || !previewState.url) return
-
-    try {
-      if (document.fullscreenElement === previewFrameRef.current) {
-        await document.exitFullscreen()
-        return
-      }
-
-      if (document.fullscreenElement) {
-        await document.exitFullscreen()
-      }
-
-      await previewFrameRef.current.requestFullscreen()
-    } catch {
-      window.open(getPreviewPopoutUrl(selectedDocument, previewState.url), '_blank', 'noopener,noreferrer')
-    }
-  }
-
+function DocumentPreview({ selectedDocument, previewState, onRefreshPreview, onDownload }) {
   if (!selectedDocument) {
-    return <EmptyPreviewState />
+    return (
+      <div className="portal-panel flex min-h-[460px] flex-col items-center justify-center rounded-[32px] p-8 text-center">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-[22px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
+          <FileText className="h-8 w-8" style={{ color: 'var(--portal-primary)' }} />
+        </div>
+        <h3 className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>Choose a document</h3>
+        <p className="mt-3 max-w-md text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+          Select a file to preview, download, or include in a secure access room.
+        </p>
+      </div>
+    )
   }
 
   return (
-    <div className="portal-panel rounded-[32px] p-5 md:p-6 space-y-5">
-      <div className="flex flex-col gap-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-[18px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
-            <DocumentIcon mimeType={selectedDocument.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
-          </div>
-          <div className="min-w-0">
-            <h3 className="truncate text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedDocument.file_name}</h3>
-            <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-              {documentFolder(selectedDocument)} · {formatBytes(selectedDocument.size_bytes)} · {formatDate(selectedDocument.updated_at || selectedDocument.created_at)}
-            </p>
-          </div>
+    <div className="portal-panel space-y-5 rounded-[32px] p-5 md:p-6">
+      <div className="flex items-start gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
+          <DocumentFileIcon mimeType={selectedDocument.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
         </div>
-
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={onRefreshPreview}
-            className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all"
-          >
-            <Link2 className="h-3.5 w-3.5" />
-            Refresh preview
-          </button>
-          {previewState.url && (
-            <button
-              type="button"
-              onClick={handleFullscreenPreview}
-              className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all"
-            >
-              <Maximize2 className="h-3.5 w-3.5" />
-              Full screen
-            </button>
-          )}
-          {previewState.url && (
-            <a
-              href={getPreviewPopoutUrl(selectedDocument, previewState.url)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Pop out preview
-            </a>
-          )}
+        <div className="min-w-0">
+          <h3 className="truncate text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedDocument.file_name}</h3>
+          <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+            {documentFolder(selectedDocument)} - {formatVaultBytes(selectedDocument.size_bytes)} - {formatDate(selectedDocument.updated_at || selectedDocument.created_at)}
+          </p>
         </div>
       </div>
 
-      {previewState.loading && (
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={onRefreshPreview} className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold">
+          <Eye className="h-3.5 w-3.5" />
+          Preview
+        </button>
+        <button type="button" onClick={onDownload} className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold">
+          <Download className="h-3.5 w-3.5" />
+          Download
+        </button>
+        {previewState.url ? (
+          <a href={previewState.url} target="_blank" rel="noopener noreferrer" className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold">
+            <ExternalLink className="h-3.5 w-3.5" />
+            Open
+          </a>
+        ) : null}
+      </div>
+
+      {previewState.loading ? (
         <div className="portal-surface-strong flex items-center justify-center gap-3 rounded-[26px] p-8">
           <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} />
-          <span className="text-sm" style={{ color: 'var(--portal-text-muted)' }}>Requesting signed document URL…</span>
+          <span className="text-sm" style={{ color: 'var(--portal-text-muted)' }}>Requesting signed document URL...</span>
         </div>
-      )}
+      ) : null}
 
-      {previewState.error && <Notice kind="error" message={previewState.error} />}
+      {previewState.error ? <Notice kind="error" message={previewState.error} /> : null}
 
-      {previewState.url && !previewState.loading && !previewState.error && (
-        <div
-          ref={previewFrameRef}
-          className="rounded-[30px] bg-[var(--portal-surface)] [&:fullscreen]:overflow-auto [&:fullscreen]:p-6"
-        >
+      {previewState.url && !previewState.loading && !previewState.error ? (
+        <div className="rounded-[30px] bg-[var(--portal-surface)]">
           {selectedDocument.mime_type === 'application/pdf' ? (
             <PdfDocumentViewer url={previewState.url} fileName={selectedDocument.file_name} />
           ) : TEXT_PREVIEW_MIME.has(selectedDocument.mime_type) ? (
-            <TextDocumentViewer
-              url={previewState.url}
-              fileName={selectedDocument.file_name}
-              mimeType={selectedDocument.mime_type === 'application/csv' ? 'text/csv' : selectedDocument.mime_type}
-            />
+            <TextDocumentViewer url={previewState.url} fileName={selectedDocument.file_name} mimeType={selectedDocument.mime_type === 'application/csv' ? 'text/csv' : selectedDocument.mime_type} />
           ) : NATIVE_IMAGE_PREVIEW_MIME.has(selectedDocument.mime_type) ? (
-            <div className="space-y-3">
-              <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>Image preview from the signed URL</p>
-              <img
-                src={previewState.url}
-                alt={selectedDocument.file_name}
-                className="max-h-[70vh] w-full rounded-[28px] border bg-white object-contain"
-                style={{ borderColor: 'var(--portal-border)' }}
-              />
-            </div>
-          ) : getViewerSource(selectedDocument, previewState.url) ? (
-            <EmbeddedDocumentViewer document={selectedDocument} signedUrl={previewState.url} />
+            <img src={previewState.url} alt={selectedDocument.file_name} className="max-h-[70vh] w-full rounded-[28px] border bg-white object-contain" style={{ borderColor: 'var(--portal-border)' }} />
           ) : (
             <div className="portal-surface-strong rounded-[26px] p-5">
               <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Preview not available inline</p>
-              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                This file type does not render inline yet, but the signed URL is ready to open.
-              </p>
-              <a
-                href={previewState.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="portal-button-primary mt-4 inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Open file in new tab
-              </a>
+              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>Open or download the signed file to view it.</p>
             </div>
           )}
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
 
 export default function Documents() {
-  const { session, billingAccess, requireWriteAccess } = useOutletContext()
   const queryClient = useQueryClient()
-  const claims = getSessionClaims(session)
-  const layoutRef = useRef(null)
+  const { profile, billingAccess, requireWriteAccess } = useOutletContext()
+  const clientId = profile?.client_id
+  const quotaBytes = Number(profile?.clients?.secure_vault_quota_bytes || SECURE_VAULT_QUOTA_BYTES)
 
+  const [activeView, setActiveView] = useState('files')
   const [selectedId, setSelectedId] = useState(null)
-  const [uploadedFallbackDocuments, setUploadedFallbackDocuments] = useState([])
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState([])
   const [previewState, setPreviewState] = useState({ loading: false, error: '', url: '' })
-  const [uploadForm, setUploadForm] = useState({ category: '', description: '' })
+  const [notice, setNotice] = useState({ type: '', message: '' })
+  const [uploadForm, setUploadForm] = useState({ folderId: '', category: DEFAULT_UPLOAD_FOLDER, description: '' })
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
+  const [isRoomDialogOpen, setIsRoomDialogOpen] = useState(false)
+  const [roomFolderIds, setRoomFolderIds] = useState([])
+  const [shareDialogDocument, setShareDialogDocument] = useState(null)
   const [shareDraft, setShareDraft] = useState({ expiresAt: '', maxUses: '' })
   const [shareNotice, setShareNotice] = useState({ type: '', message: '' })
-  const [folderNotice, setFolderNotice] = useState({ type: '', message: '' })
-  const [fileNotice, setFileNotice] = useState({ type: '', message: '' })
+  const [createdShareLink, setCreatedShareLink] = useState(null)
+  const [createdRoom, setCreatedRoom] = useState(null)
+  const [roomForm, setRoomForm] = useState({
+    name: '',
+    recipientEmails: '',
+    passcode: '',
+    expiresAt: defaultRoomExpiryValue(),
+    accessMode: 'view_and_download',
+  })
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFolder, setSelectedFolder] = useState(ALL_FILES_FOLDER)
   const [libraryView, setLibraryView] = useState('list')
   const [folderDraft, setFolderDraft] = useState('')
-  const [localFolders, setLocalFolders] = useState([])
   const [openActionMenuId, setOpenActionMenuId] = useState(null)
-  const [shareDialogDocument, setShareDialogDocument] = useState(null)
-  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
-  const [isDesktopLayout, setIsDesktopLayout] = useState(() => window.innerWidth >= DESKTOP_PANE_BREAKPOINT)
-  const [paneSizes, setPaneSizes] = useState({ folders: 260, preview: 400 })
-  const [activePaneResize, setActivePaneResize] = useState(null)
+  const [auditQuery, setAuditQuery] = useState('')
+  const [auditSort, setAuditSort] = useState({ field: 'accessed_at', direction: 'desc' })
 
-  const { data: profile } = useQuery({
-    queryKey: ['profile'],
-    queryFn: fetchProfile,
+  const { data: documents = [], isLoading: documentsLoading, error: documentsError } = useQuery({
+    queryKey: ['secure-vault-documents'],
+    queryFn: fetchSecureVaultDocuments,
   })
-  const tenant = useMemo(
-    () => buildTenantConfig({ client: profile?.clients || null, claims }),
-    [profile, claims],
-  )
-  const clientFolderKey = profile?.client_id || profile?.clients?.slug || tenant.clientSlug || ''
-
-  useEffect(() => {
-    setLocalFolders(loadLocalFolders(clientFolderKey))
-  }, [clientFolderKey])
-
-  const {
-    data: documents = [],
-    isLoading: documentsLoading,
-    error: documentsError,
-  } = useQuery({
-    queryKey: ['documents'],
-    queryFn: fetchDocuments,
+  const { data: secureFolders = [], isLoading: foldersLoading, error: foldersError } = useQuery({
+    queryKey: ['secure-vault-folders'],
+    queryFn: fetchSecureVaultFolders,
+  })
+  const { data: rooms = [], isLoading: roomsLoading, error: roomsError } = useQuery({
+    queryKey: ['secure-vault-rooms'],
+    queryFn: fetchSecureVaultRooms,
+  })
+  const { data: shareLinks = [] } = useQuery({
+    queryKey: ['secure-vault-share-links'],
+    queryFn: fetchSecureVaultShareLinks,
+  })
+  const { data: audit = [], isLoading: auditLoading, error: auditError } = useQuery({
+    queryKey: ['secure-vault-audit'],
+    queryFn: fetchSecureVaultAudit,
   })
 
-  const {
-    data: shareLinks = [],
-    error: shareLinksError,
-  } = useQuery({
-    queryKey: ['share-links'],
-    queryFn: fetchShareLinks,
-  })
+  const usedBytes = useMemo(() => documents.reduce((sum, document) => sum + Number(document.size_bytes || 0), 0), [documents])
+  const activeDocuments = useMemo(() => documents.filter((document) => !document.is_archived), [documents])
+  const archivedDocuments = useMemo(() => documents.filter((document) => document.is_archived), [documents])
+  const activeRooms = useMemo(() => rooms.filter((room) => !room.revoked_at && !isRoomExpired(room)), [rooms])
+  const roomDocumentIds = useMemo(() => new Set(rooms.flatMap((room) => (room.secure_share_room_documents || []).map((entry) => entry.document_id))), [rooms])
+  const usagePercent = vaultUsagePercent(usedBytes, quotaBytes)
+  const folderTree = useMemo(() => buildFolderTree(secureFolders), [secureFolders])
+  const folderRows = folderTree.rows
+  const foldersById = folderTree.byId
 
-  const visibleDocuments = documents.length > 0 ? documents : uploadedFallbackDocuments
+  const folders = useMemo(() => [
+    { id: SHARED_ROOMS_FOLDER, name: SHARED_ROOMS_FOLDER, path: SHARED_ROOMS_FOLDER, depth: 0, special: true },
+    { id: ALL_FILES_FOLDER, name: ALL_FILES_FOLDER, path: ALL_FILES_FOLDER, depth: 0, special: true },
+    ...folderRows,
+    { id: ARCHIVED_FOLDER, name: ARCHIVED_FOLDER, path: ARCHIVED_FOLDER, depth: 0, special: true },
+  ], [folderRows])
 
-  const folders = useMemo(() => {
-    const documentFolders = visibleDocuments.map((document) => documentFolder(document))
-    return [
-      SHARED_FILES_FOLDER,
-      ALL_FILES_FOLDER,
-      ...Array.from(new Set([...documentFolders, ...localFolders])).sort((a, b) => a.localeCompare(b)),
-    ]
-  }, [visibleDocuments, localFolders])
-
-  const sharedFileEntries = useMemo(() => {
-    const latestLinksByDocument = new Map()
-
-    shareLinks
-      .filter(isShareLinkActive)
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .forEach((link) => {
-        if (!latestLinksByDocument.has(link.document_id)) {
-          latestLinksByDocument.set(link.document_id, link)
-        }
-      })
-
-    return Array.from(latestLinksByDocument.entries())
-      .map(([documentId, link]) => ({
-        document: visibleDocuments.find((document) => document.id === documentId),
-        link,
-      }))
-      .filter((entry) => entry.document)
-  }, [shareLinks, visibleDocuments])
-
-  const sharedDocuments = useMemo(
-    () => sharedFileEntries.map((entry) => entry.document),
-    [sharedFileEntries],
-  )
-
-  const activeShareByDocumentId = useMemo(
-    () => new Map(sharedFileEntries.map((entry) => [entry.document.id, entry.link])),
-    [sharedFileEntries],
-  )
+  const selectedFolderRecord = useMemo(() => folders.find((folder) => folder.id === selectedFolder) || folders[1], [folders, selectedFolder])
 
   const filteredDocuments = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase()
-    const sourceDocuments = selectedFolder === SHARED_FILES_FOLDER
-      ? sharedDocuments
-      : visibleDocuments.filter((document) => selectedFolder === ALL_FILES_FOLDER || documentFolder(document) === selectedFolder)
+    const folderSource = selectedFolder === ARCHIVED_FOLDER
+      ? archivedDocuments
+      : selectedFolder === SHARED_ROOMS_FOLDER
+        ? activeDocuments.filter((document) => roomDocumentIds.has(document.id))
+        : activeDocuments.filter((document) => selectedFolder === ALL_FILES_FOLDER || document.folder_id === selectedFolder)
 
-    return sourceDocuments.filter((document) => normalizedQuery.length === 0 || [
+    return folderSource.filter((document) => normalizedQuery.length === 0 || [
       document.file_name,
       document.mime_type,
       document.category,
+      documentFolder(document),
+      folderPath(document.folder_id, foldersById),
       document.description,
     ].some((value) => value?.toLowerCase().includes(normalizedQuery)))
-  }, [searchQuery, selectedFolder, sharedDocuments, visibleDocuments])
+  }, [activeDocuments, archivedDocuments, foldersById, roomDocumentIds, searchQuery, selectedFolder])
 
   const selectedDocument = useMemo(
     () => filteredDocuments.find((document) => document.id === selectedId)
-      || visibleDocuments.find((document) => document.id === selectedId)
+      || activeDocuments.find((document) => document.id === selectedId)
       || filteredDocuments[0]
-      || visibleDocuments[0]
+      || activeDocuments[0]
       || null,
-    [filteredDocuments, visibleDocuments, selectedId],
+    [activeDocuments, filteredDocuments, selectedId],
   )
 
-  const canManageShares = (claims.user_role || profile?.role) === 'admin'
-  const canManageDocuments = canManageShares
+  const folderCounts = useMemo(() => {
+    const counts = {
+      [ALL_FILES_FOLDER]: activeDocuments.length,
+      [SHARED_ROOMS_FOLDER]: activeDocuments.filter((document) => roomDocumentIds.has(document.id)).length,
+      [ARCHIVED_FOLDER]: archivedDocuments.length,
+    }
+    for (const folder of folderRows) {
+      counts[folder.id] = activeDocuments.filter((document) => document.folder_id === folder.id).length
+    }
+    return counts
+  }, [activeDocuments, archivedDocuments.length, folderRows, roomDocumentIds])
 
-  const previewMutation = useMutation({
-    mutationFn: getDocumentUrl,
-    onMutate: () => setPreviewState({ loading: true, error: '', url: '' }),
-    onSuccess: (payload) => {
-      setPreviewState({ loading: false, error: '', url: payload.signed_url })
-    },
-    onError: (error) => {
-      setPreviewState({ loading: false, error: error.message, url: '' })
-    },
-  })
+  const folderOptions = folderRows
+
+  const filteredAudit = useMemo(() => {
+    const query = auditQuery.trim().toLowerCase()
+    const rows = audit.filter((event) => {
+      if (!query) return true
+      return [
+        event.action,
+        event.secure_documents?.file_name,
+        event.secure_share_rooms?.name,
+        event.secure_share_room_recipients?.email,
+        event.ip_address,
+        event.user_agent,
+      ].some((value) => String(value || '').toLowerCase().includes(query))
+    })
+
+    return [...rows].sort((a, b) => {
+      const direction = auditSort.direction === 'asc' ? 1 : -1
+      const aValue = auditSort.field === 'document'
+        ? a.secure_documents?.file_name || ''
+        : auditSort.field === 'room'
+          ? a.secure_share_rooms?.name || ''
+          : auditSort.field === 'recipient'
+            ? a.secure_share_room_recipients?.email || ''
+            : auditSort.field === 'action'
+              ? a.action || ''
+              : a.accessed_at || ''
+      const bValue = auditSort.field === 'document'
+        ? b.secure_documents?.file_name || ''
+        : auditSort.field === 'room'
+          ? b.secure_share_rooms?.name || ''
+          : auditSort.field === 'recipient'
+            ? b.secure_share_room_recipients?.email || ''
+            : auditSort.field === 'action'
+              ? b.action || ''
+              : b.accessed_at || ''
+      return String(aValue).localeCompare(String(bValue)) * direction
+    })
+  }, [audit, auditQuery, auditSort])
 
   const uploadMutation = useMutation({
-    mutationFn: async ({ file, category, description }) => {
-      const mimeType = resolveUploadMimeType(file)
-      const targetFolder = category?.trim() || DEFAULT_UPLOAD_FOLDER
-      const uploadDescription = description?.trim() || ''
-      const payload = await getUploadUrl({
+    mutationFn: async ({ file, folderId, category, description }) => {
+      if (!requireWriteAccess('upload documents')) return null
+      const validation = validateSecureVaultFile(file, usedBytes, quotaBytes)
+      if (!validation.valid) {
+        if (validation.reason === 'file_too_large') throw new Error('Documents must be 25 MB or smaller.')
+        if (validation.reason === 'quota_exceeded') throw new Error('This upload would exceed the 100 MB document quota.')
+        throw new Error('This file type is not supported.')
+      }
+
+      const upload = await getSecureVaultUploadUrl({
         filename: file.name,
-        mime_type: mimeType,
+        mime_type: validation.mimeType,
         size_bytes: file.size,
-        category: targetFolder,
-        description: uploadDescription || null,
+        folder_id: folderId || null,
+        category: category || DEFAULT_UPLOAD_FOLDER,
+        description: description || null,
       })
-      await uploadFileToSignedUrl(payload.upload_url, file, mimeType)
-      return { ...payload, resolvedMimeType: mimeType, targetFolder, uploadDescription }
+      await uploadSecureVaultFileToSignedUrl(upload.upload_url, file, validation.mimeType)
+      return upload
+    },
+    onSuccess: async (payload) => {
+      if (!payload) return
+      setNotice({ type: 'success', message: 'Document uploaded securely.' })
+      setIsUploadDialogOpen(false)
+      setUploadForm({ folderId: '', category: DEFAULT_UPLOAD_FOLDER, description: '' })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-documents'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-folders'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-audit'] }),
+      ])
+      setSelectedId(payload.document_id)
+      previewMutation.mutate({ documentId: payload.document_id, action: 'view' })
+    },
+    onError: (error) => setNotice({ type: 'error', message: error.message }),
+  })
+
+  const previewMutation = useMutation({
+    mutationFn: ({ documentId, action }) => getSecureVaultDocumentUrl(documentId, action),
+    onMutate: (_variables) => {
+      if (_variables.action === 'view') setPreviewState({ loading: true, error: '', url: '' })
     },
     onSuccess: async (payload, variables) => {
-      const file = variables.file
-      const optimisticDocument = {
-        id: payload.document_id,
-        file_name: file.name,
-        mime_type: payload.expected_mime || payload.resolvedMimeType || file.type,
-        category: payload.targetFolder || null,
-        description: payload.uploadDescription || null,
-        size_bytes: file.size,
-        storage_path: payload.storage_path,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+      if (variables.action === 'download') {
+        const document = documents.find((item) => item.id === variables.documentId)
+        await downloadSignedFile(payload.signed_url, document?.file_name)
+        setNotice({ type: 'success', message: 'Download started.' })
+      } else {
+        setPreviewState({ loading: false, error: '', url: payload.signed_url })
       }
-
-      setUploadedFallbackDocuments((current) => [optimisticDocument, ...current.filter((document) => document.id !== optimisticDocument.id)].slice(0, 10))
-      queryClient.setQueryData(['documents'], (current = []) => [optimisticDocument, ...current.filter((document) => document.id !== optimisticDocument.id)])
-      setSelectedId(payload.document_id)
-      setFileNotice({ type: 'success', message: 'Upload complete. Document list refreshed.' })
-
-      if (payload.targetFolder?.trim()) {
-        setLocalFolders((current) => {
-          if (current.includes(payload.targetFolder.trim())) return current
-          const next = [...current, payload.targetFolder.trim()].sort((a, b) => a.localeCompare(b))
-          saveLocalFolders(clientFolderKey, next)
-          return next
-        })
-      }
-
-      setUploadForm({ category: '', description: '' })
-      setIsUploadDialogOpen(false)
-      await queryClient.invalidateQueries({ queryKey: ['documents'] })
-      previewMutation.mutate(payload.document_id)
+      queryClient.invalidateQueries({ queryKey: ['secure-vault-audit'] })
     },
-    onError: (error) => {
-      setFileNotice({ type: 'error', message: error.message })
-    },
-  })
-
-  const createShareMutation = useMutation({
-    mutationFn: createShareLink,
-    onSuccess: async (link) => {
-      const shareUrl = buildShareUrl(link.token)
-      setShareNotice({ type: 'success', message: 'Share link ready to copy.' })
-      setShareDraft({ expiresAt: '', maxUses: '' })
-      await copyTextToClipboard(shareUrl).catch(() => {})
-      await queryClient.invalidateQueries({ queryKey: ['share-links'] })
-    },
-    onError: (error) => {
-      setShareNotice({ type: 'error', message: error.message })
-    },
-  })
-
-  const revokeShareMutation = useMutation({
-    mutationFn: revokeShareLink,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['share-links'] })
+    onError: (error, variables) => {
+      if (variables?.action === 'view') setPreviewState({ loading: false, error: error.message, url: '' })
+      setNotice({ type: 'error', message: error.message })
     },
   })
 
   const updateDocumentMutation = useMutation({
-    mutationFn: ({ documentId, changes }) => updateDocumentMetadata(documentId, changes),
+    mutationFn: ({ documentId, changes }) => updateSecureVaultDocument(documentId, changes),
     onSuccess: async (updatedDocument) => {
-      queryClient.setQueryData(['documents'], (current = []) =>
-        current.map((document) => (document.id === updatedDocument.id ? { ...document, ...updatedDocument } : document)))
-      setUploadedFallbackDocuments((current) =>
-        current.map((document) => (document.id === updatedDocument.id ? { ...document, ...updatedDocument } : document)))
-
-      if (updatedDocument.category?.trim()) {
-        setLocalFolders((current) => {
-          if (current.includes(updatedDocument.category.trim())) return current
-          const next = [...current, updatedDocument.category.trim()].sort((a, b) => a.localeCompare(b))
-          saveLocalFolders(clientFolderKey, next)
-          return next
-        })
-      }
-
-      if (Object.prototype.hasOwnProperty.call(updatedDocument, 'file_name')) {
-        setFileNotice({ type: 'success', message: 'File renamed.' })
-      } else {
-        setFolderNotice({ type: 'success', message: 'Folder saved.' })
-      }
-      await queryClient.invalidateQueries({ queryKey: ['documents'] })
+      setNotice({ type: 'success', message: updatedDocument.is_archived ? 'Document archived.' : 'Document saved.' })
+      await queryClient.invalidateQueries({ queryKey: ['secure-vault-documents'] })
     },
-    onError: (error) => {
-      setFolderNotice({ type: 'error', message: error.message })
-      setFileNotice({ type: 'error', message: error.message })
-    },
+    onError: (error) => setNotice({ type: 'error', message: error.message }),
   })
 
-  const deleteDocumentMutation = useMutation({
-    mutationFn: ({ documentId, storagePath }) => deleteDocument(documentId, storagePath),
-    onSuccess: async (_data, variables) => {
-      queryClient.setQueryData(['documents'], (current = []) =>
-        current.filter((document) => document.id !== variables.documentId))
-      setUploadedFallbackDocuments((current) =>
-        current.filter((document) => document.id !== variables.documentId))
-
-      const remainingDocuments = visibleDocuments.filter((document) => document.id !== variables.documentId)
-      if (selectedId === variables.documentId) {
-        setSelectedId(remainingDocuments[0]?.id || null)
-        setPreviewState({ loading: false, error: '', url: '' })
-      }
-
-      setFileNotice({ type: 'success', message: 'File deleted.' })
-      await queryClient.invalidateQueries({ queryKey: ['documents'] })
+  const folderMutation = useMutation({
+    mutationFn: createSecureVaultFolder,
+    onSuccess: async (folder) => {
+      setFolderDraft('')
+      setSelectedFolder(folder.id)
+      setNotice({ type: 'success', message: `Folder "${folder.name}" created.` })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-folders'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-audit'] }),
+      ])
     },
-    onError: (error) => {
-      setFileNotice({ type: 'error', message: error.message })
-    },
+    onError: (error) => setNotice({ type: 'error', message: error.message }),
   })
 
-  function handlePreview(documentId) {
-    setSelectedId(documentId)
-    previewMutation.mutate(documentId)
+  const shareLinkMutation = useMutation({
+    mutationFn: createSecureVaultShareLink,
+    onSuccess: async (link) => {
+      setCreatedShareLink(link)
+      setShareNotice({ type: 'success', message: 'Share link created.' })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-share-links'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-audit'] }),
+      ])
+    },
+    onError: (error) => setShareNotice({ type: 'error', message: error.message }),
+  })
+
+  const revokeShareLinkMutation = useMutation({
+    mutationFn: revokeSecureVaultShareLink,
+    onSuccess: async () => {
+      setCreatedShareLink(null)
+      setShareNotice({ type: 'success', message: 'Share link revoked.' })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-share-links'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-audit'] }),
+      ])
+    },
+    onError: (error) => setShareNotice({ type: 'error', message: error.message }),
+  })
+
+  const roomMutation = useMutation({
+    mutationFn: async () => {
+      if (!requireWriteAccess('create secure access rooms')) return null
+      const recipientEmails = roomForm.recipientEmails
+        .split(/[\n,;]/)
+        .map((email) => email.trim())
+        .filter(Boolean)
+      return createSecureVaultRoom({
+        clientId,
+        name: roomForm.name,
+        documentIds: selectedDocumentIds,
+        folderIds: roomFolderIds,
+        recipientEmails,
+        expiresAt: roomForm.expiresAt,
+        accessMode: roomForm.accessMode,
+        passcode: roomForm.passcode,
+      })
+    },
+    onSuccess: async (room) => {
+      if (!room) return
+      setCreatedRoom(room)
+      setIsRoomDialogOpen(false)
+      setSelectedDocumentIds([])
+      setRoomFolderIds([])
+      setRoomForm({
+        name: '',
+        recipientEmails: '',
+        passcode: '',
+        expiresAt: defaultRoomExpiryValue(),
+        accessMode: 'view_and_download',
+      })
+      setNotice({
+        type: room.invite_delivery?.failed_count > 0 ? 'error' : 'success',
+        message: room.invite_delivery?.failed_count > 0
+          ? 'Room created, but one or more emails failed. Use the fallback link and passcode below.'
+          : 'Secure access room created. The link and passcode were emailed separately.',
+      })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-rooms'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-audit'] }),
+      ])
+    },
+    onError: (error) => setNotice({ type: 'error', message: error.message }),
+  })
+
+  const revokeRoomMutation = useMutation({
+    mutationFn: revokeSecureVaultRoom,
+    onSuccess: async () => {
+      setNotice({ type: 'success', message: 'Secure access room revoked.' })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-rooms'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-audit'] }),
+      ])
+    },
+    onError: (error) => setNotice({ type: 'error', message: error.message }),
+  })
+
+  function toggleSelectedDocument(documentId) {
+    setSelectedDocumentIds((current) =>
+      current.includes(documentId) ? current.filter((id) => id !== documentId) : [...current, documentId])
   }
 
-  function handleFileChange(event) {
-    if (!requireWriteAccess('upload files')) {
-      event.target.value = ''
-      return
-    }
+  function openUploadDialog() {
+    if (!requireWriteAccess('upload documents')) return
+    const activeFolder = folderRows.find((folder) => folder.id === selectedFolder)
+    setUploadForm({ folderId: activeFolder?.id || '', category: activeFolder?.name || DEFAULT_UPLOAD_FOLDER, description: '' })
+    setIsUploadDialogOpen(true)
+  }
 
+  function handleUploadFile(event) {
     const file = event.target.files?.[0]
+    event.target.value = ''
     if (!file) return
-
-    const mimeType = resolveUploadMimeType(file)
-
-    if (!mimeType) {
-      return
-    }
-
-    if (file.size > MAX_DOCUMENT_BYTES) {
-      return
-    }
-
     uploadMutation.mutate({
       file,
+      folderId: uploadForm.folderId || null,
       category: uploadForm.category || DEFAULT_UPLOAD_FOLDER,
-      description: uploadForm.description,
-    })
-    event.target.value = ''
-  }
-
-  function handleCreateShare(event) {
-    event.preventDefault()
-    if (!requireWriteAccess('create share links')) return
-    if (!shareDialogDocument || !canManageShares) return
-
-    setShareNotice({ type: '', message: '' })
-    createShareMutation.mutate({
-      documentId: shareDialogDocument.id,
-      clientId: claims.client_id || profile?.client_id || null,
-      expiresAt: shareDraft.expiresAt ? new Date(shareDraft.expiresAt).toISOString() : null,
-      maxUses: shareDraft.maxUses ? Number(shareDraft.maxUses) : null,
+      description: uploadForm.description?.trim() || '',
     })
   }
 
   function handleCreateFolder(event) {
     event.preventDefault()
     if (!requireWriteAccess('create folders')) return
-
     const nextFolder = folderDraft.trim()
     if (!nextFolder) return
+    const parentFolderId = folderRows.some((folder) => folder.id === selectedFolder) ? selectedFolder : null
+    folderMutation.mutate({ clientId, name: nextFolder, parentFolderId })
+  }
 
-    if (!folders.includes(nextFolder)) {
-      const next = [...localFolders, nextFolder].sort((a, b) => a.localeCompare(b))
-      setLocalFolders(next)
-      saveLocalFolders(clientFolderKey, next)
-    }
-
-    setFolderDraft('')
-    setSelectedFolder(nextFolder)
-    setFolderNotice({ type: 'success', message: `Folder "${nextFolder}" created.` })
+  function handleRenameDocument(document) {
+    if (!requireWriteAccess('rename documents')) return
+    setOpenActionMenuId(null)
+    const nextName = window.prompt('Rename file', document.file_name)?.trim()
+    if (!nextName || nextName === document.file_name) return
+    updateDocumentMutation.mutate({ documentId: document.id, changes: { file_name: nextName } })
   }
 
   function handleMoveDocument(document, nextFolder) {
     if (!requireWriteAccess('move documents')) return
-
-    setSelectedId(document.id)
-
-    if (!document || !canManageDocuments) return
-
-    const normalizedFolder = nextFolder?.trim()
-    if (!normalizedFolder || normalizedFolder === documentFolder(document)) return
-
     setOpenActionMenuId(null)
-
-    setFolderNotice({ type: '', message: '' })
-    updateDocumentMutation.mutate({
-      documentId: document.id,
-      changes: { category: normalizedFolder },
-    })
+    if (!nextFolder?.id || nextFolder.id === document.folder_id) return
+    updateDocumentMutation.mutate({ documentId: document.id, changes: { folder_id: nextFolder.id, category: nextFolder.name } })
   }
 
-  function handleRenameDocument(document) {
+  function handleArchiveDocument(document) {
+    if (!requireWriteAccess(document.is_archived ? 'restore documents' : 'archive documents')) return
     setOpenActionMenuId(null)
-    setSelectedId(document.id)
-    handleRenameFileForDocument(document)
+    updateDocumentMutation.mutate({ documentId: document.id, changes: { is_archived: !document.is_archived } })
   }
 
-  function handleRenameFileForDocument(document) {
-    if (!requireWriteAccess('rename documents')) return
-    if (!document || !canManageDocuments) return
-
-    const promptedName = window.prompt('Rename file', document.file_name)
-    const nextName = promptedName?.trim()
-    if (!nextName || nextName === document.file_name) return
-
-    setFileNotice({ type: '', message: '' })
-    updateDocumentMutation.mutate({
-      documentId: document.id,
-      changes: { file_name: nextName },
-    })
-  }
-
-  function handleDeleteDocument(document) {
-    if (!requireWriteAccess('delete documents')) return
-
+  function openRoomDialogForDocuments(documentIds) {
+    if (!requireWriteAccess('create secure access rooms')) return
     setOpenActionMenuId(null)
-    setSelectedId(document.id)
-
-    if (!document || !canManageDocuments) return
-
-    const confirmed = window.confirm(`Delete "${document.file_name}"? This will permanently remove the file from the portal.`)
-    if (!confirmed) return
-
-    setFileNotice({ type: '', message: '' })
-    deleteDocumentMutation.mutate({
-      documentId: document.id,
-      storagePath: document.storage_path,
-    })
+    setSelectedDocumentIds(Array.from(new Set(documentIds)))
+    setRoomFolderIds([])
+    setIsRoomDialogOpen(true)
   }
 
-  function handleCreateShareForDocument(document) {
+  function openRoomDialogForFolder(folderId) {
+    if (!requireWriteAccess('create secure access rooms')) return
+    const folderIds = descendantFolderIds(folderId, folderRows)
+    const documentIds = activeDocuments
+      .filter((document) => document.folder_id && folderIds.has(document.folder_id))
+      .map((document) => document.id)
+    if (!documentIds.length) {
+      setNotice({ type: 'error', message: 'This folder does not have documents to share yet.' })
+      return
+    }
+    setSelectedDocumentIds(Array.from(new Set(documentIds)))
+    setRoomFolderIds([folderId])
+    setIsRoomDialogOpen(true)
+  }
+
+  function openShareLinkDialog(document) {
     if (!requireWriteAccess('create share links')) return
-
     setOpenActionMenuId(null)
-    setSelectedId(document.id)
-    if (!document || !canManageShares) return
-
+    setCreatedShareLink(null)
     setShareNotice({ type: '', message: '' })
-    setShareDraft({ expiresAt: '', maxUses: '' })
+    setShareDraft({ expiresAt: defaultRoomExpiryValue(), maxUses: '' })
     setShareDialogDocument(document)
   }
 
-  async function handleCopyShareForDocument(document) {
-    const activeShareLink = activeShareByDocumentId.get(document.id)
-    if (!activeShareLink) {
-      setShareNotice({ type: 'info', message: 'This file does not have an active share link yet.' })
-      return
-    }
-
-    await handleCopySharedFileLink(activeShareLink)
+  function activeShareLinkForDocument(documentId) {
+    return shareLinks.find((link) =>
+      link.document_id === documentId &&
+      !link.revoked_at &&
+      (link.max_uses === null || Number(link.use_count || 0) < Number(link.max_uses)))
   }
 
-  function handleRevokeShareForDocument(document) {
-    if (!requireWriteAccess('revoke share links')) return
-
-    const activeShareLink = activeShareByDocumentId.get(document.id)
-    if (!activeShareLink) return
-
-    revokeShareMutation.mutate(activeShareLink.id)
+  function setAuditSortField(field) {
+    setAuditSort((current) => ({
+      field,
+      direction: current.field === field && current.direction === 'asc' ? 'desc' : 'asc',
+    }))
   }
-
-  async function handleCopySharedFileLink(link) {
-    const shareUrl = buildShareUrl(link.token, tenant)
-    try {
-      await copyTextToClipboard(shareUrl)
-      setShareNotice({ type: 'success', message: 'Share link copied to clipboard.' })
-    } catch {
-      setShareNotice({ type: 'error', message: 'Could not copy the share link to the clipboard.' })
-    }
-  }
-
-  function handleDownloadDocument(document) {
-    setOpenActionMenuId(null)
-    setSelectedId(document.id)
-    previewMutation.mutate(document.id, {
-      onSuccess: async (payload) => {
-        try {
-          await downloadSignedFile(payload.signed_url, document.file_name)
-          setFileNotice({ type: 'success', message: `Downloading "${document.file_name}".` })
-        } catch (error) {
-          setFileNotice({ type: 'error', message: error.message || 'Could not start the download.' })
-        }
-      },
-    })
-  }
-
-  const folderCounts = useMemo(() => {
-    const counts = {
-      [ALL_FILES_FOLDER]: visibleDocuments.length,
-      [SHARED_FILES_FOLDER]: sharedDocuments.length,
-    }
-    for (const folder of folders) {
-      if (folder === ALL_FILES_FOLDER || folder === SHARED_FILES_FOLDER) continue
-      counts[folder] = visibleDocuments.filter((document) => documentFolder(document) === folder).length
-    }
-    return counts
-  }, [folders, sharedDocuments.length, visibleDocuments])
-
-  const folderSelectOptions = folders.filter((folder) => folder !== ALL_FILES_FOLDER && folder !== SHARED_FILES_FOLDER)
-  const uploadFolderOptions = folderSelectOptions.length > 0 ? folderSelectOptions : [DEFAULT_UPLOAD_FOLDER]
-  const isSpecialFolderView = selectedFolder === ALL_FILES_FOLDER || selectedFolder === SHARED_FILES_FOLDER
-  const activeUploadFolder = !isSpecialFolderView ? selectedFolder : uploadFolderOptions[0]
-
-  useEffect(() => {
-    if (!openActionMenuId) return undefined
-
-    function handlePointerDown(event) {
-      const target = event.target
-      if (target instanceof Element && target.closest('[data-document-action-menu="true"]')) {
-        return
-      }
-      setOpenActionMenuId(null)
-    }
-
-    document.addEventListener('pointerdown', handlePointerDown)
-    return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [openActionMenuId])
-
-  useEffect(() => {
-    function handleResize() {
-      setIsDesktopLayout(window.innerWidth >= DESKTOP_PANE_BREAKPOINT)
-    }
-
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
-
-  useEffect(() => {
-    if (!activePaneResize) return undefined
-
-    function handlePointerMove(event) {
-      const layoutBounds = layoutRef.current?.getBoundingClientRect()
-      if (!layoutBounds) return
-
-      if (activePaneResize === 'folders') {
-        const nextFoldersWidth = Math.min(
-          MAX_FOLDER_PANE,
-          Math.max(MIN_FOLDER_PANE, event.clientX - layoutBounds.left),
-        )
-        setPaneSizes((current) => ({ ...current, folders: nextFoldersWidth }))
-        return
-      }
-
-      const nextPreviewWidth = Math.min(
-        MAX_PREVIEW_PANE,
-        Math.max(MIN_PREVIEW_PANE, layoutBounds.right - event.clientX),
-      )
-      setPaneSizes((current) => ({ ...current, preview: nextPreviewWidth }))
-    }
-
-    function handlePointerUp() {
-      setActivePaneResize(null)
-    }
-
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', handlePointerUp)
-
-    return () => {
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', handlePointerUp)
-    }
-  }, [activePaneResize])
 
   return (
     <div className="portal-page w-full max-w-none space-y-5 md:p-5 xl:p-6">
-      <ShareDialog
-        document={shareDialogDocument}
-        draft={shareDraft}
-        activeShareLink={shareDialogDocument ? activeShareByDocumentId.get(shareDialogDocument.id) ?? null : null}
-        shareNotice={shareNotice}
-        onChange={setShareDraft}
-        onClose={() => setShareDialogDocument(null)}
-        onSubmit={handleCreateShare}
-        onCopy={() => {
-          const activeShareLink = shareDialogDocument ? activeShareByDocumentId.get(shareDialogDocument.id) : null
-          if (!activeShareLink) return
-          handleCopySharedFileLink(activeShareLink)
-        }}
-        onRevoke={() => {
-          if (!shareDialogDocument) return
-          handleRevokeShareForDocument(shareDialogDocument)
-        }}
-        isSubmitting={createShareMutation.isPending}
-        isRevoking={revokeShareMutation.isPending}
-      />
       <UploadDialog
         isOpen={isUploadDialogOpen}
         draft={uploadForm}
-        folders={uploadFolderOptions}
+        folders={folderOptions}
         onChange={setUploadForm}
         onClose={() => setIsUploadDialogOpen(false)}
-        onSubmit={handleFileChange}
+        onSubmit={handleUploadFile}
         isSubmitting={uploadMutation.isPending}
+      />
+
+      <ShareLinkDialog
+        document={shareDialogDocument}
+        activeShareLink={shareDialogDocument ? activeShareLinkForDocument(shareDialogDocument.id) : null}
+        createdShareLink={createdShareLink}
+        draft={shareDraft}
+        notice={shareNotice}
+        onChange={setShareDraft}
+        onClose={() => {
+          setShareDialogDocument(null)
+          setCreatedShareLink(null)
+          setShareNotice({ type: '', message: '' })
+        }}
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (!shareDialogDocument) return
+          shareLinkMutation.mutate({
+            clientId,
+            documentId: shareDialogDocument.id,
+            expiresAt: shareDraft.expiresAt,
+            maxUses: shareDraft.maxUses,
+          })
+        }}
+        onCopy={() => copyText(createdShareLink?.share_url)}
+        onRevoke={() => {
+          const activeLink = shareDialogDocument ? activeShareLinkForDocument(shareDialogDocument.id) : null
+          if (activeLink) revokeShareLinkMutation.mutate(activeLink.id)
+        }}
+        isSubmitting={shareLinkMutation.isPending}
+        isRevoking={revokeShareLinkMutation.isPending}
+      />
+
+      <SecureRoomDialog
+        isOpen={isRoomDialogOpen}
+        documents={activeDocuments}
+        selectedIds={selectedDocumentIds}
+        draft={roomForm}
+        onChange={setRoomForm}
+        onClose={() => setIsRoomDialogOpen(false)}
+        onSubmit={(event) => {
+          event.preventDefault()
+          roomMutation.mutate()
+        }}
+        isSubmitting={roomMutation.isPending}
       />
 
       <section className="portal-surface rounded-[36px] p-5 md:p-7">
@@ -1426,25 +1275,32 @@ export default function Documents() {
               <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
                 Documents
               </span>
+              <span className="portal-chip inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Secure sharing
+              </span>
             </div>
             <h1 className="portal-page-title font-display">Documents</h1>
+            <p className="mt-2 max-w-3xl text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+              Store business documents, create secure access rooms, and review every access event from one place.
+            </p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="portal-stat-card rounded-[24px] px-4 py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>Total files</p>
-              <p className="mt-2 text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>{visibleDocuments.length}</p>
-              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>Available in this library</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>Storage</p>
+              <p className="mt-2 text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>{usagePercent}%</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>{formatVaultBytes(usedBytes)} of {formatVaultBytes(quotaBytes)}</p>
             </div>
             <div className="portal-stat-card rounded-[24px] px-4 py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>Folders</p>
-              <p className="mt-2 text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>{folders.length - 1}</p>
-              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>Current folder groups</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>Documents</p>
+              <p className="mt-2 text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>{activeDocuments.length}</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>Active files</p>
             </div>
             <div className="portal-stat-card rounded-[24px] px-4 py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>Share links</p>
-              <p className="mt-2 text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>{shareLinks.length}</p>
-              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>Active and archived links</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>Rooms</p>
+              <p className="mt-2 text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>{activeRooms.length}</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>Currently active</p>
             </div>
           </div>
         </div>
@@ -1452,35 +1308,27 @@ export default function Documents() {
 
       <section className="portal-command-bar rounded-[30px]">
         <div className="portal-command-bar-group">
-          <button
-            type="button"
-            onClick={() => {
-              if (!requireWriteAccess('upload files')) return
-              setUploadForm((current) => ({
-                ...current,
-                category: !isSpecialFolderView ? selectedFolder : (current.category || activeUploadFolder),
-              }))
-              setIsUploadDialogOpen(true)
-            }}
-            disabled={billingAccess?.readOnly}
-            className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-          >
+          <button type="button" onClick={openUploadDialog} disabled={billingAccess?.readOnly} className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
             <Upload className="h-4 w-4" />
-            File Upload
+            Upload document
           </button>
-          <button
-            type="button"
-            onClick={() => selectedDocument && handlePreview(selectedDocument.id)}
-            className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
-            disabled={!selectedDocument}
-          >
+          <button type="button" onClick={() => setIsRoomDialogOpen(true)} disabled={selectedDocumentIds.length === 0 || billingAccess?.readOnly} className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
             <Link2 className="h-4 w-4" />
-            Refresh preview
+            Create secure access room
           </button>
-          <div className="portal-chip inline-flex items-center gap-2 rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.22em]">
-            <FolderOpen className="h-3.5 w-3.5" />
-            {selectedFolder}
-          </div>
+          <button type="button" onClick={() => setActiveView('rooms')} className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
+            <Users className="h-4 w-4" />
+            View rooms
+          </button>
+          <button type="button" onClick={() => setActiveView('log')} className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
+            <History className="h-4 w-4" />
+            Access log
+          </button>
+          {activeView !== 'files' ? (
+            <button type="button" onClick={() => setActiveView('files')} className="portal-button-ghost rounded-2xl px-4 py-3 text-sm font-semibold">
+              Back to files
+            </button>
+          ) : null}
         </div>
 
         <div className="portal-command-bar-group">
@@ -1488,287 +1336,390 @@ export default function Documents() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--portal-text-soft)' }} />
             <input
               type="text"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search by file name or note"
+              value={activeView === 'log' ? auditQuery : searchQuery}
+              onChange={(event) => activeView === 'log' ? setAuditQuery(event.target.value) : setSearchQuery(event.target.value)}
+              placeholder={activeView === 'log' ? 'Search log by file, room, recipient, action' : 'Search by file name or note'}
               className="portal-input py-3 pl-10 pr-4 text-sm"
             />
           </div>
-          <div className="portal-chip inline-flex items-center gap-1 rounded-full p-1">
-            <button
-              type="button"
-              onClick={() => setLibraryView('list')}
-              className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition-all"
-              style={libraryView === 'list' ? { background: 'white', color: 'var(--portal-primary)' } : { color: 'var(--portal-text-soft)' }}
-            >
-              <List className="h-4 w-4" />
-              <span>List view</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setLibraryView('grid')}
-              className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition-all"
-              style={libraryView === 'grid' ? { background: 'white', color: 'var(--portal-primary)' } : { color: 'var(--portal-text-soft)' }}
-            >
-              <Grid2X2 className="h-4 w-4" />
-              <span>Grid view</span>
-            </button>
-          </div>
+          {activeView === 'files' ? (
+            <div className="portal-chip inline-flex items-center gap-1 rounded-full p-1">
+              <button type="button" onClick={() => setLibraryView('list')} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition-all" style={libraryView === 'list' ? { background: 'white', color: 'var(--portal-primary)' } : { color: 'var(--portal-text-soft)' }}>
+                <List className="h-4 w-4" />
+                <span>List</span>
+              </button>
+              <button type="button" onClick={() => setLibraryView('grid')} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition-all" style={libraryView === 'grid' ? { background: 'white', color: 'var(--portal-primary)' } : { color: 'var(--portal-text-soft)' }}>
+                <Grid2X2 className="h-4 w-4" />
+                <span>Grid</span>
+              </button>
+            </div>
+          ) : null}
         </div>
       </section>
 
-      <div
-        ref={layoutRef}
-        className="space-y-6 xl:grid xl:items-start xl:gap-0"
-        style={isDesktopLayout
-          ? { gridTemplateColumns: `${paneSizes.folders}px 14px minmax(0,1fr) 14px ${paneSizes.preview}px` }
-          : undefined}
-      >
-        <aside className="space-y-6">
-          <section className="portal-panel overflow-hidden rounded-[34px]">
-            <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
-              <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Folders</h2>
-            </div>
-            <div className="space-y-4 p-5">
-              <form onSubmit={handleCreateFolder} className="flex gap-2">
+      <Notice kind={notice.type} message={notice.message} />
+
+      {createdRoom ? (
+        <section className="rounded-[24px] border p-4" style={{ borderColor: 'var(--portal-border)', background: 'var(--portal-surface)' }}>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Secure access room ready</p>
+              <label className="mt-3 block text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
+                Share link
+              </label>
+              {createdRoom.share_url ? (
                 <input
-                  type="text"
-                  value={folderDraft}
-                  onChange={(event) => setFolderDraft(event.target.value)}
-                  placeholder="New folder"
-                  className="portal-input px-4 py-3 text-sm"
-                  disabled={billingAccess?.readOnly}
+                  className="portal-input mt-2 w-full rounded-2xl px-3 py-2 text-sm"
+                  readOnly
+                  value={createdRoom.share_url}
+                  onFocus={(event) => event.target.select()}
                 />
-                <button
-                  type="submit"
-                  disabled={billingAccess?.readOnly}
-                  className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  <FolderPlus className="h-4 w-4" />
-                </button>
-              </form>
-
-              <div className="space-y-2">
-                {folders.map((folder) => (
-                  <button
-                    key={folder}
-                    type="button"
-                    onClick={() => setSelectedFolder(folder)}
-                    className="flex w-full items-center justify-between rounded-2xl px-3 py-3 text-left transition-all"
-                    style={selectedFolder === folder
-                      ? folder === SHARED_FILES_FOLDER
-                        ? { background: 'linear-gradient(135deg, rgba(31,169,113,0.18), rgba(201, 240, 223, 0.14))', border: '1px solid rgba(31,169,113,0.24)' }
-                        : { background: 'linear-gradient(135deg, rgba(201,168,76,0.16), rgba(232,213,160,0.08))', border: '1px solid rgba(201,168,76,0.24)' }
-                      : folder === SHARED_FILES_FOLDER
-                        ? { background: 'rgba(217, 244, 229, 0.58)', border: '1px solid rgba(31,169,113,0.18)' }
-                        : { background: 'rgba(255,255,255,0.78)', border: '1px solid var(--portal-border)' }}
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{folder}</p>
-                      <p className="text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>{folderCounts[folder] || 0} file{(folderCounts[folder] || 0) === 1 ? '' : 's'}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              <Notice kind={folderNotice.type} message={folderNotice.message} />
-            </div>
-          </section>
-        </aside>
-
-        {isDesktopLayout ? (
-          <div className="flex items-stretch justify-center px-1">
-            <button
-              type="button"
-              aria-label="Resize folders panel"
-              onPointerDown={() => setActivePaneResize('folders')}
-              className="group flex w-full cursor-col-resize items-center justify-center"
-            >
-              <span
-                className="h-full min-h-[640px] w-[2px] rounded-full transition-all"
-                style={{
-                  background: activePaneResize === 'folders' ? 'rgba(201, 168, 76, 0.65)' : 'rgba(201, 168, 76, 0.22)',
-                  boxShadow: activePaneResize === 'folders' ? '0 0 0 3px rgba(201, 168, 76, 0.14)' : 'none',
-                }}
-              />
-            </button>
-          </div>
-        ) : null}
-
-        <section className="portal-panel overflow-visible rounded-[34px]">
-          <div className="border-b px-5 py-5 md:px-6" style={{ borderColor: 'var(--portal-border)' }}>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedFolder}</h2>
-                <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                  {selectedFolder === ALL_FILES_FOLDER
-                    ? 'Tenant-scoped files from the secure library.'
-                    : selectedFolder === SHARED_FILES_FOLDER
-                      ? 'Files that currently have active share links.'
-                      : `Files inside the ${selectedFolder} folder.`}
+              ) : (
+                <p className="mt-2 rounded-2xl border px-3 py-2 text-sm" style={{ borderColor: 'var(--portal-danger)', color: 'var(--portal-danger)' }}>
+                  Share link was not returned. Recreate the room before sending access.
                 </p>
-              </div>
-              <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold">
-                {filteredDocuments.length} shown
-              </span>
+              )}
+              <p className="mt-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>Passcode: {createdRoom.passcode || 'Not returned'}</p>
+              {createdRoom.invite_delivery ? (
+                <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+                  Email delivery: {createdRoom.invite_delivery.sent_count || 0} sent, {createdRoom.invite_delivery.failed_count || 0} failed.
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60" disabled={!createdRoom.share_url} onClick={() => copyText(createdRoom.share_url)}>
+                <Copy className="h-4 w-4" />
+                Copy share link
+              </button>
+              <button type="button" className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60" disabled={!createdRoom.passcode} onClick={() => copyText(createdRoom.passcode)}>
+                <LockKeyhole className="h-4 w-4" />
+                Copy passcode
+              </button>
+              <button type="button" className="portal-button-ghost rounded-2xl px-3 py-2 text-sm font-semibold" onClick={() => setCreatedRoom(null)}>
+                <X className="h-4 w-4" />
+              </button>
             </div>
           </div>
+        </section>
+      ) : null}
 
-          {documentsError && <div className="p-5"><Notice kind="error" message={documentsError.message} /></div>}
-
-          {documentsLoading ? (
+      {activeView === 'rooms' ? (
+        <section className="portal-panel overflow-hidden rounded-[34px]">
+          <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
+            <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Secure access rooms</h2>
+            <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>Review active, expired, and revoked external access.</p>
+          </div>
+          {roomsError ? <div className="p-5"><Notice kind="error" message={roomsError.message} /></div> : null}
+          {roomsLoading ? (
             <div className="flex items-center gap-3 px-6 py-10" style={{ color: 'var(--portal-text-muted)' }}>
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-sm">Loading documents…</span>
+              <span className="text-sm">Loading rooms...</span>
             </div>
-          ) : filteredDocuments.length > 0 ? (
-            libraryView === 'grid' ? (
-              <div className="grid gap-3 p-5 sm:grid-cols-2 2xl:grid-cols-3">
-                {filteredDocuments.map((document) => {
-                  const isSelected = selectedDocument?.id === document.id
-
-                  return (
-                    <div
-                      key={document.id}
-                      onClick={() => handlePreview(document.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          handlePreview(document.id)
-                        }
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      className="relative rounded-[24px] p-4 text-left transition-all cursor-pointer"
-                      style={isSelected
-                        ? { background: 'linear-gradient(145deg, rgba(201,168,76,0.14), rgba(232,213,160,0.08))', border: '1px solid rgba(201,168,76,0.24)', boxShadow: '0 14px 28px rgba(26,24,20,0.06)' }
-                        : { background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}
-                    >
-                      <div className="absolute right-3 top-3">
-                        <DocumentActionMenu
-                          key={`${document.id}-${openActionMenuId === document.id ? 'open' : 'closed'}-grid`}
-                          document={document}
-                          isOpen={openActionMenuId === document.id}
-                          canManage={canManageDocuments}
-                          availableFolders={folderSelectOptions}
-                          currentFolder={documentFolder(document)}
-                          activeShareLink={activeShareByDocumentId.get(document.id)}
-                          onOpen={() => setOpenActionMenuId((current) => (current === document.id ? null : document.id))}
-                          onMove={handleMoveDocument}
-                          onRename={handleRenameDocument}
-                          onShare={handleCreateShareForDocument}
-                          onCopyShare={handleCopyShareForDocument}
-                          onRevokeShare={handleRevokeShareForDocument}
-                          onDownload={handleDownloadDocument}
-                          onDelete={handleDeleteDocument}
-                        />
-                      </div>
-                      <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
-                        <DocumentIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-[13px] font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
-                        {activeShareByDocumentId.get(document.id) ? (
-                          <Share2 className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--portal-success)' }} />
-                        ) : null}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="portal-scroll overflow-auto">
-                <table className="w-full border-separate border-spacing-0">
-                  <tbody>
-                    {filteredDocuments.map((document) => {
-                      const isSelected = selectedDocument?.id === document.id
-                      return (
-                        <tr
-                          key={document.id}
-                          className="portal-table-row cursor-pointer transition-all"
-                          onClick={() => handlePreview(document.id)}
-                          style={isSelected ? { background: 'rgba(201, 168, 76, 0.1)' } : undefined}
-                        >
-                          <td className="border-t px-4 py-2.5" style={{ borderColor: 'var(--portal-border)' }}>
-                            <div className="flex min-w-0 items-center gap-3">
-                              <div className="shrink-0">
-                                <DocumentActionMenu
-                                  key={`${document.id}-${openActionMenuId === document.id ? 'open' : 'closed'}-list`}
-                                  document={document}
-                                  isOpen={openActionMenuId === document.id}
-                                  canManage={canManageDocuments}
-                                  availableFolders={folderSelectOptions}
-                                  currentFolder={documentFolder(document)}
-                                  activeShareLink={activeShareByDocumentId.get(document.id)}
-                                  onOpen={() => setOpenActionMenuId((current) => (current === document.id ? null : document.id))}
-                                  onMove={handleMoveDocument}
-                                  onRename={handleRenameDocument}
-                                  onShare={handleCreateShareForDocument}
-                                  onCopyShare={handleCopyShareForDocument}
-                                  onRevokeShare={handleRevokeShareForDocument}
-                                  onDownload={handleDownloadDocument}
-                                  onDelete={handleDeleteDocument}
-                                />
-                              </div>
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
-                                <DocumentIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
-                              </div>
-                              <div className="flex min-w-0 items-center gap-2">
-                                <p className="truncate text-[12px] font-semibold leading-5" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
-                                {activeShareByDocumentId.get(document.id) ? (
-                                  <Share2 className="h-3 w-3 shrink-0" style={{ color: 'var(--portal-success)' }} />
-                                ) : null}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )
           ) : (
-            <div className="px-5 py-12 text-center">
-              <div className="mx-auto max-w-md rounded-[28px] border border-dashed px-6 py-10" style={{ borderColor: 'var(--portal-border-strong)', color: 'var(--portal-text-muted)' }}>
-                <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>No documents match this view</p>
-                <p className="mt-2 text-xs">Try another folder, clear your search, or upload the first file for this workspace.</p>
-              </div>
+            <div className="divide-y" style={{ borderColor: 'var(--portal-border)' }}>
+              {rooms.map((room) => {
+                const status = roomStatus(room)
+                return (
+                  <div key={room.id} className="grid gap-4 px-5 py-4 lg:grid-cols-[1fr_auto] lg:items-center">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{room.name}</p>
+                        <span className="portal-chip rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]">{status}</span>
+                      </div>
+                      <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                        {room.access_mode === 'view_only' ? 'View only' : 'View and download'} - {getRoomDocumentCount(room)} document{getRoomDocumentCount(room) === 1 ? '' : 's'} - Expires {formatDate(room.expires_at)}
+                      </p>
+                      <p className="mt-1 truncate text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                        {getRoomRecipientEmails(room).join(', ') || 'No recipients'}
+                      </p>
+                    </div>
+                    {!room.revoked_at ? (
+                      <button type="button" className="portal-button-ghost inline-flex items-center justify-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold" disabled={revokeRoomMutation.isPending} onClick={() => revokeRoomMutation.mutate(room.id)}>
+                        <Archive className="h-4 w-4" />
+                        Revoke
+                      </button>
+                    ) : null}
+                  </div>
+                )
+              })}
+              {!rooms.length ? <div className="px-5 py-10 text-sm" style={{ color: 'var(--portal-text-muted)' }}>No secure access rooms yet.</div> : null}
             </div>
           )}
         </section>
-
-        {isDesktopLayout ? (
-          <div className="flex items-stretch justify-center px-1">
-            <button
-              type="button"
-              aria-label="Resize preview panel"
-              onPointerDown={() => setActivePaneResize('preview')}
-              className="group flex w-full cursor-col-resize items-center justify-center"
-            >
-              <span
-                className="h-full min-h-[640px] w-[2px] rounded-full transition-all"
-                style={{
-                  background: activePaneResize === 'preview' ? 'rgba(201, 168, 76, 0.65)' : 'rgba(201, 168, 76, 0.22)',
-                  boxShadow: activePaneResize === 'preview' ? '0 0 0 3px rgba(201, 168, 76, 0.14)' : 'none',
-                }}
-              />
-            </button>
+      ) : activeView === 'log' ? (
+        <section className="portal-panel overflow-hidden rounded-[34px]">
+          <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
+            <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Access log</h2>
+            <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>Search and sort document, room, recipient, and access events.</p>
           </div>
-        ) : null}
+          {auditError ? <div className="p-5"><Notice kind="error" message={auditError.message} /></div> : null}
+          {auditLoading ? (
+            <div className="flex items-center gap-3 px-6 py-10" style={{ color: 'var(--portal-text-muted)' }}>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Loading access log...</span>
+            </div>
+          ) : (
+            <div className="portal-scroll overflow-auto">
+              <table className="w-full min-w-[860px] border-separate border-spacing-0 text-sm">
+                <thead>
+                  <tr>
+                    {[
+                      ['accessed_at', 'Date'],
+                      ['action', 'Action'],
+                      ['document', 'Document'],
+                      ['room', 'Room'],
+                      ['recipient', 'Recipient'],
+                    ].map(([field, label]) => (
+                      <th key={field} className="border-b px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em]" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-soft)' }}>
+                        <button type="button" onClick={() => setAuditSortField(field)} className="inline-flex items-center gap-1">
+                          {label}
+                          {auditSort.field === field ? <span>{auditSort.direction === 'asc' ? 'up' : 'down'}</span> : null}
+                        </button>
+                      </th>
+                    ))}
+                    <th className="border-b px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em]" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-soft)' }}>IP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAudit.map((event) => (
+                    <tr key={event.id} className="portal-table-row">
+                      <td className="border-b px-4 py-3" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>{formatDate(event.accessed_at)}</td>
+                      <td className="border-b px-4 py-3 capitalize" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)' }}>{actionLabel(event.action)}</td>
+                      <td className="border-b px-4 py-3" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>{event.secure_documents?.file_name || '-'}</td>
+                      <td className="border-b px-4 py-3" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>{event.secure_share_rooms?.name || '-'}</td>
+                      <td className="border-b px-4 py-3" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>{auditRecipientLabel(event)}</td>
+                      <td className="border-b px-4 py-3" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>{event.ip_address || '-'}</td>
+                    </tr>
+                  ))}
+                  {!filteredAudit.length ? (
+                    <tr>
+                      <td colSpan="6" className="px-5 py-10 text-center text-sm" style={{ color: 'var(--portal-text-muted)' }}>No access log events match this search.</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ) : (
+        <div className="space-y-6 xl:grid xl:grid-cols-[260px_minmax(0,1fr)_400px] xl:items-start xl:gap-6 xl:space-y-0">
+          <aside className="space-y-6">
+            <section className="portal-panel overflow-hidden rounded-[34px]">
+              <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
+                <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Folders</h2>
+              </div>
+              <div className="space-y-4 p-5">
+                <form onSubmit={handleCreateFolder} className="flex gap-2">
+                  <input type="text" value={folderDraft} onChange={(event) => setFolderDraft(event.target.value)} placeholder={folderRows.some((folder) => folder.id === selectedFolder) ? 'New subfolder' : 'New folder'} className="portal-input px-4 py-3 text-sm" disabled={billingAccess?.readOnly} />
+                  <button type="submit" disabled={billingAccess?.readOnly || folderMutation.isPending} className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
+                    <FolderPlus className="h-4 w-4" />
+                  </button>
+                </form>
 
-        <aside className="space-y-6">
-          <DocumentPreview
-            selectedDocument={selectedDocument}
-            previewState={previewState}
-            onRefreshPreview={() => selectedDocument && handlePreview(selectedDocument.id)}
-          />
+                <div className="space-y-2">
+                  {folders.map((folder) => (
+                    <button
+                      key={folder.id}
+                      type="button"
+                      onClick={() => setSelectedFolder(folder.id)}
+                      className="flex w-full items-center justify-between rounded-2xl px-3 py-3 text-left transition-all"
+                      style={selectedFolder === folder.id
+                        ? folder.id === SHARED_ROOMS_FOLDER
+                          ? { background: 'linear-gradient(135deg, rgba(31,169,113,0.18), rgba(201, 240, 223, 0.14))', border: '1px solid rgba(31,169,113,0.24)' }
+                          : { background: 'linear-gradient(135deg, rgba(201,168,76,0.16), rgba(232,213,160,0.08))', border: '1px solid rgba(201,168,76,0.24)' }
+                        : folder.id === SHARED_ROOMS_FOLDER
+                          ? { background: 'rgba(217, 244, 229, 0.58)', border: '1px solid rgba(31,169,113,0.18)' }
+                          : { background: 'rgba(255,255,255,0.78)', border: '1px solid var(--portal-border)' }}
+                    >
+                      <div className="min-w-0" style={{ paddingLeft: `${folder.depth * 12}px` }}>
+                        <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{folder.name}</p>
+                        <p className="text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>{folderCounts[folder.id] || 0} file{(folderCounts[folder.id] || 0) === 1 ? '' : 's'}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+          </aside>
 
-          <Notice kind={fileNotice.type} message={fileNotice.message} />
-          {shareLinksError ? <Notice kind="error" message={shareLinksError.message} /> : null}
-          <Notice kind={shareNotice.type} message={shareNotice.message} />
-        </aside>
-      </div>
+          <section className="portal-panel overflow-hidden rounded-[34px]">
+            <div className="border-b px-5 py-5 md:px-6" style={{ borderColor: 'var(--portal-border)' }}>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedFolderRecord?.path || selectedFolder}</h2>
+                  <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+                    {selectedFolder === SHARED_ROOMS_FOLDER ? 'Files included in secure access rooms.' : selectedFolder === ARCHIVED_FOLDER ? 'Archived files still count against quota.' : 'Tenant-scoped secure document library.'}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {folderRows.some((folder) => folder.id === selectedFolder) ? (
+                    <button type="button" onClick={() => openRoomDialogForFolder(selectedFolder)} disabled={billingAccess?.readOnly} className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold disabled:opacity-60">
+                      <Users className="h-3.5 w-3.5" />
+                      Share folder
+                    </button>
+                  ) : null}
+                  <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold">{filteredDocuments.length} shown</span>
+                </div>
+              </div>
+            </div>
+
+            {documentsError ? <div className="p-5"><Notice kind="error" message={documentsError.message} /></div> : null}
+            {foldersError ? <div className="p-5"><Notice kind="error" message={foldersError.message} /></div> : null}
+            {documentsLoading || foldersLoading ? (
+              <div className="flex items-center gap-3 px-6 py-10" style={{ color: 'var(--portal-text-muted)' }}>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Loading documents...</span>
+              </div>
+            ) : filteredDocuments.length > 0 ? (
+              libraryView === 'grid' ? (
+                <div className="grid gap-3 p-5 sm:grid-cols-2 2xl:grid-cols-3">
+                  {filteredDocuments.map((document) => {
+                    const isSelected = selectedDocument?.id === document.id
+                    const isChecked = selectedDocumentIds.includes(document.id)
+
+                    return (
+                      <div key={document.id} className="relative rounded-[24px] p-4 text-left transition-all" style={isSelected ? { background: 'linear-gradient(145deg, rgba(201,168,76,0.14), rgba(232,213,160,0.08))', border: '1px solid rgba(201,168,76,0.24)', boxShadow: '0 14px 28px rgba(26,24,20,0.06)' } : { background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}>
+                        <label className="absolute left-3 top-3" onClick={(event) => event.stopPropagation()}>
+                          <input type="checkbox" checked={isChecked} onChange={() => toggleSelectedDocument(document.id)} />
+                        </label>
+                        <div className="absolute right-3 top-3">
+                          <DocumentActionMenu
+                            document={document}
+                            isOpen={openActionMenuId === document.id}
+                            canManage={!billingAccess?.readOnly}
+                            availableFolders={folderOptions}
+                            currentFolder={document.folder_id}
+                            onOpen={() => setOpenActionMenuId((current) => current === document.id ? null : document.id)}
+                            onClose={() => setOpenActionMenuId(null)}
+                            onMove={handleMoveDocument}
+                            onRename={handleRenameDocument}
+                            onRoom={(item) => openRoomDialogForDocuments([item.id])}
+                            onShareLink={openShareLinkDialog}
+                            onDownload={(item) => {
+                              setOpenActionMenuId(null)
+                              previewMutation.mutate({ documentId: item.id, action: 'download' })
+                            }}
+                            onArchive={handleArchiveDocument}
+                          />
+                        </div>
+                        <button type="button" onClick={() => { setSelectedId(document.id); previewMutation.mutate({ documentId: document.id, action: 'view' }) }} className="block w-full text-left">
+                          <div className="mb-3 ml-6 flex h-8 w-8 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+                            <DocumentFileIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
+                          </div>
+                          <div className="flex items-center gap-2 pr-7">
+                            <p className="truncate text-[13px] font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                            {roomDocumentIds.has(document.id) ? <Users className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--portal-success)' }} /> : null}
+                          </div>
+                          <p className="mt-1 text-[11px]" style={{ color: 'var(--portal-text-muted)' }}>{folderPath(document.folder_id, foldersById) || documentFolder(document)} - {formatVaultBytes(document.size_bytes)}</p>
+                        </button>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button type="button" onClick={() => previewMutation.mutate({ documentId: document.id, action: 'view' })} className="portal-button-ghost inline-flex h-8 w-8 items-center justify-center rounded-full" aria-label={`Preview ${document.file_name}`}>
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="portal-scroll overflow-auto">
+                  <table className="w-full border-separate border-spacing-0">
+                    <tbody>
+                      {filteredDocuments.map((document) => {
+                        const isSelected = selectedDocument?.id === document.id
+                        const isChecked = selectedDocumentIds.includes(document.id)
+                        return (
+                          <tr
+                            key={document.id}
+                            className="portal-table-row cursor-pointer transition-all"
+                            onClick={() => { setSelectedId(document.id); previewMutation.mutate({ documentId: document.id, action: 'view' }) }}
+                            style={isSelected ? { background: 'rgba(201, 168, 76, 0.1)' } : undefined}
+                          >
+                            <td className="border-t px-4 py-2.5" style={{ borderColor: 'var(--portal-border)' }}>
+                              <div className="flex min-w-0 items-center gap-3">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onClick={(event) => event.stopPropagation()}
+                                  onChange={() => toggleSelectedDocument(document.id)}
+                                />
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+                                  <DocumentFileIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
+                                </div>
+                                <div className="flex min-w-0 flex-1 items-center gap-3">
+                                  <div className="min-w-0">
+                                    <div className="flex min-w-0 items-center gap-2">
+                                      <p className="truncate text-[12px] font-semibold leading-5" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                                      {roomDocumentIds.has(document.id) ? <Users className="h-3 w-3 shrink-0" style={{ color: 'var(--portal-success)' }} /> : null}
+                                    </div>
+                                    <p className="text-[11px]" style={{ color: 'var(--portal-text-muted)' }}>{folderPath(document.folder_id, foldersById) || documentFolder(document)} - {formatVaultBytes(document.size_bytes)}</p>
+                                  </div>
+                                  <span className="hidden shrink-0 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] lg:inline-flex" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-soft)' }}>
+                                    {folderPath(document.folder_id, foldersById) || documentFolder(document)}
+                                  </span>
+                                </div>
+                                <div className="ml-auto flex shrink-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
+                                  <DocumentActionMenu
+                                    document={document}
+                                    isOpen={openActionMenuId === document.id}
+                                    canManage={!billingAccess?.readOnly}
+                                    availableFolders={folderOptions}
+                                    currentFolder={document.folder_id}
+                                    onOpen={() => setOpenActionMenuId((current) => current === document.id ? null : document.id)}
+                                    onClose={() => setOpenActionMenuId(null)}
+                                    onMove={handleMoveDocument}
+                                    onRename={handleRenameDocument}
+                                    onRoom={(item) => openRoomDialogForDocuments([item.id])}
+                                    onShareLink={openShareLinkDialog}
+                                    onDownload={(item) => {
+                                      setOpenActionMenuId(null)
+                                      previewMutation.mutate({ documentId: item.id, action: 'download' })
+                                    }}
+                                    onArchive={handleArchiveDocument}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            ) : (
+              <div className="px-5 py-12 text-center">
+                <div className="mx-auto max-w-md rounded-[28px] border border-dashed px-6 py-10" style={{ borderColor: 'var(--portal-border-strong)', color: 'var(--portal-text-muted)' }}>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>No documents match this view</p>
+                  <p className="mt-2 text-xs">Try another folder, clear your search, or upload the first file for this workspace.</p>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <aside className="space-y-6">
+            <DocumentPreview
+              selectedDocument={selectedDocument}
+              previewState={previewState}
+              onRefreshPreview={() => selectedDocument && previewMutation.mutate({ documentId: selectedDocument.id, action: 'view' })}
+              onDownload={() => selectedDocument && previewMutation.mutate({ documentId: selectedDocument.id, action: 'download' })}
+            />
+
+            <section className="portal-panel rounded-[28px] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Selected for room</p>
+                  <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>{selectedDocumentIds.length} document{selectedDocumentIds.length === 1 ? '' : 's'} selected</p>
+                </div>
+                <button type="button" onClick={() => setIsRoomDialogOpen(true)} disabled={selectedDocumentIds.length === 0 || billingAccess?.readOnly} className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold disabled:opacity-60">
+                  <Mail className="h-3.5 w-3.5" />
+                  Share
+                </button>
+              </div>
+            </section>
+          </aside>
+        </div>
+      )}
     </div>
   )
 }
