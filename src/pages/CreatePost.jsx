@@ -2068,6 +2068,10 @@ export default function CreatePost() {
 
   async function handleImproveImage(mode, sourceItem = activeCreativeItem) {
     if (!requireWriteAccess('improve images with Partner')) return
+    if (!clientId) {
+      setImageImproveError('Client profile is still loading. Try again in a moment.')
+      return
+    }
 
     setImageImproveState('improving')
     setImageImproveMode(mode)
@@ -2101,6 +2105,10 @@ export default function CreatePost() {
 
   async function handlePartnerAssist(actionId) {
     if (!requireWriteAccess('use Partner Assist')) return
+    if (!clientId) {
+      setAssistError('Client profile is still loading. Try again in a moment.')
+      return
+    }
     if (!content.trim()) {
       setAssistError('Write or load a caption before using Partner Assist.')
       return
@@ -3152,7 +3160,8 @@ export default function CreatePost() {
                         key={action.id}
                         type="button"
                         onClick={() => handlePartnerAssist(action.id)}
-                        disabled={!canUseAssist || assistState === 'loading'}
+                        disabled={isSubmitting || assistState === 'loading'}
+                        data-locked={!canUseAssist ? 'true' : undefined}
                         title={action.description}
                         data-active={assistAction === action.id && assistState === 'loading'}
                         className="portal-ai-mini-action"
@@ -3241,7 +3250,8 @@ export default function CreatePost() {
                 <button
                   type="button"
                   onClick={handleGenerateImage}
-                  disabled={isSubmitting || imageGenerateState === 'generating' || !canGenerateImage}
+                  disabled={isSubmitting || imageGenerateState === 'generating'}
+                  data-locked={!canGenerateImage ? 'true' : undefined}
                   className="portal-ai-action inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-semibold transition disabled:cursor-not-allowed"
                   data-generating={imageGenerateState === 'generating'}
                   style={{
@@ -3429,7 +3439,8 @@ export default function CreatePost() {
                       key={action.id}
                       type="button"
                       onClick={() => handleImproveImage(action.id)}
-                      disabled={!canImproveImage || imageImproveState === 'improving' || imageGenerateState === 'generating'}
+                      disabled={isSubmitting || activeCreativeIsVideo || imageImproveState === 'improving' || imageGenerateState === 'generating'}
+                      data-locked={!canImproveImage ? 'true' : undefined}
                       title={action.description}
                       data-active={imageImproveMode === action.id && imageImproveState === 'improving'}
                       className="portal-ai-mini-action inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed"
@@ -3441,7 +3452,8 @@ export default function CreatePost() {
                   <button
                     type="button"
                     onClick={handleFormatPlatformImages}
-                    disabled={!canImproveImage || imageFormatState === 'formatting' || imageGenerateState === 'generating'}
+                    disabled={isSubmitting || activeCreativeIsVideo || imageFormatState === 'formatting' || imageGenerateState === 'generating'}
+                    data-locked={!canImproveImage ? 'true' : undefined}
                     title="Create platform-specific crops from the selected image."
                     className="portal-ai-mini-action inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed"
                     data-active={imageFormatState === 'formatting'}
@@ -3610,7 +3622,8 @@ export default function CreatePost() {
                           setPreviewPlatform(id)
                           handleImproveImage('cleanup', activeCreativeItem)
                         }}
-                        disabled={!active || !canImproveImage || imageImproveState === 'improving' || imageGenerateState === 'generating'}
+                        disabled={!active || isSubmitting || activeCreativeIsVideo || imageImproveState === 'improving' || imageGenerateState === 'generating'}
+                        data-locked={!canImproveImage ? 'true' : undefined}
                         className="portal-ai-mini-action"
                       >
                         {imageImproveState === 'improving' && imageImproveMode === 'cleanup'
@@ -3624,7 +3637,8 @@ export default function CreatePost() {
                           setPreviewPlatform(id)
                           handleFormatPlatformImages([id])
                         }}
-                        disabled={!active || !canImproveImage || imageFormatState === 'formatting' || imageGenerateState === 'generating'}
+                        disabled={!active || isSubmitting || activeCreativeIsVideo || imageFormatState === 'formatting' || imageGenerateState === 'generating'}
+                        data-locked={!canImproveImage ? 'true' : undefined}
                         className="portal-ai-mini-action"
                       >
                         {imageFormatState === 'formatting' && previewPlatform === id

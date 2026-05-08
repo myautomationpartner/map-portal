@@ -8583,6 +8583,13 @@ html[data-portal-theme="map-dark"] .create-post-page .create-post-ai-mode-grid b
   pointer-events: auto !important;
 }
 
+html[data-portal-theme="map-dark"] .create-post-page .portal-ai-action[data-locked="true"],
+html[data-portal-theme="map-dark"] .create-post-page .portal-ai-mini-action[data-locked="true"],
+html[data-portal-theme="map-dark"] .create-post-page .create-post-ai-mode-grid button[data-locked="true"] {
+  opacity: 1 !important;
+  cursor: pointer !important;
+}
+
 html[data-portal-theme="map-dark"] .create-post-page .portal-ai-action:disabled *,
 html[data-portal-theme="map-dark"] .create-post-page .portal-ai-mini-action:disabled *,
 html[data-portal-theme="map-dark"] .create-post-page .create-post-ai-mode-grid button:disabled * {
@@ -11033,9 +11040,17 @@ html:not([data-portal-theme="map-dark"]) .campaign-partner-page .portal-ai-actio
   position: relative;
   isolation: isolate;
   overflow: visible;
+  cursor: pointer;
   border-color: var(--ai-pill-border) !important;
   background: #ffffff !important;
   color: #5d5274 !important;
+}
+
+html:not([data-portal-theme="map-dark"]) .create-post-page .portal-ai-action[data-locked="true"],
+html:not([data-portal-theme="map-dark"]) .create-post-page .portal-ai-mini-action[data-locked="true"],
+html:not([data-portal-theme="map-dark"]) .create-post-page .create-post-ai-mode-grid button[data-locked="true"] {
+  opacity: 1 !important;
+  cursor: pointer !important;
 }
 
 html:not([data-portal-theme="map-dark"]) .content-plan-actions .portal-ai-action,
