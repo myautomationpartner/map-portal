@@ -1181,6 +1181,15 @@ export default function Documents() {
     setIsUploadDialogOpen(true)
   }
 
+  function openSelectedRoomDialog() {
+    if (!requireWriteAccess('create secure access rooms')) return
+    if (!selectedDocumentIds.length) {
+      setNotice({ type: 'error', message: 'Select at least one document before creating a secure access room.' })
+      return
+    }
+    setIsRoomDialogOpen(true)
+  }
+
   function handleUploadFile(event) {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -1353,11 +1362,11 @@ export default function Documents() {
 
       <section className="documents-action-bar portal-command-bar rounded-[30px]">
         <div className="portal-command-bar-group">
-          <button type="button" onClick={openUploadDialog} disabled={billingAccess?.readOnly} className="documents-primary-action portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
+          <button type="button" onClick={openUploadDialog} aria-disabled={billingAccess?.readOnly ? 'true' : undefined} title={billingAccess?.readOnly ? 'Payment is required to upload documents.' : undefined} className={`documents-primary-action portal-button-primary inline-flex cursor-pointer items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold ${billingAccess?.readOnly ? 'opacity-70' : ''}`}>
             <Upload className="h-4 w-4" />
             Upload document
           </button>
-          <button type="button" onClick={() => setIsRoomDialogOpen(true)} disabled={selectedDocumentIds.length === 0 || billingAccess?.readOnly} className="documents-secondary-action portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
+          <button type="button" onClick={openSelectedRoomDialog} aria-disabled={selectedDocumentIds.length === 0 || billingAccess?.readOnly ? 'true' : undefined} title={billingAccess?.readOnly ? 'Payment is required to create secure access rooms.' : selectedDocumentIds.length === 0 ? 'Select at least one document first.' : undefined} className={`documents-secondary-action portal-button-secondary inline-flex cursor-pointer items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold ${selectedDocumentIds.length === 0 || billingAccess?.readOnly ? 'opacity-70' : ''}`}>
             <Link2 className="h-4 w-4" />
             Create secure access room
           </button>
@@ -1788,7 +1797,7 @@ export default function Documents() {
                   <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Selected for room</p>
                   <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>{selectedDocumentIds.length} document{selectedDocumentIds.length === 1 ? '' : 's'} selected</p>
                 </div>
-                <button type="button" onClick={() => setIsRoomDialogOpen(true)} disabled={selectedDocumentIds.length === 0 || billingAccess?.readOnly} className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold disabled:opacity-60">
+                <button type="button" onClick={openSelectedRoomDialog} aria-disabled={selectedDocumentIds.length === 0 || billingAccess?.readOnly ? 'true' : undefined} title={billingAccess?.readOnly ? 'Payment is required to create secure access rooms.' : selectedDocumentIds.length === 0 ? 'Select at least one document first.' : undefined} className={`portal-button-primary inline-flex cursor-pointer items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold ${selectedDocumentIds.length === 0 || billingAccess?.readOnly ? 'opacity-70' : ''}`}>
                   <Mail className="h-3.5 w-3.5" />
                   Share
                 </button>
