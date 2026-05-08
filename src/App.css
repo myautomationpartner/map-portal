@@ -10702,6 +10702,30 @@ html:not([data-portal-theme="map-dark"]) .settings-status-badge {
   box-shadow: none !important;
 }
 
+html:not([data-portal-theme="map-dark"]) .settings-team-form,
+html:not([data-portal-theme="map-dark"]) .settings-team-user-row {
+  border-color: var(--light-line) !important;
+  background: #ffffff !important;
+  color: var(--light-text) !important;
+  box-shadow: none !important;
+}
+
+html:not([data-portal-theme="map-dark"]) .settings-permission-option {
+  border-color: var(--light-line) !important;
+  background: var(--light-surface-soft) !important;
+  color: var(--light-text) !important;
+  box-shadow: none !important;
+}
+
+html:not([data-portal-theme="map-dark"]) .settings-permission-option span span:last-child {
+  color: var(--light-text-muted) !important;
+}
+
+html:not([data-portal-theme="map-dark"]) .settings-team-form input[type="checkbox"],
+html:not([data-portal-theme="map-dark"]) .settings-team-user-row input[type="checkbox"] {
+  accent-color: var(--light-blue);
+}
+
 html:not([data-portal-theme="map-dark"]) .documents-folder-button:hover,
 html:not([data-portal-theme="map-dark"]) .documents-file-card:hover,
 html:not([data-portal-theme="map-dark"]) .content-plan-post-chip:hover,

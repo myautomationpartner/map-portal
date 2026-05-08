@@ -504,7 +504,7 @@ function TeamAccessSection({ profile, billingAccess }) {
       <div className="space-y-5">
         {status && <StatusBadge status={status.type} message={status.message} />}
 
-        <form onSubmit={handleInvite} className="rounded-2xl p-4" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }}>
+        <form onSubmit={handleInvite} className="settings-team-form rounded-2xl p-4" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }}>
           <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
             <input
               value={inviteForm.name}
@@ -533,7 +533,7 @@ function TeamAccessSection({ profile, billingAccess }) {
           </div>
           <div className="mt-4 grid gap-2 md:grid-cols-2">
             {TEAM_PERMISSION_OPTIONS.map((option) => (
-              <label key={option.id} className="flex items-start gap-3 rounded-xl p-3 text-sm" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+              <label key={option.id} className="settings-permission-option flex items-start gap-3 rounded-xl p-3 text-sm" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
                 <input
                   type="checkbox"
                   checked={inviteForm.portal_permissions.includes(option.id)}
@@ -558,7 +558,7 @@ function TeamAccessSection({ profile, billingAccess }) {
           ) : users.map((user) => {
             const isEditing = editingUserId === user.id
             return (
-              <div key={user.id} className="rounded-2xl p-4" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }}>
+              <div key={user.id} className="settings-team-user-row rounded-2xl p-4" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{user.name || user.email}</p>
@@ -596,7 +596,7 @@ function TeamAccessSection({ profile, billingAccess }) {
                     </div>
                     <div className="grid gap-2 md:grid-cols-2">
                       {TEAM_PERMISSION_OPTIONS.map((option) => (
-                        <label key={option.id} className="flex items-start gap-3 rounded-xl p-3 text-sm" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+                        <label key={option.id} className="settings-permission-option flex items-start gap-3 rounded-xl p-3 text-sm" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
                           <input
                             type="checkbox"
                             checked={editingForm.portal_permissions.includes(option.id)}
