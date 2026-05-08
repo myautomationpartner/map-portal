@@ -24,7 +24,7 @@ export default function PortalBillingBanner({ billingAccess, onAction, actionPen
           </div>
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
-              Billing Hold
+              {billingAccess.eyebrow || 'Billing Hold'}
             </p>
             <h2 className="mt-1 text-base font-semibold" style={{ color: 'var(--portal-text)' }}>
               {billingAccess.title}

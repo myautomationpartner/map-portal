@@ -9,6 +9,14 @@ const DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME = 'Social Inbox'
 const CONTENT_PARTNER_CONTACT_NAME = 'My Partner'
 const TECHNICAL_HOST_SUFFIXES = ['.workers.dev', '.pages.dev']
 const DEFAULT_SHARED_PORTAL_PATH_PREFIX = 'portal'
+const PORTAL_TEAM_PERMISSIONS = new Set([
+  'read_only',
+  'create_post',
+  'publish_posts',
+  'view_documents',
+  'manage_secure_sharing',
+  'full_admin',
+])
 const SUPPORTED_MEDIA_EXTENSIONS = new Set([
   'jpg',
   'jpeg',
@@ -308,6 +316,35 @@ function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase()
 }
 
+function normalizeTeamPermissions(input) {
+  const values = Array.isArray(input) ? input : [input]
+  const normalized = Array.from(new Set(values
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter((value) => PORTAL_TEAM_PERMISSIONS.has(value))))
+
+  if (normalized.includes('full_admin')) return ['full_admin']
+  if (!normalized.length) return ['read_only']
+  if (!normalized.includes('read_only')) normalized.unshift('read_only')
+  if (normalized.includes('publish_posts') && !normalized.includes('create_post')) {
+    normalized.push('create_post')
+  }
+  if (normalized.includes('manage_secure_sharing') && !normalized.includes('view_documents')) {
+    normalized.push('view_documents')
+  }
+
+  return Array.from(new Set(normalized))
+}
+
+function userHasPermission(user, permission) {
+  const permissions = Array.isArray(user?.portal_permissions) ? user.portal_permissions : []
+  return permissions.includes('full_admin') || permissions.includes(permission)
+}
+
+function requireFullAdmin(auth) {
+  if (auth.user?.role === 'admin' && userHasPermission(auth.user, 'full_admin')) return null
+  return json({ error: 'Only full administrators can manage portal users.' }, { status: 403 })
+}
+
 function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
 }
@@ -425,7 +462,7 @@ async function authorizePortalUser(request, env) {
     || '',
   ).trim().toLowerCase()
   const filters = new URLSearchParams({
-    select: 'id,client_id,role,email,clients(slug)',
+    select: 'id,client_id,role,email,name,portal_permissions,disabled_at,clients(slug)',
     id: `eq.${authUserId}`,
     limit: '1',
   })
@@ -444,6 +481,10 @@ async function authorizePortalUser(request, env) {
     return { error: json({ error: 'This portal session is not authorized for this tenant.' }, { status: 403 }) }
   }
 
+  if (portalUser.disabled_at) {
+    return { error: json({ error: 'This portal user has been disabled.' }, { status: 403 }) }
+  }
+
   const profileSlug = String(portalUser?.clients?.slug || '').trim().toLowerCase()
   if (requestedTenantSlug && profileSlug && requestedTenantSlug !== profileSlug) {
     return { error: json({ error: 'This portal session is not authorized for this tenant path.' }, { status: 403 }) }
@@ -458,6 +499,222 @@ async function authorizePortalUser(request, env) {
     },
     bearerToken,
   }
+}
+
+async function supabaseAuthAdmin(envConfig, path, init = {}) {
+  const response = await fetch(`${envConfig.url}/auth/v1${path}`, {
+    ...init,
+    headers: {
+      apikey: envConfig.serviceRoleKey,
+      Authorization: `Bearer ${envConfig.serviceRoleKey}`,
+      'Content-Type': 'application/json',
+      ...(init.headers || {}),
+    },
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    const message = payload?.msg || payload?.message || payload?.error_description || payload?.error || `Supabase Auth request failed (${response.status}).`
+    const error = new Error(message)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}
+
+function teamUserPayload(row) {
+  const permissions = normalizeTeamPermissions(row?.portal_permissions)
+  return {
+    id: row.id,
+    client_id: row.client_id,
+    name: row.name || '',
+    email: row.email || '',
+    role: row.role || 'viewer',
+    portal_permissions: permissions,
+    disabled_at: row.disabled_at || null,
+    invited_at: row.invited_at || null,
+    is_full_admin: permissions.includes('full_admin'),
+  }
+}
+
+async function fetchTeamUsers(envConfig) {
+  const params = new URLSearchParams({
+    select: 'id,client_id,name,email,role,portal_permissions,disabled_at,invited_at',
+    client_id: `eq.${envConfig.clientId}`,
+    order: 'email.asc',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/users?${params.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows.map(teamUserPayload) : []
+}
+
+function resolvePortalRedirect(request, envConfig) {
+  const url = new URL(request.url)
+  const pathSlug = extractTenantSlugFromPath(String(request.headers.get('x-map-original-pathname') || url.pathname), {})
+    || String(envConfig.clientSlug || '').trim().toLowerCase()
+
+  if (url.hostname.replace(/^www\./, '').toLowerCase() === 'myautomationpartner.com' && pathSlug) {
+    return `${url.origin}/${getSharedPortalPathPrefix({})}/${pathSlug}/login`
+  }
+
+  return `${url.origin}/login`
+}
+
+async function handleTeamAccessUsers(request, env) {
+  if (!['GET', 'POST', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'GET, POST, OPTIONS' } })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const adminError = requireFullAdmin(auth)
+  if (adminError) return adminError
+
+  if (request.method === 'GET') {
+    return json({ users: await fetchTeamUsers(auth.envConfig) })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const email = normalizeEmail(body.email)
+  const name = String(body.name || '').trim()
+  const permissions = normalizeTeamPermissions(body.portal_permissions || body.permissions)
+
+  if (!email || !email.includes('@')) {
+    return json({ error: 'Add a valid email address.' }, { status: 400 })
+  }
+  if (email === normalizeEmail(auth.user.email)) {
+    return json({ error: 'You cannot invite your own account.' }, { status: 400 })
+  }
+
+  const existingParams = new URLSearchParams({
+    select: 'id,email,client_id',
+    email: `eq.${email}`,
+    limit: '1',
+  })
+  const existingResponse = await supabaseRest(auth.envConfig, `/rest/v1/users?${existingParams.toString()}`)
+  const existingRows = await existingResponse.json()
+  const existing = Array.isArray(existingRows) ? existingRows[0] : null
+  if (existing) {
+    return json({ error: 'That email already has portal access.' }, { status: 409 })
+  }
+
+  let invitedUser
+  try {
+    invitedUser = await supabaseAuthAdmin(auth.envConfig, '/invite', {
+      method: 'POST',
+      body: JSON.stringify({
+        email,
+        data: {
+          name,
+          client_id: auth.envConfig.clientId,
+          invited_by: auth.user.id,
+        },
+        redirect_to: resolvePortalRedirect(request, auth.envConfig),
+      }),
+    })
+  } catch (error) {
+    return json({ error: error.message || 'Could not send the invite.' }, { status: error.status || 502 })
+  }
+
+  const authUserId = String(invitedUser?.id || invitedUser?.user?.id || '').trim()
+  if (!isUuidLike(authUserId)) {
+    return json({ error: 'Invite was sent but Supabase did not return a user id.' }, { status: 502 })
+  }
+
+  const role = permissions.includes('full_admin') ? 'admin' : 'viewer'
+  const insertResponse = await supabaseRest(auth.envConfig, '/rest/v1/users?select=id,client_id,name,email,role,portal_permissions,disabled_at,invited_at', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({
+      id: authUserId,
+      client_id: auth.envConfig.clientId,
+      name,
+      email,
+      role,
+      portal_permissions: permissions,
+      invited_by: auth.user.id,
+      invited_at: new Date().toISOString(),
+      last_access_updated_by: auth.user.id,
+      last_access_updated_at: new Date().toISOString(),
+    }),
+  })
+  const insertedRows = await insertResponse.json()
+  const inserted = Array.isArray(insertedRows) ? insertedRows[0] : insertedRows
+
+  return json({ user: teamUserPayload(inserted), users: await fetchTeamUsers(auth.envConfig) }, { status: 201 })
+}
+
+async function handleTeamAccessUserUpdate(request, env, userId) {
+  if (!['PATCH', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'PATCH, OPTIONS' } })
+
+  if (!isUuidLike(userId)) return json({ error: 'Invalid user id.' }, { status: 400 })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+  const adminError = requireFullAdmin(auth)
+  if (adminError) return adminError
+  if (userId === auth.user.id) return json({ error: 'You cannot change your own access from here.' }, { status: 400 })
+
+  const body = await request.json().catch(() => ({}))
+  const patch = {}
+
+  if (Object.prototype.hasOwnProperty.call(body, 'name')) {
+    patch.name = String(body.name || '').trim()
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'portal_permissions') || Object.prototype.hasOwnProperty.call(body, 'permissions')) {
+    const permissions = normalizeTeamPermissions(body.portal_permissions || body.permissions)
+    patch.portal_permissions = permissions
+    patch.role = permissions.includes('full_admin') ? 'admin' : 'viewer'
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'disabled')) {
+    patch.disabled_at = body.disabled ? new Date().toISOString() : null
+  }
+
+  const newEmail = Object.prototype.hasOwnProperty.call(body, 'email') ? normalizeEmail(body.email) : ''
+  if (newEmail) {
+    if (!newEmail.includes('@')) return json({ error: 'Add a valid email address.' }, { status: 400 })
+    patch.email = newEmail
+  }
+
+  if (!Object.keys(patch).length) return json({ error: 'No changes provided.' }, { status: 400 })
+
+  if (newEmail) {
+    try {
+      await supabaseAuthAdmin(auth.envConfig, `/admin/users/${encodeURIComponent(userId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ email: newEmail }),
+      })
+    } catch (error) {
+      return json({ error: error.message || 'Could not update the login email.' }, { status: error.status || 502 })
+    }
+  }
+
+  patch.last_access_updated_by = auth.user.id
+  patch.last_access_updated_at = new Date().toISOString()
+
+  const response = await supabaseRest(
+    auth.envConfig,
+    `/rest/v1/users?id=eq.${encodeURIComponent(userId)}&client_id=eq.${encodeURIComponent(auth.envConfig.clientId)}&select=id,client_id,name,email,role,portal_permissions,disabled_at,invited_at`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify(patch),
+    },
+  )
+  const rows = await response.json()
+  const updated = Array.isArray(rows) ? rows[0] : null
+  if (!updated) return json({ error: 'Portal user not found.' }, { status: 404 })
+
+  return json({ user: teamUserPayload(updated), users: await fetchTeamUsers(auth.envConfig) })
 }
 
 function getChatwootConfig(env) {
@@ -1875,17 +2132,18 @@ async function ensureChatwootConversationOpen(env, conversation) {
 }
 
 async function findOrCreateChatwootContentPartnerConversation(env, envConfig, portalUser = null) {
-  const inbox = await resolveChatwootSocialInbox(env)
-  const contact = await findOrCreateChatwootContentPartnerContact(env, inbox.id, envConfig)
+  const chatwootConfig = await getChatwootConfigForClient(env, envConfig)
+  const inbox = await resolveChatwootSocialInbox(chatwootConfig)
+  const contact = await findOrCreateChatwootContentPartnerContact(chatwootConfig, inbox.id, envConfig)
   if (!contact?.id) throw new Error('Could not create MAP Content Partner contact.')
 
-  const existing = await findChatwootContentPartnerConversation(env, contact.id, inbox.id, envConfig)
+  const existing = await findChatwootContentPartnerConversation(chatwootConfig, contact.id, inbox.id, envConfig)
   if (existing?.id) {
-    const reopen = await ensureChatwootConversationOpen(env, existing).catch((error) => ({
+    const reopen = await ensureChatwootConversationOpen(chatwootConfig, existing).catch((error) => ({
       reopened: false,
       reason: sanitizeChatwootError(error?.message || 'Could not reopen Content Partner conversation.'),
     }))
-    const assignment = await assignChatwootContentPartnerConversation(env, existing, portalUser).catch((error) => ({
+    const assignment = await assignChatwootContentPartnerConversation(chatwootConfig, existing, portalUser).catch((error) => ({
       assigned: false,
       alreadyAssigned: false,
       reason: sanitizeChatwootError(error?.message || 'Could not assign Content Partner conversation.'),
@@ -1893,8 +2151,8 @@ async function findOrCreateChatwootContentPartnerConversation(env, envConfig, po
     return { conversation: existing, contact, inbox, assignment, reopen }
   }
 
-  const conversation = await createChatwootContentPartnerConversation(env, contact, inbox.id, envConfig)
-  const assignment = await assignChatwootContentPartnerConversation(env, conversation, portalUser).catch((error) => ({
+  const conversation = await createChatwootContentPartnerConversation(chatwootConfig, contact, inbox.id, envConfig)
+  const assignment = await assignChatwootContentPartnerConversation(chatwootConfig, conversation, portalUser).catch((error) => ({
     assigned: false,
     alreadyAssigned: false,
     reason: sanitizeChatwootError(error?.message || 'Could not assign Content Partner conversation.'),
@@ -4139,6 +4397,15 @@ export default {
 
     if (url.pathname === '/api/social-connections/disconnect') {
       return handleSocialConnectionDisconnect(request, env)
+    }
+
+    if (url.pathname === '/api/team-access/users') {
+      return handleTeamAccessUsers(request, env)
+    }
+
+    const teamAccessUserMatch = /^\/api\/team-access\/users\/([^/]+)$/.exec(url.pathname)
+    if (teamAccessUserMatch) {
+      return handleTeamAccessUserUpdate(request, env, decodeURIComponent(teamAccessUserMatch[1]))
     }
 
     if (url.pathname === '/api/post-boosts') {

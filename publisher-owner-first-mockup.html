@@ -1,0 +1,2183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Publisher Calendar and Composer Mockup</title>
+  <style>
+    :root {
+      --canvas: #f7f6f3;
+      --paper: #ffffff;
+      --surface: #fbfbfa;
+      --ink: #242320;
+      --soft-ink: #5f5a54;
+      --muted: #827d75;
+      --faint: #aaa39a;
+      --line: #e9e6df;
+      --line-strong: #ded9cf;
+      --black: #151515;
+      --blue-soft: #e1f3fe;
+      --blue-text: #1f6c9f;
+      --green-soft: #edf3ec;
+      --green-text: #346538;
+      --yellow-soft: #fbf3db;
+      --yellow-text: #956400;
+      --red-soft: #fdebec;
+      --red-text: #9f2f2d;
+      --ai-purple: #8b5cf6;
+      --ai-purple-2: #d45cff;
+      --ai-purple-3: #f1c6ff;
+      --body: "SF Pro Display", "Geist Sans", "Helvetica Neue", Switzer, sans-serif;
+      --serif: "Newsreader", "Instrument Serif", "Playfair Display", Georgia, serif;
+      --mono: "Geist Mono", "SF Mono", "JetBrains Mono", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: var(--body);
+      line-height: 1.5;
+    }
+
+    button,
+    input,
+    textarea,
+    select {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .ambient {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .42;
+      background-image:
+        linear-gradient(to right, rgba(36, 35, 32, .035) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(36, 35, 32, .028) 1px, transparent 1px);
+      background-size: 42px 42px;
+      mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+    }
+
+    .app-frame {
+      position: relative;
+      z-index: 1;
+      min-height: 100dvh;
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr);
+    }
+
+    .rail {
+      position: sticky;
+      top: 0;
+      height: 100dvh;
+      border-right: 1px solid var(--line);
+      background: rgba(255, 255, 255, .72);
+      backdrop-filter: blur(12px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px 10px;
+      gap: 14px;
+    }
+
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      background: var(--paper);
+      color: var(--ink);
+      font-weight: 850;
+      letter-spacing: -.04em;
+    }
+
+    .rail-nav {
+      width: 100%;
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .rail-link {
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 9px 4px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 750;
+      text-align: center;
+      text-decoration: none;
+    }
+
+    .rail-link.active {
+      border-color: var(--line);
+      background: var(--paper);
+      color: var(--ink);
+    }
+
+    main {
+      min-width: 0;
+    }
+
+    .view {
+      display: none;
+      min-height: 100dvh;
+      padding: 24px;
+    }
+
+    body[data-view="calendar"] #calendarView,
+    body[data-view="status"] #statusView,
+    body[data-view="editor"] #editorView {
+      display: block;
+    }
+
+    .page-shell {
+      max-width: 1780px;
+      margin: 0 auto;
+    }
+
+    .publisher-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 12px;
+      min-height: 46px;
+    }
+
+    .eyebrow {
+      margin: 0 0 7px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    .page-title {
+      margin-bottom: 6px;
+      font-family: var(--serif);
+      font-size: clamp(36px, 4vw, 62px);
+      line-height: 1.02;
+      letter-spacing: -.035em;
+      font-weight: 720;
+    }
+
+    .page-subtitle {
+      max-width: 760px;
+      margin-bottom: 0;
+      color: var(--soft-ink);
+      font-size: 15px;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    .button {
+      min-height: 38px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: var(--paper);
+      color: var(--ink);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 9px 13px;
+      font-size: 13px;
+      font-weight: 760;
+      text-decoration: none;
+      transition: background .18s ease, transform .18s ease, border-color .18s ease;
+    }
+
+    .button:active {
+      transform: scale(.98);
+    }
+
+    .button.primary {
+      border-color: rgba(20, 19, 16, .12);
+      background: linear-gradient(135deg, #ffd700, #c9a84c);
+      color: #0a0a0a;
+      box-shadow: 0 12px 26px rgba(201, 168, 76, .2);
+    }
+
+    .button.soft {
+      background: var(--surface);
+    }
+
+    .button.soft.active {
+      border-color: rgba(201, 168, 76, .36);
+      background: var(--yellow-soft);
+      color: var(--yellow-text);
+    }
+
+    .button.ai {
+      border-color: rgba(255, 255, 255, .55);
+      background: linear-gradient(135deg, #6d4aff, #b454ff 48%, #f1c6ff);
+      color: #fff;
+      box-shadow: 0 14px 32px rgba(132, 72, 255, .3), inset 0 0 0 1px rgba(255, 255, 255, .45);
+    }
+
+    .icon {
+      width: 16px;
+      height: 16px;
+      display: inline-block;
+      flex: 0 0 auto;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 0;
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 780;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    button.status {
+      cursor: pointer;
+    }
+
+    .status.scheduled {
+      background: var(--green-soft);
+      color: var(--green-text);
+    }
+
+    .status.suggested {
+      background: var(--blue-soft);
+      color: var(--blue-text);
+    }
+
+    .status.draft {
+      background: var(--yellow-soft);
+      color: var(--yellow-text);
+    }
+
+    .status.blocked {
+      background: var(--red-soft);
+      color: var(--red-text);
+    }
+
+    .calendar-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      gap: 16px;
+      align-items: stretch;
+      min-height: calc(100dvh - 170px);
+    }
+
+    .calendar-card,
+    .side-card,
+    .editor-card,
+    .composer-phone,
+    .preview-card,
+    .tool-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .9);
+    }
+
+    .calendar-card {
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+    }
+
+    .calendar-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      border-bottom: 1px solid var(--line);
+      padding: 14px 16px;
+      background: var(--paper);
+    }
+
+    .calendar-head h2 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: -.02em;
+    }
+
+    .calendar-controls {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+    }
+
+    .small-button {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--soft-ink);
+      min-width: 34px;
+      height: 32px;
+      padding: 0 10px;
+      font-size: 12px;
+      font-weight: 740;
+    }
+
+    .small-button.active {
+      border-color: rgba(201, 168, 76, .36);
+      background: var(--yellow-soft);
+      color: var(--yellow-text);
+    }
+
+    .calendar-weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .calendar-weekdays span {
+      padding: 11px 12px;
+      border-right: 1px solid var(--line);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 780;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .calendar-weekdays span:last-child {
+      border-right: 0;
+    }
+
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      grid-auto-rows: minmax(128px, 1fr);
+      min-height: 0;
+    }
+
+    .calendar-grid.week-mode {
+      grid-auto-rows: minmax(520px, 1fr);
+    }
+
+    .day-cell {
+      position: relative;
+      min-width: 0;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      padding: 10px;
+      background: rgba(255, 255, 255, .72);
+    }
+
+    .day-cell:nth-child(7n) {
+      border-right: 0;
+    }
+
+    .day-cell.muted {
+      background: rgba(247, 246, 243, .64);
+      color: var(--faint);
+    }
+
+    .day-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .day-number {
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .quick-add {
+      opacity: 0;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--paper);
+      color: var(--muted);
+      padding: 3px 6px;
+      font-size: 10px;
+      font-weight: 760;
+      transition: opacity .16s ease;
+    }
+
+    .day-cell:hover .quick-add {
+      opacity: 1;
+    }
+
+    .event-list {
+      display: grid;
+      gap: 5px;
+    }
+
+    .event-chip {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      display: grid;
+      grid-template-columns: 7px minmax(0, 1fr);
+      gap: 7px;
+      align-items: stretch;
+      padding: 0;
+      overflow: hidden;
+      background: var(--paper);
+      color: var(--ink);
+      text-align: left;
+      transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+    }
+
+    .event-chip:hover {
+      transform: translateY(-1px);
+      border-color: var(--line-strong);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, .035);
+    }
+
+    .event-chip .event-strip {
+      background: var(--muted);
+    }
+
+    .event-chip[data-type="scheduled"] .event-strip {
+      background: var(--green-text);
+    }
+
+    .event-chip[data-type="suggested"] .event-strip {
+      background: var(--blue-text);
+    }
+
+    .event-chip[data-type="draft"] .event-strip {
+      background: var(--yellow-text);
+    }
+
+    .event-chip-inner {
+      min-width: 0;
+      padding: 7px 7px 7px 0;
+    }
+
+    .event-time {
+      display: block;
+      margin-bottom: 1px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 760;
+    }
+
+    .event-title {
+      display: block;
+      overflow: hidden;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.2;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .side-stack {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    .side-card {
+      padding: 16px;
+    }
+
+    .side-card.compact {
+      align-self: start;
+    }
+
+    .side-card.stretch {
+      min-height: 100%;
+    }
+
+    .side-card h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+      letter-spacing: -.02em;
+    }
+
+    .status-page-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .92);
+      overflow: hidden;
+    }
+
+    .status-page-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      border-bottom: 1px solid var(--line);
+      background: var(--paper);
+      padding: 16px;
+    }
+
+    .status-page-head h1 {
+      margin: 0;
+      font-size: 26px;
+      letter-spacing: -.03em;
+    }
+
+    .post-list {
+      display: grid;
+    }
+
+    .post-row {
+      display: grid;
+      grid-template-columns: 88px minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      padding: 14px 16px;
+      background: rgba(255, 255, 255, .76);
+    }
+
+    .post-row:last-child {
+      border-bottom: 0;
+    }
+
+    .post-date {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 760;
+      text-transform: uppercase;
+    }
+
+    .post-row h3 {
+      margin: 0 0 4px;
+      font-size: 16px;
+      letter-spacing: -.02em;
+    }
+
+    .post-row p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 13px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+      padding: 10px;
+      text-align: left;
+      cursor: pointer;
+      transition: border-color .18s ease, transform .18s ease, background .18s ease;
+    }
+
+    .metric:hover {
+      transform: translateY(-1px);
+      border-color: var(--line-strong);
+      background: var(--paper);
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 24px;
+      letter-spacing: -.03em;
+      line-height: 1;
+    }
+
+    .metric span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .suggestion-row {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .suggestion {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+      padding: 11px;
+    }
+
+    .side-card.stretch .suggestion {
+      min-height: 118px;
+    }
+
+    .suggestion strong {
+      display: block;
+      margin: 6px 0 4px;
+      font-size: 13px;
+    }
+
+    .suggestion p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .hover-preview {
+      position: fixed;
+      z-index: 60;
+      display: none;
+      width: min(390px, calc(100vw - 28px));
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .96);
+      padding: 13px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, .07);
+      pointer-events: none;
+    }
+
+    .hover-preview.visible {
+      display: block;
+      animation: soft-in .18s ease forwards;
+    }
+
+    .preview-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+
+    .hover-preview h3 {
+      margin: 4px 0 2px;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+
+    .hover-preview p {
+      margin: 0;
+      color: var(--soft-ink);
+      font-size: 12px;
+    }
+
+    .hover-preview img {
+      width: 100%;
+      height: 140px;
+      object-fit: cover;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      filter: saturate(.78) contrast(1.02);
+      margin-top: 12px;
+    }
+
+    .platform-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .platform-dot {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--soft-ink);
+      padding: 4px 7px;
+      font-size: 10px;
+      font-weight: 760;
+    }
+
+    .editor-header {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .editor-title h1 {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: clamp(30px, 3.4vw, 50px);
+      line-height: 1.06;
+      letter-spacing: -.035em;
+    }
+
+    .editor-title p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .composer-phone {
+      overflow: hidden;
+      background: var(--paper);
+    }
+
+    .phone-bar {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+    }
+
+    .phone-title {
+      text-align: center;
+      font-size: 15px;
+      font-weight: 850;
+    }
+
+    .phone-body {
+      padding: 15px;
+    }
+
+    .identity-row {
+      display: flex;
+      gap: 11px;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .avatar {
+      width: 44px;
+      height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+      display: grid;
+      place-items: center;
+      color: var(--ink);
+      font-size: 18px;
+      font-weight: 850;
+      letter-spacing: -.04em;
+    }
+
+    .identity-row strong {
+      display: block;
+      font-size: 14px;
+    }
+
+    .identity-row span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .caption-area {
+      width: 100%;
+      min-height: 360px;
+      border: 0;
+      outline: none;
+      resize: vertical;
+      color: var(--ink);
+      background: transparent;
+      font-size: 19px;
+      line-height: 1.45;
+    }
+
+    .composer-workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .composer-column {
+      min-width: 0;
+      display: grid;
+      gap: 14px;
+    }
+
+    .caption-block,
+    .media-block {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    .creative-stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .caption-panel,
+    .media-tools-panel {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+      padding: 12px;
+    }
+
+    .assist-panel,
+    .image-tools-panel,
+    .main-creative-panel {
+      position: relative;
+      overflow: hidden;
+      background:
+        linear-gradient(145deg, rgba(255, 255, 255, .98), rgba(255, 252, 245, .94));
+    }
+
+    .assist-panel::before,
+    .image-tools-panel::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      right: 0;
+      height: 3px;
+      background: #c9a84c;
+    }
+
+    .caption-panel h3,
+    .media-tools-panel h3 {
+      margin: 0 0 6px;
+      font-size: 14px;
+      letter-spacing: -.01em;
+    }
+
+    .caption-panel p,
+    .media-tools-panel p {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .media-box {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    .media-box img {
+      display: block;
+      width: 100%;
+      height: 360px;
+      object-fit: cover;
+      filter: saturate(.82) contrast(1.03);
+    }
+
+    .media-caption {
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .add-to-post {
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .add-to-post-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      font-weight: 780;
+    }
+
+    .action-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .action-button {
+      border: 0;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: var(--paper);
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 46px;
+      padding: 10px 12px;
+      color: var(--soft-ink);
+      font-size: 13px;
+      font-weight: 740;
+      text-align: left;
+    }
+
+    .action-button:nth-child(2n) {
+      border-right: 0;
+    }
+
+    .action-button:nth-last-child(-n + 2) {
+      border-bottom: 0;
+    }
+
+    .tool-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .tool-grid.single {
+      grid-template-columns: 1fr;
+    }
+
+    .tool-card {
+      padding: 16px;
+      min-height: 190px;
+      background: var(--paper);
+    }
+
+    .tool-card h3 {
+      margin: 0 0 7px;
+      font-size: 18px;
+      letter-spacing: -.02em;
+    }
+
+    .tool-card p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .chip-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--soft-ink);
+      padding: 7px 9px;
+      font-size: 12px;
+      font-weight: 780;
+    }
+
+    .chip.ai-chip {
+      border-color: rgba(139, 92, 246, .22);
+      background: rgba(139, 92, 246, .1);
+      color: #6d43c2;
+      padding: 6px 8px;
+      font-size: 11px;
+      box-shadow: none;
+    }
+
+    .chip.active {
+      border-color: var(--line-strong);
+      background: var(--yellow-soft);
+      color: var(--yellow-text);
+    }
+
+    .chip.ai-chip.active {
+      border-color: rgba(139, 92, 246, .26);
+      background: rgba(139, 92, 246, .12);
+      color: #6d43c2;
+    }
+
+    .chip.connected {
+      background: var(--green-soft);
+      color: var(--green-text);
+    }
+
+    .chip.disconnected {
+      background: var(--red-soft);
+      color: var(--red-text);
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+    }
+
+    .schedule-strip {
+      display: grid;
+      grid-template-columns: minmax(210px, .7fr) minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .9);
+      padding: 13px 16px;
+    }
+
+    .schedule-strip h3 {
+      margin: 0 0 3px;
+      font-size: 16px;
+      letter-spacing: -.02em;
+    }
+
+    .schedule-strip p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .schedule-strip .field-grid {
+      grid-template-columns: repeat(2, minmax(150px, 1fr));
+    }
+
+    .field {
+      display: grid;
+      gap: 5px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 780;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .field input,
+    .field select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--ink);
+      min-height: 38px;
+      padding: 8px 10px;
+      outline: none;
+      font-size: 13px;
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .credit-pill {
+      border-radius: 999px;
+      background: rgba(93, 120, 255, .1);
+      color: #4058c9;
+      padding: 5px 8px;
+      font-size: 10px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .notice {
+      display: none;
+      margin-top: 12px;
+      border: 1px solid #cddfc9;
+      border-radius: 8px;
+      background: var(--green-soft);
+      color: var(--green-text);
+      padding: 10px;
+      font-size: 12px;
+      font-weight: 720;
+    }
+
+    .notice.visible {
+      display: block;
+    }
+
+    .preview-section {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .9);
+      overflow: hidden;
+    }
+
+    .preview-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+      padding: 13px 16px;
+      background: var(--paper);
+    }
+
+    .preview-section-head h2 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: -.02em;
+    }
+
+    .preview-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(250px, 1fr));
+      gap: 0;
+      overflow-x: auto;
+    }
+
+    .preview-card {
+      min-width: 250px;
+      border-radius: 0;
+      border-width: 0 1px 0 0;
+      padding: 14px;
+      background: var(--paper);
+      position: relative;
+      transition: opacity .18s ease, background .18s ease;
+    }
+
+    .preview-card[data-selected="false"] {
+      opacity: .54;
+      background: var(--surface);
+    }
+
+    .preview-card:last-child {
+      border-right: 0;
+    }
+
+    .preview-account {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding-right: 40px;
+    }
+
+    .preview-check {
+      position: absolute;
+      top: 13px;
+      right: 13px;
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--paper);
+      color: transparent;
+      display: grid;
+      place-items: center;
+      transition: background .18s ease, color .18s ease, border-color .18s ease;
+    }
+
+    .preview-card[data-selected="true"] .preview-check {
+      border-color: #bdd6b7;
+      background: var(--green-soft);
+      color: var(--green-text);
+    }
+
+    .platform-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 900;
+      font-size: 14px;
+    }
+
+    .platform-avatar.facebook {
+      background: #1877f2;
+    }
+
+    .platform-avatar.instagram {
+      background: #c13584;
+    }
+
+    .platform-avatar.google {
+      background: #4285f4;
+    }
+
+    .platform-avatar.tiktok {
+      background: #151515;
+    }
+
+    .platform-avatar.linkedin {
+      background: #0a66c2;
+    }
+
+    .preview-account strong {
+      display: block;
+      font-size: 13px;
+    }
+
+    .preview-account span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .preview-copy {
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+
+    .preview-image {
+      width: 100%;
+      height: 155px;
+      object-fit: cover;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      margin-top: 12px;
+      filter: saturate(.82) contrast(1.03);
+    }
+
+    .preview-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 11px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .preview-tools {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      margin-top: 11px;
+    }
+
+    .preview-tool {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--surface);
+      color: var(--soft-ink);
+      min-height: 32px;
+      padding: 6px 8px;
+      font-size: 11px;
+      font-weight: 760;
+    }
+
+    .fade-in {
+      opacity: 0;
+      transform: translateY(12px);
+      animation: soft-in .6s cubic-bezier(.16, 1, .3, 1) forwards;
+      animation-delay: calc(var(--index, 0) * 70ms);
+    }
+
+    @keyframes soft-in {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 1180px) {
+      .calendar-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .side-stack {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 820px) {
+      .app-frame {
+        grid-template-columns: 1fr;
+      }
+
+      .rail {
+        display: none;
+      }
+
+      .view {
+        padding: 14px;
+      }
+
+      .publisher-topbar,
+      .editor-header {
+        grid-template-columns: 1fr;
+        display: grid;
+      }
+
+      .button-row {
+        justify-content: flex-start;
+      }
+
+      .calendar-grid {
+        grid-auto-rows: 126px;
+      }
+
+      .calendar-weekdays span {
+        padding: 8px 6px;
+        text-align: center;
+      }
+
+      .day-cell {
+        padding: 7px;
+      }
+
+      .side-stack,
+      .tool-grid,
+      .field-grid,
+      .composer-workspace,
+      .caption-block,
+      .media-block,
+      .schedule-strip,
+      .schedule-strip .field-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .action-list {
+        grid-template-columns: 1fr;
+      }
+
+      .action-button,
+      .action-button:nth-child(2n),
+      .action-button:nth-last-child(-n + 2) {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .action-button:last-child {
+        border-bottom: 0;
+      }
+    }
+  </style>
+</head>
+<body data-view="calendar">
+  <div class="ambient" aria-hidden="true"></div>
+  <div class="app-frame">
+    <aside class="rail" aria-label="Portal navigation context">
+      <div class="brand-mark">D</div>
+      <nav class="rail-nav">
+        <a class="rail-link" href="#">Home</a>
+        <a class="rail-link active" href="#">Publisher</a>
+        <a class="rail-link" href="#">Radar</a>
+        <a class="rail-link" href="#">Files</a>
+        <a class="rail-link" href="#">Inbox</a>
+      </nav>
+    </aside>
+
+    <main>
+      <section class="view" id="calendarView">
+        <div class="page-shell">
+          <header class="publisher-topbar fade-in">
+            <div class="button-row">
+              <button class="button soft" type="button" id="todayButton">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M8 2v4M16 2v4M3 10h18"></path></svg>
+                Today
+              </button>
+              <button class="button soft active" type="button" id="monthViewButton">Month</button>
+              <button class="button soft" type="button" id="weekViewButton">Week</button>
+              <button class="button soft" type="button">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"></path></svg>
+                Filter
+              </button>
+              <button class="status scheduled" type="button" data-status-page="scheduled">Scheduled</button>
+              <button class="status suggested" type="button" data-status-page="suggested">Suggested</button>
+              <button class="status draft" type="button" data-status-page="draft">Draft</button>
+              <button class="status blocked" type="button" data-status-page="blocked">Needs setup</button>
+            </div>
+            <div class="button-row">
+              <button class="button primary" type="button" id="newPostButton">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+                New post
+              </button>
+              <button class="button ai" type="button" id="trainPartnerButton">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.7 4.7L18 9.4l-4.3 1.7L12 16l-1.7-4.9L6 9.4l4.3-1.7L12 3z"></path><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"></path></svg>
+                Train your Partner
+              </button>
+            </div>
+          </header>
+
+          <div class="calendar-layout">
+            <section class="calendar-card fade-in" style="--index: 1">
+              <div class="calendar-head">
+                <div>
+                  <p class="eyebrow">Live calendar</p>
+                  <h2 id="calendarTitle">May 2026</h2>
+                </div>
+                <div class="calendar-controls" aria-label="Calendar controls">
+                  <button class="small-button" type="button" aria-label="Previous month">Prev</button>
+                  <button class="small-button" type="button" aria-label="Next month">Next</button>
+                </div>
+              </div>
+              <div class="calendar-weekdays" aria-hidden="true">
+                <span>Mon</span>
+                <span>Tue</span>
+                <span>Wed</span>
+                <span>Thu</span>
+                <span>Fri</span>
+                <span>Sat</span>
+                <span>Sun</span>
+              </div>
+              <div class="calendar-grid" id="calendarGrid" aria-label="Publisher calendar"></div>
+            </section>
+
+            <aside class="side-stack">
+              <section class="side-card compact fade-in" style="--index: 2">
+                <p class="eyebrow">This month</p>
+                <h3>Publishing load</h3>
+                <div class="metric-grid">
+                  <button class="metric" type="button" data-status-page="scheduled"><strong>9</strong><span>scheduled</span></button>
+                  <button class="metric" type="button" data-status-page="suggested"><strong>6</strong><span>AI ideas</span></button>
+                  <button class="metric" type="button" data-status-page="draft"><strong>3</strong><span>drafts</span></button>
+                  <button class="metric" type="button" data-status-page="approval"><strong>2</strong><span>needs approval</span></button>
+                </div>
+              </section>
+
+              <section class="side-card stretch fade-in" style="--index: 3">
+                <p class="eyebrow">Partner recommendations</p>
+                <h3>Use the empty days</h3>
+                <div class="suggestion-row">
+                  <button class="suggestion" type="button" data-open-event="rec-1">
+                    <span class="status suggested">Suggested</span>
+                    <strong>Parent confidence post</strong>
+                    <p>Good slot for a low-pressure enrollment reminder.</p>
+                  </button>
+                  <button class="suggestion" type="button" data-open-event="rec-4">
+                    <span class="status suggested">Suggested</span>
+                    <strong>Recital reminder</strong>
+                    <p>Schedule near the weekend when families plan ahead.</p>
+                  </button>
+                </div>
+              </section>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="statusView">
+        <div class="page-shell">
+          <div class="status-page-card">
+            <header class="status-page-head">
+              <div>
+                <p class="eyebrow" id="statusPageEyebrow">Publisher posts</p>
+                <h1 id="statusPageTitle">Scheduled posts</h1>
+              </div>
+              <button class="button soft" type="button" id="backToCalendarFromStatus">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+                Back to calendar
+              </button>
+            </header>
+            <div class="post-list" id="statusPostList"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="editorView">
+        <div class="page-shell">
+          <header class="editor-header fade-in">
+            <button class="button soft" type="button" id="backToCalendar">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+              Calendar
+            </button>
+            <div class="editor-title">
+              <p class="eyebrow" id="editorStatusLabel">Suggested post</p>
+              <h1 id="editorTitle">Parent confidence post</h1>
+              <p id="editorTiming">Recommended for May 5 at 10:15 AM.</p>
+            </div>
+            <div class="button-row">
+              <button class="button soft" type="button" id="saveDraftButton">Save draft</button>
+              <button class="button primary" type="button" id="approveButton">Preview and approve</button>
+            </div>
+          </header>
+
+          <section>
+            <article class="composer-phone fade-in" style="--index: 1" aria-label="Facebook style post composer">
+              <div class="phone-bar">
+                <button class="small-button" type="button" id="phoneCancel">Cancel</button>
+                <div class="phone-title">Create post</div>
+                <button class="small-button" type="button" id="phoneNext">Next</button>
+              </div>
+              <div class="phone-body">
+                <div class="identity-row">
+                  <div class="avatar">D</div>
+                  <div>
+                    <strong>Dancescapes Performing Arts</strong>
+                    <span id="identityPlatforms">Facebook, Instagram, Google Business</span>
+                  </div>
+                </div>
+                <div class="composer-workspace">
+                  <section class="composer-column" aria-label="Caption workflow">
+                    <div class="caption-block">
+                      <textarea class="caption-area" id="captionInput" aria-label="Post caption"></textarea>
+                      <aside class="caption-panel assist-panel" aria-label="Improve caption tools">
+                        <div class="card-head">
+                          <div>
+                            <p class="eyebrow">Partner Assist</p>
+                            <h3>Improve caption</h3>
+                          </div>
+                          <span class="credit-pill">1 credit</span>
+                        </div>
+                        <p>Try a quick improvement, shorter version, stronger CTA, or platform-aware caption before approval.</p>
+                        <div class="chip-grid">
+                          <button class="chip ai-chip" type="button" data-assist="improve">Improve</button>
+                          <button class="chip ai-chip" type="button" data-assist="shorten">Shorten</button>
+                          <button class="chip ai-chip" type="button" data-assist="engaging">More engaging</button>
+                          <button class="chip ai-chip" type="button" data-assist="cta">Add CTA</button>
+                          <button class="chip ai-chip" type="button" data-assist="variants">3 versions</button>
+                          <button class="chip ai-chip" type="button" data-assist="platform">Platform-aware</button>
+                        </div>
+                      </aside>
+                    </div>
+                  </section>
+
+                  <section class="composer-column" aria-label="Creative workflow">
+                    <div class="creative-stack">
+                      <aside class="media-tools-panel main-creative-panel" aria-label="Upload or create tools">
+                        <div class="card-head">
+                          <div>
+                            <p class="eyebrow">Main Creative</p>
+                            <h3>Choose your creative</h3>
+                          </div>
+                          <span class="credit-pill" style="background: rgba(245,240,235,.92); color: var(--muted);">Upload, generate, or choose</span>
+                        </div>
+                        <div class="chip-grid">
+                          <button class="chip" type="button">From Computer</button>
+                          <button class="chip ai-chip" type="button" id="generateImageButton">Generate with AI</button>
+                          <button class="chip" type="button">Google Photos</button>
+                          <button class="chip" type="button">Apple Photos</button>
+                          <button class="chip" type="button">Dropbox</button>
+                          <button class="chip" type="button">OneDrive</button>
+                        </div>
+                      </aside>
+                      <div class="media-block">
+                        <div class="media-box">
+                          <img id="composerImage" src="https://picsum.photos/seed/dance-parent-confidence/900/700" alt="Post media preview" />
+                          <div class="media-caption" id="mediaIdea">Media idea: warm studio moment with a student smiling after class.</div>
+                        </div>
+                        <aside class="media-tools-panel image-tools-panel" aria-label="Image tools">
+                          <div class="card-head">
+                            <div>
+                              <p class="eyebrow">Image Tools</p>
+                              <p>Improve the image, then format crops for the selected platforms.</p>
+                            </div>
+                            <span class="credit-pill">2 credits for AI edits</span>
+                          </div>
+                          <div class="chip-grid">
+                            <button class="chip ai-chip" type="button" data-image-tool="cleanup">Clean up</button>
+                            <button class="chip ai-chip" type="button" data-image-tool="social">Make social-ready</button>
+                            <button class="chip ai-chip" type="button" data-image-tool="brand">Brand polish</button>
+                            <button class="chip ai-chip" type="button" data-image-tool="square">Square crop</button>
+                            <button class="chip ai-chip" type="button" data-image-tool="story">Story crop</button>
+                            <button class="chip ai-chip" type="button" data-image-tool="format">Format crops</button>
+                          </div>
+                          <p>Add or select an image to unlock image tools.</p>
+                        </aside>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </article>
+
+            <div class="notice" id="editorNotice">Post mockup updated.</div>
+          </section>
+
+          <section class="schedule-strip fade-in" style="--index: 3">
+            <div>
+              <p class="eyebrow">Schedule</p>
+              <h3>Choose timing</h3>
+              <p>Scheduled posts keep their existing time. AI recommendations open with Partner's suggested slot.</p>
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="scheduleDate">Date</label>
+                <input id="scheduleDate" type="date" value="2026-05-05" />
+              </div>
+              <div class="field">
+                <label for="scheduleTime">Time</label>
+                <input id="scheduleTime" type="time" value="10:15" />
+              </div>
+            </div>
+            <span class="status suggested">Partner suggested</span>
+          </section>
+
+          <section class="preview-section fade-in" style="--index: 4">
+            <div class="preview-section-head">
+              <div>
+                <p class="eyebrow">Bottom approval tray</p>
+                <h2>Selected platform previews appear side by side</h2>
+              </div>
+              <span class="status scheduled" id="approvalStatus">Ready to review</span>
+            </div>
+            <div class="preview-row" id="previewRow" aria-label="Platform previews"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <aside class="hover-preview" id="hoverPreview" aria-hidden="true"></aside>
+
+  <script>
+    const events = [
+      {
+        id: 'sch-1',
+        type: 'scheduled',
+        date: '2026-05-01',
+        time: '9:30 AM',
+        title: 'May class openings',
+        caption: 'May classes are open for enrollment. If your dancer is ready for a confident, welcoming place to learn, send us a note and we will help you choose the right class.',
+        platforms: ['facebook', 'instagram', 'google'],
+        image: 'https://picsum.photos/seed/dance-may-class/900/700',
+        source: 'Scheduled',
+        why: 'Already approved and waiting for publish time.',
+        mediaIdea: 'Bright studio image with younger dancers warming up.'
+      },
+      {
+        id: 'rec-1',
+        type: 'suggested',
+        date: '2026-05-05',
+        time: '10:15 AM',
+        title: 'Parent confidence post',
+        caption: 'Choosing a dance class can feel like a lot if you are new to the studio. Tell us your dancer’s age, experience, and schedule, and we will help you find a class that feels like the right first step.',
+        platforms: ['facebook', 'instagram', 'google'],
+        image: 'https://picsum.photos/seed/dance-parent-confidence/900/700',
+        source: 'Partner recommended',
+        why: 'Tuesday morning is a good window for parent planning and enrollment questions.',
+        mediaIdea: 'Warm studio moment with a student smiling after class.'
+      },
+      {
+        id: 'draft-1',
+        type: 'draft',
+        date: '2026-05-07',
+        time: '2:00 PM',
+        title: 'Teacher spotlight',
+        caption: 'This week we are celebrating the teachers who make each class feel encouraging, structured, and fun. A strong class starts with someone who knows how to meet each dancer where they are.',
+        platforms: ['facebook', 'instagram'],
+        image: 'https://picsum.photos/seed/dance-teacher-spotlight/900/700',
+        source: 'Draft saved',
+        why: 'Saved draft from a prior campaign idea.',
+        mediaIdea: 'Teacher helping a student at the barre.'
+      },
+      {
+        id: 'sch-2',
+        type: 'scheduled',
+        date: '2026-05-09',
+        time: '11:45 AM',
+        title: 'Saturday trial reminder',
+        caption: 'Saturday is a great day to visit the studio, ask questions, and see which class might be the best fit. Message us if you would like help choosing where to start.',
+        platforms: ['facebook', 'instagram', 'tiktok'],
+        image: 'https://picsum.photos/seed/dance-saturday-trial/900/700',
+        source: 'Scheduled',
+        why: 'Weekend reminder for families planning activities.',
+        mediaIdea: 'Studio doorway or class transition moment.'
+      },
+      {
+        id: 'rec-2',
+        type: 'suggested',
+        date: '2026-05-12',
+        time: '6:10 PM',
+        title: 'Why dance builds confidence',
+        caption: 'Dance is not only about steps. It teaches listening, practice, courage, and the feeling of trying again when something is new. That confidence can follow dancers outside the studio too.',
+        platforms: ['facebook', 'instagram', 'linkedin'],
+        image: 'https://picsum.photos/seed/dance-confidence-story/900/700',
+        source: 'Partner recommended',
+        why: 'Good educational post to balance direct enrollment reminders.',
+        mediaIdea: 'Black and white class moment with a soft yellow accent.'
+      },
+      {
+        id: 'rec-3',
+        type: 'suggested',
+        date: '2026-05-15',
+        time: '1:30 PM',
+        title: 'Google update: summer registration',
+        caption: 'Summer registration is open. Families can contact Dancescapes Performing Arts for help choosing the right class by age, schedule, and experience level.',
+        platforms: ['google', 'facebook'],
+        image: 'https://picsum.photos/seed/dance-summer-register/900/700',
+        source: 'Partner recommended',
+        why: 'Local search visibility needs a Google Business update this week.',
+        mediaIdea: 'Clean exterior or studio lobby image.'
+      },
+      {
+        id: 'sch-3',
+        type: 'scheduled',
+        date: '2026-05-18',
+        time: '8:40 AM',
+        title: 'Recital prep week',
+        caption: 'Recital prep is underway. Families, please keep an eye on studio messages this week for reminders about timing, costumes, and what dancers should bring.',
+        platforms: ['facebook', 'instagram'],
+        image: 'https://picsum.photos/seed/dance-recital-prep/900/700',
+        source: 'Scheduled',
+        why: 'Approved campaign reminder.',
+        mediaIdea: 'Costume rack or rehearsal detail.'
+      },
+      {
+        id: 'rec-4',
+        type: 'suggested',
+        date: '2026-05-22',
+        time: '4:20 PM',
+        title: 'Recital weekend reminder',
+        caption: 'Recital weekend is getting close. Save this reminder, check your studio messages, and reach out if you are unsure about arrival times or what your dancer needs.',
+        platforms: ['facebook', 'instagram', 'tiktok'],
+        image: 'https://picsum.photos/seed/dance-recital-weekend/900/700',
+        source: 'Partner recommended',
+        why: 'Families engage with reminders before weekend plans begin.',
+        mediaIdea: 'Soft detail shot of shoes, costume bag, or stage curtain.'
+      },
+      {
+        id: 'draft-2',
+        type: 'draft',
+        date: '2026-05-26',
+        time: '12:00 PM',
+        title: 'Memorial week hours',
+        caption: 'Please check this week’s studio schedule before heading to class. If you have questions about makeups or class timing, send us a message.',
+        platforms: ['facebook', 'google'],
+        image: 'https://picsum.photos/seed/dance-studio-hours/900/700',
+        source: 'Draft saved',
+        why: 'Operational update awaiting approval.',
+        mediaIdea: 'Simple studio sign or calendar image.'
+      }
+    ];
+
+    const platformMeta = {
+      facebook: { label: 'Facebook', short: 'FB', className: 'facebook', connected: true },
+      instagram: { label: 'Instagram', short: 'IG', className: 'instagram', connected: true },
+      google: { label: 'Google Business', short: 'G', className: 'google', connected: true },
+      tiktok: { label: 'TikTok', short: 'TT', className: 'tiktok', connected: true },
+      linkedin: { label: 'LinkedIn', short: 'IN', className: 'linkedin', connected: false }
+    };
+
+    let selectedEvent = events[1];
+    let activePlatforms = new Set(selectedEvent.platforms);
+
+    const calendarGrid = document.getElementById('calendarGrid');
+    const hoverPreview = document.getElementById('hoverPreview');
+    const captionInput = document.getElementById('captionInput');
+    const previewRow = document.getElementById('previewRow');
+    const editorNotice = document.getElementById('editorNotice');
+    const calendarTitle = document.getElementById('calendarTitle');
+    const monthViewButton = document.getElementById('monthViewButton');
+    const weekViewButton = document.getElementById('weekViewButton');
+    const statusPageTitle = document.getElementById('statusPageTitle');
+    const statusPageEyebrow = document.getElementById('statusPageEyebrow');
+    const statusPostList = document.getElementById('statusPostList');
+    let calendarMode = 'month';
+
+    function statusLabel(type) {
+      if (type === 'scheduled') return 'Scheduled';
+      if (type === 'draft') return 'Draft';
+      if (type === 'blocked') return 'Needs setup';
+      if (type === 'approval') return 'Needs approval';
+      return 'Suggested';
+    }
+
+    function getStatusPosts(status) {
+      if (status === 'blocked') {
+        return events.filter((event) => event.platforms.some((platform) => platformMeta[platform]?.connected === false));
+      }
+      if (status === 'approval') {
+        return events.filter((event) => event.type === 'draft' || event.type === 'suggested').slice(0, 2);
+      }
+      return events.filter((event) => event.type === status);
+    }
+
+    function renderStatusPage(status) {
+      const posts = getStatusPosts(status);
+      statusPageEyebrow.textContent = 'Publisher posts';
+      statusPageTitle.textContent = `${statusLabel(status)} posts`;
+      statusPostList.innerHTML = posts.length
+        ? posts.map((post) => `
+            <article class="post-row">
+              <div class="post-date">${post.date.slice(5).replace('-', '/')}<br>${post.time}</div>
+              <div>
+                <span class="status ${status === 'blocked' ? 'blocked' : status === 'approval' ? 'draft' : post.type}">${status === 'blocked' || status === 'approval' ? statusLabel(status) : statusLabel(post.type)}</span>
+                <h3>${post.title}</h3>
+                <p>${post.caption}</p>
+                <div class="platform-line">
+                  ${post.platforms.map((platform) => `<span class="platform-dot">${platformMeta[platform]?.label || platform}</span>`).join('')}
+                </div>
+              </div>
+              <button class="button primary" type="button" data-edit-post="${post.id}">Edit post</button>
+            </article>
+          `).join('')
+        : '<article class="post-row"><div></div><div><h3>No posts in this view</h3><p>This group is empty in the mockup.</p></div><button class="button soft" type="button" data-back-empty>Calendar</button></article>';
+
+      statusPostList.querySelectorAll('[data-edit-post]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const post = events.find((event) => event.id === button.dataset.editPost);
+          if (post) openEditor(post);
+        });
+      });
+      statusPostList.querySelectorAll('[data-back-empty]').forEach((button) => {
+        button.addEventListener('click', () => {
+          document.body.dataset.view = 'calendar';
+        });
+      });
+      document.body.dataset.view = 'status';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function dateParts(dateString) {
+      const [year, month, day] = dateString.split('-').map(Number);
+      return { year, month, day };
+    }
+
+    function renderCalendar() {
+      calendarGrid.innerHTML = '';
+      calendarGrid.classList.toggle('week-mode', calendarMode === 'week');
+      calendarTitle.textContent = calendarMode === 'week' ? 'May 4-10, 2026' : 'May 2026';
+      monthViewButton.classList.toggle('active', calendarMode === 'month');
+      weekViewButton.classList.toggle('active', calendarMode === 'week');
+      const start = calendarMode === 'week' ? new Date(2026, 4, 4) : new Date(2026, 3, 27);
+      const dayCount = calendarMode === 'week' ? 7 : 35;
+      const allEvents = new Map();
+      for (const event of events) {
+        if (!allEvents.has(event.date)) allEvents.set(event.date, []);
+        allEvents.get(event.date).push(event);
+      }
+
+      for (let index = 0; index < dayCount; index += 1) {
+        const current = new Date(start);
+        current.setDate(start.getDate() + index);
+        const year = current.getFullYear();
+        const month = String(current.getMonth() + 1).padStart(2, '0');
+        const day = String(current.getDate()).padStart(2, '0');
+        const dateKey = `${year}-${month}-${day}`;
+        const muted = current.getMonth() !== 4;
+        const dayEvents = allEvents.get(dateKey) || [];
+
+        const cell = document.createElement('article');
+        cell.className = `day-cell${muted ? ' muted' : ''}`;
+        cell.innerHTML = `
+          <div class="day-top">
+            <span class="day-number">${current.getDate()}</span>
+            <button class="quick-add" type="button" data-new-date="${dateKey}">Add</button>
+          </div>
+          <div class="event-list"></div>
+        `;
+
+        const list = cell.querySelector('.event-list');
+        dayEvents.forEach((event) => {
+          const chip = document.createElement('button');
+          chip.className = 'event-chip';
+          chip.type = 'button';
+          chip.dataset.type = event.type;
+          chip.dataset.eventId = event.id;
+          chip.innerHTML = `
+            <span class="event-strip"></span>
+            <span class="event-chip-inner">
+              <span class="event-time">${event.time} · ${statusLabel(event.type)}</span>
+              <span class="event-title">${event.title}</span>
+            </span>
+          `;
+          chip.addEventListener('mouseenter', (mouseEvent) => showHover(event, mouseEvent));
+          chip.addEventListener('mousemove', moveHover);
+          chip.addEventListener('mouseleave', hideHover);
+          chip.addEventListener('click', () => openEditor(event));
+          list.appendChild(chip);
+        });
+
+        cell.querySelector('[data-new-date]').addEventListener('click', () => {
+          const emptyEvent = {
+            id: 'new',
+            type: 'draft',
+            date: dateKey,
+            time: '10:00 AM',
+            title: 'New post',
+            caption: 'Write a short update for families, then use Partner Assist to make it clearer before publishing.',
+            platforms: ['facebook', 'instagram'],
+            image: 'https://picsum.photos/seed/dance-new-post/900/700',
+            source: 'New draft',
+            why: 'Created from the calendar.',
+            mediaIdea: 'Choose or generate a studio image.'
+          };
+          openEditor(emptyEvent);
+        });
+
+        calendarGrid.appendChild(cell);
+      }
+    }
+
+    function showHover(event, mouseEvent) {
+      hoverPreview.innerHTML = `
+        <div class="preview-head">
+          <div>
+            <span class="status ${event.type}">${statusLabel(event.type)}</span>
+            <h3>${event.title}</h3>
+            <p>${event.time} · ${event.source}</p>
+          </div>
+          <button class="small-button" type="button">Open</button>
+        </div>
+        <p>${event.caption}</p>
+        <img src="${event.image}" alt="Preview for ${event.title}">
+        <div class="platform-line">
+          ${event.platforms.map((platform) => `<span class="platform-dot">${platformMeta[platform]?.label || platform}</span>`).join('')}
+        </div>
+      `;
+      hoverPreview.classList.add('visible');
+      moveHover(mouseEvent);
+    }
+
+    function moveHover(mouseEvent) {
+      const width = 390;
+      const left = Math.min(mouseEvent.clientX + 18, window.innerWidth - width - 14);
+      const top = Math.min(mouseEvent.clientY + 18, window.innerHeight - 330);
+      hoverPreview.style.left = `${Math.max(14, left)}px`;
+      hoverPreview.style.top = `${Math.max(14, top)}px`;
+    }
+
+    function hideHover() {
+      hoverPreview.classList.remove('visible');
+    }
+
+    function openEditor(event) {
+      selectedEvent = event;
+      activePlatforms = new Set();
+      document.body.dataset.view = 'editor';
+      document.getElementById('editorStatusLabel').textContent = `${statusLabel(event.type)} post`;
+      document.getElementById('editorTitle').textContent = event.title;
+      document.getElementById('editorTiming').textContent = `${event.source} for ${event.date} at ${event.time}.`;
+      document.getElementById('composerImage').src = event.image;
+      document.getElementById('mediaIdea').textContent = `Media idea: ${event.mediaIdea}`;
+      captionInput.value = event.caption;
+
+      const parts = dateParts(event.date);
+      document.getElementById('scheduleDate').value = `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+      const timeMatch = event.time.match(/(\d+):(\d+) (AM|PM)/);
+      if (timeMatch) {
+        let hour = Number(timeMatch[1]);
+        const minute = timeMatch[2];
+        const meridiem = timeMatch[3];
+        if (meridiem === 'PM' && hour < 12) hour += 12;
+        if (meridiem === 'AM' && hour === 12) hour = 0;
+        document.getElementById('scheduleTime').value = `${String(hour).padStart(2, '0')}:${minute}`;
+      }
+
+      renderPlatformChips();
+      renderPreviews();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function renderPlatformChips() {
+      document.getElementById('identityPlatforms').textContent = Array.from(activePlatforms)
+        .map((id) => platformMeta[id]?.label || id)
+        .join(', ') || 'No platforms selected';
+    }
+
+    function formatCaption(platformId, caption) {
+      const clean = caption.trim();
+      if (platformId === 'instagram') {
+        return `${clean}\n\n#DanceStudio #Dancescapes #DanceClass`;
+      }
+      if (platformId === 'google') {
+        return clean.length > 190 ? `${clean.slice(0, 187)}...` : clean;
+      }
+      if (platformId === 'tiktok') {
+        return `${clean}\n\nQuick reminder for dance families.`;
+      }
+      if (platformId === 'linkedin') {
+        return clean.replace('dancer', 'student').replace('dance class', 'performing arts class');
+      }
+      return clean;
+    }
+
+    function renderPreviews() {
+      previewRow.innerHTML = '';
+      const allPlatforms = Object.keys(platformMeta);
+      document.getElementById('identityPlatforms').textContent = Array.from(activePlatforms)
+        .map((id) => platformMeta[id]?.label || id)
+        .join(', ') || 'No platforms selected';
+
+      allPlatforms.forEach((id) => {
+        const platform = platformMeta[id] || { label: id, short: id.slice(0, 2), className: 'facebook' };
+        const selected = activePlatforms.has(id);
+        const card = document.createElement('article');
+        card.className = 'preview-card';
+        card.dataset.selected = String(selected);
+        card.innerHTML = `
+          <button class="preview-check" type="button" aria-label="${selected ? 'Remove' : 'Select'} ${platform.label}">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+          </button>
+          <div class="preview-account">
+            <div class="platform-avatar ${platform.className}">${platform.short}</div>
+            <div>
+              <strong>${platform.label}</strong>
+              <span>${platform.connected ? (selected ? 'Selected channel' : 'Available channel') : 'Not connected, preview only'}</span>
+            </div>
+          </div>
+          <div class="preview-copy">${formatCaption(id, captionInput.value)}</div>
+          <img class="preview-image" src="${document.getElementById('composerImage').src}" alt="${platform.label} preview image">
+          <div class="preview-meta">
+            <span>${document.getElementById('scheduleDate').value} at ${document.getElementById('scheduleTime').value}</span>
+            <span>${platform.connected ? (selected ? 'Ready' : 'Not selected') : 'Setup needed'}</span>
+          </div>
+          <div class="preview-tools">
+            <button class="preview-tool" type="button" data-preview-tool="improve" ${selected ? '' : 'disabled'}>Improve image</button>
+            <button class="preview-tool" type="button" data-preview-tool="crop" ${selected ? '' : 'disabled'}>Crop setting</button>
+          </div>
+        `;
+        card.querySelector('.preview-check').addEventListener('click', () => {
+          if (activePlatforms.has(id)) {
+            activePlatforms.delete(id);
+          } else {
+            activePlatforms.add(id);
+          }
+          renderPlatformChips();
+          renderPreviews();
+        });
+        card.querySelectorAll('[data-preview-tool]').forEach((button) => {
+          button.addEventListener('click', () => {
+            showNotice(button.dataset.previewTool === 'crop'
+              ? `${platform.label} crop setting opened in the mockup.`
+              : `${platform.label} image improvement queued in the mockup.`);
+          });
+        });
+        previewRow.appendChild(card);
+      });
+    }
+
+    function showNotice(message) {
+      editorNotice.textContent = message;
+      editorNotice.classList.add('visible');
+      window.clearTimeout(showNotice.timer);
+      showNotice.timer = window.setTimeout(() => editorNotice.classList.remove('visible'), 2400);
+    }
+
+    document.getElementById('newPostButton').addEventListener('click', () => {
+      openEditor({
+        id: 'new-post',
+        type: 'draft',
+        date: '2026-05-06',
+        time: '10:00 AM',
+        title: 'New post',
+        caption: 'Write a clear update for families. Partner Assist can improve it before approval.',
+        platforms: ['facebook', 'instagram'],
+        image: 'https://picsum.photos/seed/dance-new-composer/900/700',
+        source: 'New draft',
+        why: 'Created from Publisher.',
+        mediaIdea: 'Choose or generate a studio image.'
+      });
+    });
+
+    document.getElementById('todayButton').addEventListener('click', () => {
+      calendarMode = 'week';
+      renderCalendar();
+    });
+
+    monthViewButton.addEventListener('click', () => {
+      calendarMode = 'month';
+      renderCalendar();
+    });
+
+    weekViewButton.addEventListener('click', () => {
+      calendarMode = 'week';
+      renderCalendar();
+    });
+
+    document.querySelectorAll('[data-status-page]').forEach((button) => {
+      button.addEventListener('click', () => renderStatusPage(button.dataset.statusPage));
+    });
+
+    document.getElementById('trainPartnerButton').addEventListener('click', () => {
+      showNotice('Train your Partner modal would open from here.');
+    });
+
+    document.querySelectorAll('[data-open-event]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const event = events.find((item) => item.id === button.dataset.openEvent);
+        if (event) openEditor(event);
+      });
+    });
+
+    document.getElementById('backToCalendar').addEventListener('click', () => {
+      document.body.dataset.view = 'calendar';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    document.getElementById('backToCalendarFromStatus').addEventListener('click', () => {
+      document.body.dataset.view = 'calendar';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    document.getElementById('phoneCancel').addEventListener('click', () => {
+      document.body.dataset.view = 'calendar';
+    });
+
+    document.getElementById('phoneNext').addEventListener('click', () => {
+      document.querySelector('.preview-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    captionInput.addEventListener('input', renderPreviews);
+    document.getElementById('scheduleDate').addEventListener('input', renderPreviews);
+    document.getElementById('scheduleTime').addEventListener('input', renderPreviews);
+
+    document.querySelectorAll('[data-assist]').forEach((button) => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('[data-assist]').forEach((item) => item.classList.remove('active'));
+        button.classList.add('active');
+        if (button.dataset.assist === 'shorten') {
+          captionInput.value = 'Looking for the right dance class? Tell us your dancer’s age, experience, and schedule. We will help you find a class that fits.';
+        } else if (button.dataset.assist === 'engaging') {
+          captionInput.value = 'A confident first class can change the way a dancer walks into the studio. Tell us your dancer’s age, experience, and schedule, and we will help you find a class that feels welcoming from day one.';
+        } else if (button.dataset.assist === 'cta') {
+          captionInput.value = `${captionInput.value.trim()}\n\nSend us a message and we will help you choose the right class.`;
+        } else if (button.dataset.assist === 'variants') {
+          captionInput.value = 'Option 1: Need help choosing a dance class? Message us.\n\nOption 2: A confident first class starts with the right fit.\n\nOption 3: We can help your dancer find a class that feels welcoming from day one.';
+        } else if (button.dataset.assist === 'platform') {
+          captionInput.value = 'Facebook: Choosing a dance class should feel simple. Message us with your dancer’s age and schedule, and we will help you find the right fit.\n\nInstagram: New to dance? We can help your dancer find a welcoming first class.\n\nGoogle Business: Summer dance class help is available. Contact Dancescapes Performing Arts to choose the right class.';
+        } else {
+          captionInput.value = 'Choosing a dance class should feel simple. Tell us your dancer’s age, experience, and schedule, and we will help you find a class that feels welcoming, structured, and right for their next step.';
+        }
+        renderPreviews();
+        showNotice('Partner Assist updated the caption in the mockup.');
+      });
+    });
+
+    document.querySelectorAll('[data-image-tool]').forEach((button) => {
+      button.addEventListener('click', () => {
+        showNotice(`${button.textContent.trim()} queued in the image tools mockup.`);
+      });
+    });
+
+    document.getElementById('generateImageButton').addEventListener('click', () => {
+      const image = document.getElementById('composerImage');
+      image.src = `https://picsum.photos/seed/generated-dance-${Date.now()}/900/700`;
+      renderPreviews();
+      showNotice('Generated image placed into the composer.');
+    });
+
+    document.getElementById('saveDraftButton').addEventListener('click', () => showNotice('Draft saved in the mockup.'));
+    document.getElementById('approveButton').addEventListener('click', () => {
+      document.querySelector('.preview-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      showNotice('Review the side-by-side previews before approving.');
+    });
+
+    renderCalendar();
+    openEditor(selectedEvent);
+    document.body.dataset.view = 'calendar';
+  </script>
+</body>
+</html>

@@ -5,9 +5,11 @@ import { supabase } from '../lib/supabase'
 import { buildTenantConfig } from '../lib/tenantConfig'
 import { buildSharedPortalPath, portalPath } from '../lib/portalPath'
 import { DASHBOARD_PLATFORMS } from '../lib/platformCatalog'
+import { fetchTeamAccessUsers, inviteTeamAccessUser, updateTeamAccessUser } from '../lib/portalApi'
 import {
   User, Lock, Building2, CheckCircle2, Loader2, AlertCircle,
-  Link2, ExternalLink, Wifi, WifiOff, MessageCircle, Copy, RefreshCw, Mail, Save, Unlink2
+  Link2, ExternalLink, Wifi, WifiOff, MessageCircle, Copy, RefreshCw, Mail, Save, Unlink2,
+  UserPlus, ShieldCheck, Ban
 } from 'lucide-react'
 
 const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
@@ -15,6 +17,14 @@ const SETTINGS_SYNC_ENDPOINT = '/api/n8n/zernio-sync-accounts'
 const SETTINGS_DISCONNECT_ENDPOINT = '/api/social-connections/disconnect'
 
 const PLATFORMS = DASHBOARD_PLATFORMS
+const TEAM_PERMISSION_OPTIONS = [
+  { id: 'read_only', label: 'Read Only', description: 'Can sign in and view allowed portal areas.' },
+  { id: 'create_post', label: 'Create Post', description: 'Can draft and prepare posts without publishing.' },
+  { id: 'publish_posts', label: 'Create and Publish posts', description: 'Can publish, schedule, and manage posts.' },
+  { id: 'view_documents', label: 'View documents', description: 'Can view secure portal documents.' },
+  { id: 'manage_secure_sharing', label: 'Create shared document rooms and shared links', description: 'Can create secure rooms and share links.' },
+  { id: 'full_admin', label: 'Full Administrator', description: 'Can manage users, settings, publishing, and documents.' },
+]
 
 function buildTenantAwarePortalPath(path, clientSlug) {
   const resolvedPath = portalPath(path)
@@ -220,6 +230,290 @@ function normalizeWorkflowError(data, fallbackMessage) {
   }
 
   return fallbackMessage
+}
+
+function normalizeTeamPermissions(input) {
+  const values = Array.isArray(input) ? input : [input]
+  const normalized = Array.from(new Set(values
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)))
+
+  if (normalized.includes('full_admin')) return ['full_admin']
+  if (!normalized.includes('read_only')) normalized.unshift('read_only')
+  if (normalized.includes('publish_posts') && !normalized.includes('create_post')) normalized.push('create_post')
+  if (normalized.includes('manage_secure_sharing') && !normalized.includes('view_documents')) normalized.push('view_documents')
+  return normalized
+}
+
+function formatTeamPermissions(permissions) {
+  const normalized = normalizeTeamPermissions(permissions)
+  if (normalized.includes('full_admin')) return 'Full Administrator'
+  return TEAM_PERMISSION_OPTIONS
+    .filter((option) => normalized.includes(option.id))
+    .map((option) => option.label)
+    .join(', ')
+}
+
+function TeamAccessSection({ profile, billingAccess }) {
+  const queryClient = useQueryClient()
+  const [inviteForm, setInviteForm] = useState({
+    name: '',
+    email: '',
+    portal_permissions: ['read_only'],
+  })
+  const [editingUserId, setEditingUserId] = useState(null)
+  const [editingForm, setEditingForm] = useState(null)
+  const [savingUserId, setSavingUserId] = useState(null)
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [status, setStatus] = useState(null)
+
+  const canManageTeam = normalizeTeamPermissions(profile?.portal_permissions).includes('full_admin') || profile?.role === 'admin'
+  const query = useQuery({
+    queryKey: ['team-access-users', profile?.client_id],
+    queryFn: fetchTeamAccessUsers,
+    enabled: Boolean(profile?.client_id && canManageTeam),
+  })
+  const users = query.data?.users || []
+
+  function toggleInvitePermission(permission) {
+    setInviteForm((current) => ({
+      ...current,
+      portal_permissions: normalizeTeamPermissions(
+        current.portal_permissions.includes(permission)
+          ? current.portal_permissions.filter((item) => item !== permission)
+          : [...current.portal_permissions, permission],
+      ),
+    }))
+  }
+
+  function toggleEditPermission(permission) {
+    setEditingForm((current) => ({
+      ...current,
+      portal_permissions: normalizeTeamPermissions(
+        current.portal_permissions.includes(permission)
+          ? current.portal_permissions.filter((item) => item !== permission)
+          : [...current.portal_permissions, permission],
+      ),
+    }))
+  }
+
+  async function refreshTeam(payload) {
+    queryClient.setQueryData(['team-access-users', profile?.client_id], payload)
+    await queryClient.invalidateQueries({ queryKey: ['team-access-users', profile?.client_id] })
+    await queryClient.invalidateQueries({ queryKey: ['profile'] })
+  }
+
+  async function handleInvite(event) {
+    event.preventDefault()
+    setInviteLoading(true)
+    setStatus(null)
+    try {
+      const payload = await inviteTeamAccessUser(inviteForm)
+      await refreshTeam(payload)
+      setInviteForm({ name: '', email: '', portal_permissions: ['read_only'] })
+      setStatus({ type: 'success', message: `Invite sent to ${inviteForm.email}.` })
+    } catch (error) {
+      setStatus({ type: 'error', message: error instanceof Error ? error.message : 'Could not invite this user.' })
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
+  function startEditing(user) {
+    setEditingUserId(user.id)
+    setEditingForm({
+      name: user.name || '',
+      email: user.email || '',
+      portal_permissions: normalizeTeamPermissions(user.portal_permissions),
+      disabled: Boolean(user.disabled_at),
+    })
+    setStatus(null)
+  }
+
+  async function saveEditing(userId) {
+    setSavingUserId(userId)
+    setStatus(null)
+    try {
+      const payload = await updateTeamAccessUser(userId, editingForm)
+      await refreshTeam(payload)
+      setEditingUserId(null)
+      setEditingForm(null)
+      setStatus({ type: 'success', message: 'Portal access updated.' })
+    } catch (error) {
+      setStatus({ type: 'error', message: error instanceof Error ? error.message : 'Could not update this user.' })
+    } finally {
+      setSavingUserId(null)
+    }
+  }
+
+  if (!profile) {
+    return (
+      <Section title="Team Access" description="Portal users and permissions" icon={ShieldCheck}>
+        <div className="flex items-center gap-2" style={{ color: 'var(--portal-text-muted)' }}>
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Loading team access...</span>
+        </div>
+      </Section>
+    )
+  }
+
+  if (!canManageTeam) {
+    return (
+      <Section title="Team Access" description="Portal users and permissions" icon={ShieldCheck}>
+        <StatusBadge status="info" message="Only Full Administrators can invite users or change access." />
+      </Section>
+    )
+  }
+
+  return (
+    <Section title="Team Access" description="Invite portal users and control what they can do" icon={ShieldCheck}>
+      <div className="space-y-5">
+        {status && <StatusBadge status={status.type} message={status.message} />}
+
+        <form onSubmit={handleInvite} className="rounded-2xl p-4" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }}>
+          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+            <input
+              value={inviteForm.name}
+              onChange={(event) => setInviteForm((current) => ({ ...current, name: event.target.value }))}
+              placeholder="Name"
+              className="portal-input rounded-xl px-4 py-3 text-sm focus:outline-none"
+              disabled={inviteLoading || billingAccess?.readOnly}
+            />
+            <input
+              type="email"
+              value={inviteForm.email}
+              onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))}
+              placeholder="email@example.com"
+              className="portal-input rounded-xl px-4 py-3 text-sm focus:outline-none"
+              disabled={inviteLoading || billingAccess?.readOnly}
+              required
+            />
+            <button
+              type="submit"
+              disabled={inviteLoading || billingAccess?.readOnly}
+              className="portal-button-primary inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-50"
+            >
+              {inviteLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+              Invite
+            </button>
+          </div>
+          <div className="mt-4 grid gap-2 md:grid-cols-2">
+            {TEAM_PERMISSION_OPTIONS.map((option) => (
+              <label key={option.id} className="flex items-start gap-3 rounded-xl p-3 text-sm" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+                <input
+                  type="checkbox"
+                  checked={inviteForm.portal_permissions.includes(option.id)}
+                  onChange={() => toggleInvitePermission(option.id)}
+                  disabled={billingAccess?.readOnly}
+                />
+                <span>
+                  <span className="block font-semibold">{option.label}</span>
+                  <span className="block text-xs" style={{ color: 'var(--portal-text-muted)' }}>{option.description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </form>
+
+        <div className="space-y-3">
+          {query.isLoading ? (
+            <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading team access...
+            </div>
+          ) : users.map((user) => {
+            const isEditing = editingUserId === user.id
+            return (
+              <div key={user.id} className="rounded-2xl p-4" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{user.name || user.email}</p>
+                    <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>{user.email}</p>
+                    <p className="mt-2 text-xs" style={{ color: user.disabled_at ? 'var(--map-brand-magenta)' : 'var(--portal-text-soft)' }}>
+                      {user.disabled_at ? 'Disabled' : formatTeamPermissions(user.portal_permissions)}
+                    </p>
+                  </div>
+                  {!isEditing && user.id !== profile?.id && (
+                    <button
+                      type="button"
+                      onClick={() => startEditing(user)}
+                      disabled={billingAccess?.readOnly}
+                      className="portal-button-secondary rounded-xl px-3 py-2 text-xs font-semibold disabled:opacity-50"
+                    >
+                      Edit access
+                    </button>
+                  )}
+                </div>
+
+                {isEditing && editingForm && (
+                  <div className="mt-4 space-y-3 border-t pt-4" style={{ borderColor: 'var(--portal-border)' }}>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <input
+                        value={editingForm.name}
+                        onChange={(event) => setEditingForm((current) => ({ ...current, name: event.target.value }))}
+                        className="portal-input rounded-xl px-4 py-3 text-sm"
+                      />
+                      <input
+                        type="email"
+                        value={editingForm.email}
+                        onChange={(event) => setEditingForm((current) => ({ ...current, email: event.target.value }))}
+                        className="portal-input rounded-xl px-4 py-3 text-sm"
+                      />
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {TEAM_PERMISSION_OPTIONS.map((option) => (
+                        <label key={option.id} className="flex items-start gap-3 rounded-xl p-3 text-sm" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+                          <input
+                            type="checkbox"
+                            checked={editingForm.portal_permissions.includes(option.id)}
+                            onChange={() => toggleEditPermission(option.id)}
+                          />
+                          <span>
+                            <span className="block font-semibold">{option.label}</span>
+                            <span className="block text-xs" style={{ color: 'var(--portal-text-muted)' }}>{option.description}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <label className="inline-flex items-center gap-2 text-sm" style={{ color: 'var(--portal-text)' }}>
+                      <input
+                        type="checkbox"
+                        checked={editingForm.disabled}
+                        onChange={(event) => setEditingForm((current) => ({ ...current, disabled: event.target.checked }))}
+                      />
+                      <Ban className="h-4 w-4" />
+                      Disable this portal user
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => saveEditing(user.id)}
+                        disabled={savingUserId === user.id}
+                        className="portal-button-primary inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold disabled:opacity-50"
+                      >
+                        {savingUserId === user.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                        Save access
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingUserId(null)
+                          setEditingForm(null)
+                        }}
+                        className="portal-button-secondary rounded-xl px-4 py-2 text-xs font-semibold"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </Section>
+  )
 }
 
 // ── Social Connections section ────────────────────────────────────────────────
@@ -1023,6 +1317,8 @@ export default function Settings() {
             </div>
           )}
         </Section>
+
+        <TeamAccessSection profile={profile} billingAccess={billingAccess} />
 
         {/* Business info */}
         {client && (

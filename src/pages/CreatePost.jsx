@@ -3564,42 +3564,6 @@ export default function CreatePost() {
             </div>
           </article>
 
-          <section className="create-post-schedule-strip">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                Schedule
-              </p>
-              <h2>Choose timing</h2>
-              <p>{timingSummary}</p>
-            </div>
-            <div className="create-post-schedule-actions">
-              <button type="button" onClick={chooseNow} data-active={timingMode === 'now'}>
-                Post now
-              </button>
-              <button type="button" onClick={() => chooseCustomTime(selectedDay)} data-active={timingMode === 'custom'}>
-                Custom time
-              </button>
-              <button
-                type="button"
-                onClick={() => setTimingMode('slot')}
-                data-active={timingMode === 'slot'}
-              >
-                Calendar slot
-              </button>
-            </div>
-            <input
-              type="datetime-local"
-              value={scheduledFor}
-              min={minScheduleValue}
-              onChange={(event) => {
-                setScheduledFor(event.target.value)
-                setTimingMode('custom')
-              }}
-              className="portal-input rounded-2xl px-4 py-3 text-sm focus:outline-none"
-              style={{ colorScheme: 'light' }}
-            />
-          </section>
-
           <section className="create-post-preview-section">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -3977,6 +3941,42 @@ export default function CreatePost() {
               )}
             </section>
           </div>
+
+          <section className="create-post-schedule-strip">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                Schedule
+              </p>
+              <h2>Choose timing</h2>
+              <p>{timingSummary}</p>
+            </div>
+            <div className="create-post-schedule-actions">
+              <button type="button" onClick={chooseNow} data-active={timingMode === 'now'}>
+                Post now
+              </button>
+              <button type="button" onClick={() => chooseCustomTime(selectedDay)} data-active={timingMode === 'custom'}>
+                Custom time
+              </button>
+              <button
+                type="button"
+                onClick={() => setTimingMode('slot')}
+                data-active={timingMode === 'slot'}
+              >
+                Calendar slot
+              </button>
+            </div>
+            <input
+              type="datetime-local"
+              value={scheduledFor}
+              min={minScheduleValue}
+              onChange={(event) => {
+                setScheduledFor(event.target.value)
+                setTimingMode('custom')
+              }}
+              className="portal-input rounded-2xl px-4 py-3 text-sm focus:outline-none"
+              style={{ colorScheme: 'light' }}
+            />
+          </section>
         </div>
       </div>
 

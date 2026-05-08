@@ -42,6 +42,43 @@ const PORTAL_PARTNER_ENABLED =
   import.meta.env.VITE_PORTAL_PARTNER_ENABLED !== 'false' &&
   import.meta.env.VITE_PORTAL_COPILOT_ENABLED !== 'false'
 
+function normalizePermissions(profile) {
+  const permissions = Array.isArray(profile?.portal_permissions) ? profile.portal_permissions : []
+  if (profile?.role === 'admin' && !permissions.length) return ['full_admin']
+  if (!permissions.length) return ['read_only']
+  return permissions
+}
+
+function hasPortalPermission(profile, permission) {
+  const permissions = normalizePermissions(profile)
+  return permissions.includes('full_admin') ||
+    permissions.includes(permission) ||
+    (permission === 'create_post' && permissions.includes('publish_posts')) ||
+    (permission === 'view_documents' && permissions.includes('manage_secure_sharing'))
+}
+
+function inferRequiredPermission(actionLabel) {
+  const label = String(actionLabel || '').toLowerCase()
+
+  if (label.includes('publish') || label.includes('schedule') || label.includes('boost')) return 'publish_posts'
+  if (label.includes('post') || label.includes('draft') || label.includes('partner assist') || label.includes('format image')) return 'create_post'
+  if (label.includes('secure access room') || label.includes('share link')) return 'manage_secure_sharing'
+  if (label.includes('document') || label.includes('folder') || label.includes('vault')) return 'manage_secure_sharing'
+
+  return 'full_admin'
+}
+
+function buildPermissionMessage(actionLabel, permission) {
+  const names = {
+    create_post: 'Create Post',
+    publish_posts: 'Create and Publish Posts',
+    view_documents: 'View Documents',
+    manage_secure_sharing: 'Create shared document rooms and shared links',
+    full_admin: 'Full Administrator',
+  }
+  return `Your portal access does not allow you to ${actionLabel}. Ask a Full Administrator to add ${names[permission] || 'the required'} access.`
+}
+
 function resolveInitialPortalTheme() {
   if (typeof window === 'undefined') return 'dark'
 
@@ -243,6 +280,14 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     return false
   }
 
+  function requirePortalAccess(actionLabel = 'make changes', permission = null) {
+    if (!requireWriteAccess(actionLabel)) return false
+    const requiredPermission = permission || inferRequiredPermission(actionLabel)
+    if (hasPortalPermission(profile, requiredPermission)) return true
+    window.alert(buildPermissionMessage(actionLabel, requiredPermission))
+    return false
+  }
+
   async function handleBillingAction() {
     if (billingActionPending) return
 
@@ -254,7 +299,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     try {
       setBillingActionPending(true)
 
-      if (billingAccess.mode === 'read_only' || billingAccess.mode === 'warning') {
+      if (billingAccess.actionType === 'checkout') {
         const result = await createBillingCheckoutSession({
           ...(selectedPlan ? { selected_plan: selectedPlan } : {}),
           success_url: billingReturnUrl,
@@ -332,14 +377,23 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
             onAction={handleBillingAction}
             actionPending={billingActionPending}
           />
-          <Outlet context={{ session, profile, tenant, billingAccess, requireWriteAccess }} />
+          <Outlet
+            context={{
+              session,
+              profile,
+              tenant,
+              billingAccess,
+              requireWriteAccess: requirePortalAccess,
+              hasPortalPermission: (permission) => hasPortalPermission(profile, permission),
+            }}
+          />
           {PORTAL_PARTNER_ENABLED ? (
             <PortalPartner
               session={session}
               profile={profile}
               tenant={tenant}
               billingAccess={billingAccess}
-              requireWriteAccess={requireWriteAccess}
+              requireWriteAccess={requirePortalAccess}
             />
           ) : null}
         </main>

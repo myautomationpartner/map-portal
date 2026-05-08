@@ -7,6 +7,8 @@ const RESERVED_ROOT_SEGMENTS = new Set([
   'calendar',
   'campaigns',
   'documents',
+  'secure-vault',
+  'vault',
   'opportunities',
   'inbox',
   'post',

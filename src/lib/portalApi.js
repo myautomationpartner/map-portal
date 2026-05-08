@@ -113,7 +113,7 @@ export function resolveUploadMimeType(file) {
 export async function fetchProfile() {
   const { data, error } = await supabase
     .from('users')
-    .select('id, client_id, role, name, email, clients(*, client_planner_profiles(*))')
+    .select('id, client_id, role, name, email, portal_permissions, disabled_at, clients(*, client_planner_profiles(*))')
     .single()
 
   if (error) throw error
@@ -823,30 +823,6 @@ async function getAccessToken() {
   return accessToken
 }
 
-async function callEdgeFunction(path, body, options = {}) {
-  const accessToken = options.public ? null : await getAccessToken()
-  const response = await fetch(`${FUNCTION_BASE}/${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-    },
-    body: JSON.stringify(body ?? {}),
-  })
-
-  const payload = await response.json().catch(() => ({}))
-
-  if (!response.ok) {
-    const message = payload?.error || payload?.detail || `Request failed with status ${response.status}`
-    const error = new Error(message)
-    error.status = response.status
-    error.payload = payload
-    throw error
-  }
-
-  return payload
-}
-
 async function callPortalWorker(path, options = {}) {
   const accessToken = await getAccessToken()
   const response = await fetch(portalPath(path), {
@@ -882,6 +858,24 @@ export async function fetchWebsiteChatSettings() {
   return callPortalWorker('/api/website-chat/settings')
 }
 
+export async function fetchTeamAccessUsers() {
+  return callPortalWorker('/api/team-access/users')
+}
+
+export async function inviteTeamAccessUser(input) {
+  return callPortalWorker('/api/team-access/users', {
+    method: 'POST',
+    body: JSON.stringify(input ?? {}),
+  })
+}
+
+export async function updateTeamAccessUser(userId, input) {
+  return callPortalWorker(`/api/team-access/users/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input ?? {}),
+  })
+}
+
 export async function checkWebsiteChatInstallation() {
   return callPortalWorker('/api/website-chat/check-installation', {
     method: 'POST',
@@ -894,6 +888,30 @@ export async function openContentPartnerConversation(input = {}) {
     method: 'POST',
     body: JSON.stringify(input),
   })
+}
+
+async function callEdgeFunction(path, body, options = {}) {
+  const accessToken = options.public ? null : await getAccessToken()
+  const response = await fetch(`${FUNCTION_BASE}/${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify(body ?? {}),
+  })
+
+  const payload = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    const message = payload?.error || payload?.detail || `Request failed with status ${response.status}`
+    const error = new Error(message)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
 }
 
 export async function getDocumentUrl(documentId) {
