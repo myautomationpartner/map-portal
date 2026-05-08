@@ -1,0 +1,62 @@
+name: Deploy Portal Update
+
+on:
+  workflow_dispatch:
+    inputs:
+      client_slug:
+        description: Customer client slug to update
+        required: true
+        type: string
+      dry_run:
+        description: Validate the deploy without publishing assets
+        required: false
+        type: boolean
+        default: false
+  repository_dispatch:
+    types:
+      - deploy-portal-update
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      N8N_BASE_URL: ${{ vars.N8N_BASE_URL || 'https://n8n.myautomationpartner.com' }}
+      VITE_CHATWOOT_APP_URL: ${{ vars.VITE_CHATWOOT_APP_URL || 'https://chatwoot.myautomationpartner.com/app' }}
+      CLIENT_SLUG: ${{ github.event.inputs.client_slug || github.event.client_payload.client_slug }}
+      DRY_RUN: ${{ github.event.inputs.dry_run || github.event.client_payload.dry_run || 'false' }}
+      PORTAL_TEMPLATE_REF: phase4-documents-share
+    steps:
+      - name: Checkout portal template
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PORTAL_TEMPLATE_REF }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy selected portal
+        run: |
+          if [ -z "$CLIENT_SLUG" ]; then
+            echo "Missing client_slug input." >&2
+            exit 1
+          fi
+
+          args=(--client-slug "$CLIENT_SLUG")
+
+          if [ "$DRY_RUN" = "true" ]; then
+            args+=(--dry-run)
+          fi
+
+          npm run deploy:portal -- "${args[@]}"
