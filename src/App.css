@@ -8830,7 +8830,7 @@ html[data-portal-theme="map-dark"] .create-post-page select {
   box-shadow: none !important;
 }
 
-@media (max-width: 1500px) {
+@media (max-width: 1279px) {
   html[data-portal-theme="map-dark"] .create-post-preview-section .create-post-preview-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
