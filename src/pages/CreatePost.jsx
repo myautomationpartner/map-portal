@@ -109,18 +109,14 @@ const PLATFORM_IMAGE_TARGETS = {
 const ASSIST_ACTIONS = [
   { id: 'improve', label: 'Improve', description: 'Clean up the caption and make it stronger.' },
   { id: 'shorten', label: 'Shorten', description: 'Keep the idea, cut the extra words.' },
-  { id: 'engaging', label: 'More engaging', description: 'Add energy without sounding generic.' },
+  { id: 'engaging', label: 'Engage', description: 'Add energy without sounding generic.' },
   { id: 'cta', label: 'Add CTA', description: 'Give readers a clearer next step.' },
-  { id: 'variants', label: '3 versions', description: 'Create three different options.' },
-  { id: 'platform', label: 'Platform-aware', description: 'Tune it for the selected channels.' },
 ]
 
 const IMAGE_ASSIST_ACTIONS = [
-  { id: 'cleanup', label: 'Clean up', description: 'Improve light, crop, contrast, and sharpness.' },
-  { id: 'social', label: 'Make social-ready', description: 'Polish it into a stronger post creative.' },
-  { id: 'branded', label: 'Brand polish', description: 'Add a subtle professional MAP-style finish.' },
-  { id: 'square', label: 'Square crop', description: 'Create a 1:1 social post version.' },
-  { id: 'story', label: 'Story crop', description: 'Create a vertical story/reel-friendly version.' },
+  { id: 'cleanup', label: 'Enhance', description: 'Improve lighting, sharpness, and contrast.' },
+  { id: 'social', label: 'Social-ready', description: 'Turn this into a polished post creative.' },
+  { id: 'branded', label: 'Brand polish', description: 'Add a subtle business-ready finish.' },
 ]
 
 const IMAGE_GENERATION_MODES = [
@@ -2153,20 +2149,6 @@ export default function CreatePost() {
     }
   }
 
-  function handleGeneratePlatformVariants() {
-    if (!content.trim()) {
-      setPlatformFormatStatus('Write or load a caption before formatting by platform.')
-      return
-    }
-    if (!activePlatforms.length) {
-      setPlatformFormatStatus('Select at least one platform before formatting.')
-      return
-    }
-
-    setPlatformVariants(buildPlatformVariants(activePlatforms, content, profile))
-    setPlatformFormatStatus('Platform captions formatted. Review and edit each one before approval.')
-  }
-
   function getResolvedPlatformVariants(platformIds = activePlatforms) {
     return buildPlatformVariants(platformIds, content, profile, platformVariants)
   }
@@ -3204,7 +3186,7 @@ export default function CreatePost() {
                       ))}
                     </div>
                   ) : (
-                    <p className="partner-assist-note">Try a quick improvement, shorter version, stronger CTA, or platform-aware caption before approval.</p>
+                    <p className="partner-assist-note">Use Partner Assist only when the caption needs a quick polish before approval.</p>
                   )}
                 </div>
 
@@ -3244,7 +3226,7 @@ export default function CreatePost() {
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <div className="create-post-source-actions mt-3 flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -3309,29 +3291,27 @@ export default function CreatePost() {
                 <div className="create-post-ai-mode-head">
                   <span>
                     <Sparkles className="h-3.5 w-3.5" />
-                    Image style
+                    AI image style
                   </span>
                   <strong>{selectedImageGenerationMode.label}</strong>
                 </div>
-                <div className="create-post-ai-mode-grid">
+                <select
+                  value={imageGenerationMode}
+                  onChange={(event) => {
+                    setImageGenerationMode(event.target.value)
+                    setImageGenerateError('')
+                  }}
+                  disabled={isSubmitting || imageGenerateState === 'generating'}
+                  className="portal-input mt-3 w-full rounded-2xl px-4 py-3 text-sm font-semibold focus:outline-none"
+                  aria-label="AI image style"
+                >
                   {IMAGE_GENERATION_MODES.map((mode) => (
-                    <button
-                      key={mode.id}
-                      type="button"
-                      onClick={() => {
-                        setImageGenerationMode(mode.id)
-                        setImageGenerateError('')
-                      }}
-                      disabled={isSubmitting || imageGenerateState === 'generating'}
-                      data-active={imageGenerationMode === mode.id}
-                      title={mode.description}
-                      aria-pressed={imageGenerationMode === mode.id}
-                    >
-                      <span>{mode.label}</span>
-                      <small>{mode.description}</small>
-                    </button>
+                    <option key={mode.id} value={mode.id}>{mode.label}</option>
                   ))}
-                </div>
+                </select>
+                <p className="mt-2 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                  {selectedImageGenerationMode.description}
+                </p>
               </div>
 
               <div className="mt-3 overflow-hidden rounded-[24px]" style={{ border: '1px solid var(--portal-border)', background: 'rgba(255,255,255,0.78)' }}>
@@ -3439,12 +3419,9 @@ export default function CreatePost() {
                     <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
                       {activeCreativeIsVideo
                         ? 'Videos publish as video media. Image cleanup and crop tools are available for photos.'
-                        : 'Improve the image, then format crops for the selected platforms.'}
+                        : 'Polish the image for social, then format it for the selected platforms.'}
                     </p>
                   </div>
-                  <span className="portal-ai-credit-pill rounded-full px-3 py-1 text-[11px] font-semibold">
-                    2 credits for AI edits
-                  </span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {IMAGE_ASSIST_ACTIONS.map((action) => (
@@ -3458,7 +3435,7 @@ export default function CreatePost() {
                       className="portal-ai-mini-action inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed"
                     >
                       {imageImproveMode === action.id && imageImproveState === 'improving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                      {action.label}
+                      {imageImproveMode === action.id && imageImproveState === 'improving' ? 'Working...' : action.label}
                     </button>
                   ))}
                   <button
@@ -3467,9 +3444,10 @@ export default function CreatePost() {
                     disabled={!canImproveImage || imageFormatState === 'formatting' || imageGenerateState === 'generating'}
                     title="Create platform-specific crops from the selected image."
                     className="portal-ai-mini-action inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed"
+                    data-active={imageFormatState === 'formatting'}
                   >
                     {imageFormatState === 'formatting' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                    {imageFormatState === 'formatting' ? 'Formatting...' : 'Format crops'}
+                    {imageFormatState === 'formatting' ? 'Formatting...' : 'Crops'}
                   </button>
                   {Object.keys(platformImageVariants).length > 0 && (
                     <button
@@ -3578,16 +3556,6 @@ export default function CreatePost() {
                 <div className="create-post-preview-hint">
                   Choose the channels you want to approve. Nothing is selected by default.
                 </div>
-                <button
-                  type="button"
-                  onClick={handleGeneratePlatformVariants}
-                  disabled={!content.trim() || !activePlatforms.length || isSubmitting}
-                  className="portal-ai-mini-action"
-                  title="Create platform-aware captions for the selected preview cards."
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Platform-aware
-                </button>
               </div>
             </div>
             {platformFormatStatus ? (

@@ -869,9 +869,9 @@ function PhoneSetupModal({ open, onClose, userEmail }) {
 
 function EmptyState({ title, detail }) {
   return (
-    <div className="flex min-h-[360px] flex-col items-center justify-center px-6 text-center">
+    <div className="inbox-empty-state flex min-h-[360px] flex-col items-center justify-center px-6 text-center">
       <div
-        className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl"
+        className="inbox-empty-icon mb-4 flex h-14 w-14 items-center justify-center rounded-2xl"
         style={{ background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.22)' }}
       >
         <InboxIcon className="h-6 w-6" style={{ color: 'var(--portal-primary)' }} />
@@ -1024,7 +1024,7 @@ export default function Inbox() {
   }
 
   return (
-    <div className="portal-page w-full max-w-none space-y-3 p-0 md:p-4 xl:p-5">
+    <div className="portal-page inbox-page w-full max-w-none space-y-3 p-0 md:p-4 xl:p-5">
       <section className="portal-panel overflow-hidden">
         <div className="flex min-h-[60px] flex-wrap items-center justify-between gap-3 border-b px-4 py-3 md:px-5" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.86)' }}>
           <div className="flex min-w-0 items-center gap-3">
@@ -1058,7 +1058,7 @@ export default function Inbox() {
               type="button"
               onClick={() => contentPartnerMutation.mutate()}
               disabled={contentPartnerMutation.isPending}
-              className="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-black shadow-sm transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inbox-content-partner-action inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-black shadow-sm transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
               style={{
                 borderColor: 'rgba(145,86,255,0.35)',
                 background: 'linear-gradient(135deg, #7c3cff, #d977ff)',
@@ -1105,8 +1105,8 @@ export default function Inbox() {
         <MobileAppBanner />
         <ErrorBanner message={contentPartnerMutation.error?.message || conversationsQuery.error?.message || inboxesQuery.error?.message || messagesQuery.error?.message} />
 
-        <div className="grid min-h-[calc(100vh-150px)] lg:grid-cols-[324px_minmax(0,1fr)_300px]">
-          <aside className={`${mobileThreadOpen ? 'hidden lg:flex' : 'flex'} min-h-[calc(100vh-150px)] flex-col border-r bg-white`} style={{ borderColor: 'var(--portal-border)' }}>
+        <div className="inbox-workspace-grid grid min-h-[calc(100vh-150px)] lg:grid-cols-[324px_minmax(0,1fr)_300px]">
+          <aside className={`inbox-conversation-list ${mobileThreadOpen ? 'hidden lg:flex' : 'flex'} min-h-[calc(100vh-150px)] flex-col border-r bg-white`} style={{ borderColor: 'var(--portal-border)' }}>
             <div className="border-b px-3 py-3" style={{ borderColor: 'var(--portal-border)' }}>
               <div className="relative mb-3 sm:hidden">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--portal-text-soft)' }} />
@@ -1127,6 +1127,7 @@ export default function Inbox() {
                       setSelectedId(null)
                     }}
                     className="shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors"
+                    data-active={status === option.value}
                     style={status === option.value ? { background: '#162033', borderColor: '#162033', color: '#fff' } : { background: '#fff', borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}
                   >
                     {option.label}
@@ -1171,13 +1172,14 @@ export default function Inbox() {
                       key={conversation.id}
                       type="button"
                       onClick={() => handleSelect(conversation.id)}
-                      className="grid w-full grid-cols-[44px_1fr_auto] gap-3 border-l-[3px] px-3 py-3 text-left transition-colors hover:bg-slate-50"
+                      className="inbox-conversation-row grid w-full grid-cols-[44px_1fr_auto] gap-3 border-l-[3px] px-3 py-3 text-left transition-colors hover:bg-slate-50"
+                      data-active={isActive}
                       style={{
                         borderLeftColor: isActive ? '#2377ff' : 'transparent',
                         background: isActive ? '#eef5ff' : '#fff',
                       }}
                     >
-                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#2377ff] to-[#65d6a8] text-sm font-black text-white">
+                      <div className="inbox-avatar flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#2377ff] to-[#65d6a8] text-sm font-black text-white">
                         {conversationInitials(conversation)}
                       </div>
                       <div className="min-w-0">
@@ -1207,10 +1209,10 @@ export default function Inbox() {
             </div>
           </aside>
 
-          <main className={`${mobileThreadOpen ? 'flex' : 'hidden lg:flex'} min-h-[calc(100vh-150px)] min-w-0 flex-col`} style={{ background: '#f9fbfe' }}>
+          <main className={`inbox-thread-panel ${mobileThreadOpen ? 'flex' : 'hidden lg:flex'} min-h-[calc(100vh-150px)] min-w-0 flex-col`} style={{ background: 'var(--portal-inbox-thread-bg, #f9fbfe)' }}>
             {selectedConversation ? (
               <>
-                <div className="flex min-h-[72px] items-center justify-between gap-3 border-b bg-white/95 px-4 py-3 md:px-5" style={{ borderColor: 'var(--portal-border)' }}>
+                <div className="inbox-thread-header flex min-h-[72px] items-center justify-between gap-3 border-b bg-white/95 px-4 py-3 md:px-5" style={{ borderColor: 'var(--portal-border)' }}>
                   <div className="flex min-w-0 items-center gap-3">
                     <button
                       type="button"
@@ -1220,7 +1222,7 @@ export default function Inbox() {
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </button>
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#2377ff] to-[#65d6a8] text-sm font-black text-white">
+                    <div className="inbox-avatar flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#2377ff] to-[#65d6a8] text-sm font-black text-white">
                       {conversationInitials(selectedConversation)}
                     </div>
                     <div className="min-w-0">
@@ -1251,7 +1253,7 @@ export default function Inbox() {
                   </div>
                 </div>
 
-                <div className="portal-scroll flex-1 overflow-y-auto px-3 py-4 md:px-6">
+                <div className="inbox-message-scroll portal-scroll flex-1 overflow-y-auto px-3 py-4 md:px-6">
                   {messagesQuery.isLoading ? (
                     <div className="flex h-full items-center justify-center">
                       <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} />
@@ -1260,7 +1262,7 @@ export default function Inbox() {
                     <EmptyState title="No messages loaded" detail="This conversation is selected, but Chatwoot has not returned message history yet." />
                   ) : (
                     <div className="mx-auto max-w-[900px] space-y-2">
-                      <div className="mx-auto mb-4 w-fit rounded-full px-3 py-1 text-[11px] font-bold" style={{ background: '#e9eef5', color: '#7b8797' }}>
+                      <div className="inbox-date-chip mx-auto mb-4 w-fit rounded-full px-3 py-1 text-[11px] font-bold" style={{ background: '#e9eef5', color: '#7b8797' }}>
                         Today
                       </div>
                       {messages.map((message) => {
@@ -1272,7 +1274,8 @@ export default function Inbox() {
                           <div key={message.id || `${message.created_at}-${message.content}`} className={`flex ${outgoing ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[84%] md:max-w-[72%] ${outgoing ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
                               <div
-                                className="px-4 py-2.5 text-sm leading-relaxed shadow-sm"
+                                className="inbox-message-bubble px-4 py-2.5 text-sm leading-relaxed shadow-sm"
+                                data-outgoing={outgoing}
                                 style={{
                                   borderRadius: outgoing ? '20px 20px 6px 20px' : '20px 20px 20px 6px',
                                   background: outgoing ? '#2478ff' : '#eef2f7',
@@ -1333,8 +1336,8 @@ export default function Inbox() {
                   )}
                 </div>
 
-                <form onSubmit={handleSubmit} className="border-t bg-white/95 p-3 md:p-4" style={{ borderColor: 'var(--portal-border)' }}>
-                  <div className="mx-auto grid max-w-[980px] grid-cols-[auto_1fr_auto_auto] items-center gap-2 rounded-full border bg-white p-2" style={{ borderColor: 'var(--portal-border)' }}>
+                <form onSubmit={handleSubmit} className="inbox-composer border-t bg-white/95 p-3 md:p-4" style={{ borderColor: 'var(--portal-border)' }}>
+                  <div className="inbox-composer-shell mx-auto grid max-w-[980px] grid-cols-[auto_1fr_auto_auto] items-center gap-2 rounded-full border bg-white p-2" style={{ borderColor: 'var(--portal-border)' }}>
                     <button
                       type="button"
                       onClick={() => setIsPrivate((value) => !value)}
@@ -1376,8 +1379,8 @@ export default function Inbox() {
             )}
           </main>
 
-          <aside className="hidden min-h-[calc(100vh-150px)] border-l bg-white p-4 lg:block" style={{ borderColor: 'var(--portal-border)' }}>
-            <div className="mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
+          <aside className="inbox-detail-panel hidden min-h-[calc(100vh-150px)] border-l bg-white p-4 lg:block" style={{ borderColor: 'var(--portal-border)' }}>
+            <div className="inbox-side-card mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Ticket Flow</h2>
                 <StatusPill status={selectedConversation?.status || status} />
@@ -1408,7 +1411,7 @@ export default function Inbox() {
               />
             </div>
 
-            <div className="mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
+            <div className="inbox-side-card mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
               <div className="grid gap-2 text-xs">
                 <div className="flex justify-between gap-3 border-b pb-2" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
                   <span style={{ color: 'var(--portal-text-muted)' }}>Priority</span>
@@ -1429,7 +1432,7 @@ export default function Inbox() {
               </div>
             </div>
 
-            <div className="mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
+            <div className="inbox-side-card mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
               <p className="mb-3 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Status</p>
               <div className="grid gap-2">
                 {STATUS_OPTIONS.map((option) => (
@@ -1448,7 +1451,7 @@ export default function Inbox() {
               <ErrorBanner message={statusMutation.error?.message} />
             </div>
 
-            <div className="rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
+            <div className="inbox-side-card rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
               <p className="mb-3 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Quick Actions</p>
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" className="portal-button-secondary h-9 px-2 text-xs font-semibold">Saved Reply</button>

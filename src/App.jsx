@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './lib/supabase'
 import { createBillingCheckoutSession, createBillingPortalSession, fetchProfile, getSessionClaims } from './lib/portalApi'
@@ -232,6 +232,7 @@ function AuthProvider({ children }) {
 
 function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
   const queryClient = useQueryClient()
+  const location = useLocation()
   const { data: profile } = useQuery({
     queryKey: ['profile'],
     queryFn: fetchProfile,
@@ -257,6 +258,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     !pathTenantMismatch,
   )
   const tenantRouteMismatch = Boolean(session && profile?.clients && pathTenantMismatch)
+  const showBillingBanner = location.pathname !== '/' && !location.pathname.startsWith('/stats/') && !location.pathname.startsWith('/documents') && location.pathname !== '/calendar' && location.pathname !== '/post'
 
   useEffect(() => {
     const url = new URL(window.location.href)
@@ -372,11 +374,13 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
       {/* Main content area */}
       <div className="flex min-h-screen w-full flex-col md:ml-[188px] md:w-[calc(100%-188px)]">
         <main className="flex-1 overflow-auto pb-24 md:pb-0">
-          <PortalBillingBanner
-            billingAccess={billingAccess}
-            onAction={handleBillingAction}
-            actionPending={billingActionPending}
-          />
+          {showBillingBanner ? (
+            <PortalBillingBanner
+              billingAccess={billingAccess}
+              onAction={handleBillingAction}
+              actionPending={billingActionPending}
+            />
+          ) : null}
           <Outlet
             context={{
               session,

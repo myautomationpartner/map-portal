@@ -726,8 +726,8 @@ function SecureRoomDialog({
 function DocumentPreview({ selectedDocument, previewState, onRefreshPreview, onDownload }) {
   if (!selectedDocument) {
     return (
-      <div className="portal-panel flex min-h-[360px] flex-col items-center justify-center rounded-[28px] p-6 text-center">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-[22px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
+      <div className="documents-preview-panel portal-panel flex min-h-[360px] flex-col items-center justify-center rounded-[28px] p-6 text-center">
+        <div className="documents-preview-empty-icon mb-4 flex h-16 w-16 items-center justify-center rounded-[22px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
           <FileText className="h-8 w-8" style={{ color: 'var(--portal-primary)' }} />
         </div>
         <h3 className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>Choose a document</h3>
@@ -739,9 +739,9 @@ function DocumentPreview({ selectedDocument, previewState, onRefreshPreview, onD
   }
 
   return (
-    <div className="portal-panel space-y-4 rounded-[28px] p-4 md:p-5">
+    <div className="documents-preview-panel portal-panel space-y-4 rounded-[28px] p-4 md:p-5">
       <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
+        <div className="documents-preview-file-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
           <DocumentFileIcon mimeType={selectedDocument.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
         </div>
         <div className="min-w-0">
@@ -1270,7 +1270,7 @@ export default function Documents() {
   }
 
   return (
-    <div className="portal-page w-full max-w-none space-y-5 md:p-5 xl:p-6">
+    <div className="documents-page portal-page w-full max-w-none space-y-5 md:p-5 xl:p-6">
       <UploadDialog
         isOpen={isUploadDialogOpen}
         draft={uploadForm}
@@ -1326,46 +1326,46 @@ export default function Documents() {
         isSubmitting={roomMutation.isPending}
       />
 
-      <section className="portal-command-bar rounded-[22px] px-3 py-2 md:px-4">
+      <section className="documents-page-header portal-command-bar rounded-[22px] px-3 py-2 md:px-4">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <h1 className="font-display text-xl font-semibold leading-none" style={{ color: 'var(--portal-text)' }}>Documents</h1>
-          <span className="portal-chip inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]">
+          <span className="documents-kicker portal-chip inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]">
             <ShieldCheck className="h-3 w-3" />
             Secure sharing
           </span>
         </div>
 
         <div className="portal-command-bar-group">
-          <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)' }}>
+          <span className="documents-stat-pill inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)' }}>
             <span className="uppercase tracking-[0.14em]" style={{ color: 'var(--portal-text-soft)' }}>Storage</span>
             {usagePercent}%
           </span>
-          <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)' }}>
+          <span className="documents-stat-pill inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)' }}>
             <FileText className="h-3 w-3" style={{ color: 'var(--portal-primary)' }} />
             {activeDocuments.length} files
           </span>
-          <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)' }}>
+          <span className="documents-stat-pill inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)' }}>
             <Users className="h-3 w-3" style={{ color: 'var(--portal-primary)' }} />
             {activeRooms.length} rooms
           </span>
         </div>
       </section>
 
-      <section className="portal-command-bar rounded-[30px]">
+      <section className="documents-action-bar portal-command-bar rounded-[30px]">
         <div className="portal-command-bar-group">
-          <button type="button" onClick={openUploadDialog} disabled={billingAccess?.readOnly} className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
+          <button type="button" onClick={openUploadDialog} disabled={billingAccess?.readOnly} className="documents-primary-action portal-button-primary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
             <Upload className="h-4 w-4" />
             Upload document
           </button>
-          <button type="button" onClick={() => setIsRoomDialogOpen(true)} disabled={selectedDocumentIds.length === 0 || billingAccess?.readOnly} className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
+          <button type="button" onClick={() => setIsRoomDialogOpen(true)} disabled={selectedDocumentIds.length === 0 || billingAccess?.readOnly} className="documents-secondary-action portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
             <Link2 className="h-4 w-4" />
             Create secure access room
           </button>
-          <button type="button" onClick={() => setActiveView('rooms')} className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
+          <button type="button" onClick={() => setActiveView('rooms')} className="documents-secondary-action portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
             <Users className="h-4 w-4" />
             View rooms
           </button>
-          <button type="button" onClick={() => setActiveView('log')} className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
+          <button type="button" onClick={() => setActiveView('log')} className="documents-secondary-action portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
             <History className="h-4 w-4" />
             Access log
           </button>
@@ -1377,23 +1377,23 @@ export default function Documents() {
         </div>
 
         <div className="portal-command-bar-group">
-          <div className="relative min-w-[240px]">
+          <div className="documents-search-wrap relative min-w-[240px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--portal-text-soft)' }} />
             <input
               type="text"
               value={activeView === 'log' ? auditQuery : searchQuery}
               onChange={(event) => activeView === 'log' ? setAuditQuery(event.target.value) : setSearchQuery(event.target.value)}
               placeholder={activeView === 'log' ? 'Search log by file, room, recipient, action' : 'Search by file name or note'}
-              className="portal-input py-3 pl-10 pr-4 text-sm"
+              className="documents-search-input portal-input py-3 pl-10 pr-4 text-sm"
             />
           </div>
           {activeView === 'files' ? (
-            <div className="portal-chip inline-flex items-center gap-1 rounded-full p-1">
-              <button type="button" onClick={() => setLibraryView('list')} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition-all" style={libraryView === 'list' ? { background: 'white', color: 'var(--portal-primary)' } : { color: 'var(--portal-text-soft)' }}>
+            <div className="documents-view-toggle portal-chip inline-flex items-center gap-1 rounded-full p-1">
+              <button type="button" onClick={() => setLibraryView('list')} data-active={libraryView === 'list'} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition-all" style={libraryView === 'list' ? { background: 'white', color: 'var(--portal-primary)' } : { color: 'var(--portal-text-soft)' }}>
                 <List className="h-4 w-4" />
                 <span>List</span>
               </button>
-              <button type="button" onClick={() => setLibraryView('grid')} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition-all" style={libraryView === 'grid' ? { background: 'white', color: 'var(--portal-primary)' } : { color: 'var(--portal-text-soft)' }}>
+              <button type="button" onClick={() => setLibraryView('grid')} data-active={libraryView === 'grid'} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition-all" style={libraryView === 'grid' ? { background: 'white', color: 'var(--portal-primary)' } : { color: 'var(--portal-text-soft)' }}>
                 <Grid2X2 className="h-4 w-4" />
                 <span>Grid</span>
               </button>
@@ -1449,7 +1449,7 @@ export default function Documents() {
       ) : null}
 
       {activeView === 'rooms' ? (
-        <section className="portal-panel overflow-hidden rounded-[34px]">
+        <section className="documents-room-panel portal-panel overflow-hidden rounded-[34px]">
           <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
             <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Secure access rooms</h2>
             <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>Review active, expired, and revoked external access.</p>
@@ -1492,7 +1492,7 @@ export default function Documents() {
           )}
         </section>
       ) : activeView === 'log' ? (
-        <section className="portal-panel overflow-hidden rounded-[34px]">
+        <section className="documents-log-panel portal-panel overflow-hidden rounded-[34px]">
           <div className="border-b px-5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
             <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Access log</h2>
             <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>Search and sort document, room, recipient, and access events.</p>
@@ -1549,11 +1549,11 @@ export default function Documents() {
       ) : (
         <div
           ref={documentsLayoutRef}
-          className="space-y-4 xl:grid xl:grid-cols-[260px_minmax(380px,var(--documents-file-column-width))_14px_minmax(440px,1fr)] xl:items-start xl:gap-4 xl:space-y-0"
+          className="documents-workspace-layout space-y-4 xl:grid xl:grid-cols-[260px_minmax(380px,var(--documents-file-column-width))_14px_minmax(440px,1fr)] xl:items-start xl:gap-4 xl:space-y-0"
           style={{ '--documents-file-column-width': `${fileColumnWidth}px` }}
         >
           <aside className="space-y-4">
-            <section className="portal-panel overflow-hidden rounded-[28px]">
+            <section className="documents-folder-panel portal-panel overflow-hidden rounded-[28px]">
               <div className="border-b px-4 py-4" style={{ borderColor: 'var(--portal-border)' }}>
                 <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Folders</h2>
               </div>
@@ -1571,7 +1571,9 @@ export default function Documents() {
                       key={folder.id}
                       type="button"
                       onClick={() => setSelectedFolder(folder.id)}
-                      className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left transition-all"
+                      data-active={selectedFolder === folder.id}
+                      data-kind={folder.id}
+                      className="documents-folder-button flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left transition-all"
                       style={selectedFolder === folder.id
                         ? folder.id === SHARED_ROOMS_FOLDER
                           ? { background: 'linear-gradient(135deg, rgba(31,169,113,0.18), rgba(201, 240, 223, 0.14))', border: '1px solid rgba(31,169,113,0.24)' }
@@ -1591,7 +1593,7 @@ export default function Documents() {
             </section>
           </aside>
 
-          <section className="portal-panel overflow-hidden rounded-[28px]">
+          <section className="documents-files-panel portal-panel overflow-hidden rounded-[28px]">
             <div className="border-b px-4 py-4 md:px-5" style={{ borderColor: 'var(--portal-border)' }}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -1621,13 +1623,13 @@ export default function Documents() {
               </div>
             ) : filteredDocuments.length > 0 ? (
               libraryView === 'grid' ? (
-                <div className="grid gap-2.5 p-4 sm:grid-cols-2 2xl:grid-cols-3">
+                <div className="documents-file-grid grid gap-2.5 p-4 sm:grid-cols-2 2xl:grid-cols-3">
                   {filteredDocuments.map((document) => {
                     const isSelected = selectedDocument?.id === document.id
                     const isChecked = selectedDocumentIds.includes(document.id)
 
                     return (
-                      <div key={document.id} className="relative rounded-[20px] p-3.5 text-left transition-all" style={isSelected ? { background: 'linear-gradient(145deg, rgba(201,168,76,0.14), rgba(232,213,160,0.08))', border: '1px solid rgba(201,168,76,0.24)', boxShadow: '0 14px 28px rgba(26,24,20,0.06)' } : { background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}>
+                      <div key={document.id} data-selected={isSelected} className="documents-file-card relative rounded-[20px] p-3.5 text-left transition-all" style={isSelected ? { background: 'linear-gradient(145deg, rgba(201,168,76,0.14), rgba(232,213,160,0.08))', border: '1px solid rgba(201,168,76,0.24)', boxShadow: '0 14px 28px rgba(26,24,20,0.06)' } : { background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}>
                         <label className="absolute left-3 top-3" onClick={(event) => event.stopPropagation()}>
                           <input type="checkbox" checked={isChecked} onChange={() => toggleSelectedDocument(document.id)} />
                         </label>
@@ -1652,7 +1654,7 @@ export default function Documents() {
                           />
                         </div>
                         <button type="button" onClick={() => { setSelectedId(document.id); previewMutation.mutate({ documentId: document.id, action: 'view' }) }} className="block w-full text-left">
-                          <div className="mb-3 ml-6 flex h-8 w-8 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+                          <div className="documents-file-icon mb-3 ml-6 flex h-8 w-8 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
                             <DocumentFileIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
                           </div>
                           <div className="flex items-center gap-2 pr-7">
@@ -1671,7 +1673,7 @@ export default function Documents() {
                   })}
                 </div>
               ) : (
-                <div className="portal-scroll overflow-auto">
+                <div className="documents-file-list portal-scroll overflow-auto">
                   <table className="w-full border-separate border-spacing-0">
                     <tbody>
                       {filteredDocuments.map((document) => {
@@ -1680,7 +1682,8 @@ export default function Documents() {
                         return (
                           <tr
                             key={document.id}
-                            className="portal-table-row cursor-pointer transition-all"
+                            data-selected={isSelected}
+                            className="documents-file-row portal-table-row cursor-pointer transition-all"
                             onClick={() => { setSelectedId(document.id); previewMutation.mutate({ documentId: document.id, action: 'view' }) }}
                             style={isSelected ? { background: 'rgba(201, 168, 76, 0.1)' } : undefined}
                           >
@@ -1692,7 +1695,7 @@ export default function Documents() {
                                   onClick={(event) => event.stopPropagation()}
                                   onChange={() => toggleSelectedDocument(document.id)}
                                 />
-                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+                                <div className="documents-file-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
                                   <DocumentFileIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
                                 </div>
                                 <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -1738,7 +1741,7 @@ export default function Documents() {
               )
             ) : (
               <div className="px-4 py-10 text-center">
-                <div className="mx-auto max-w-md rounded-[28px] border border-dashed px-6 py-10" style={{ borderColor: 'var(--portal-border-strong)', color: 'var(--portal-text-muted)' }}>
+                <div className="documents-empty-state mx-auto max-w-md rounded-[28px] border border-dashed px-6 py-10" style={{ borderColor: 'var(--portal-border-strong)', color: 'var(--portal-text-muted)' }}>
                   <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>No documents match this view</p>
                   <p className="mt-2 text-xs">Try another folder, clear your search, or upload the first file for this workspace.</p>
                 </div>
@@ -1747,7 +1750,7 @@ export default function Documents() {
           </section>
 
           <div
-            className="hidden h-full min-h-[320px] cursor-col-resize items-stretch justify-center rounded-full transition-colors xl:flex"
+            className="documents-resize-handle hidden h-full min-h-[320px] cursor-col-resize items-stretch justify-center rounded-full transition-colors xl:flex"
             role="separator"
             aria-orientation="vertical"
             aria-label="Resize document preview panel"
@@ -1771,7 +1774,7 @@ export default function Documents() {
             <div className="my-4 w-1 rounded-full" style={{ background: isFileColumnResizing ? 'var(--portal-primary)' : 'var(--portal-border-strong)' }} />
           </div>
 
-          <aside className="space-y-4">
+          <aside className="documents-preview-column space-y-4">
             <DocumentPreview
               selectedDocument={selectedDocument}
               previewState={previewState}
@@ -1779,7 +1782,7 @@ export default function Documents() {
               onDownload={() => selectedDocument && previewMutation.mutate({ documentId: selectedDocument.id, action: 'download' })}
             />
 
-            <section className="portal-panel rounded-[24px] p-4">
+            <section className="documents-selection-panel portal-panel rounded-[24px] p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Selected for room</p>

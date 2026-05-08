@@ -4,8 +4,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useOutletContext } from 'react-router-dom'
 import {
   fetchMetrics,
+  fetchCalendarPosts,
+  fetchOpportunityRadar,
   fetchProfile,
   fetchSocialConnections,
+  fetchSocialDrafts,
   fetchWorkspacePreferences,
   upsertWorkspacePreferences,
 } from '../lib/portalApi'
@@ -14,7 +17,10 @@ import { buildSharedPortalPath, portalPath } from '../lib/portalPath'
 import { DASHBOARD_PLATFORMS, PLATFORM_CATALOG } from '../lib/platformCatalog'
 import {
   ArrowUpRight,
+  CalendarDays,
   Check,
+  Clock3,
+  Filter,
   Globe,
   Grip,
   MoreHorizontal,
@@ -58,20 +64,96 @@ function getMetricValue(metrics, platform, field) {
   return Number(value).toLocaleString()
 }
 
-const DAILY_PROMPTS = [
-  'What are we doing today to provide more value to your customers?',
-  'What small customer moment can we make easier before lunch?',
-  'What useful post, answer, or reminder would help someone choose you today?',
-  'Where can we remove friction for a parent, client, or prospect today?',
-  'What proof can we share today that makes the next step feel simple?',
-  'What would make your best customer say, "I am glad they reminded me"?',
-  'What can we publish, organize, or answer today that saves someone time?',
-]
+const PLATFORM_CARD_BORDERS = {
+  facebook: {
+    base: 'rgba(53, 104, 166, 0.32)',
+    hover: 'rgba(53, 104, 166, 0.48)',
+  },
+  instagram: {
+    base: 'rgba(216, 95, 152, 0.32)',
+    hover: 'rgba(216, 95, 152, 0.48)',
+  },
+  twitter: {
+    base: 'rgba(231, 233, 234, 0.2)',
+    hover: 'rgba(231, 233, 234, 0.34)',
+  },
+  tiktok: {
+    base: 'rgba(37, 244, 238, 0.22)',
+    hover: 'rgba(37, 244, 238, 0.36)',
+  },
+}
 
-function getDailyPrompt() {
-  const start = new Date(new Date().getFullYear(), 0, 0)
-  const day = Math.floor((new Date() - start) / 86400000)
-  return DAILY_PROMPTS[day % DAILY_PROMPTS.length]
+const HIDDEN_DASHBOARD_RADAR_STATES = new Set(['dismissed', 'archived', 'converted_to_draft'])
+const DASHBOARD_PUBLISHER_PLATFORMS = new Set(['facebook', 'instagram', 'google', 'tiktok', 'linkedin', 'twitter'])
+
+function getActiveDashboardSuggestions(opportunity) {
+  return [...(opportunity?.client_opportunity_suggestions || [])]
+    .filter((suggestion) => !['archived', 'dismissed', 'converted_to_draft'].includes(suggestion.review_state) && !suggestion.converted_draft_id)
+}
+
+function getDashboardPublisherSummary(calendarPosts, drafts, opportunities) {
+  const activeOpportunities = opportunities
+    .filter((opportunity) => !HIDDEN_DASHBOARD_RADAR_STATES.has(opportunity.review_state))
+    .filter((opportunity) => getActiveDashboardSuggestions(opportunity).length > 0)
+
+  const needsSetup = activeOpportunities.filter((opportunity) => (
+    getActiveDashboardSuggestions(opportunity).some((suggestion) => (
+      (suggestion.recommended_platforms || []).some((platform) => platform && !DASHBOARD_PUBLISHER_PLATFORMS.has(platform))
+    ))
+  ))
+
+  return {
+    scheduled: calendarPosts.filter((post) => post.status === 'scheduled').length,
+    suggested: activeOpportunities.length,
+    draft: drafts.filter((draft) => draft.review_state !== 'published').length,
+    setup: needsSetup.length,
+  }
+}
+
+function DashboardPublisherBar({ summary }) {
+  const statusItems = [
+    { id: 'scheduled', label: 'Scheduled', value: summary.scheduled },
+    { id: 'suggested', label: 'Suggested', value: summary.suggested },
+    { id: 'draft', label: 'Draft', value: summary.draft },
+    { id: 'setup', label: 'Needs setup', value: summary.setup },
+  ]
+
+  return (
+    <section className="dashboard-publisher-bar" aria-label="Publisher quick controls">
+      <div className="dashboard-publisher-control-group">
+        <Link to="/calendar" className="dashboard-publisher-control dashboard-publisher-control-active">
+          Today
+        </Link>
+        <Link to="/calendar?view=month" className="dashboard-publisher-control">
+          <CalendarDays className="h-3.5 w-3.5" />
+          Month
+        </Link>
+        <Link to="/calendar?view=week" className="dashboard-publisher-control">
+          <Clock3 className="h-3.5 w-3.5" />
+          Week
+        </Link>
+        <Link to="/calendar" className="dashboard-publisher-control">
+          <Filter className="h-3.5 w-3.5" />
+          Filter
+        </Link>
+      </div>
+
+      <div className="dashboard-publisher-meta">
+        <div className="dashboard-publisher-status-group" aria-label="Publisher workflow counts">
+          {statusItems.map((item) => (
+            <Link key={item.id} to="/calendar" className="dashboard-publisher-status">
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </Link>
+          ))}
+        </div>
+        <Link to="/post" className="dashboard-publisher-primary">
+          <Plus className="h-4 w-4" />
+          New post
+        </Link>
+      </div>
+    </section>
+  )
 }
 
 function PlatformMetricCard({ platform, metrics, connectedPlatforms, connectingPlatform, onConnect }) {
@@ -85,8 +167,12 @@ function PlatformMetricCard({ platform, metrics, connectedPlatforms, connectingP
 
   return (
     <article
-      className="portal-card group flex min-h-[92px] flex-col justify-between p-2.5 transition-all duration-200 hover:-translate-y-0.5"
+      className="dashboard-platform-card portal-card group flex min-h-[92px] flex-col justify-between p-2.5 transition-all duration-200 hover:-translate-y-0.5"
       style={{
+        '--dashboard-platform-accent': platform.accent,
+        '--dashboard-platform-soft': platform.soft,
+        '--dashboard-platform-border': PLATFORM_CARD_BORDERS[platform.id]?.base || `${platform.accent}30`,
+        '--dashboard-platform-border-hover': PLATFORM_CARD_BORDERS[platform.id]?.hover || `${platform.accent}4d`,
         borderColor: isConnected ? `${platform.accent}30` : 'var(--portal-border)',
         background: isConnected
           ? `linear-gradient(180deg, ${platform.soft}, rgba(255,255,255,0.95))`
@@ -96,7 +182,7 @@ function PlatformMetricCard({ platform, metrics, connectedPlatforms, connectingP
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <div
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
+            className="dashboard-platform-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
             style={{ background: platform.accent }}
           >
             <Icon className="h-3.5 w-3.5" />
@@ -110,7 +196,7 @@ function PlatformMetricCard({ platform, metrics, connectedPlatforms, connectingP
             </p>
           </div>
         </div>
-        <span className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ background: platform.soft, color: platform.accent }}>
+        <span className="dashboard-platform-short rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ background: platform.soft, color: platform.accent }}>
           {platform.shortLabel}
         </span>
       </div>
@@ -354,20 +440,21 @@ function ToolForm({
       group: preset.category,
       presetId: preset.id,
     })
+    onClose()
   }
 
   return (
-    <div className="workspace-tool-library overflow-hidden rounded-[34px] border" style={{ borderColor: 'rgba(26, 24, 20, 0.08)', background: 'linear-gradient(135deg, rgba(255,255,255,0.98), rgba(246,250,255,0.94))', boxShadow: '0 24px 60px rgba(26, 24, 20, 0.08)' }}>
-      <div className="relative border-b px-5 py-5 md:px-6" style={{ borderColor: 'rgba(26, 24, 20, 0.07)' }}>
+    <div className="dashboard-tool-form workspace-tool-library overflow-hidden rounded-[34px] border" style={{ borderColor: 'rgba(26, 24, 20, 0.08)', background: 'linear-gradient(135deg, rgba(255,255,255,0.98), rgba(246,250,255,0.94))', boxShadow: '0 24px 60px rgba(26, 24, 20, 0.08)' }}>
+      <div className="dashboard-tool-form-head relative border-b px-5 py-5 md:px-6" style={{ borderColor: 'rgba(26, 24, 20, 0.07)' }}>
         <div className="absolute right-6 top-5 hidden h-24 w-24 rounded-full blur-2xl md:block" style={{ background: 'rgba(78, 149, 255, 0.18)' }} />
         <div className="relative flex items-start justify-between gap-4">
           <div>
-            <p className="mb-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary-strong)' }}>
+            <p className="dashboard-tool-form-kicker mb-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary-strong)' }}>
               <Sparkles className="h-3.5 w-3.5" />
               Connector library
             </p>
-            <h3 className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>Add daily tools</h3>
-            <p className="mt-1 max-w-2xl text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+            <h3 className="dashboard-tool-form-title font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>Add daily tools</h3>
+            <p className="dashboard-tool-form-copy mt-1 max-w-2xl text-sm" style={{ color: 'var(--portal-text-muted)' }}>
               Known apps already include the correct login URL. Choose one to pin it instantly, or use custom shortcut for anything else.
             </p>
           </div>
@@ -382,8 +469,8 @@ function ToolForm({
         </div>
       </div>
 
-      <div className="grid gap-0 lg:grid-cols-[1fr_380px]">
-        <div className="p-5 md:p-6">
+      <div className="dashboard-tool-form-layout grid gap-0 lg:grid-cols-[1fr_380px]">
+        <div className="dashboard-tool-form-main p-5 md:p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="relative md:max-w-sm md:flex-1">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--portal-text-soft)' }} />
@@ -412,7 +499,7 @@ function ToolForm({
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="dashboard-preset-grid mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {filteredPresets.map((preset) => {
               const Icon = preset.Icon || Globe
               const presetUrl = normalizeToolUrl(preset.url)
@@ -443,26 +530,26 @@ function ToolForm({
                     if (!alreadyPinned) addPreset(preset)
                   }}
                   disabled={isConnected || isConnecting || (!canConnect && alreadyPinned)}
-                  className="workspace-preset-card group flex min-h-[116px] items-start gap-3 rounded-[24px] border p-4 text-left transition-all enabled:hover:-translate-y-0.5 disabled:cursor-default"
+                  className="dashboard-preset-card workspace-preset-card group flex min-h-[116px] items-start gap-3 rounded-[24px] border p-4 text-left transition-all enabled:hover:-translate-y-0.5 disabled:cursor-default"
                   style={{
                     borderColor: (alreadyPinned || isConnected) ? 'rgba(31, 169, 113, 0.22)' : 'rgba(26, 24, 20, 0.08)',
                     background: (alreadyPinned || isConnected) ? 'rgba(31, 169, 113, 0.08)' : 'rgba(255,255,255,0.82)',
                     boxShadow: '0 14px 28px rgba(26, 24, 20, 0.05)',
                   }}
                 >
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] text-sm font-bold" style={{ background: `${preset.accent}18`, color: preset.accent }}>
+                  <span className="dashboard-preset-icon flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] text-sm font-bold" style={{ background: `${preset.accent}18`, color: preset.accent }}>
                     <Icon className="h-5 w-5" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-2">
-                      <span className="font-semibold" style={{ color: 'var(--portal-text)' }}>{preset.label}</span>
+                      <span className="dashboard-preset-name font-semibold" style={{ color: 'var(--portal-text)' }}>{preset.label}</span>
                       {(alreadyPinned || isConnected) ? <Check className="h-4 w-4" style={{ color: 'var(--portal-success)' }} /> : <Plus className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" style={{ color: 'var(--portal-primary)' }} />}
                     </span>
-                    <span className="mt-1 block text-xs" style={{ color: 'var(--portal-text-muted)' }}>{preset.description}</span>
-                    <span className="mt-2 block truncate text-[11px] font-medium" style={{ color: 'var(--portal-text-soft)' }}>
+                    <span className="dashboard-preset-description mt-1 block text-xs" style={{ color: 'var(--portal-text-muted)' }}>{preset.description}</span>
+                    <span className="dashboard-preset-host mt-2 block truncate text-[11px] font-medium" style={{ color: 'var(--portal-text-soft)' }}>
                       {canConnect ? `Uses secure ${formatPlatformLabel(preset.connectPlatform)} auth` : presetHost}
                     </span>
-                    <span className="mt-3 inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-soft)' }}>
+                    <span className="dashboard-preset-action mt-3 inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-soft)' }}>
                       {actionLabel}
                     </span>
                   </span>
@@ -478,7 +565,7 @@ function ToolForm({
           )}
         </div>
 
-        <form onSubmit={handleSubmit} className="workspace-tool-sidebar border-t p-5 md:p-6 lg:border-l lg:border-t-0" style={{ borderColor: 'rgba(26, 24, 20, 0.07)', background: 'rgba(250, 247, 241, 0.72)' }}>
+        <form onSubmit={handleSubmit} className="dashboard-tool-form-sidebar workspace-tool-sidebar border-t p-5 md:p-6 lg:border-l lg:border-t-0" style={{ borderColor: 'rgba(26, 24, 20, 0.07)', background: 'rgba(250, 247, 241, 0.72)' }}>
         <div>
           <h4 className="font-display text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Custom shortcut</h4>
           <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
@@ -510,7 +597,7 @@ function ToolForm({
           />
         </div>
 
-        <div className="mt-5 rounded-[24px] border px-4 py-3" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.72)' }}>
+        <div className="dashboard-icon-preview-panel mt-5 rounded-[24px] border px-4 py-3" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.72)' }}>
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>
             Icon preview
           </p>
@@ -528,7 +615,7 @@ function ToolForm({
           </div>
         </div>
 
-        <button type="submit" className="portal-button-primary mt-5 w-full rounded-2xl px-4 py-3 text-sm font-semibold">
+        <button type="submit" className="dashboard-custom-submit portal-button-primary mt-5 w-full rounded-2xl px-4 py-3 text-sm font-semibold">
           Save custom tool
         </button>
       </form>
@@ -685,17 +772,17 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onUpdate, onMoveGroup, onD
           onOpen(tool)
         }
       }}
-      className="group relative w-full rounded-[18px] border text-left transition-all duration-200 hover:-translate-y-0.5 sm:w-[218px]"
+      className="dashboard-tool-tile group relative flex min-h-[92px] w-[88px] flex-col items-center rounded-2xl border text-center transition-all duration-200 sm:w-[96px]"
       style={{
         borderColor: 'rgba(26, 24, 20, 0.08)',
         background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(250, 247, 241, 0.7))',
         boxShadow: '0 10px 24px rgba(26, 24, 20, 0.045)',
       }}
     >
-      <div className="flex min-h-[62px] items-center gap-2 p-2 pr-9">
+      <div className="dashboard-tool-tile-content flex min-h-[92px] w-full flex-col items-center justify-start gap-2 px-2 pb-2 pt-2.5">
         {editMode && (
           <div
-            className="absolute left-1.5 top-1.5 rounded-full p-1"
+            className="dashboard-tool-drag-handle absolute left-1.5 top-1.5 rounded-full p-1"
             style={{ background: 'rgba(255,255,255,0.8)', color: 'var(--portal-text-soft)' }}
             aria-hidden="true"
           >
@@ -704,14 +791,14 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onUpdate, onMoveGroup, onD
         )}
 
         <div
-          className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-xl"
+          className="dashboard-tool-icon flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl"
           style={{ background: `${accent}13`, color: accent, border: '1px solid rgba(26, 24, 20, 0.06)' }}
         >
           <ToolIcon key={`${tool.id}:${tool.url}:${tool.presetId || ''}`} tool={tool} />
         </div>
 
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
+        <div className="dashboard-tool-labels min-w-0 w-full">
+          <p className="text-[11px] font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
             {tool.label}
           </p>
           <p className="mt-0.5 truncate text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>
@@ -733,7 +820,7 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onUpdate, onMoveGroup, onD
           setShowGroupChooser(false)
           setMenuOpen((current) => !current)
         }}
-        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border transition-all hover:-translate-y-0.5"
+        className="dashboard-tool-menu-button absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full border opacity-0 transition-all hover:-translate-y-0.5 focus:opacity-100 group-hover:opacity-100"
         style={{ borderColor: 'rgba(26, 24, 20, 0.08)', background: 'rgba(255,255,255,0.86)', color: 'var(--portal-text-muted)', boxShadow: '0 8px 18px rgba(26, 24, 20, 0.06)' }}
         aria-label={`${tool.label} options`}
       >
@@ -744,7 +831,7 @@ function ToolTile({ tool, editMode, onOpen, onRemove, onUpdate, onMoveGroup, onD
         <div
           ref={menuRef}
           data-workspace-action-menu="true"
-          className="fixed z-[120] min-w-[180px] rounded-[20px] border p-2 shadow-lg"
+          className="dashboard-tool-menu-popover fixed z-[120] min-w-[180px] rounded-[20px] border p-2 shadow-lg"
           style={{
             top: `${menuPosition.top}px`,
             left: `${menuPosition.left}px`,
@@ -864,11 +951,30 @@ export default function Dashboard() {
     queryFn: () => fetchSocialConnections(clientId),
     enabled: !!clientId,
   })
+  const { data: calendarPosts = [] } = useQuery({
+    queryKey: ['calendar-posts', clientId],
+    queryFn: () => fetchCalendarPosts(clientId),
+    enabled: !!clientId,
+  })
+  const { data: socialDrafts = [] } = useQuery({
+    queryKey: ['social-drafts', clientId],
+    queryFn: () => fetchSocialDrafts(clientId),
+    enabled: !!clientId,
+  })
+  const { data: opportunities = [] } = useQuery({
+    queryKey: ['opportunity-radar', clientId],
+    queryFn: () => fetchOpportunityRadar(clientId),
+    enabled: !!clientId,
+  })
 
   const metrics = rawMetrics
   const connectedPlatformIds = useMemo(
     () => new Set((socialConnections || []).map((connection) => connection.platform).filter(Boolean)),
     [socialConnections],
+  )
+  const publisherSummary = useMemo(
+    () => getDashboardPublisherSummary(calendarPosts, socialDrafts, opportunities),
+    [calendarPosts, opportunities, socialDrafts],
   )
 
   const [draftTools, setDraftTools] = useState(null)
@@ -881,13 +987,6 @@ export default function Dashboard() {
   const [draggedToolId, setDraggedToolId] = useState(null)
   const [workspaceState, setWorkspaceState] = useState('idle')
   const workspaceOwnerKey = `${clientId || 'unknown'}:${userId || 'unknown'}`
-
-  const today = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  })
-  const dailyPrompt = getDailyPrompt()
 
   const resolvedTools = useMemo(() => {
     const persistedTools = Array.isArray(workspacePreference?.workspace_tools_json)
@@ -1042,34 +1141,10 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="portal-page w-full max-w-none space-y-5 md:p-5 xl:p-6">
-      <section className="portal-surface overflow-hidden rounded-[30px] p-4 md:p-5">
-        <div className="portal-page-header items-center">
-          <div className="max-w-4xl">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className="portal-chip rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]">
-                {today}
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(31, 169, 113, 0.1)', color: 'var(--portal-success)' }}>
-                <Sparkles className="h-3.5 w-3.5" />
-                Daily focus
-              </span>
-            </div>
-            <h1 className="font-display text-2xl font-semibold leading-tight md:text-[2rem]" style={{ color: 'var(--portal-text)' }}>
-              {dailyPrompt}
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-              Use the workspace below as the launchpad: publish something helpful, check the channels that matter, and keep the team moving from one clean portal.
-            </p>
-          </div>
+    <div className="dashboard-page portal-page w-full max-w-none space-y-5 md:p-5 xl:p-6">
+      <DashboardPublisherBar summary={publisherSummary} />
 
-          <div className="hidden lg:block">
-            <div className="h-24 w-24 rounded-full blur-3xl" style={{ background: 'rgba(201, 168, 76, 0.18)' }} />
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="dashboard-platform-grid grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {DASHBOARD_PLATFORMS.map((platform) => (
           <PlatformMetricCard
             key={platform.id}
@@ -1082,8 +1157,8 @@ export default function Dashboard() {
         ))}
       </section>
 
-      <section className="workspace-launcher-panel portal-panel overflow-visible rounded-[24px] p-0">
-        <div className="border-b px-3 py-2.5 md:px-4" style={{ borderColor: 'var(--portal-border)' }}>
+      <section className="dashboard-launcher workspace-launcher-panel portal-panel overflow-visible rounded-[24px] p-0">
+        <div className="dashboard-launcher-head border-b px-3 py-2.5 md:px-4" style={{ borderColor: 'var(--portal-border)' }}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.16em]" style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary-strong)' }}>
@@ -1115,7 +1190,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="p-3 md:p-4">
+        <div className="dashboard-launcher-body p-3 md:p-4">
         {showAddTool && (
           <ToolForm
             tools={tools}
@@ -1138,100 +1213,104 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
-          {WORKSPACE_GROUPS.map((group) => {
-            const groupCount = group.id === 'all'
-              ? tools.length
-              : tools.filter((tool) => getToolGroup(tool) === group.id).length
+        {!showAddTool && (
+          <>
+            <div className="dashboard-workspace-filters mb-2.5 flex flex-wrap items-center gap-1.5">
+              {WORKSPACE_GROUPS.map((group) => {
+                const groupCount = group.id === 'all'
+                  ? tools.length
+                  : tools.filter((tool) => getToolGroup(tool) === group.id).length
 
-            return (
-              <button
-                key={group.id}
-                type="button"
-                data-active={activeWorkspaceGroup === group.id}
-                onClick={() => setActiveWorkspaceGroup(group.id)}
-                className="workspace-group-pill rounded-full px-2.5 py-1.5 text-[11px] font-semibold transition-all"
-                style={activeWorkspaceGroup === group.id
-                  ? { background: 'var(--portal-text)', color: 'white', boxShadow: '0 10px 22px rgba(26, 24, 20, 0.12)' }
-                  : { background: 'rgba(255,255,255,0.78)', color: 'var(--portal-text-muted)', border: '1px solid rgba(26, 24, 20, 0.07)' }}
-              >
-                {group.label}
-                <span className="ml-2 opacity-70">{groupCount}</span>
-              </button>
-            )
-          })}
-        </div>
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    data-active={activeWorkspaceGroup === group.id}
+                    onClick={() => setActiveWorkspaceGroup(group.id)}
+                    className="workspace-group-pill rounded-full px-2.5 py-1.5 text-[11px] font-semibold transition-all"
+                    style={activeWorkspaceGroup === group.id
+                      ? { background: 'var(--portal-text)', color: 'white', boxShadow: '0 10px 22px rgba(26, 24, 20, 0.12)' }
+                      : { background: 'rgba(255,255,255,0.78)', color: 'var(--portal-text-muted)', border: '1px solid rgba(26, 24, 20, 0.07)' }}
+                  >
+                    {group.label}
+                    <span className="ml-2 opacity-70">{groupCount}</span>
+                  </button>
+                )
+              })}
+            </div>
 
-        <div className="mb-3 flex flex-wrap items-center gap-1.5">
-          <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-soft)' }}>
-            {visibleTools.length} shown
-          </span>
-          <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ background: editMode ? 'rgba(201, 168, 76, 0.14)' : 'rgba(31, 169, 113, 0.1)', color: editMode ? 'var(--portal-primary-strong)' : 'var(--portal-success)' }}>
-            {editMode ? 'Edit mode on' : 'Launcher ready'}
-          </span>
-          <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{
-            background: workspaceState === 'error'
-              ? 'rgba(216, 95, 152, 0.12)'
-              : workspaceState === 'saving'
-                ? 'rgba(201, 168, 76, 0.14)'
-                : 'rgba(26, 24, 20, 0.05)',
-            color: workspaceState === 'error'
-              ? 'var(--portal-danger)'
-              : workspaceState === 'saving'
-                ? 'var(--portal-primary-strong)'
-                : 'var(--portal-text-soft)',
-          }}>
-            {workspaceState === 'error' ? 'Save issue' : workspaceState === 'saving' ? 'Saving layout' : workspaceState === 'saved' ? 'Saved to portal' : 'Local fallback ready'}
-          </span>
-        </div>
+            <div className="dashboard-workspace-status mb-3 flex flex-wrap items-center gap-1.5">
+              <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-soft)' }}>
+                {visibleTools.length} shown
+              </span>
+              <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ background: editMode ? 'rgba(201, 168, 76, 0.14)' : 'rgba(31, 169, 113, 0.1)', color: editMode ? 'var(--portal-primary-strong)' : 'var(--portal-success)' }}>
+                {editMode ? 'Edit mode on' : 'Launcher ready'}
+              </span>
+              <span className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{
+                background: workspaceState === 'error'
+                  ? 'rgba(216, 95, 152, 0.12)'
+                  : workspaceState === 'saving'
+                    ? 'rgba(201, 168, 76, 0.14)'
+                    : 'rgba(26, 24, 20, 0.05)',
+                color: workspaceState === 'error'
+                  ? 'var(--portal-danger)'
+                  : workspaceState === 'saving'
+                    ? 'var(--portal-primary-strong)'
+                    : 'var(--portal-text-soft)',
+              }}>
+                {workspaceState === 'error' ? 'Save issue' : workspaceState === 'saving' ? 'Saving layout' : workspaceState === 'saved' ? 'Saved to portal' : 'Local fallback ready'}
+              </span>
+            </div>
 
-        {visibleTools.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {visibleTools.map((tool) => (
-              <ToolTile
-                key={tool.id}
-                tool={tool}
-                editMode={editMode}
-                onOpen={openTool}
-                onRemove={removeTool}
-                onUpdate={updateTool}
-                onMoveGroup={moveToolToGroup}
-                onDragStart={(id) => setDraggedToolId(id)}
-                onDragOver={(event) => {
-                  if (!editMode) return
-                  event.preventDefault()
-                }}
-                onDrop={handleToolDrop}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-[28px] border border-dashed px-6 py-10 text-center" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.72)' }}>
-            <button
-              type="button"
-              onClick={() => setShowAddTool(true)}
-              className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl transition-all hover:-translate-y-0.5"
-              style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary)' }}
-              aria-label="Add a workspace tool"
-            >
-              <Plus className="h-5 w-5" />
-            </button>
-            <h3 className="mt-4 text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>
-              {tools.length > 0 ? `No ${getWorkspaceGroupLabel(activeWorkspaceGroup).toLowerCase()} apps yet` : 'Blank by design'}
-            </h3>
-            <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-              {tools.length > 0
-                ? 'Add a matching app or move an existing shortcut into this group from its three-dot menu.'
-                : 'This workspace starts empty for each new client. Add the inboxes, drives, and daily tools you actually use.'}
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowAddTool(true)}
-              className="portal-button-primary mt-5 rounded-2xl px-4 py-3 text-sm font-semibold"
-            >
-              Browse connector library
-            </button>
-          </div>
+            {visibleTools.length > 0 ? (
+              <div className="dashboard-tool-grid flex flex-wrap gap-2">
+                {visibleTools.map((tool) => (
+                  <ToolTile
+                    key={tool.id}
+                    tool={tool}
+                    editMode={editMode}
+                    onOpen={openTool}
+                    onRemove={removeTool}
+                    onUpdate={updateTool}
+                    onMoveGroup={moveToolToGroup}
+                    onDragStart={(id) => setDraggedToolId(id)}
+                    onDragOver={(event) => {
+                      if (!editMode) return
+                      event.preventDefault()
+                    }}
+                    onDrop={handleToolDrop}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="dashboard-launcher-empty rounded-[28px] border border-dashed px-6 py-10 text-center" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.72)' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddTool(true)}
+                  className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl transition-all hover:-translate-y-0.5"
+                  style={{ background: 'rgba(201, 168, 76, 0.12)', color: 'var(--portal-primary)' }}
+                  aria-label="Add a workspace tool"
+                >
+                  <Plus className="h-5 w-5" />
+                </button>
+                <h3 className="mt-4 text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>
+                  {tools.length > 0 ? `No ${getWorkspaceGroupLabel(activeWorkspaceGroup).toLowerCase()} apps yet` : 'Blank by design'}
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                  {tools.length > 0
+                    ? 'Add a matching app or move an existing shortcut into this group from its three-dot menu.'
+                    : 'This workspace starts empty for each new client. Add the inboxes, drives, and daily tools you actually use.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowAddTool(true)}
+                  className="portal-button-primary mt-5 rounded-2xl px-4 py-3 text-sm font-semibold"
+                >
+                  Browse connector library
+                </button>
+              </div>
+            )}
+          </>
         )}
         </div>
       </section>

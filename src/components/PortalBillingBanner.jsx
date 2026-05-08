@@ -7,7 +7,7 @@ export default function PortalBillingBanner({ billingAccess, onAction, actionPen
 
   return (
     <section
-      className="mb-5 w-full max-w-none rounded-[28px] border px-5 py-4 md:px-6"
+      className="portal-billing-banner mb-5 w-full max-w-none rounded-[28px] border px-5 py-4 md:px-6"
       style={{
         background: 'linear-gradient(135deg, color-mix(in srgb, var(--portal-primary) 18%, transparent), color-mix(in srgb, var(--portal-cyan) 8%, transparent))',
         borderColor: 'color-mix(in srgb, var(--portal-primary) 28%, transparent)',
@@ -17,7 +17,7 @@ export default function PortalBillingBanner({ billingAccess, onAction, actionPen
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-start gap-3">
           <div
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl"
+            className="portal-billing-banner-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl"
             style={{ background: 'rgba(26,24,20,0.08)', color: 'var(--portal-primary)' }}
           >
             <Icon className="h-5 w-5" />
@@ -40,7 +40,7 @@ export default function PortalBillingBanner({ billingAccess, onAction, actionPen
             type="button"
             onClick={onAction}
             disabled={actionPending}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+            className="portal-billing-banner-action inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
             style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}
           >
             {actionPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

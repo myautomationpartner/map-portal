@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { CalendarDays, LayoutDashboard, Megaphone, MessageSquare, Settings, LogOut, FolderOpen, CreditCard } from 'lucide-react'
+import { CalendarDays, LayoutDashboard, Megaphone, MessageSquare, Settings, LogOut, FolderOpen } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { getSessionClaims } from '../lib/portalApi'
 import { buildTenantConfig } from '../lib/tenantConfig'
@@ -18,6 +18,7 @@ function resolveSubscriptionStatus(billingAccess) {
   if (billingAccess?.readOnly || billingAccess?.mode === 'blocked' || billingAccess?.mode === 'inactive') {
     return {
       label: 'Subscription inactive',
+      compactLabel: 'Inactive',
       color: 'var(--map-brand-magenta)',
       background: 'rgba(255,122,184,0.13)',
       border: 'rgba(255,122,184,0.34)',
@@ -27,6 +28,7 @@ function resolveSubscriptionStatus(billingAccess) {
   if (billingAccess?.mode === 'trial') {
     return {
       label: 'Trial active',
+      compactLabel: 'Trial active',
       color: 'var(--portal-success)',
       background: 'rgba(133,247,169,0.12)',
       border: 'rgba(133,247,169,0.30)',
@@ -36,6 +38,7 @@ function resolveSubscriptionStatus(billingAccess) {
   if (billingAccess?.mode === 'warning') {
     return {
       label: 'Subscription active',
+      compactLabel: 'Active',
       color: 'var(--portal-success)',
       background: 'rgba(133,247,169,0.12)',
       border: 'rgba(133,247,169,0.30)',
@@ -44,6 +47,7 @@ function resolveSubscriptionStatus(billingAccess) {
 
   return {
     label: 'Subscription active',
+    compactLabel: 'Active',
     color: 'var(--portal-success)',
     background: 'rgba(133,247,169,0.12)',
     border: 'rgba(133,247,169,0.30)',
@@ -54,8 +58,6 @@ export default function Sidebar({
   session,
   tenant: providedTenant,
   billingAccess,
-  onBillingAction,
-  billingActionPending = false,
   portalTheme = 'dark',
   onPortalThemeChange,
 }) {
@@ -79,16 +81,13 @@ export default function Sidebar({
   }
 
   const subscriptionStatus = resolveSubscriptionStatus(billingAccess)
-  const subscriptionActionLabel = billingAccess?.showBanner
-    ? billingAccess.ctaLabel || 'Open billing'
-    : 'Manage subscription'
 
   return (
     <aside
       className="hidden fixed left-0 top-0 z-40 h-full w-[188px] flex-col border-r md:flex"
       style={{ background: 'linear-gradient(180deg, var(--portal-nav) 0%, var(--portal-nav-strong) 100%)', borderColor: 'var(--portal-border)' }}
     >
-      <div className="flex items-center gap-2.5 border-b px-3.5 py-5" style={{ borderColor: 'var(--portal-border)' }}>
+      <div className="flex items-center gap-2.5 border-b px-3.5 py-4" style={{ borderColor: 'var(--portal-border)' }}>
         <div className="h-9 w-11 shrink-0 overflow-hidden rounded-xl border bg-black/20 p-0.5 shadow-sm" style={{ borderColor: 'rgba(112, 228, 255, 0.24)' }}>
           <img
             src={tenant.logoUrl}
@@ -104,6 +103,18 @@ export default function Sidebar({
           <p className="truncate text-[9px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-primary)' }}>
             {tenant.portalLabel}
           </p>
+          <div
+            className="mt-1 inline-flex max-w-full items-center gap-1.5 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.14em]"
+            title={subscriptionStatus.label}
+            style={{
+              background: subscriptionStatus.background,
+              color: subscriptionStatus.color,
+              border: `1px solid ${subscriptionStatus.border}`,
+            }}
+          >
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: subscriptionStatus.color }} />
+            <span className="truncate">{subscriptionStatus.compactLabel}</span>
+          </div>
         </div>
       </div>
 
@@ -151,46 +162,6 @@ export default function Sidebar({
       <div className="px-2.5 py-4" style={{ borderTop: '1px solid var(--portal-border)' }}>
         <div className="mb-2.5">
           <ThemeToggle theme={portalTheme} onToggle={onPortalThemeChange} />
-        </div>
-        <div className="mb-2.5 rounded-[18px] px-2.5 py-2.5" style={{ background: 'var(--portal-theme-toggle-bg)', border: '1px solid var(--portal-border)' }}>
-          <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
-            style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}>
-            {session?.user?.email?.[0]?.toUpperCase() ?? '?'}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="truncate text-[11px] font-semibold" style={{ color: 'var(--portal-nav-text-strong)' }}>{session?.user?.email}</p>
-            <p className="text-[9px] font-semibold uppercase tracking-[0.24em]" style={{ color: 'var(--portal-nav-text-muted)' }}>
-              {claims.user_role || 'verified client'} · {claims.client_slug || 'tenant'}
-            </p>
-          </div>
-          </div>
-          <button
-            type="button"
-            onClick={onBillingAction}
-            disabled={!onBillingAction || billingActionPending}
-            className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-[10px] font-black uppercase tracking-[0.16em] transition-all disabled:opacity-60"
-            style={{
-              background: subscriptionStatus.background,
-              border: `1px solid ${subscriptionStatus.border}`,
-              color: subscriptionStatus.color,
-            }}
-          >
-            <span className="flex min-w-0 items-center gap-1.5">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: subscriptionStatus.color }} />
-              <span className="truncate">{subscriptionStatus.label}</span>
-            </span>
-            <CreditCard className="h-3.5 w-3.5 shrink-0" />
-          </button>
-          <button
-            type="button"
-            onClick={onBillingAction}
-            disabled={!onBillingAction || billingActionPending}
-            className="mt-2 w-full rounded-xl px-2.5 py-2 text-[10px] font-semibold transition-all disabled:opacity-60"
-            style={{ background: 'rgba(255,255,255,0.075)', border: '1px solid var(--portal-border)', color: 'var(--portal-nav-text-strong)' }}
-          >
-            {billingActionPending ? 'Opening...' : subscriptionActionLabel}
-          </button>
         </div>
         <button
           onClick={handleLogout}

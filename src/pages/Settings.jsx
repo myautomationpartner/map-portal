@@ -133,7 +133,7 @@ async function portalAuthHeaders() {
 
 function Section({ title, description, icon: Icon, children }) {
   return (
-    <div className="portal-panel rounded-[32px] overflow-hidden">
+    <div className="settings-section-panel portal-panel rounded-[32px] overflow-hidden">
       <div className="flex items-center gap-3 border-b px-6 py-5" style={{ borderColor: 'var(--portal-border)' }}>
         <div className="flex h-8 w-8 items-center justify-center rounded-lg"
           style={{ background: 'rgba(112,228,255,0.12)', border: '1px solid rgba(112,228,255,0.28)' }}>
@@ -153,7 +153,7 @@ function Field({ label, value }) {
   return (
     <div>
       <label className="mb-2 block text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--portal-text-soft)' }}>{label}</label>
-      <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+      <div className="settings-field-value rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
         {value || <span style={{ color: 'var(--portal-text-soft)' }}>—</span>}
       </div>
     </div>
@@ -165,7 +165,7 @@ function StatusBadge({ status, message }) {
   const isSuccess = status === 'success'
   const isInfo = status === 'info'
   return (
-    <div className="flex items-center gap-2 text-sm rounded-xl px-4 py-3"
+    <div className="settings-status-badge flex items-center gap-2 text-sm rounded-xl px-4 py-3"
       style={isSuccess
         ? { background: 'rgba(133,247,169,0.10)', border: '1px solid rgba(133,247,169,0.24)', color: 'var(--portal-success)' }
         : isInfo
@@ -225,11 +225,11 @@ function resolveSubscriptionStatus(billingAccess) {
 function SettingsCategory({ title, description, icon: Icon, defaultOpen = false, children }) {
   return (
     <details
-      className="group rounded-[32px]"
+      className="settings-category group rounded-[32px]"
       defaultOpen={defaultOpen}
       style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid var(--portal-border)' }}
     >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 md:px-6">
+      <summary className="settings-category-summary flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 md:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <div
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
@@ -244,7 +244,7 @@ function SettingsCategory({ title, description, icon: Icon, defaultOpen = false,
         </div>
         <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" style={{ color: 'var(--portal-text-muted)' }} />
       </summary>
-      <div className="space-y-5 border-t p-4 md:p-5" style={{ borderColor: 'var(--portal-border)' }}>
+      <div className="settings-category-body space-y-5 border-t p-4 md:p-5" style={{ borderColor: 'var(--portal-border)' }}>
         {children}
       </div>
     </details>
@@ -1420,7 +1420,7 @@ export default function Settings() {
   const tenant = buildTenantConfig({ client })
 
   return (
-    <div className="portal-page w-full max-w-none space-y-6 md:p-5 xl:p-6">
+    <div className="portal-page settings-page w-full max-w-none space-y-6 md:p-5 xl:p-6">
       <section className="portal-surface rounded-[36px] p-5 md:p-7">
         <div className="portal-page-header">
           <div>

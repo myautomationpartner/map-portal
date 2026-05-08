@@ -51,12 +51,12 @@ function calcNetChange(metrics, days, field = 'followers') {
 function MomentumCard({ timeframe, label, value }) {
   const isPositive = value >= 0
   return (
-    <div className="portal-stat-card flex flex-col items-center justify-center p-5 text-center transition-all hover:-translate-y-0.5">
-      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>{timeframe}</p>
-      <div className="mb-1 text-2xl font-semibold tabular-nums" style={{ color: isPositive ? 'var(--portal-success)' : 'var(--portal-danger)' }}>
+    <div className="social-momentum-card portal-stat-card flex flex-col justify-center p-4 transition-all">
+      <p className="social-stats-meta mb-2 text-[10px] font-semibold uppercase tracking-[0.18em]">{timeframe}</p>
+      <div className="social-momentum-value mb-1 text-2xl font-semibold tabular-nums" data-positive={isPositive}>
         {isPositive ? '+' : ''}{value.toLocaleString()}
       </div>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--portal-text-muted)' }}>{label}</p>
+      <p className="social-stats-submeta text-[10px] font-semibold uppercase tracking-[0.14em]">{label}</p>
     </div>
   )
 }
@@ -109,25 +109,25 @@ export default function PlatformStats() {
   if (!platformIsVisible) return <Navigate to="/" replace />
 
   return (
-    <div className="portal-page w-full max-w-none space-y-6 md:p-5 xl:p-6">
+    <div className="social-stats-page portal-page w-full max-w-none space-y-5 md:p-5 xl:p-6">
       <Link
         to="/"
-        className="portal-button-secondary inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold"
+        className="social-stats-back portal-button-secondary inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold"
       >
         <ArrowLeft className="h-4 w-4" />
         Dashboard
       </Link>
 
-      <section className="portal-surface p-5 md:p-7">
-        <div className="portal-page-header">
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center border bg-white" style={{ borderColor: 'var(--portal-border)', borderRadius: 'var(--portal-radius-lg)' }}>
+      <section className="social-stats-hero portal-surface p-5 md:p-6">
+        <div className="portal-page-header items-center">
+          <div className="social-stats-identity flex items-center gap-4">
+            <div className="social-stats-icon flex h-12 w-12 items-center justify-center" style={{ color: config.accent }}>
               <Icon className="h-7 w-7" style={{ color: config.accent }} />
             </div>
             <div>
-              <div className="mb-2 flex items-center gap-2">
+              <div className="social-stats-status mb-2 flex items-center gap-2" data-connected={hasMetrics}>
                 <span className="h-2 w-2 rounded-full" style={{ background: hasMetrics ? 'var(--portal-success)' : 'var(--portal-primary)' }} />
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
                   {hasMetrics ? 'Live sync connected' : 'Waiting for connection'}
                 </p>
               </div>
@@ -135,27 +135,26 @@ export default function PlatformStats() {
             </div>
           </div>
 
-          <div className="portal-stat-card min-w-[220px] px-5 py-4 text-left md:text-right">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
+          <div className="social-stats-total min-w-[190px] px-0 py-0 text-left md:text-right">
+            <p className="social-stats-meta text-[11px] font-semibold uppercase tracking-[0.18em]">
               Total {config.metricLabel}
             </p>
-            <p className="mt-1 text-3xl font-semibold tabular-nums" style={{ color: 'var(--portal-text)' }}>{totalLabel}</p>
+            <p className="mt-1 text-3xl font-semibold tabular-nums">{totalLabel}</p>
           </div>
         </div>
       </section>
 
       {isLoading ? (
-        <div className="portal-panel flex min-h-[320px] items-center justify-center p-8">
+        <div className="social-stats-loading portal-panel flex min-h-[320px] items-center justify-center p-8">
           <Loader2 className="h-7 w-7 animate-spin" style={{ color: 'var(--portal-primary)' }} />
         </div>
       ) : (
         <>
-          <section>
-            <div className="mb-4 flex items-center gap-3">
-              <div className="h-1 w-5 rounded-full" style={{ background: 'var(--portal-primary)' }} />
-              <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Momentum</h2>
+          <section className="social-stats-section">
+            <div className="social-stats-section-head mb-3 flex items-center gap-3">
+              <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em]">Momentum</h2>
             </div>
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <div className="social-stats-momentum-grid grid grid-cols-2 gap-3 md:grid-cols-4">
               <MomentumCard timeframe="Past 24h" label="Net Change" value={change24h} />
               <MomentumCard timeframe="Past 7 Days" label="Net Change" value={change7d} />
               <MomentumCard timeframe="Past 30 Days" label="Net Change" value={change30d} />
@@ -164,15 +163,13 @@ export default function PlatformStats() {
           </section>
 
           <section className="space-y-4">
-            <div className="flex items-center justify-between gap-3">
+            <div className="social-stats-section-head flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="h-1 w-5 rounded-full" style={{ background: 'var(--portal-primary)' }} />
-                <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--portal-text-soft)' }}>Recent Posts</h2>
+                <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em]">Recent Posts</h2>
               </div>
               <Link
                 to="/post/history"
-                className="inline-flex items-center gap-1.5 text-xs font-semibold"
-                style={{ color: 'var(--portal-primary-strong)' }}
+                className="social-stats-inline-link inline-flex items-center gap-1.5 text-xs font-semibold"
               >
                 View all
                 <ChevronRight className="h-3.5 w-3.5" />
@@ -184,7 +181,7 @@ export default function PlatformStats() {
                 {recentPosts.map(post => (
                   <article
                     key={post.id}
-                    className="portal-panel flex overflow-hidden"
+                    className="social-post-card portal-panel flex overflow-hidden"
                   >
                     <div className="relative aspect-square w-28 shrink-0 overflow-hidden bg-[var(--portal-surface-muted)] md:w-32">
                       {post.media_url ? (
@@ -214,8 +211,8 @@ export default function PlatformStats() {
                 ))}
               </div>
             ) : (
-              <div className="portal-panel p-10 text-center">
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center" style={{ background: 'rgba(201,168,76,0.1)', borderRadius: 'var(--portal-radius-lg)' }}>
+              <div className="social-stats-empty portal-panel p-10 text-center">
+                <div className="social-stats-empty-icon mx-auto mb-4 flex h-12 w-12 items-center justify-center">
                   <Image className="h-6 w-6" style={{ color: 'var(--portal-primary)' }} />
                 </div>
                 <h3 className="font-display text-xl font-semibold" style={{ color: 'var(--portal-text)' }}>No recent history</h3>
@@ -224,7 +221,7 @@ export default function PlatformStats() {
                 </p>
                 <Link
                   to="/post"
-                  className="portal-button-primary mt-5 inline-flex items-center gap-2 px-4 py-3 text-sm font-semibold"
+                  className="social-stats-empty-action portal-button-primary mt-5 inline-flex items-center gap-2 px-4 py-3 text-sm font-semibold"
                 >
                   Start drafting
                   <ArrowLeft className="h-4 w-4 rotate-180" />
