@@ -54,6 +54,7 @@ jobs:
           fi
 
           args=(--client-slug "$CLIENT_SLUG")
+          args+=(--allow-main-site-domain)
 
           if [ "$DRY_RUN" = "true" ]; then
             args+=(--dry-run)
