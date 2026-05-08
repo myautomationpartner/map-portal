@@ -112,6 +112,26 @@ export function buildTenantConfig(input = {}) {
     claims.billing_status ||
     sharePayload.billing_status ||
     ''
+  const billingProvider =
+    client?.billing_provider ||
+    claims.billing_provider ||
+    sharePayload.billing_provider ||
+    ''
+  const billingCustomerId =
+    client?.billing_customer_id ||
+    claims.billing_customer_id ||
+    sharePayload.billing_customer_id ||
+    ''
+  const billingSubscriptionId =
+    client?.billing_subscription_id ||
+    claims.billing_subscription_id ||
+    sharePayload.billing_subscription_id ||
+    ''
+  const lastBillingSyncAt =
+    client?.last_billing_sync_at ||
+    claims.last_billing_sync_at ||
+    sharePayload.last_billing_sync_at ||
+    ''
 
   const billingPortalUrl =
     import.meta.env.VITE_PORTAL_BILLING_PORTAL_URL ||
@@ -148,6 +168,10 @@ export function buildTenantConfig(input = {}) {
     pathBasename: pathTenant.basename,
     theme,
     billingStatus,
+    billingProvider,
+    billingCustomerId,
+    billingSubscriptionId,
+    lastBillingSyncAt,
     billingPortalUrl,
     billingCheckoutUrl,
     selectedPlan,

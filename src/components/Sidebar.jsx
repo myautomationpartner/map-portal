@@ -15,7 +15,7 @@ const navItems = [
 ]
 
 function resolveSubscriptionStatus(billingAccess) {
-  if (billingAccess?.readOnly || billingAccess?.mode === 'blocked') {
+  if (billingAccess?.readOnly || billingAccess?.mode === 'blocked' || billingAccess?.mode === 'inactive') {
     return {
       label: 'Subscription inactive',
       color: 'var(--map-brand-magenta)',

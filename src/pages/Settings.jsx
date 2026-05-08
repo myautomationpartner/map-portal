@@ -179,7 +179,7 @@ function StatusBadge({ status, message }) {
 }
 
 function resolveSubscriptionStatus(billingAccess) {
-  if (billingAccess?.readOnly || billingAccess?.mode === 'blocked') {
+  if (billingAccess?.readOnly || billingAccess?.mode === 'blocked' || billingAccess?.mode === 'inactive') {
     return {
       label: 'Inactive',
       tone: 'inactive',
