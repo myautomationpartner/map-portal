@@ -9,7 +9,7 @@ import { fetchTeamAccessUsers, inviteTeamAccessUser, updateTeamAccessUser } from
 import {
   User, Lock, Building2, CheckCircle2, Loader2, AlertCircle,
   Link2, ExternalLink, Wifi, WifiOff, MessageCircle, Copy, RefreshCw, Mail, Save, Unlink2,
-  UserPlus, ShieldCheck, Ban
+  UserPlus, ShieldCheck, Ban, CreditCard, ChevronDown
 } from 'lucide-react'
 
 const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
@@ -175,6 +175,140 @@ function StatusBadge({ status, message }) {
       {isSuccess ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
       {message}
     </div>
+  )
+}
+
+function resolveSubscriptionStatus(billingAccess) {
+  if (billingAccess?.readOnly || billingAccess?.mode === 'blocked') {
+    return {
+      label: 'Inactive',
+      tone: 'inactive',
+      description: billingAccess?.message || 'Payment is required to restore full portal access.',
+      color: 'var(--map-brand-magenta)',
+      background: 'rgba(255,122,184,0.12)',
+      border: 'rgba(255,122,184,0.28)',
+    }
+  }
+
+  if (billingAccess?.mode === 'trial') {
+    return {
+      label: 'Trial active',
+      tone: 'active',
+      description: billingAccess?.message || 'Your trial is active. Add payment before the trial ends.',
+      color: 'var(--portal-success)',
+      background: 'rgba(133,247,169,0.10)',
+      border: 'rgba(133,247,169,0.24)',
+    }
+  }
+
+  if (billingAccess?.mode === 'warning') {
+    return {
+      label: 'Active',
+      tone: 'active',
+      description: billingAccess?.message || 'Your subscription is active. Add payment details before access changes.',
+      color: 'var(--portal-success)',
+      background: 'rgba(133,247,169,0.10)',
+      border: 'rgba(133,247,169,0.24)',
+    }
+  }
+
+  return {
+    label: 'Active',
+    tone: 'active',
+    description: 'Your portal subscription is active.',
+    color: 'var(--portal-success)',
+    background: 'rgba(133,247,169,0.10)',
+    border: 'rgba(133,247,169,0.24)',
+  }
+}
+
+function SettingsCategory({ title, description, icon: Icon, defaultOpen = false, children }) {
+  return (
+    <details
+      className="group rounded-[32px]"
+      defaultOpen={defaultOpen}
+      style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid var(--portal-border)' }}
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 md:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <div
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+            style={{ background: 'rgba(112,228,255,0.12)', border: '1px solid rgba(112,228,255,0.28)' }}
+          >
+            <Icon className="h-4 w-4" style={{ color: 'var(--map-brand-cyan)' }} />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{title}</h2>
+            {description && <p className="mt-0.5 text-xs" style={{ color: 'var(--portal-text-muted)' }}>{description}</p>}
+          </div>
+        </div>
+        <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" style={{ color: 'var(--portal-text-muted)' }} />
+      </summary>
+      <div className="space-y-5 border-t p-4 md:p-5" style={{ borderColor: 'var(--portal-border)' }}>
+        {children}
+      </div>
+    </details>
+  )
+}
+
+function SubscriptionSection({ tenant, billingAccess, onBillingAction, billingActionPending }) {
+  const status = resolveSubscriptionStatus(billingAccess)
+  const primaryLabel = billingAccess?.showBanner
+    ? billingAccess.ctaLabel || 'Buy now'
+    : 'Manage subscription'
+  const canOpenBilling = Boolean(onBillingAction)
+
+  return (
+    <Section title="Subscription" description="Status, payment, and cancellation options" icon={CreditCard}>
+      <div className="space-y-5">
+        <div className="rounded-2xl p-4" style={{ background: status.background, border: `1px solid ${status.border}` }}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: status.color }}>
+                Subscription {status.label}
+              </p>
+              <h3 className="mt-2 text-xl font-semibold" style={{ color: 'var(--portal-text)' }}>
+                {tenant?.selectedPlan ? tenant.selectedPlan.replace(/_/g, ' ') : 'MAP Starter'}
+              </h3>
+              <p className="mt-2 max-w-2xl text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+                {status.description}
+              </p>
+            </div>
+            <span
+              className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-black uppercase tracking-[0.18em]"
+              style={{ background: 'rgba(9,14,24,0.50)', border: `1px solid ${status.border}`, color: status.color }}
+            >
+              <span className="h-2 w-2 rounded-full" style={{ background: status.color }} />
+              {status.tone}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={onBillingAction}
+            disabled={!canOpenBilling || billingActionPending}
+            className="portal-button-primary inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
+          >
+            {billingActionPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+            {billingActionPending ? 'Opening billing...' : primaryLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onBillingAction}
+            disabled={!canOpenBilling || billingActionPending}
+            className="portal-button-secondary inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
+          >
+            Cancel or change plan
+          </button>
+        </div>
+
+        <p className="text-xs leading-relaxed" style={{ color: 'var(--portal-text-soft)' }}>
+          Subscription changes open in Stripe's secure billing flow. Cancellations and payment-method updates are handled there.
+        </p>
+      </div>
+    </Section>
   )
 }
 
@@ -1224,7 +1358,7 @@ function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Settings() {
-  const { session, requireWriteAccess, billingAccess } = useOutletContext()
+  const { session, requireWriteAccess, billingAccess, onBillingAction, billingActionPending } = useOutletContext()
   const [searchParams, setSearchParams] = useSearchParams()
   const returnedPlatform = searchParams.get('connected') || null
 
@@ -1300,124 +1434,151 @@ export default function Settings() {
         </div>
       </section>
 
-      <div className="space-y-5">
-
-        {/* Account info */}
-        <Section title="Account" description="Your login information" icon={User}>
-          {isLoading ? (
-            <div className="flex items-center gap-2" style={{ color: 'var(--portal-text-muted)' }}>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm">Loading…</span>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <Field label="Name" value={profile?.name} />
-              <Field label="Email" value={profile?.email ?? session?.user?.email} />
-              <Field label="Role" value={profile?.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : undefined} />
-            </div>
-          )}
-        </Section>
-
-        <TeamAccessSection profile={profile} billingAccess={billingAccess} />
-
-        {/* Business info */}
-        {client && (
-          <Section title="Business Profile" description="Details on file for your account" icon={Building2}>
-            <div className="space-y-4">
-              <Field label="Business Name" value={client.business_name} />
-              <Field label="Contact Email" value={client.contact_email} />
-              <Field label="Website" value={client.website_url} />
-            </div>
-            <p className="text-xs mt-4" style={{ color: 'var(--portal-text-soft)' }}>
-              To update your business details, contact{' '}
-              <a href={`mailto:${tenant.supportEmail}`}
-                className="transition-colors hover:text-brand-gold"
-                style={{ color: 'var(--portal-text-muted)', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
-                {tenant.supportEmail}
-              </a>
-            </p>
-          </Section>
-        )}
-
-        {/* Social connections */}
-        {profile?.client_id && (
-          <SocialConnectionsSection
-            clientId={profile.client_id}
-            clientSlug={client?.slug}
-            returnedPlatform={returnedPlatform}
-            requireWriteAccess={requireWriteAccess}
-            billingAccess={billingAccess}
-          />
-        )}
-
-        {client && (
-          <WebsiteChatSection
-            client={client}
-            requireWriteAccess={requireWriteAccess}
-            billingAccess={billingAccess}
+      <div className="space-y-4">
+        <SettingsCategory
+          title="Subscription & billing"
+          description="Status, payment, cancellation, and subscription management"
+          icon={CreditCard}
+          defaultOpen
+        >
+          <SubscriptionSection
             tenant={tenant}
+            billingAccess={billingAccess}
+            onBillingAction={onBillingAction}
+            billingActionPending={billingActionPending}
           />
-        )}
+        </SettingsCategory>
 
-        {/* Change password */}
-        <Section title="Change Password" description="Update your login password" icon={Lock}>
-          <form onSubmit={handlePasswordChange} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
-                Current Password
-              </label>
-              <input
-                type="password"
-                value={currentPw}
-                onChange={e => setCurrentPw(e.target.value)}
-                required
-                placeholder="••••••••"
-                className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
-                New Password
-              </label>
-              <input
-                type="password"
-                value={newPw}
-                onChange={e => setNewPw(e.target.value)}
-                required
-                placeholder="Min. 8 characters"
-                className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
-                Confirm New Password
-              </label>
-              <input
-                type="password"
-                value={confirmPw}
-                onChange={e => setConfirmPw(e.target.value)}
-                required
-                placeholder="••••••••"
-                className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
-              />
-            </div>
+        <SettingsCategory
+          title="Account & team"
+          description="Your login, portal users, and access levels"
+          icon={ShieldCheck}
+          defaultOpen
+        >
+          <Section title="Account" description="Your login information" icon={User}>
+            {isLoading ? (
+              <div className="flex items-center gap-2" style={{ color: 'var(--portal-text-muted)' }}>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">Loading…</span>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <Field label="Name" value={profile?.name} />
+                <Field label="Email" value={profile?.email ?? session?.user?.email} />
+                <Field label="Role" value={profile?.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : undefined} />
+              </div>
+            )}
+          </Section>
 
-            {pwStatus && <StatusBadge status={pwStatus.type} message={pwStatus.message} />}
+          <TeamAccessSection profile={profile} billingAccess={billingAccess} />
+        </SettingsCategory>
 
-            <button
-              type="submit"
-              disabled={pwLoading}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:-translate-y-px active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}>
-              {pwLoading ? (
-                <><Loader2 className="w-4 h-4 animate-spin" />Updating…</>
-              ) : (
-                'Update Password'
-              )}
-            </button>
-          </form>
-        </Section>
+        <SettingsCategory
+          title="Business & channels"
+          description="Business profile, social accounts, and website chat"
+          icon={Building2}
+        >
+          {client && (
+            <Section title="Business Profile" description="Details on file for your account" icon={Building2}>
+              <div className="space-y-4">
+                <Field label="Business Name" value={client.business_name} />
+                <Field label="Contact Email" value={client.contact_email} />
+                <Field label="Website" value={client.website_url} />
+              </div>
+              <p className="text-xs mt-4" style={{ color: 'var(--portal-text-soft)' }}>
+                To update your business details, contact{' '}
+                <a href={`mailto:${tenant.supportEmail}`}
+                  className="transition-colors hover:text-brand-gold"
+                  style={{ color: 'var(--portal-text-muted)', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
+                  {tenant.supportEmail}
+                </a>
+              </p>
+            </Section>
+          )}
 
+          {profile?.client_id && (
+            <SocialConnectionsSection
+              clientId={profile.client_id}
+              clientSlug={client?.slug}
+              returnedPlatform={returnedPlatform}
+              requireWriteAccess={requireWriteAccess}
+              billingAccess={billingAccess}
+            />
+          )}
+
+          {client && (
+            <WebsiteChatSection
+              client={client}
+              requireWriteAccess={requireWriteAccess}
+              billingAccess={billingAccess}
+              tenant={tenant}
+            />
+          )}
+        </SettingsCategory>
+
+        <SettingsCategory
+          title="Security"
+          description="Password and account protection"
+          icon={Lock}
+        >
+          <Section title="Change Password" description="Update your login password" icon={Lock}>
+            <form onSubmit={handlePasswordChange} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                  Current Password
+                </label>
+                <input
+                  type="password"
+                  value={currentPw}
+                  onChange={e => setCurrentPw(e.target.value)}
+                  required
+                  placeholder="••••••••"
+                  className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  value={newPw}
+                  onChange={e => setNewPw(e.target.value)}
+                  required
+                  placeholder="Min. 8 characters"
+                  className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                  Confirm New Password
+                </label>
+                <input
+                  type="password"
+                  value={confirmPw}
+                  onChange={e => setConfirmPw(e.target.value)}
+                  required
+                  placeholder="••••••••"
+                  className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
+                />
+              </div>
+
+              {pwStatus && <StatusBadge status={pwStatus.type} message={pwStatus.message} />}
+
+              <button
+                type="submit"
+                disabled={pwLoading}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:-translate-y-px active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}>
+                {pwLoading ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" />Updating…</>
+                ) : (
+                  'Update Password'
+                )}
+              </button>
+            </form>
+          </Section>
+        </SettingsCategory>
       </div>
     </div>
   )

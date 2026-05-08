@@ -383,6 +383,8 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
               profile,
               tenant,
               billingAccess,
+              onBillingAction: handleBillingAction,
+              billingActionPending,
               requireWriteAccess: requirePortalAccess,
               hasPortalPermission: (permission) => hasPortalPermission(profile, permission),
             }}
