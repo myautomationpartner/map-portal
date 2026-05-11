@@ -501,6 +501,12 @@ function getDraftMetaImagePrompt(draft) {
   return ''
 }
 
+function buildCaptionImagePrompt(caption, modeLabel) {
+  const trimmedCaption = String(caption || '').trim().replace(/\s+/g, ' ').slice(0, 900)
+  if (!trimmedCaption) return ''
+  return `Create ${String(modeLabel || 'social post image').toLowerCase()} creative that supports this caption: ${trimmedCaption}`
+}
+
 async function fetchConnections(clientId) {
   if (!clientId) return []
 
@@ -1413,12 +1419,16 @@ export default function CreatePost() {
     return calendar.slots.find((slot) => getSlotKey(slot) === activeSlotKey) || null
   }, [activeSlotKey, calendar])
   const activeDraft = useMemo(() => drafts.find((draft) => draft.id === activeDraftId) || findDraftForSlot(drafts, activeSlot), [activeDraftId, drafts, activeSlot])
-  const imageGenerationPrompt = useMemo(
+  const selectedImageGenerationMode = IMAGE_GENERATION_MODE_BY_ID[imageGenerationMode] || IMAGE_GENERATION_MODES[0]
+  const partnerImagePrompt = useMemo(
     () => getDraftMetaImagePrompt(activeDraft) || mediaSuggestion,
     [activeDraft, mediaSuggestion],
   )
-  const selectedImageGenerationMode = IMAGE_GENERATION_MODE_BY_ID[imageGenerationMode] || IMAGE_GENERATION_MODES[0]
-  const canGenerateImage = Boolean(clientId && content.trim() && imageGenerationPrompt)
+  const imageGenerationPrompt = useMemo(
+    () => partnerImagePrompt || buildCaptionImagePrompt(content, selectedImageGenerationMode.label),
+    [content, partnerImagePrompt, selectedImageGenerationMode.label],
+  )
+  const canGenerateImage = Boolean(clientId && imageGenerationPrompt)
   const canUseAssist = Boolean(clientId && content.trim() && !isSubmitting)
   const scheduledPostsDetailed = useMemo(() => {
     const timezone = calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'
@@ -1946,8 +1956,12 @@ export default function CreatePost() {
 
   async function handleGenerateImage() {
     if (!requireWriteAccess('generate images for posts')) return
-    if (!canGenerateImage) {
-      setImageGenerateError('Load a Radar draft or media idea before generating an image.')
+    if (!clientId) {
+      setImageGenerateError('Client profile is still loading. Try again in a moment.')
+      return
+    }
+    if (!imageGenerationPrompt) {
+      setImageGenerateError('Write a caption or load a Radar draft before generating an image.')
       return
     }
 
@@ -3124,6 +3138,7 @@ export default function CreatePost() {
                     setPlatformVariants({})
                     setPlatformFormatStatus('Base caption changed. Run Partner Format to refresh platform captions.')
                     setErrorMsg('')
+                    if (imageGenerateError) setImageGenerateError('')
                     if (!hydratingDraftRef.current && activeDraftId) {
                       setDraftDirty(true)
                       setDraftStatus('Saving caption edits…')
@@ -3520,7 +3535,7 @@ export default function CreatePost() {
                 )}
               </div>
 
-              {imageGenerationPrompt && (
+              {partnerImagePrompt && (
                 <div className="mt-3 rounded-[20px] px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.62)', border: '1px solid var(--portal-border)' }}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
@@ -3531,14 +3546,15 @@ export default function CreatePost() {
                     </span>
                   </div>
                   <p className="mt-1 line-clamp-2 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                    {imageGenerationPrompt}
+                    {partnerImagePrompt}
                   </p>
-                  {imageGenerateError && (
-                    <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--portal-danger)' }}>
-                      {imageGenerateError}
-                    </p>
-                  )}
                 </div>
+              )}
+
+              {imageGenerateError && (
+                <p className="mt-3 rounded-[18px] px-3 py-2 text-xs leading-relaxed" style={{ background: 'rgba(223, 95, 143, 0.10)', border: '1px solid rgba(223, 95, 143, 0.22)', color: 'var(--portal-danger)' }}>
+                  {imageGenerateError}
+                </p>
               )}
 
               <input
