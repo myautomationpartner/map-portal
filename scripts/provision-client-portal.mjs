@@ -23,6 +23,8 @@ const DEFAULT_CHATWOOT_ANDROID_URL = 'https://play.google.com/store/apps/details
 const DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME = 'Social Inbox'
 const CHATWOOT_CONTENT_PARTNER_CONTACT_NAME = 'My Partner'
 const CHATWOOT_CONTENT_PARTNER_GREETING = 'Send me a rough note, photos, or both. I will turn it into a Publisher draft for you to review before anything posts.'
+const DEFAULT_ZERNIO_API_BASE_URL = 'https://zernio.com/api/v1'
+const DEFAULT_ZERNIO_PROFILE_PREFIX = 'MAP'
 const DEFAULT_PORTAL_LABEL = 'Client Portal'
 const DEFAULT_SUPPORT_EMAIL = 'info@myautomationpartner.com'
 const DEFAULT_SHARED_PORTAL_HOST = 'myautomationpartner.com'
@@ -53,8 +55,15 @@ function readCredentialMap() {
 
   for (const line of text.split(/\r?\n/)) {
     const match = line.match(/^([A-Z0-9_]+)=(.*)$/)
-    if (!match) continue
-    values.set(match[1], match[2].trim())
+    if (match) {
+      values.set(match[1], match[2].trim())
+      continue
+    }
+
+    const zernioKeyMatch = line.match(/^AD BOOST API-\s*(.+)$/)
+    if (zernioKeyMatch?.[1]?.trim()) {
+      values.set('ZERNIO_API_KEY', zernioKeyMatch[1].trim())
+    }
   }
 
   return values
@@ -231,6 +240,323 @@ async function fetchJson(url, init = {}) {
   }
 
   throw lastError
+}
+
+function normalizeName(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
+function normalizeComparable(value) {
+  return normalizeName(value).toLowerCase()
+}
+
+function firstString(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined) continue
+    if (typeof value === 'object') continue
+    const normalized = String(value || '').trim()
+    if (normalized) return normalized
+  }
+  return ''
+}
+
+function zernioProfileNameForClient(client) {
+  return normalizeName(`${DEFAULT_ZERNIO_PROFILE_PREFIX} - ${client.business_name || client.slug || client.id}`)
+}
+
+function resolveZernioProfileId(profile) {
+  return firstString(profile?._id, profile?.id, profile?.profileId)
+}
+
+function resolveZernioProfileName(profile) {
+  return normalizeName(firstString(profile?.name, profile?.displayName, profile?.title))
+}
+
+function zernioProvisioningConfig() {
+  return {
+    baseUrl: envValue(['ZERNIO_API_BASE_URL'], DEFAULT_ZERNIO_API_BASE_URL).replace(/\/$/, ''),
+    apiKey: secretValue(['ZERNIO_API_KEY'], {
+      keychainServices: ['MAP_ZERNIO_API_KEY', 'ZERNIO_API_KEY'],
+    }),
+  }
+}
+
+function zernioHeaders(apiKey) {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    Accept: 'application/json',
+    ...jsonHeaders(),
+  }
+}
+
+async function zernioProvisioningFetch(path, init = {}) {
+  const config = zernioProvisioningConfig()
+  if (!config.apiKey) {
+    throw new Error('Missing ZERNIO_API_KEY for Zernio customer profile provisioning.')
+  }
+
+  return fetchJson(`${config.baseUrl}${path}`, {
+    ...init,
+    headers: {
+      ...zernioHeaders(config.apiKey),
+      ...(init.headers || {}),
+    },
+  })
+}
+
+function normalizeZernioList(payload, key) {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.[key])) return payload[key]
+  if (Array.isArray(payload?.data)) return payload.data
+  if (Array.isArray(payload?.data?.[key])) return payload.data[key]
+  return []
+}
+
+async function listZernioProfilesForProvisioning() {
+  return normalizeZernioList(await zernioProvisioningFetch('/profiles'), 'profiles')
+}
+
+async function createZernioProfileForClient(client) {
+  const name = zernioProfileNameForClient(client)
+  const payload = await zernioProvisioningFetch('/profiles', {
+    method: 'POST',
+    body: JSON.stringify({
+      name,
+      description: `Dedicated MAP customer profile for ${client.slug}.`,
+    }),
+  })
+  return payload?.data && typeof payload.data === 'object' ? payload.data : payload
+}
+
+function findZernioProfileForClient(client, profiles) {
+  const existingProfileId = firstString(client.zernio_profile_id)
+  if (existingProfileId) {
+    const byId = profiles.find((profile) => resolveZernioProfileId(profile) === existingProfileId)
+    if (byId) return byId
+  }
+
+  const expectedName = normalizeComparable(zernioProfileNameForClient(client))
+  return profiles.find((profile) => normalizeComparable(resolveZernioProfileName(profile)) === expectedName) || null
+}
+
+function resolveZernioAccountId(account) {
+  return firstString(account?._id, account?.id, account?.accountId, account?.providerAccountId)
+}
+
+function resolveZernioAccountProfileId(account) {
+  return firstString(
+    account?.profileId,
+    account?.profile_id,
+    account?.profileId?._id,
+    account?.profileId?.id,
+    account?.profile?._id,
+    account?.profile?.id,
+    account?.profile?.profileId,
+  )
+}
+
+function resolveZernioAccountProfileName(account) {
+  return normalizeName(firstString(
+    account?.profileName,
+    account?.profile_name,
+    account?.profileId?.name,
+    account?.profileId?.displayName,
+    account?.profile?.name,
+    account?.profile?.displayName,
+    account?.profile?.title,
+  ))
+}
+
+function resolveZernioAccountUsername(account) {
+  return firstString(
+    account?.username,
+    account?.handle,
+    account?.accountName,
+    account?.displayName,
+    account?.name,
+    account?.pageName,
+  )
+}
+
+function resolveZernioAccountPlatform(account) {
+  return firstString(
+    account?.platform,
+    account?.provider,
+    account?.type,
+    account?.network,
+    account?.service,
+  ).toLowerCase()
+}
+
+async function listZernioAccountsForProvisioning() {
+  return normalizeZernioList(await zernioProvisioningFetch('/accounts?limit=200'), 'accounts')
+}
+
+async function moveZernioAccountToProfile(accountId, profileId) {
+  if (!accountId || !profileId) {
+    throw new Error('Zernio account id and profile id are required to move an account.')
+  }
+
+  const payload = await zernioProvisioningFetch(`/accounts/${encodeURIComponent(accountId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ profileId }),
+  })
+  return payload?.data && typeof payload.data === 'object' ? payload.data : payload
+}
+
+async function reconcileClientZernioConnections({ client, profileId, profileName }) {
+  const summary = {
+    checked: 0,
+    moved: 0,
+    updatedConnections: 0,
+    missingAccounts: [],
+    needsReconnect: [],
+  }
+
+  if (!client?.id || !profileId) return summary
+
+  const connections = await fetchSupabaseRows(`/rest/v1/social_connections?select=id,platform,zernio_account_id,zernio_profile_id,zernio_account_metadata,username&client_id=eq.${encodeURIComponent(client.id)}&order=connected_at.desc`)
+  const rows = Array.isArray(connections) ? connections : []
+  const accounts = await listZernioAccountsForProvisioning()
+  const accountsById = new Map(accounts.map((account) => [resolveZernioAccountId(account), account]).filter(([accountId]) => Boolean(accountId)))
+
+  for (const connection of rows) {
+    const accountId = firstString(connection?.zernio_account_id)
+    if (!accountId) continue
+
+    summary.checked += 1
+    const account = accountsById.get(accountId)
+
+    if (!account) {
+      const missing = { connectionId: connection.id, platform: connection.platform || null, accountId }
+      summary.missingAccounts.push(missing)
+      summary.needsReconnect.push({ ...missing, reason: 'account_missing_in_zernio' })
+      continue
+    }
+
+    const originalProfileId = resolveZernioAccountProfileId(account)
+    const originalProfileName = resolveZernioAccountProfileName(account)
+    let repairedAccount = account
+    let repairedProfileId = originalProfileId
+
+    if (originalProfileId && originalProfileId !== profileId) {
+      if (normalizeComparable(originalProfileName) === 'default') {
+        repairedAccount = await moveZernioAccountToProfile(accountId, profileId)
+        repairedProfileId = resolveZernioAccountProfileId(repairedAccount) || profileId
+        summary.moved += 1
+      } else {
+        summary.needsReconnect.push({
+          connectionId: connection.id,
+          platform: connection.platform || resolveZernioAccountPlatform(account) || null,
+          accountId,
+          currentProfileId: originalProfileId,
+          currentProfileName: originalProfileName || null,
+          targetProfileId: profileId,
+          reason: 'account_belongs_to_another_customer_profile',
+        })
+      }
+    }
+
+    if (!repairedProfileId) {
+      repairedProfileId = profileId
+    }
+
+    const existingMetadata = connection.zernio_account_metadata && typeof connection.zernio_account_metadata === 'object'
+      ? connection.zernio_account_metadata
+      : {}
+    const username = resolveZernioAccountUsername(repairedAccount) || connection.username || null
+
+    await patchSupabase(`/rest/v1/social_connections?id=eq.${encodeURIComponent(connection.id)}`, {
+      zernio_profile_id: repairedProfileId,
+      username,
+      zernio_account_metadata: {
+        ...existingMetadata,
+        accountProfileId: repairedProfileId,
+        targetClientProfileId: profileId,
+        targetClientProfileName: profileName,
+        zernioProfileMatchesClient: repairedProfileId === profileId,
+        profileName: repairedProfileId === profileId ? profileName : (originalProfileName || null),
+        platform: resolveZernioAccountPlatform(repairedAccount) || connection.platform || null,
+        username,
+        reconciledAt: new Date().toISOString(),
+        reconciliationSource: 'provision-client-portal',
+      },
+    })
+    summary.updatedConnections += 1
+  }
+
+  return summary
+}
+
+async function ensureZernioCustomerProfile({ client, dryRun, skipZernioProfileProvisioning }) {
+  const expectedProfileName = zernioProfileNameForClient(client)
+  if (skipZernioProfileProvisioning) {
+    return {
+      skipped: true,
+      reason: 'Zernio customer profile provisioning skipped by flag.',
+      profileName: expectedProfileName,
+      profileId: firstString(client.zernio_profile_id) || null,
+    }
+  }
+
+  if (dryRun) {
+    return {
+      skipped: true,
+      reason: 'Dry run.',
+      profileName: expectedProfileName,
+      profileId: firstString(client.zernio_profile_id) || null,
+      wouldCreate: !firstString(client.zernio_profile_id),
+    }
+  }
+
+  const profiles = await listZernioProfilesForProvisioning()
+  let profile = findZernioProfileForClient(client, profiles)
+  let created = false
+
+  if (!profile) {
+    profile = await createZernioProfileForClient(client)
+    created = true
+  }
+
+  const profileId = resolveZernioProfileId(profile)
+  if (!profileId) {
+    throw new Error(`Zernio did not return a profile id for ${client.slug}.`)
+  }
+
+  const profileName = resolveZernioProfileName(profile) || expectedProfileName
+  const connectionReconciliation = await reconcileClientZernioConnections({ client, profileId, profileName })
+  const status = connectionReconciliation.needsReconnect.length ? 'needs_reconnect' : 'active'
+  const now = new Date().toISOString()
+  const existingMetadata = client.zernio_profile_metadata && typeof client.zernio_profile_metadata === 'object'
+    ? client.zernio_profile_metadata
+    : {}
+
+  await patchSupabase(`/rest/v1/clients?id=eq.${encodeURIComponent(client.id)}`, {
+    zernio_profile_id: profileId,
+    zernio_profile_status: status,
+    zernio_profile_created_at: client.zernio_profile_created_at || now,
+    zernio_profile_metadata: {
+      ...existingMetadata,
+      profileName,
+      provisionedAt: now,
+      provisionedBy: 'provision-client-portal',
+      provisioningSource: 'customer-onboarding',
+      createdInZernio: created,
+      reusedExistingProfile: !created,
+      connectionReconciliation,
+    },
+  })
+
+  return {
+    skipped: false,
+    profileId,
+    profileName,
+    created,
+    status,
+    connectionReconciliation,
+  }
 }
 
 function getChatwootProvisioningConfig() {
@@ -1132,7 +1458,7 @@ async function seedInitialSocialDrafts({ client, dryRun, skipInitialSocialDrafts
   }
 }
 
-async function persistProvisioningSummary({ run, webhookResult, chatwootProvisioning, initialOpportunityRadar, initialSocialDrafts, dryRun }) {
+async function persistProvisioningSummary({ run, webhookResult, zernioProfile, chatwootProvisioning, initialOpportunityRadar, initialSocialDrafts, dryRun }) {
   if (dryRun || !run?.id) {
     return {
       skipped: true,
@@ -1153,6 +1479,7 @@ async function persistProvisioningSummary({ run, webhookResult, chatwootProvisio
         zernio_webhook: webhookResult?.skipped && currentMetadata.zernio_webhook
           ? currentMetadata.zernio_webhook
           : webhookResult || null,
+        zernio_profile: zernioProfile || null,
         chatwoot_provisioning: chatwootSummary?.skipped && currentMetadata.chatwoot_provisioning
           ? currentMetadata.chatwoot_provisioning
           : chatwootSummary,
@@ -1312,7 +1639,7 @@ function buildSecretEnv(client, chatwootProvisioning = {}, options = {}) {
         ),
     CHATWOOT_SOCIAL_INBOX_ID: sharedMode ? '' : (chatwootProvisioning.socialInboxId || envValue(['CHATWOOT_SOCIAL_INBOX_ID'], '')),
     CHATWOOT_WEBHOOK_BRIDGE_SECRET: chatwootWebhookSecret,
-    ZERNIO_API_BASE_URL: envValue(['ZERNIO_API_BASE_URL'], 'https://zernio.com/api/v1'),
+    ZERNIO_API_BASE_URL: envValue(['ZERNIO_API_BASE_URL'], DEFAULT_ZERNIO_API_BASE_URL),
     ZERNIO_API_KEY: envValue(
       ['ZERNIO_API_KEY'],
       secretValue(['ZERNIO_API_KEY'], {
@@ -1361,44 +1688,66 @@ function buildWranglerConfig(client, assetsDirectory, options = {}) {
   ].join('\n')
 }
 
-async function configureZernioWebhook(client, secretEnv, options = {}) {
+async function configureZernioWebhook(secretEnv) {
   const webhookSecret = String(secretEnv.ZERNIO_WEBHOOK_SECRET || '').trim()
 
   const baseUrl = envValue(['PORTAL_WEBHOOK_BASE_URL'])
-  const targetUrl = baseUrl
-    ? `${baseUrl.replace(/\/$/, '')}/api/zernio/account-events`
-    : `${buildPortalUrl(client, options)}/api/zernio/account-events`
+  const portalWebhookBaseUrl = baseUrl
+    ? baseUrl.replace(/\/$/, '')
+    : `https://${getSharedPortalHost()}/${getSharedPortalPathPrefix()}/_zernio`
+  const webhookConfigs = [
+    {
+      key: 'accountEvents',
+      targetUrl: `${portalWebhookBaseUrl}/api/zernio/account-events`,
+      name: 'MAP Portal Account Events — central dispatcher',
+      events: ['account.connected', 'account.disconnected'],
+    },
+    {
+      key: 'inboxEvents',
+      targetUrl: `${portalWebhookBaseUrl}/api/zernio/inbox-events`,
+      name: 'MAP Portal Inbox Events',
+      events: ['message.received', 'comment.received', 'review.new'],
+    },
+  ]
 
-  const requestBody = {
-    url: targetUrl,
-    secret: webhookSecret,
-    name: `MAP Portal Account Events — ${client.slug || client.business_name || client.worker_name}`,
-    events: ['account.connected', 'account.disconnected'],
-  }
+  const webhooks = {}
 
-  const configured = await fetchJson(`${envValue(['N8N_BASE_URL'], DEFAULT_N8N_BASE_URL)}/webhook/zernio-configure-account-webhook`, {
-    method: 'POST',
-    headers: jsonHeaders(),
-    body: JSON.stringify(requestBody),
-  })
-
-  const webhookId = configured?.webhook?._id || configured?._id || configured?.webhookId || ''
-  let tested = null
-
-  if (webhookId) {
-    tested = await fetchJson(`${envValue(['N8N_BASE_URL'], DEFAULT_N8N_BASE_URL)}/webhook/zernio-test-webhook-delivery`, {
+  for (const config of webhookConfigs) {
+    const configured = await fetchJson(`${envValue(['N8N_BASE_URL'], DEFAULT_N8N_BASE_URL)}/webhook/zernio-configure-account-webhook`, {
       method: 'POST',
       headers: jsonHeaders(),
-      body: JSON.stringify({ webhookId }),
+      body: JSON.stringify({
+        url: config.targetUrl,
+        secret: webhookSecret,
+        name: config.name,
+        events: config.events,
+      }),
     })
+
+    const webhookId = configured?.webhook?._id || configured?._id || configured?.webhookId || ''
+    let tested = null
+
+    if (webhookId) {
+      tested = await fetchJson(`${envValue(['N8N_BASE_URL'], DEFAULT_N8N_BASE_URL)}/webhook/zernio-test-webhook-delivery`, {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({ webhookId }),
+      })
+    }
+
+    webhooks[config.key] = {
+      targetUrl: config.targetUrl,
+      webhookId: webhookId || null,
+      configureResult: configured,
+      testResult: tested,
+    }
   }
 
   return {
     configured: true,
-    targetUrl,
-    webhookId: webhookId || null,
-    configureResult: configured,
-    testResult: tested,
+    targetUrl: webhooks.accountEvents?.targetUrl || null,
+    webhookId: webhooks.accountEvents?.webhookId || null,
+    webhooks,
   }
 }
 
@@ -1520,9 +1869,11 @@ async function main() {
   const skipInitialSocialDrafts = Boolean(args['skip-initial-social-drafts'])
   const skipChatwootProvisioning = Boolean(args['skip-chatwoot-provisioning'])
   const skipChatwootPasswordReset = !Boolean(args['send-chatwoot-password-reset']) || Boolean(args['skip-chatwoot-password-reset'])
+  const skipZernioProfileProvisioning = Boolean(args['skip-zernio-profile-provisioning'])
+  const skipWorkerDeploy = Boolean(args['skip-worker-deploy'])
   const client = await loadClient(args)
   const deploymentMode = resolvePortalDeploymentMode(args, client)
-  const shouldDeployWorker = deploymentMode === 'dedicated-domain' || Boolean(args['deploy-shared-worker'])
+  const shouldDeployWorker = !skipWorkerDeploy && (deploymentMode === 'dedicated-domain' || Boolean(args['deploy-shared-worker']))
 
   if (!client.portal_domain || !client.worker_name || !client.portal_subdomain) {
     throw new Error('Client is missing portal runtime fields. Run derive-tenant-bootstrap first.')
@@ -1538,6 +1889,11 @@ async function main() {
     skipChatwootProvisioning,
     skipChatwootPasswordReset,
     deploymentMode,
+  })
+  const zernioProfile = await ensureZernioCustomerProfile({
+    client,
+    dryRun,
+    skipZernioProfileProvisioning,
   })
   const publicEnv = buildPublicEnv(client, { deploymentMode })
   const secretEnv = buildSecretEnv(client, chatwootProvisioning, {
@@ -1589,7 +1945,7 @@ async function main() {
     }
 
     if (!dryRun && !skipWebhookConfig) {
-      webhookResult = await configureZernioWebhook(client, secretEnv, { deploymentMode })
+      webhookResult = await configureZernioWebhook(secretEnv)
     } else if (skipWebhookConfig) {
       webhookResult = {
         configured: false,
@@ -1621,6 +1977,7 @@ async function main() {
     const provisioningSummary = await persistProvisioningSummary({
       run,
       webhookResult,
+      zernioProfile,
       chatwootProvisioning,
       initialOpportunityRadar,
       initialSocialDrafts,
@@ -1631,7 +1988,12 @@ async function main() {
       deploymentMode,
       workerDeployment: shouldDeployWorker
         ? { skipped: false, workerName: deploymentMode === 'shared-path' ? DEFAULT_SHARED_PORTAL_WORKER_NAME : client.worker_name }
-        : { skipped: true, reason: 'Shared portal worker deployment is reused. Pass --deploy-shared-worker to rebuild it.' },
+        : {
+            skipped: true,
+            reason: skipWorkerDeploy
+              ? 'Worker deployment skipped by flag.'
+              : 'Shared portal worker deployment is reused. Pass --deploy-shared-worker to rebuild it.',
+          },
       clientId: client.id,
       clientSlug: client.slug,
       workerName: deploymentMode === 'shared-path' ? DEFAULT_SHARED_PORTAL_WORKER_NAME : client.worker_name,
@@ -1639,6 +2001,7 @@ async function main() {
       portalPath: deploymentMode === 'shared-path' ? buildPortalPath(client) : undefined,
       portalUrl: buildPortalUrl(client, { deploymentMode }),
       cloudflareAccountId: accountId || undefined,
+      zernioProfile,
       chatwootProvisioning: summarizeChatwootProvisioning(chatwootProvisioning),
       webhookResult,
       deploymentState,
