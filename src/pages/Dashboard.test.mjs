@@ -19,3 +19,11 @@ test('dashboard polls profile-scoped social state while a connection is finishin
   assert.ok(source.indexOf('let keepPolling = false', connectSuccessIndex) < connectSuccessIndex)
   assert.ok(connectedEffectIndex > connectionsQueryIndex)
 })
+
+test('dashboard timeout copy explains X authorization failures', async () => {
+  const source = await readFile(new URL('./Dashboard.jsx', import.meta.url), 'utf8')
+
+  assert.match(source, /function getConnectPendingTimeoutMessage/)
+  assert.match(source, /MAP did not receive a completed X \/ Twitter connection/)
+  assert.match(source, /If X showed "Something went wrong"/)
+})

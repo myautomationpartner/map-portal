@@ -360,6 +360,14 @@ function formatPlatformLabel(platform) {
   return platform.charAt(0).toUpperCase() + platform.slice(1)
 }
 
+function getConnectPendingTimeoutMessage(platform) {
+  const label = formatPlatformLabel(platform)
+  if (platform === 'twitter' || platform === 'x') {
+    return 'MAP did not receive a completed X / Twitter connection. If X showed "Something went wrong", close the auth window, sign in to X in a fresh tab, then try Connect again.'
+  }
+  return `${label} did not finish connecting yet. If the auth window completed, refresh this page; otherwise try Connect again.`
+}
+
 function normalizeConnectionPlatform(platform) {
   const value = String(platform || '').trim().toLowerCase()
   const platformMap = {
@@ -793,7 +801,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
         setConnectingPlatform(null)
         setSyncStatus({
           type: 'info',
-          message: `${formatPlatformLabel(normalizedPlatform)} is still finishing in Zernio. This page will update automatically as soon as MAP receives the account event.`,
+          message: getConnectPendingTimeoutMessage(normalizedPlatform),
         })
         clearAutoSyncTimer()
         return

@@ -429,7 +429,16 @@ function saveTools(storageKey, tools) {
 
 function formatPlatformLabel(platform) {
   if (!platform) return 'Account'
+  if (platform === 'twitter' || platform === 'x') return 'X / Twitter'
   return platform.charAt(0).toUpperCase() + platform.slice(1)
+}
+
+function getConnectPendingTimeoutMessage(platform) {
+  const label = formatPlatformLabel(platform)
+  if (platform === 'twitter' || platform === 'x') {
+    return 'MAP did not receive a completed X / Twitter connection. If X showed "Something went wrong", close the auth window, sign in to X in a fresh tab, then try Connect again.'
+  }
+  return `${label} did not finish connecting yet. If the auth window completed, refresh this page; otherwise try Connect again.`
 }
 
 function ToolForm({
@@ -1046,7 +1055,7 @@ export default function Dashboard() {
     const timer = window.setTimeout(() => {
       setConnectorStatus({
         type: 'info',
-        message: `${formatPlatformLabel(connectingPlatform)} is still finishing in Zernio. Refresh the dashboard after the auth window completes if it does not appear automatically.`,
+        message: getConnectPendingTimeoutMessage(connectingPlatform),
       })
       setConnectingPlatform(null)
     }, 120000)

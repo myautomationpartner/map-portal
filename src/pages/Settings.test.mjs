@@ -33,3 +33,11 @@ test('social connection polling refreshes the customer-scoped Zernio profile bef
   assert.notEqual(clearOnConnectionIndex, -1)
   assert.match(settings, /Zernio account event/)
 })
+
+test('social connection timeout copy explains X authorization failures', async () => {
+  const settings = await source('src/pages/Settings.jsx')
+
+  assert.match(settings, /function getConnectPendingTimeoutMessage/)
+  assert.match(settings, /MAP did not receive a completed X \/ Twitter connection/)
+  assert.match(settings, /If X showed "Something went wrong"/)
+})
