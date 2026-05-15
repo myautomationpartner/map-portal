@@ -172,6 +172,13 @@ export async function startSocialConnection({ clientId, platform, redirectUrl })
   })
 }
 
+export async function refreshSocialConnections(platform) {
+  return callPortalWorker('/api/social-connections/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ platform }),
+  })
+}
+
 export async function fetchResearchSources(clientId) {
   if (!clientId) return []
 

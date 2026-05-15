@@ -8,6 +8,7 @@ import {
   fetchMetrics,
   fetchOpportunityRadar,
   fetchProfile,
+  refreshSocialConnections,
   fetchSocialConnections,
   fetchSocialDrafts,
   fetchWorkspacePreferences,
@@ -965,11 +966,15 @@ export default function Dashboard() {
   const clientId = profile?.client_id
   const client = profile?.clients || null
   const userId = profile?.id
+  const [connectingPlatform, setConnectingPlatform] = useState(null)
+  const [connectorStatus, setConnectorStatus] = useState(null)
   const { data: dashboardSocialMetrics = null, isFetching: dashboardSocialMetricsFetching } = useQuery({
     queryKey: ['dashboard-social-metrics', clientId],
     queryFn: () => fetchDashboardSocialMetrics({ sync: true }),
     enabled: !!clientId,
     retry: 1,
+    refetchInterval: connectingPlatform ? 2000 : false,
+    refetchIntervalInBackground: true,
   })
   const { data: legacyMetrics = [] } = useQuery({
     queryKey: ['metrics', clientId],
@@ -990,6 +995,8 @@ export default function Dashboard() {
     queryKey: ['social_connections', clientId],
     queryFn: () => fetchSocialConnections(clientId),
     enabled: !!clientId,
+    refetchInterval: connectingPlatform ? 2000 : false,
+    refetchIntervalInBackground: true,
   })
   const { data: calendarPosts = [] } = useQuery({
     queryKey: ['calendar-posts', clientId],
@@ -1032,6 +1039,54 @@ export default function Dashboard() {
     },
     [dashboardSocialMetrics, socialConnections],
   )
+
+  useEffect(() => {
+    if (!connectingPlatform) return undefined
+
+    const timer = window.setTimeout(() => {
+      setConnectorStatus({
+        type: 'info',
+        message: `${formatPlatformLabel(connectingPlatform)} is still finishing in Zernio. Refresh the dashboard after the auth window completes if it does not appear automatically.`,
+      })
+      setConnectingPlatform(null)
+    }, 120000)
+
+    return () => window.clearTimeout(timer)
+  }, [connectingPlatform])
+
+  useEffect(() => {
+    if (!connectingPlatform || !connectedPlatformIds.has(connectingPlatform) || !clientId) return undefined
+
+    let cancelled = false
+
+    async function reconcileConnectedPlatform() {
+      try {
+        await refreshSocialConnections(connectingPlatform)
+      } catch {
+        // The metrics endpoint can already show the connected account; this
+        // refresh just reconciles the Supabase connection row when possible.
+      }
+
+      if (cancelled) return
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['social_connections', clientId] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard-social-metrics', clientId] }),
+      ])
+      setConnectorStatus({
+        type: 'success',
+        message: `${formatPlatformLabel(connectingPlatform)} is connected and ready for publishing and metrics.`,
+      })
+      setConnectingPlatform(null)
+    }
+
+    void reconcileConnectedPlatform()
+
+    return () => {
+      cancelled = true
+    }
+  }, [clientId, connectedPlatformIds, connectingPlatform, queryClient])
+
   const publisherSummary = useMemo(
     () => getDashboardPublisherSummary(calendarPosts, socialDrafts, opportunities),
     [calendarPosts, opportunities, socialDrafts],
@@ -1042,8 +1097,6 @@ export default function Dashboard() {
   const [showAddTool, setShowAddTool] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [activeWorkspaceGroup, setActiveWorkspaceGroup] = useState('all')
-  const [connectingPlatform, setConnectingPlatform] = useState(null)
-  const [connectorStatus, setConnectorStatus] = useState(null)
   const [draggedToolId, setDraggedToolId] = useState(null)
   const [workspaceState, setWorkspaceState] = useState('idle')
   const workspaceOwnerKey = `${clientId || 'unknown'}:${userId || 'unknown'}`
@@ -1145,6 +1198,7 @@ export default function Dashboard() {
 
     setConnectingPlatform(platform)
     setConnectorStatus(null)
+    let keepPolling = false
 
     try {
       const { data: sessionData } = await supabase.auth.getSession()
@@ -1166,6 +1220,7 @@ export default function Dashboard() {
       const data = await res.json().catch(() => ({}))
 
       if (res.ok && data.authUrl) {
+        keepPolling = true
         if (connectPopup && !connectPopup.closed) {
           connectPopup.opener = null
           connectPopup.location.href = data.authUrl
@@ -1178,6 +1233,7 @@ export default function Dashboard() {
           message: `Finish connecting ${formatPlatformLabel(platform)} in the auth window. Settings will confirm the connection when Zernio reports back.`,
         })
         await queryClient.invalidateQueries({ queryKey: ['social_connections', clientId] })
+        await queryClient.invalidateQueries({ queryKey: ['dashboard-social-metrics', clientId] })
       } else {
         if (connectPopup && !connectPopup.closed) connectPopup.close()
         setConnectorStatus({
@@ -1189,7 +1245,7 @@ export default function Dashboard() {
       if (connectPopup && !connectPopup.closed) connectPopup.close()
       setConnectorStatus({ type: 'error', message: 'Could not reach the connector service. Try again from Settings.' })
     } finally {
-      setConnectingPlatform(null)
+      if (!keepPolling) setConnectingPlatform(null)
     }
   }
 
