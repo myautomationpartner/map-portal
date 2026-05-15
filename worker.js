@@ -1139,6 +1139,158 @@ export function normalizeZernioAdAccounts(accounts = []) {
     .filter((account) => account.id && account.adAccountId)
 }
 
+const DASHBOARD_SOCIAL_PLATFORMS = [
+  { id: 'facebook', label: 'Facebook', metricLabel: 'Followers', metricField: 'followers' },
+  { id: 'instagram', label: 'Instagram', metricLabel: 'Followers', metricField: 'followers' },
+  { id: 'twitter', label: 'X / Twitter', metricLabel: 'Followers', metricField: 'followers' },
+  { id: 'tiktok', label: 'TikTok', metricLabel: 'Followers', metricField: 'followers' },
+]
+
+function asDashboardMetric(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : null
+}
+
+function asDashboardRate(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null
+}
+
+function pickDashboardMetric(candidates = []) {
+  for (const candidate of candidates) {
+    const value = asDashboardMetric(candidate)
+    if (value !== null) return value
+  }
+  return null
+}
+
+function normalizeZernioDashboardAccount(account = {}) {
+  const metadata = account?.metadata && typeof account.metadata === 'object' ? account.metadata : {}
+  const analytics = account?.analytics && typeof account.analytics === 'object' ? account.analytics : {}
+  const metrics = account?.metrics && typeof account.metrics === 'object' ? account.metrics : {}
+  const insights = account?.insights && typeof account.insights === 'object' ? account.insights : {}
+  const stats = account?.stats && typeof account.stats === 'object' ? account.stats : {}
+  const source = { ...metadata, ...stats, ...insights, ...metrics, ...analytics, ...account }
+
+  return {
+    id: extractZernioAccountId(account),
+    profileId: extractZernioProfileId(account),
+    platform: normalizePlatform(firstString(account?.platform, account?.provider)),
+    username: firstString(account?.username, account?.handle, account?.displayName, account?.name),
+    followers: pickDashboardMetric([
+      source.followers,
+      source.followerCount,
+      source.followersCount,
+      source.follower_count,
+      source.followers_count,
+      source.audience,
+      source.audienceCount,
+    ]),
+    impressions: pickDashboardMetric([source.impressions, source.impressionCount, source.impressionsCount]),
+    reach: pickDashboardMetric([source.reach, source.reachCount, source.accountsReached]),
+    views: pickDashboardMetric([source.views, source.viewCount, source.videoViews]),
+    engagements: pickDashboardMetric([
+      source.engagements,
+      source.engagement,
+      source.totalEngagements,
+      source.total_interactions,
+      source.interactions,
+    ]),
+    engagementRate: asDashboardRate(source.engagementRate ?? source.engagement_rate),
+    lastSyncedAt: firstString(source.lastSyncedAt, source.last_synced_at, source.lastUpdated, source.updatedAt),
+  }
+}
+
+export function buildDashboardSocialPlatformSummary({
+  platform,
+  connection = null,
+  account = null,
+  dailyMetric = null,
+  postAggregate = null,
+} = {}) {
+  const normalizedPlatform = normalizePlatform(platform?.id || platform?.platform)
+  const normalizedAccount = account?.platform ? account : normalizeZernioDashboardAccount(account || {})
+  const connected = Boolean(connection?.zernio_account_id || normalizedAccount?.id)
+  const username = firstString(connection?.username, normalizedAccount?.username)
+
+  const dailyValue = pickDashboardMetric([
+    dailyMetric?.[platform?.metricField || 'followers'],
+    dailyMetric?.followers,
+    dailyMetric?.reach,
+    dailyMetric?.impressions,
+  ])
+  const accountValue = pickDashboardMetric([
+    normalizedAccount?.[platform?.metricField || 'followers'],
+    normalizedAccount?.followers,
+    normalizedAccount?.reach,
+    normalizedAccount?.impressions,
+    normalizedAccount?.views,
+    normalizedAccount?.engagements,
+  ])
+  const postEngagement = pickDashboardMetric([postAggregate?.engagements])
+  const postReach = pickDashboardMetric([postAggregate?.reach])
+  const postViews = pickDashboardMetric([postAggregate?.views, postAggregate?.impressions])
+
+  let metricLabel = platform?.metricLabel || 'Followers'
+  let metricValue = dailyValue
+  let metricSource = dailyValue !== null ? 'daily_metrics' : ''
+
+  if (metricValue === null && accountValue !== null) {
+    metricValue = accountValue
+    metricSource = 'zernio_account'
+  }
+
+  if (metricValue === null && postEngagement !== null) {
+    metricLabel = 'Engagement'
+    metricValue = postEngagement
+    metricSource = 'post_daily_metrics'
+  }
+
+  if (metricValue === null && postReach !== null) {
+    metricLabel = 'Reach'
+    metricValue = postReach
+    metricSource = 'post_daily_metrics'
+  }
+
+  if (metricValue === null && postViews !== null) {
+    metricLabel = 'Views'
+    metricValue = postViews
+    metricSource = 'post_daily_metrics'
+  }
+
+  const lastSyncedAt = firstString(
+    postAggregate?.latestSyncedAt,
+    normalizedAccount?.lastSyncedAt,
+    dailyMetric?.created_at,
+    dailyMetric?.metric_date,
+  )
+  const statusLabel = connected
+    ? metricValue !== null
+      ? 'Metrics current'
+      : 'Waiting for metrics'
+    : 'Not connected'
+  const statusTone = connected
+    ? metricValue !== null ? 'success' : 'pending'
+    : 'muted'
+
+  return {
+    platform: normalizedPlatform,
+    connected,
+    username,
+    zernioAccountId: firstString(connection?.zernio_account_id, normalizedAccount?.id),
+    zernioProfileId: firstString(connection?.zernio_profile_id, normalizedAccount?.profileId),
+    metricLabel,
+    metricValue,
+    metricSource: metricSource || 'none',
+    secondaryMetricLabel: postReach !== null ? 'Reach' : postViews !== null ? 'Views' : '',
+    secondaryMetricValue: postReach !== null ? postReach : postViews,
+    engagementRate: asDashboardRate(dailyMetric?.engagement_rate ?? normalizedAccount?.engagementRate ?? postAggregate?.engagementRate),
+    statusLabel,
+    statusTone,
+    lastSyncedAt,
+  }
+}
+
 async function listZernioAccounts(env, params = {}) {
   const query = buildZernioScopedSearchParams(params, params.profileId)
 
@@ -1767,6 +1919,190 @@ function buildPostMetricsResponse(posts, metrics, sync = null) {
       post,
       metrics: latest.get(post.id) || null,
     })),
+  }
+}
+
+function latestDashboardDailyMetricsByPlatform(rows = []) {
+  const latest = new Map()
+  for (const row of rows) {
+    const platform = normalizePlatform(row?.platform)
+    if (!platform || latest.has(platform)) continue
+    latest.set(platform, row)
+  }
+  return latest
+}
+
+function aggregateDashboardPostMetrics(rows = []) {
+  const latestByPostPlatform = new Map()
+  for (const row of rows) {
+    const platform = normalizePlatform(row?.platform)
+    if (!platform || !row?.post_id) continue
+    const key = `${platform}:${row.post_id}`
+    if (latestByPostPlatform.has(key)) continue
+    latestByPostPlatform.set(key, row)
+  }
+
+  const aggregates = new Map()
+  for (const row of latestByPostPlatform.values()) {
+    const platform = normalizePlatform(row.platform)
+    const current = aggregates.get(platform) || {
+      platform,
+      posts: 0,
+      views: 0,
+      impressions: 0,
+      reach: 0,
+      engagements: 0,
+      clicks: 0,
+      engagementRate: null,
+      latestSyncedAt: '',
+    }
+    current.posts += 1
+    current.views += asMetricInteger(row.views)
+    current.impressions += asMetricInteger(row.impressions)
+    current.reach += asMetricInteger(row.reach)
+    current.engagements += asMetricInteger(row.engagements)
+    current.clicks += asMetricInteger(row.clicks)
+    const engagementRate = asDashboardRate(row.engagement_rate)
+    if (engagementRate !== null) {
+      current.engagementRate = current.engagementRate === null
+        ? engagementRate
+        : Math.max(current.engagementRate, engagementRate)
+    }
+    const latestSyncedAt = firstString(row.last_synced_at, row.created_at)
+    if (latestSyncedAt && (!current.latestSyncedAt || Date.parse(latestSyncedAt) > Date.parse(current.latestSyncedAt))) {
+      current.latestSyncedAt = latestSyncedAt
+    }
+    aggregates.set(platform, current)
+  }
+  return aggregates
+}
+
+async function loadDashboardDailyMetrics(envConfig) {
+  const filters = new URLSearchParams({
+    select: 'platform,metric_date,followers,impressions,reach,engagement_rate,created_at',
+    client_id: `eq.${envConfig.clientId}`,
+    order: 'metric_date.desc,created_at.desc',
+    limit: '200',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/daily_metrics?${filters.toString()}`)
+  const rows = await response.json()
+  return latestDashboardDailyMetricsByPlatform(Array.isArray(rows) ? rows : [])
+}
+
+async function loadDashboardPostMetricAggregates(envConfig) {
+  const filters = new URLSearchParams({
+    select: 'post_id,platform,metric_date,views,impressions,reach,engagements,clicks,engagement_rate,last_synced_at,created_at',
+    client_id: `eq.${envConfig.clientId}`,
+    order: 'metric_date.desc,last_synced_at.desc,created_at.desc',
+    limit: '240',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/post_daily_metrics?${filters.toString()}`)
+  const rows = await response.json()
+  return aggregateDashboardPostMetrics(Array.isArray(rows) ? rows : [])
+}
+
+async function maybeSyncDashboardPostMetrics(env, envConfig, connections = [], options = {}) {
+  if (!connections.length) {
+    return { attempted: 0, synced: 0, pending: 0, skipped: 0, failed: 0, platforms: [] }
+  }
+
+  const force = Boolean(options.force)
+  const platforms = [...new Set(connections.map((connection) => normalizePlatform(connection.platform)).filter(Boolean))]
+  const summary = { attempted: 0, synced: 0, pending: 0, skipped: 0, failed: 0, platforms: [] }
+
+  for (const platform of platforms) {
+    const posts = await loadPublishedPostsForMetrics(envConfig, platform, 6)
+    const existingMetrics = await loadPostDailyMetrics(envConfig, platform, posts.map((post) => post.id))
+    const platformSummary = posts.length
+      ? await syncZernioPostMetrics(env, envConfig, posts, platform, existingMetrics, { force, maxPosts: 3 })
+      : { attempted: 0, synced: 0, pending: 0, skipped: 0, failed: 0, analyticsAvailable: true, message: '' }
+
+    summary.attempted += platformSummary.attempted || 0
+    summary.synced += platformSummary.synced || 0
+    summary.pending += platformSummary.pending || 0
+    summary.skipped += platformSummary.skipped || 0
+    summary.failed += platformSummary.failed || 0
+    summary.platforms.push({ platform, ...platformSummary })
+  }
+
+  return summary
+}
+
+async function handleDashboardSocialMetrics(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'GET, OPTIONS' } })
+  }
+
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const shouldSync = url.searchParams.get('sync') !== '0'
+  const force = url.searchParams.get('force') === '1'
+
+  try {
+    let connections = await loadTenantSocialConnections(auth.envConfig)
+    const profileId = firstString(auth.envConfig.zernioProfileId)
+    let zernioAccounts = []
+    let zernioAvailable = Boolean(profileId)
+    let sync = null
+
+    if (profileId) {
+      try {
+        zernioAccounts = (await listZernioAccounts(env, { profileId, limit: 100 }))
+          .map(normalizeZernioDashboardAccount)
+          .filter((account) => account.id && account.platform && account.profileId === profileId)
+      } catch {
+        zernioAvailable = false
+      }
+    }
+
+    if (shouldSync) {
+      sync = await maybeSyncDashboardPostMetrics(env, auth.envConfig, connections, { force })
+      connections = await loadTenantSocialConnections(auth.envConfig)
+    }
+
+    const dailyMetricsByPlatform = await loadDashboardDailyMetrics(auth.envConfig)
+    const postAggregatesByPlatform = await loadDashboardPostMetricAggregates(auth.envConfig)
+    const connectionByPlatform = new Map()
+    connections.forEach((connection) => {
+      const platform = normalizePlatform(connection.platform)
+      if (platform && !connectionByPlatform.has(platform)) connectionByPlatform.set(platform, connection)
+    })
+    const accountByPlatform = new Map()
+    zernioAccounts.forEach((account) => {
+      if (!account.platform) return
+      const connection = connectionByPlatform.get(account.platform)
+      if (connection?.zernio_account_id && connection.zernio_account_id !== account.id) return
+      if (!accountByPlatform.has(account.platform)) accountByPlatform.set(account.platform, account)
+    })
+
+    return json({
+      success: true,
+      profileId: profileId || null,
+      profileStatus: auth.envConfig.zernioProfileStatus || null,
+      zernioAvailable,
+      sync,
+      platforms: DASHBOARD_SOCIAL_PLATFORMS.map((platform) => buildDashboardSocialPlatformSummary({
+        platform,
+        connection: connectionByPlatform.get(platform.id) || null,
+        account: accountByPlatform.get(platform.id) || null,
+        dailyMetric: dailyMetricsByPlatform.get(platform.id) || null,
+        postAggregate: postAggregatesByPlatform.get(platform.id) || null,
+      })),
+    })
+  } catch (error) {
+    return json({
+      success: false,
+      error: error.message || 'Could not load dashboard social metrics.',
+      details: error.payload || null,
+    }, { status: error.status || 502 })
   }
 }
 
@@ -6225,6 +6561,10 @@ export default {
 
     if (url.pathname === '/api/team-access/users') {
       return handleTeamAccessUsers(request, env)
+    }
+
+    if (url.pathname === '/api/dashboard-social-metrics') {
+      return handleDashboardSocialMetrics(request, env)
     }
 
     if (url.pathname === '/api/post-metrics') {

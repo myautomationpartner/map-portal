@@ -491,6 +491,15 @@ export async function fetchMetrics(clientId) {
   return data ?? []
 }
 
+export async function fetchDashboardSocialMetrics(options = {}) {
+  const params = new URLSearchParams({
+    sync: options.sync === false ? '0' : '1',
+  })
+  if (options.force) params.set('force', '1')
+
+  return callPortalWorker(`/api/dashboard-social-metrics?${params.toString()}`)
+}
+
 export async function fetchScheduledPosts(clientId) {
   if (!clientId) return []
 

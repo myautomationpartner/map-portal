@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useOutletContext } from 'react-router-dom'
 import {
-  fetchMetrics,
   fetchCalendarPosts,
+  fetchDashboardSocialMetrics,
+  fetchMetrics,
   fetchOpportunityRadar,
   fetchProfile,
   fetchSocialConnections,
@@ -52,16 +53,37 @@ import {
 } from 'react-icons/si'
 import { FaLinkedinIn, FaMicrosoft } from 'react-icons/fa'
 
-function getMetricRow(metrics, platform) {
-  return metrics.find((entry) => entry.platform?.toLowerCase() === platform.toLowerCase()) || null
+function formatDashboardMetricValue(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric.toLocaleString() : '—'
 }
 
-function getMetricValue(metrics, platform, field) {
-  const row = getMetricRow(metrics, platform)
+function formatMetricFreshness(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const today = new Date()
+  if (date.toDateString() === today.toDateString()) return 'Updated today'
+  return `Updated ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+}
+
+function buildLegacySocialMetricSummary(platform, rows = []) {
+  const row = rows.find((entry) => entry.platform?.toLowerCase() === platform.id.toLowerCase())
   if (!row) return null
-  const value = row[field]
-  if (value === null || value === undefined) return null
-  return Number(value).toLocaleString()
+  const value = row[platform.metricField]
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return null
+
+  return {
+    platform: platform.id,
+    connected: true,
+    metricLabel: platform.metricLabel,
+    metricValue: numericValue,
+    metricSource: 'daily_metrics',
+    statusLabel: 'Metrics current',
+    statusTone: 'success',
+    lastSyncedAt: row.created_at || row.metric_date,
+  }
 }
 
 const PLATFORM_CARD_BORDERS = {
@@ -156,13 +178,20 @@ function DashboardPublisherBar({ summary }) {
   )
 }
 
-function PlatformMetricCard({ platform, metrics, connectedPlatforms, connectingPlatform, onConnect }) {
+function PlatformMetricCard({ platform, summary, connectedPlatforms, connectingPlatform, metricsLoading, onConnect }) {
   const Icon = platform.Icon
-  const metricValue = getMetricValue(metrics, platform.id, platform.metricField)
+  const hasSummary = summary?.platform === platform.id
+  const metricValue = hasSummary && summary.metricValue !== null && summary.metricValue !== undefined
+    ? formatDashboardMetricValue(summary.metricValue)
+    : null
   const hasMetrics = metricValue !== null
-  const isConnected = connectedPlatforms.has(platform.id)
+  const isConnected = Boolean(summary?.connected) || connectedPlatforms.has(platform.id)
   const isConnecting = connectingPlatform === platform.id
-  const statusLabel = isConnected ? 'Connected' : 'Not connected'
+  const statusLabel = metricsLoading && !hasSummary
+    ? 'Checking metrics'
+    : summary?.statusLabel || (isConnected ? 'Connected' : 'Not connected')
+  const metricLabel = summary?.metricLabel || platform.metricLabel
+  const freshness = formatMetricFreshness(summary?.lastSyncedAt)
   const canConnectNow = platform.connectionEnabled && !isConnected
 
   return (
@@ -204,11 +233,16 @@ function PlatformMetricCard({ platform, metrics, connectedPlatforms, connectingP
       <div className="mt-2 flex items-end justify-between gap-2">
         <div>
           <p className="text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--portal-text-soft)' }}>
-            {platform.metricLabel}
+            {metricLabel}
           </p>
           <p className="mt-0.5 text-lg font-semibold tabular-nums tracking-[-0.04em]" style={{ color: 'var(--portal-text)' }}>
             {hasMetrics ? metricValue : '—'}
           </p>
+          {freshness ? (
+            <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--portal-text-soft)' }}>
+              {freshness}
+            </p>
+          ) : null}
         </div>
 
         {canConnectNow ? (
@@ -931,7 +965,13 @@ export default function Dashboard() {
   const clientId = profile?.client_id
   const client = profile?.clients || null
   const userId = profile?.id
-  const { data: rawMetrics = [] } = useQuery({
+  const { data: dashboardSocialMetrics = null, isFetching: dashboardSocialMetricsFetching } = useQuery({
+    queryKey: ['dashboard-social-metrics', clientId],
+    queryFn: () => fetchDashboardSocialMetrics({ sync: true }),
+    enabled: !!clientId,
+    retry: 1,
+  })
+  const { data: legacyMetrics = [] } = useQuery({
     queryKey: ['metrics', clientId],
     queryFn: () => fetchMetrics(clientId),
     enabled: !!clientId,
@@ -967,10 +1007,30 @@ export default function Dashboard() {
     enabled: !!clientId,
   })
 
-  const metrics = rawMetrics
+  const socialMetricsByPlatform = useMemo(() => {
+    const summaries = Array.isArray(dashboardSocialMetrics?.platforms)
+      ? dashboardSocialMetrics.platforms
+      : []
+    const map = new Map(summaries.map((summary) => [summary.platform, summary]))
+
+    DASHBOARD_PLATFORMS.forEach((platform) => {
+      const current = map.get(platform.id)
+      if (current?.metricValue !== null && current?.metricValue !== undefined) return
+      const legacySummary = buildLegacySocialMetricSummary(platform, legacyMetrics)
+      if (legacySummary) map.set(platform.id, { ...(current || {}), ...legacySummary })
+    })
+
+    return map
+  }, [dashboardSocialMetrics, legacyMetrics])
   const connectedPlatformIds = useMemo(
-    () => new Set((socialConnections || []).map((connection) => connection.platform).filter(Boolean)),
-    [socialConnections],
+    () => {
+      const connectionIds = (socialConnections || []).map((connection) => connection.platform).filter(Boolean)
+      const summaryIds = Array.isArray(dashboardSocialMetrics?.platforms)
+        ? dashboardSocialMetrics.platforms.filter((summary) => summary.connected).map((summary) => summary.platform)
+        : []
+      return new Set([...connectionIds, ...summaryIds])
+    },
+    [dashboardSocialMetrics, socialConnections],
   )
   const publisherSummary = useMemo(
     () => getDashboardPublisherSummary(calendarPosts, socialDrafts, opportunities),
@@ -1149,9 +1209,10 @@ export default function Dashboard() {
           <PlatformMetricCard
             key={platform.id}
             platform={platform}
-            metrics={metrics}
+            summary={socialMetricsByPlatform.get(platform.id)}
             connectedPlatforms={connectedPlatformIds}
             connectingPlatform={connectingPlatform}
+            metricsLoading={dashboardSocialMetricsFetching}
             onConnect={connectPlatform}
           />
         ))}

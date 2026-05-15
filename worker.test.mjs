@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 import {
+  buildDashboardSocialPlatformSummary,
   buildZernioOutboundReplyRequest,
   buildZernioScopedSearchParams,
   getUserPermissions,
@@ -221,6 +222,61 @@ test('normalizes Zernio post analytics for tenant-scoped metric storage', () => 
       },
     },
   )
+})
+
+test('dashboard social summary prefers current follower snapshots', () => {
+  const summary = buildDashboardSocialPlatformSummary({
+    platform: { id: 'facebook', metricField: 'followers', metricLabel: 'Followers' },
+    connection: {
+      platform: 'facebook',
+      zernio_account_id: 'acct_fb',
+      zernio_profile_id: 'profile_map',
+      username: 'My Automation Partner',
+    },
+    dailyMetric: {
+      followers: 723,
+      reach: 15,
+      metric_date: '2026-05-15',
+      created_at: '2026-05-15T04:00:00.000Z',
+    },
+    postAggregate: {
+      engagements: 7,
+      reach: 100,
+      views: 0,
+      latestSyncedAt: '2026-05-15T14:46:44.000Z',
+    },
+  })
+
+  assert.equal(summary.connected, true)
+  assert.equal(summary.metricLabel, 'Followers')
+  assert.equal(summary.metricValue, 723)
+  assert.equal(summary.metricSource, 'daily_metrics')
+  assert.equal(summary.statusLabel, 'Metrics current')
+  assert.equal(summary.username, 'My Automation Partner')
+})
+
+test('dashboard social summary falls back to post activity when follower snapshots are missing', () => {
+  const summary = buildDashboardSocialPlatformSummary({
+    platform: { id: 'facebook', metricField: 'followers', metricLabel: 'Followers' },
+    connection: {
+      platform: 'facebook',
+      zernio_account_id: 'acct_fb',
+      zernio_profile_id: 'profile_map',
+      username: 'My Automation Partner',
+    },
+    postAggregate: {
+      engagements: 7,
+      reach: 0,
+      views: 0,
+      latestSyncedAt: '2026-05-15T14:46:44.000Z',
+    },
+  })
+
+  assert.equal(summary.connected, true)
+  assert.equal(summary.metricLabel, 'Engagement')
+  assert.equal(summary.metricValue, 7)
+  assert.equal(summary.metricSource, 'post_daily_metrics')
+  assert.equal(summary.statusLabel, 'Metrics current')
 })
 
 test('normalizes Zernio comment webhooks into inbox messages', () => {
