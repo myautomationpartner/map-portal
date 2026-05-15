@@ -27,6 +27,7 @@ import {
   Search,
   Share2,
   ShieldCheck,
+  Trash2,
   Upload,
   Users,
   X,
@@ -34,9 +35,11 @@ import {
 import PdfDocumentViewer from '../components/PdfDocumentViewer'
 import TextDocumentViewer from '../components/TextDocumentViewer'
 import {
+  archiveSecureVaultFolderTree,
   createSecureVaultFolder,
   createSecureVaultRoom,
   createSecureVaultShareLink,
+  emptySecureVaultArchive,
   fetchSecureVaultAudit,
   fetchSecureVaultDocuments,
   fetchSecureVaultFolders,
@@ -46,7 +49,10 @@ import {
   getSecureVaultUploadUrl,
   revokeSecureVaultShareLink,
   revokeSecureVaultRoom,
+  permanentlyDeleteSecureVaultDocument,
+  permanentlyDeleteSecureVaultFolderTree,
   updateSecureVaultDocument,
+  updateSecureVaultFolder,
   uploadSecureVaultFileToSignedUrl,
 } from '../lib/portalApi'
 import {
@@ -154,6 +160,40 @@ function descendantFolderIds(folderId, folders) {
   return ids
 }
 
+function ancestorFolderIds(folderId, foldersById) {
+  const ids = new Set()
+  let current = foldersById.get(folderId)
+  while (current?.parent_folder_id && !ids.has(current.parent_folder_id)) {
+    ids.add(current.parent_folder_id)
+    current = foldersById.get(current.parent_folder_id)
+  }
+  return ids
+}
+
+function visibleFolderRowsForSelection(folderRows, selectedFolder, foldersById) {
+  const selectedRecord = foldersById.get(selectedFolder)
+  if (!selectedRecord) return folderRows.filter((folder) => !folder.parent_folder_id)
+
+  const ancestorIds = ancestorFolderIds(selectedFolder, foldersById)
+  return folderRows.filter((folder) => (
+    !folder.parent_folder_id
+    || folder.id === selectedFolder
+    || folder.parent_folder_id === selectedFolder
+    || ancestorIds.has(folder.id)
+    || ancestorIds.has(folder.parent_folder_id)
+  ))
+}
+
+function compactFolderPath(folderId, foldersById, selectedFolder) {
+  const path = folderPath(folderId, foldersById)
+  if (!path) return ''
+  const selectedPath = folderPath(selectedFolder, foldersById)
+  if (selectedPath && path.startsWith(`${selectedPath} / `)) {
+    return path.slice(selectedPath.length + 3)
+  }
+  return path
+}
+
 function DocumentFileIcon({ mimeType, className, style }) {
   if (mimeType?.startsWith('image/')) return <FileImage className={className} style={style} />
   if (TEXT_PREVIEW_MIME.has(mimeType)) return <FileCode2 className={className} style={style} />
@@ -255,6 +295,7 @@ function DocumentActionMenu({
   onShareLink,
   onDownload,
   onArchive,
+  onDelete,
 }) {
   const [showFolderChooser, setShowFolderChooser] = useState(false)
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
@@ -428,8 +469,155 @@ function DocumentActionMenu({
                   {document.is_archived ? 'Restore' : 'Archive'}
                 </button>
               ) : null}
+              {canManage ? (
+                <button
+                  type="button"
+                  onClick={() => onDelete(document)}
+                  className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+                  style={{ color: 'var(--portal-danger)', background: 'rgba(223, 95, 143, 0.1)' }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete permanently
+                </button>
+              ) : null}
             </div>
           )}
+        </div>,
+        window.document.body,
+      ) : null}
+    </div>
+  )
+}
+
+function FolderActionMenu({
+  folder,
+  isOpen,
+  canManage,
+  onOpen,
+  onClose,
+  onShare,
+  onRename,
+  onArchive,
+  onDelete,
+}) {
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
+  const buttonRef = useRef(null)
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+
+    function updateMenuPosition() {
+      const buttonRect = buttonRef.current?.getBoundingClientRect()
+      const menuRect = menuRef.current?.getBoundingClientRect()
+      if (!buttonRect) return
+
+      const estimatedMenuWidth = menuRect?.width || 210
+      const estimatedMenuHeight = menuRect?.height || 170
+      const edgePadding = 12
+      const gap = 8
+      const left = Math.min(
+        Math.max(edgePadding, buttonRect.right - estimatedMenuWidth),
+        window.innerWidth - estimatedMenuWidth - edgePadding,
+      )
+      const top = Math.min(
+        window.innerHeight - estimatedMenuHeight - edgePadding,
+        buttonRect.bottom + gap,
+      )
+
+      setMenuPosition({ top: Math.max(edgePadding, top), left })
+    }
+
+    function handlePointerDown(event) {
+      if (event.target instanceof Element && event.target.closest('[data-folder-action-menu="true"]')) return
+      onClose()
+    }
+
+    const frameId = window.requestAnimationFrame(updateMenuPosition)
+    window.addEventListener('resize', updateMenuPosition)
+    window.addEventListener('scroll', updateMenuPosition, true)
+    window.document.addEventListener('pointerdown', handlePointerDown)
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      window.removeEventListener('resize', updateMenuPosition)
+      window.removeEventListener('scroll', updateMenuPosition, true)
+      window.document.removeEventListener('pointerdown', handlePointerDown)
+    }
+  }, [isOpen, onClose])
+
+  if (!canManage) return null
+
+  return (
+    <div className="relative shrink-0" data-folder-action-menu="true">
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label={`Open actions for ${folder.name}`}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation()
+          onOpen()
+        }}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-full border transition-all"
+        style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.9)', color: 'var(--portal-text-muted)' }}
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+
+      {isOpen ? createPortal(
+        <div
+          ref={menuRef}
+          data-folder-action-menu="true"
+          className="fixed z-[120] min-w-[205px] rounded-[20px] border p-2 shadow-lg"
+          style={{
+            top: `${menuPosition.top}px`,
+            left: `${menuPosition.left}px`,
+            borderColor: 'var(--portal-border)',
+            background: 'rgba(255,255,255,0.98)',
+            boxShadow: '0 18px 40px rgba(26, 24, 20, 0.12)',
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="space-y-1">
+            <button
+              type="button"
+              onClick={() => onShare(folder)}
+              className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+              style={{ color: 'var(--portal-text)' }}
+            >
+              <Users className="h-4 w-4" />
+              Share folder
+            </button>
+            <button
+              type="button"
+              onClick={() => onRename(folder)}
+              className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+              style={{ color: 'var(--portal-text)' }}
+            >
+              <FileText className="h-4 w-4" />
+              Rename
+            </button>
+            <button
+              type="button"
+              onClick={() => onArchive(folder)}
+              className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+              style={{ color: 'var(--portal-danger)', background: 'rgba(223, 95, 143, 0.06)' }}
+            >
+              <Archive className="h-4 w-4" />
+              Archive folder
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(folder)}
+              className="flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-all"
+              style={{ color: 'var(--portal-danger)', background: 'rgba(223, 95, 143, 0.1)' }}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete permanently
+            </button>
+          </div>
         </div>,
         window.document.body,
       ) : null}
@@ -830,6 +1018,7 @@ export default function Documents() {
   const [libraryView, setLibraryView] = useState('list')
   const [folderDraft, setFolderDraft] = useState('')
   const [openActionMenuId, setOpenActionMenuId] = useState(null)
+  const [openFolderMenuId, setOpenFolderMenuId] = useState(null)
   const [auditQuery, setAuditQuery] = useState('')
   const [auditSort, setAuditSort] = useState({ field: 'accessed_at', direction: 'desc' })
   const [fileColumnWidth, setFileColumnWidth] = useState(() => {
@@ -916,23 +1105,34 @@ export default function Documents() {
   const folderTree = useMemo(() => buildFolderTree(secureFolders), [secureFolders])
   const folderRows = folderTree.rows
   const foldersById = folderTree.byId
+  const visibleFolderRows = useMemo(
+    () => visibleFolderRowsForSelection(folderRows, selectedFolder, foldersById),
+    [folderRows, foldersById, selectedFolder],
+  )
 
   const folders = useMemo(() => [
     { id: SHARED_ROOMS_FOLDER, name: SHARED_ROOMS_FOLDER, path: SHARED_ROOMS_FOLDER, depth: 0, special: true },
     { id: ALL_FILES_FOLDER, name: ALL_FILES_FOLDER, path: ALL_FILES_FOLDER, depth: 0, special: true },
-    ...folderRows,
+    ...visibleFolderRows,
     { id: ARCHIVED_FOLDER, name: ARCHIVED_FOLDER, path: ARCHIVED_FOLDER, depth: 0, special: true },
-  ], [folderRows])
+  ], [visibleFolderRows])
 
   const selectedFolderRecord = useMemo(() => folders.find((folder) => folder.id === selectedFolder) || folders[1], [folders, selectedFolder])
 
   const filteredDocuments = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase()
+    const selectedFolderIds = folderRows.some((folder) => folder.id === selectedFolder)
+      ? descendantFolderIds(selectedFolder, folderRows)
+      : null
     const folderSource = selectedFolder === ARCHIVED_FOLDER
       ? archivedDocuments
       : selectedFolder === SHARED_ROOMS_FOLDER
         ? activeDocuments.filter((document) => roomDocumentIds.has(document.id))
-        : activeDocuments.filter((document) => selectedFolder === ALL_FILES_FOLDER || document.folder_id === selectedFolder)
+        : activeDocuments.filter((document) => (
+          selectedFolder === ALL_FILES_FOLDER
+          || selectedFolderIds?.has(document.folder_id)
+          || document.folder_id === selectedFolder
+        ))
 
     return folderSource.filter((document) => normalizedQuery.length === 0 || [
       document.file_name,
@@ -942,7 +1142,7 @@ export default function Documents() {
       folderPath(document.folder_id, foldersById),
       document.description,
     ].some((value) => value?.toLowerCase().includes(normalizedQuery)))
-  }, [activeDocuments, archivedDocuments, foldersById, roomDocumentIds, searchQuery, selectedFolder])
+  }, [activeDocuments, archivedDocuments, folderRows, foldersById, roomDocumentIds, searchQuery, selectedFolder])
 
   const selectedDocument = useMemo(
     () => filteredDocuments.find((document) => document.id === selectedId)
@@ -960,7 +1160,8 @@ export default function Documents() {
       [ARCHIVED_FOLDER]: archivedDocuments.length,
     }
     for (const folder of folderRows) {
-      counts[folder.id] = activeDocuments.filter((document) => document.folder_id === folder.id).length
+      const folderIds = descendantFolderIds(folder.id, folderRows)
+      counts[folder.id] = activeDocuments.filter((document) => folderIds.has(document.folder_id)).length
     }
     return counts
   }, [activeDocuments, archivedDocuments.length, folderRows, roomDocumentIds])
@@ -1068,6 +1269,99 @@ export default function Documents() {
     onSuccess: async (updatedDocument) => {
       setNotice({ type: 'success', message: updatedDocument.is_archived ? 'Document archived.' : 'Document saved.' })
       await queryClient.invalidateQueries({ queryKey: ['secure-vault-documents'] })
+    },
+    onError: (error) => setNotice({ type: 'error', message: error.message }),
+  })
+
+  const updateFolderMutation = useMutation({
+    mutationFn: ({ folderId, changes }) => updateSecureVaultFolder(folderId, changes),
+    onSuccess: async (updatedFolder) => {
+      if (updatedFolder.is_archived && selectedFolder === updatedFolder.id) {
+        setSelectedFolder(ALL_FILES_FOLDER)
+      }
+      setNotice({
+        type: 'success',
+        message: updatedFolder.is_archived
+          ? 'Folder deleted. Files remain available in All Files.'
+          : 'Folder saved.',
+      })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-folders'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-documents'] }),
+      ])
+    },
+    onError: (error) => setNotice({ type: 'error', message: error.message }),
+  })
+
+  const archiveFolderTreeMutation = useMutation({
+    mutationFn: ({ folderIds }) => archiveSecureVaultFolderTree(folderIds),
+    onSuccess: async (result) => {
+      if (result.folders.some((folder) => folder.id === selectedFolder)) {
+        setSelectedFolder(ALL_FILES_FOLDER)
+      }
+      setNotice({
+        type: 'success',
+        message: `Folder deleted. ${result.archivedDocumentCount} file${result.archivedDocumentCount === 1 ? '' : 's'} moved to Archived.`,
+      })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-folders'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-documents'] }),
+      ])
+    },
+    onError: (error) => setNotice({ type: 'error', message: error.message }),
+  })
+
+  const deleteDocumentMutation = useMutation({
+    mutationFn: ({ documentId }) => permanentlyDeleteSecureVaultDocument(documentId),
+    onSuccess: async (result) => {
+      setNotice({
+        type: 'success',
+        message: `Document permanently deleted. ${result.deletedStorageCount} storage object${result.deletedStorageCount === 1 ? '' : 's'} removed.`,
+      })
+      setSelectedId(null)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-documents'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-folders'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-share-links'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-rooms'] }),
+      ])
+    },
+    onError: (error) => setNotice({ type: 'error', message: error.message }),
+  })
+
+  const deleteFolderTreeMutation = useMutation({
+    mutationFn: ({ folderIds }) => permanentlyDeleteSecureVaultFolderTree(folderIds),
+    onSuccess: async (result) => {
+      setSelectedFolder(ALL_FILES_FOLDER)
+      setSelectedId(null)
+      setNotice({
+        type: 'success',
+        message: `Folder permanently deleted. ${result.deletedDocumentCount} file${result.deletedDocumentCount === 1 ? '' : 's'} removed.`,
+      })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-folders'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-documents'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-share-links'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-rooms'] }),
+      ])
+    },
+    onError: (error) => setNotice({ type: 'error', message: error.message }),
+  })
+
+  const emptyArchiveMutation = useMutation({
+    mutationFn: () => emptySecureVaultArchive(clientId),
+    onSuccess: async (result) => {
+      setSelectedId(null)
+      setNotice({
+        type: 'success',
+        message: `Archive emptied. ${result.deletedDocumentCount} file${result.deletedDocumentCount === 1 ? '' : 's'} permanently deleted.`,
+      })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-folders'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-documents'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-share-links'] }),
+        queryClient.invalidateQueries({ queryKey: ['secure-vault-rooms'] }),
+      ])
     },
     onError: (error) => setNotice({ type: 'error', message: error.message }),
   })
@@ -1211,6 +1505,39 @@ export default function Documents() {
     folderMutation.mutate({ clientId, name: nextFolder, parentFolderId })
   }
 
+  function handleShareFolder(folder) {
+    setOpenFolderMenuId(null)
+    openRoomDialogForFolder(folder.id)
+  }
+
+  function handleRenameFolder(folder) {
+    if (!requireWriteAccess('rename folders')) return
+    setOpenFolderMenuId(null)
+    const nextName = window.prompt('Rename folder', folder.name)?.trim()
+    if (!nextName || nextName === folder.name) return
+    updateFolderMutation.mutate({ folderId: folder.id, changes: { name: nextName } })
+  }
+
+  function handleArchiveFolder(folder) {
+    if (!requireWriteAccess('archive folders')) return
+    setOpenFolderMenuId(null)
+    const fileCount = folderCounts[folder.id] || 0
+    const fileLabel = `${fileCount} file${fileCount === 1 ? '' : 's'}`
+    const confirmed = window.confirm(`Archive "${folder.name}"?\n\nThe folder and its subfolders will be removed from the active folder list. ${fileLabel} will move to Archived and automatically clear after 30 days.`)
+    if (!confirmed) return
+    archiveFolderTreeMutation.mutate({ folderIds: Array.from(descendantFolderIds(folder.id, folderRows)) })
+  }
+
+  function handleDeleteFolder(folder) {
+    if (!requireWriteAccess('delete folders')) return
+    setOpenFolderMenuId(null)
+    const fileCount = folderCounts[folder.id] || 0
+    const fileLabel = `${fileCount} file${fileCount === 1 ? '' : 's'}`
+    const confirmed = window.confirm(`Permanently delete "${folder.name}"?\n\nThis removes the folder tree and ${fileLabel} from storage. This cannot be undone.`)
+    if (!confirmed) return
+    deleteFolderTreeMutation.mutate({ folderIds: Array.from(descendantFolderIds(folder.id, folderRows)) })
+  }
+
   function handleRenameDocument(document) {
     if (!requireWriteAccess('rename documents')) return
     setOpenActionMenuId(null)
@@ -1230,6 +1557,22 @@ export default function Documents() {
     if (!requireWriteAccess(document.is_archived ? 'restore documents' : 'archive documents')) return
     setOpenActionMenuId(null)
     updateDocumentMutation.mutate({ documentId: document.id, changes: { is_archived: !document.is_archived } })
+  }
+
+  function handleDeleteDocument(document) {
+    if (!requireWriteAccess('delete documents')) return
+    setOpenActionMenuId(null)
+    const confirmed = window.confirm(`Permanently delete "${document.file_name}"?\n\nThis removes the file from storage. This cannot be undone.`)
+    if (!confirmed) return
+    deleteDocumentMutation.mutate({ documentId: document.id })
+  }
+
+  function handleEmptyArchive() {
+    if (!requireWriteAccess('empty archive')) return
+    const fileCount = archivedDocuments.length
+    const confirmed = window.confirm(`Empty Archive?\n\nThis permanently deletes ${fileCount} archived file${fileCount === 1 ? '' : 's'} and archived folders from storage. This cannot be undone.`)
+    if (!confirmed) return
+    emptyArchiveMutation.mutate()
   }
 
   function openRoomDialogForDocuments(documentIds) {
@@ -1576,13 +1919,11 @@ export default function Documents() {
 
                 <div className="space-y-2">
                   {folders.map((folder) => (
-                    <button
+                    <div
                       key={folder.id}
-                      type="button"
-                      onClick={() => setSelectedFolder(folder.id)}
                       data-active={selectedFolder === folder.id}
                       data-kind={folder.id}
-                      className="documents-folder-button flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left transition-all"
+                      className="documents-folder-button flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition-all"
                       style={selectedFolder === folder.id
                         ? folder.id === SHARED_ROOMS_FOLDER
                           ? { background: 'linear-gradient(135deg, rgba(31,169,113,0.18), rgba(201, 240, 223, 0.14))', border: '1px solid rgba(31,169,113,0.24)' }
@@ -1591,11 +1932,34 @@ export default function Documents() {
                           ? { background: 'rgba(217, 244, 229, 0.58)', border: '1px solid rgba(31,169,113,0.18)' }
                           : { background: 'rgba(255,255,255,0.78)', border: '1px solid var(--portal-border)' }}
                     >
-                      <div className="min-w-0" style={{ paddingLeft: `${folder.depth * 12}px` }}>
-                        <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{folder.name}</p>
-                        <p className="text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>{folderCounts[folder.id] || 0} file{(folderCounts[folder.id] || 0) === 1 ? '' : 's'}</p>
-                      </div>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFolder(folder.id)}
+                        className="min-w-0 flex-1 text-left"
+                        style={{ paddingLeft: `${folder.depth * 14}px` }}
+                      >
+                        <span className="block truncate text-[13px] font-semibold" style={{ color: 'var(--portal-text)' }}>{folder.name}</span>
+                        <span className="block truncate text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>
+                          {folder.special ? '' : folder.depth === 0 ? 'Parent folder · ' : ''}{folderCounts[folder.id] || 0} file{(folderCounts[folder.id] || 0) === 1 ? '' : 's'}
+                        </span>
+                      </button>
+                      {!folder.special ? (
+                        <FolderActionMenu
+                          folder={folder}
+                          isOpen={openFolderMenuId === folder.id}
+                          canManage={!billingAccess?.readOnly}
+                          onOpen={() => {
+                            setOpenActionMenuId(null)
+                            setOpenFolderMenuId(folder.id)
+                          }}
+                          onClose={() => setOpenFolderMenuId(null)}
+                          onShare={handleShareFolder}
+                          onRename={handleRenameFolder}
+                          onArchive={handleArchiveFolder}
+                          onDelete={handleDeleteFolder}
+                        />
+                      ) : null}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -1608,7 +1972,7 @@ export default function Documents() {
                 <div>
                   <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedFolderRecord?.path || selectedFolder}</h2>
                   <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                    {selectedFolder === SHARED_ROOMS_FOLDER ? 'Files included in secure access rooms.' : selectedFolder === ARCHIVED_FOLDER ? 'Archived files still count against quota.' : 'Tenant-scoped secure document library.'}
+                    {selectedFolder === SHARED_ROOMS_FOLDER ? 'Files included in secure access rooms.' : selectedFolder === ARCHIVED_FOLDER ? 'Archived files are recoverable for 30 days, then automatically cleared.' : 'Tenant-scoped secure document library.'}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1616,6 +1980,12 @@ export default function Documents() {
                     <button type="button" onClick={() => openRoomDialogForFolder(selectedFolder)} disabled={billingAccess?.readOnly} className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold disabled:opacity-60">
                       <Users className="h-3.5 w-3.5" />
                       Share folder
+                    </button>
+                  ) : null}
+                  {selectedFolder === ARCHIVED_FOLDER && archivedDocuments.length > 0 ? (
+                    <button type="button" onClick={handleEmptyArchive} disabled={billingAccess?.readOnly || emptyArchiveMutation.isPending} className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold transition-all disabled:opacity-60" style={{ color: 'var(--portal-danger)', background: 'rgba(223, 95, 143, 0.08)', border: '1px solid rgba(223, 95, 143, 0.18)' }}>
+                      {emptyArchiveMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                      Empty archive
                     </button>
                   ) : null}
                   <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold">{filteredDocuments.length} shown</span>
@@ -1660,6 +2030,7 @@ export default function Documents() {
                               previewMutation.mutate({ documentId: item.id, action: 'download' })
                             }}
                             onArchive={handleArchiveDocument}
+                            onDelete={handleDeleteDocument}
                           />
                         </div>
                         <button type="button" onClick={() => { setSelectedId(document.id); previewMutation.mutate({ documentId: document.id, action: 'view' }) }} className="block w-full text-left">
@@ -1670,7 +2041,9 @@ export default function Documents() {
                             <p className="truncate text-[13px] font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
                             {roomDocumentIds.has(document.id) ? <Users className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--portal-success)' }} /> : null}
                           </div>
-                          <p className="mt-1 text-[11px]" style={{ color: 'var(--portal-text-muted)' }}>{folderPath(document.folder_id, foldersById) || documentFolder(document)} - {formatVaultBytes(document.size_bytes)}</p>
+                          <p className="mt-1 truncate text-[11px]" style={{ color: 'var(--portal-text-muted)' }}>
+                            {compactFolderPath(document.folder_id, foldersById, selectedFolder) || documentFolder(document)} - {formatVaultBytes(document.size_bytes)}
+                          </p>
                         </button>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <button type="button" onClick={() => previewMutation.mutate({ documentId: document.id, action: 'view' })} className="portal-button-ghost inline-flex h-8 w-8 items-center justify-center rounded-full" aria-label={`Preview ${document.file_name}`}>
@@ -1713,10 +2086,12 @@ export default function Documents() {
                                       <p className="truncate text-[12px] font-semibold leading-5" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
                                       {roomDocumentIds.has(document.id) ? <Users className="h-3 w-3 shrink-0" style={{ color: 'var(--portal-success)' }} /> : null}
                                     </div>
-                                    <p className="text-[11px]" style={{ color: 'var(--portal-text-muted)' }}>{folderPath(document.folder_id, foldersById) || documentFolder(document)} - {formatVaultBytes(document.size_bytes)}</p>
+                                    <p className="max-w-full truncate whitespace-nowrap text-[11px]" style={{ color: 'var(--portal-text-muted)' }}>
+                                      {compactFolderPath(document.folder_id, foldersById, selectedFolder) || documentFolder(document)} - {formatVaultBytes(document.size_bytes)}
+                                    </p>
                                   </div>
-                                  <span className="hidden shrink-0 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] lg:inline-flex" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-soft)' }}>
-                                    {folderPath(document.folder_id, foldersById) || documentFolder(document)}
+                                  <span className="hidden max-w-[180px] shrink truncate whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] lg:inline-block" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-soft)' }}>
+                                    {compactFolderPath(document.folder_id, foldersById, selectedFolder) || documentFolder(document)}
                                   </span>
                                 </div>
                                 <div className="ml-auto flex shrink-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
@@ -1737,6 +2112,7 @@ export default function Documents() {
                                       previewMutation.mutate({ documentId: item.id, action: 'download' })
                                     }}
                                     onArchive={handleArchiveDocument}
+                                    onDelete={handleDeleteDocument}
                                   />
                                 </div>
                               </div>

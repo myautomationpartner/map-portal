@@ -10,16 +10,21 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  ExternalLink,
   Link2,
   Linkedin,
   Loader2,
+  FileSearch,
+  MapPin,
   Megaphone,
   MoreHorizontal,
   PencilLine,
   Plus,
   RefreshCw,
   Save,
+  ShieldCheck,
   Sparkles,
+  Target,
   Trash2,
   Wand2,
   X,
@@ -29,15 +34,18 @@ import {
   deleteResearchSource,
   deletePost,
   deleteSocialDraft,
+  fetchBoostAdAccounts,
   fetchCalendarPosts,
   fetchOpportunityRadar,
   fetchPostBoosts,
+  fetchPostBoostReadiness,
   fetchProfile,
   fetchResearchProfile,
   fetchResearchSources,
   fetchSocialDrafts,
   launchPostBoost,
   recordPlannerFeedbackEvent,
+  startBoostAdsConnection,
   startOpportunityRadar,
   updateClientPartnerProfile,
   updateResearchSource,
@@ -47,6 +55,13 @@ import {
   upsertSocialDraft,
 } from '../lib/portalApi'
 import { derivePlannerBusinessType } from '../lib/plannerIndustryCatalog'
+import {
+  PARTNER_TRAINING_STEPS,
+  buildPartnerBriefItems,
+  resolveTrainingProgress,
+  resolveTrainingStepComplete,
+} from '../lib/partnerTrainingFlow'
+import { recommendBoostSetup } from '../lib/boostAssistant'
 import { parseDraftMeta, stringifyDraftMeta } from '../lib/socialDrafting'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
@@ -85,6 +100,7 @@ const BOOST_GOALS = [
   { value: 'engagement', label: 'More engagement' },
   { value: 'traffic', label: 'More website visits' },
   { value: 'awareness', label: 'More local awareness' },
+  { value: 'video_views', label: 'More video views' },
 ]
 const BOOST_DURATIONS = [
   { value: 3, label: '3 days' },
@@ -133,10 +149,6 @@ function normalizeSourceUrl(value) {
 
 function listToText(value) {
   return Array.isArray(value) ? value.filter(Boolean).join('\n') : ''
-}
-
-function textToPreviewList(value, limit = 4) {
-  return textToList(value).slice(0, limit)
 }
 
 function textToList(value) {
@@ -359,15 +371,6 @@ function getPartnerTrainingStatus(researchProfile) {
 
 function formatVerifiedDate(value) {
   return formatDate(value, { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function normalizeBrandColors(value) {
-  if (!value) return []
-  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 5)
-  if (typeof value === 'object') {
-    return Object.values(value).map((item) => String(item || '').trim()).filter((item) => /^#?[0-9a-f]{6}$/i.test(item)).slice(0, 5)
-  }
-  return []
 }
 
 function formatSlotDate(dateString) {
@@ -702,16 +705,117 @@ function getBoostStatus(boosts = []) {
   }
 }
 
-function BoostPostModal({ item, defaultPlatform, onClose, onSubmit, isSaving, error }) {
+function BoostPostModal({ item, defaultPlatform, readiness, isReadinessLoading, onClose, onSubmit, isSaving, error }) {
   const availablePlatforms = [...new Set(item?.platforms || [])].filter((platform) => BOOSTABLE_PLATFORMS.has(platform))
-  const [platform, setPlatform] = useState(defaultPlatform || availablePlatforms[0] || 'facebook')
-  const [goal, setGoal] = useState('engagement')
-  const [budgetAmount, setBudgetAmount] = useState('10')
-  const [budgetType, setBudgetType] = useState('daily')
-  const [durationDays, setDurationDays] = useState(5)
+  const boostRecommendation = useMemo(() => recommendBoostSetup({ item, defaultPlatform }), [defaultPlatform, item])
+  const [platform, setPlatform] = useState(boostRecommendation.platform || defaultPlatform || availablePlatforms[0] || 'facebook')
+  const [goal, setGoal] = useState(boostRecommendation.goal || 'engagement')
+  const [budgetAmount, setBudgetAmount] = useState(boostRecommendation.budgetAmount || '10')
+  const [budgetType, setBudgetType] = useState(boostRecommendation.budgetType || 'daily')
+  const [durationDays, setDurationDays] = useState(boostRecommendation.durationDays || 5)
   const [adAccountId, setAdAccountId] = useState('')
+  const [adAccounts, setAdAccounts] = useState([])
+  const [isLoadingAdAccounts, setIsLoadingAdAccounts] = useState(false)
+  const [isConnectingAds, setIsConnectingAds] = useState(false)
+  const [adAccountNotice, setAdAccountNotice] = useState('')
+
+  const readinessByPlatform = new Map((readiness?.platforms || []).map((entry) => [entry.platform, entry]))
+  const selectedReadiness = readinessByPlatform.get(platform)
+  const selectedIssues = selectedReadiness?.issues || []
+  const savedAdAccountId = selectedReadiness?.savedAdAccountId || ''
+  const savedAdAccountLabel = selectedReadiness?.savedAdAccountLabel || 'saved ad account'
+  const hasLaunchAccount = Boolean(savedAdAccountId || adAccountId.trim())
+  const canLaunchBoost = availablePlatforms.length > 0
+    && !isReadinessLoading
+    && (!selectedReadiness || selectedReadiness.canBoost)
+    && hasLaunchAccount
+
+  useEffect(() => {
+    setAdAccountId('')
+    setAdAccounts([])
+    setAdAccountNotice('')
+  }, [platform])
 
   if (!item?.post) return null
+
+  async function handleLoadAdAccounts() {
+    setIsLoadingAdAccounts(true)
+    setAdAccountNotice('')
+    try {
+      const accounts = await fetchBoostAdAccounts(platform)
+      setAdAccounts(accounts)
+      if (accounts.length === 1) {
+        setAdAccountId(accounts[0].adAccountId || accounts[0].id || '')
+        setAdAccountNotice('Found one ad account and selected it for this boost.')
+      } else if (accounts.length > 1) {
+        setAdAccountNotice('Choose the ad account to use for this boost.')
+      } else {
+        setAdAccountNotice('No connected ad accounts found yet. Use Ads setup, then check again.')
+      }
+    } catch (loadError) {
+      setAdAccountNotice(loadError.message || 'Could not load ad accounts.')
+    } finally {
+      setIsLoadingAdAccounts(false)
+    }
+  }
+
+  async function handleConnectAds() {
+    const adsPopup = typeof window !== 'undefined'
+      ? window.open('', '_blank', 'width=720,height=760')
+      : null
+
+    if (adsPopup && !adsPopup.closed) {
+      adsPopup.document.write(`
+        <title>Opening Zernio Ads…</title>
+        <body style="min-height:100vh;margin:0;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:#0b0f14;font-family:ui-sans-serif,system-ui,sans-serif;color:#f5f7fb;">
+          <main style="max-width:420px;width:100%;border:1px solid rgba(255,255,255,.14);border-radius:24px;background:rgba(255,255,255,.06);padding:24px;">
+            <p style="margin:0 0 8px;font-size:15px;font-weight:800;color:#c4a8ff;">Opening Zernio Ads setup…</p>
+            <p style="margin:0;font-size:14px;line-height:1.5;color:#a6afc2;">Finish setup in the new tab, then return to MAP.</p>
+          </main>
+        </body>
+      `)
+    }
+
+    setIsConnectingAds(true)
+    setAdAccountNotice('')
+    try {
+      const payload = await startBoostAdsConnection({
+        platform,
+        redirectUrl: typeof window !== 'undefined' ? window.location.href : '',
+      })
+
+      if (payload.alreadyConnected) {
+        if (adsPopup && !adsPopup.closed) adsPopup.close()
+        const accounts = payload.accounts || []
+        setAdAccounts(accounts)
+        if (accounts.length === 1) {
+          setAdAccountId(accounts[0].adAccountId || accounts[0].id || '')
+        }
+        setAdAccountNotice(accounts.length ? 'Ads account is connected. Choose the account for this boost.' : 'Ads setup is connected. Check ad accounts again.')
+        return
+      }
+
+      if (payload.authUrl) {
+        if (adsPopup && !adsPopup.closed) {
+          adsPopup.opener = null
+          adsPopup.location.href = payload.authUrl
+          adsPopup.focus()
+        } else {
+          window.open(payload.authUrl, '_blank', 'noopener,noreferrer')
+        }
+        setAdAccountNotice('Finish Ads setup in Zernio, then click Check ad accounts.')
+        return
+      }
+
+      if (adsPopup && !adsPopup.closed) adsPopup.close()
+      setAdAccountNotice(payload.message || 'Zernio accepted the Ads setup request. Check ad accounts again.')
+    } catch (connectError) {
+      if (adsPopup && !adsPopup.closed) adsPopup.close()
+      setAdAccountNotice(connectError.message || 'Could not start Ads setup.')
+    } finally {
+      setIsConnectingAds(false)
+    }
+  }
 
   return createPortal(
     <div className="portal-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="boost-post-title">
@@ -736,6 +840,28 @@ function BoostPostModal({ item, defaultPlatform, onClose, onSubmit, isSaving, er
             <p>{item.caption}</p>
           </div>
           {item.thumbnailUrl ? <img src={item.thumbnailUrl} alt="" /> : null}
+        </div>
+
+        <div className="boost-assistant-panel">
+          <div>
+            <span><Sparkles className="h-3.5 w-3.5" /> Boost Assistant</span>
+            <strong>{BOOST_GOALS.find((option) => option.value === boostRecommendation.goal)?.label || 'Recommended starter boost'}</strong>
+            <p>{boostRecommendation.reason}</p>
+            <small>{boostRecommendation.tip}</small>
+          </div>
+          <button
+            type="button"
+            className="portal-button-secondary px-3 py-2 text-xs font-semibold"
+            onClick={() => {
+              setPlatform(boostRecommendation.platform)
+              setGoal(boostRecommendation.goal)
+              setBudgetAmount(boostRecommendation.budgetAmount)
+              setBudgetType(boostRecommendation.budgetType)
+              setDurationDays(boostRecommendation.durationDays)
+            }}
+          >
+            Use recommendation
+          </button>
         </div>
 
         <div className="boost-post-grid">
@@ -779,15 +905,55 @@ function BoostPostModal({ item, defaultPlatform, onClose, onSubmit, isSaving, er
               ))}
             </select>
           </label>
-          <label>
-            <span>Zernio ad account ID</span>
-            <input value={adAccountId} onChange={(event) => setAdAccountId(event.target.value)} placeholder="Paste adAccountId" />
-          </label>
+          {savedAdAccountId ? (
+            <div className="boost-post-readiness">
+              <span>Ad account</span>
+              <strong>Using {savedAdAccountLabel}</strong>
+              <small>Saved from a previous {PLATFORM_MARKERS[platform]?.label || platform} boost.</small>
+            </div>
+          ) : (
+            <div className="boost-post-readiness boost-post-readiness--setup">
+              <span>Ad account</span>
+              {adAccounts.length ? (
+                <select value={adAccountId} onChange={(event) => setAdAccountId(event.target.value)}>
+                  <option value="">Choose ad account</option>
+                  {adAccounts.map((account) => (
+                    <option key={account.id || account.adAccountId} value={account.adAccountId || account.id}>
+                      {account.label || account.adAccountId}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input value={adAccountId} onChange={(event) => setAdAccountId(event.target.value)} placeholder="First boost setup" />
+              )}
+              <div className="boost-ad-account-actions">
+                <button type="button" onClick={handleLoadAdAccounts} disabled={isLoadingAdAccounts || isConnectingAds}>
+                  {isLoadingAdAccounts ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  Check ad accounts
+                </button>
+                <button type="button" onClick={handleConnectAds} disabled={isLoadingAdAccounts || isConnectingAds}>
+                  {isConnectingAds ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5" />}
+                  Ads setup
+                </button>
+              </div>
+              {adAccountNotice ? <small>{adAccountNotice}</small> : <small>First boost only. MAP saves the selected account for future boosts.</small>}
+            </div>
+          )}
         </div>
 
         <div className="boost-post-note">
-          This launches real ad spend through Zernio. Keep the first test small so we can verify account setup and tracking.
+          This launches real ad spend through Zernio. The first boost may need the ad account once; MAP saves it for future boosts.
         </div>
+
+        {isReadinessLoading ? (
+          <div className="boost-post-note">Checking account readiness...</div>
+        ) : null}
+
+        {!isReadinessLoading && selectedIssues.length ? (
+          <div className="boost-post-error">
+            {selectedIssues.map((issue) => issue.message).join(' ')}
+          </div>
+        ) : null}
 
         {error ? <div className="boost-post-error">{error}</div> : null}
 
@@ -797,7 +963,7 @@ function BoostPostModal({ item, defaultPlatform, onClose, onSubmit, isSaving, er
           </button>
           <button
             type="button"
-            disabled={isSaving || availablePlatforms.length === 0}
+            disabled={isSaving || !canLaunchBoost}
             onClick={() => onSubmit({
               postId: item.post.id,
               platform,
@@ -805,7 +971,7 @@ function BoostPostModal({ item, defaultPlatform, onClose, onSubmit, isSaving, er
               budgetAmount,
               budgetType,
               durationDays,
-              adAccountId,
+              adAccountId: savedAdAccountId || adAccountId,
               name: `MAP Boost - ${item.title || 'Published post'}`,
             })}
             className="portal-button-primary inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
@@ -1072,53 +1238,163 @@ function ProofChip({ children, onClick, title }) {
   )
 }
 
-function GuidedChoiceGroup({
-  eyebrow,
-  title,
-  description,
+const TRAINING_STEP_ICONS = {
+  audience: Target,
+  area: MapPin,
+  promote: Megaphone,
+  avoid: ShieldCheck,
+  sources: FileSearch,
+}
+
+function TrainingChoiceList({
   options,
   isSelected,
   onChoose,
   mode = 'single',
-  required = false,
 }) {
   if (!options.length) return null
 
   return (
-    <section className="assistant-guided-card">
-      <div className="assistant-guided-card-head">
-        <div className="assistant-guided-card-meta">
-          <p className="assistant-training-kicker">{eyebrow}</p>
-          {required ? <span>Required</span> : null}
-        </div>
-        <h4>{title}</h4>
-        <p>{description}</p>
+    <div className="assistant-choice-list assistant-live-choice-list" data-mode={mode}>
+      {options.map((option) => {
+        const value = typeof option === 'string' ? option : option.label
+        const detail = typeof option === 'string' ? '' : option.detail
+        const selected = isSelected(option)
+        return (
+          <button
+            key={value}
+            type="button"
+            className="assistant-choice-button assistant-live-choice-button"
+            data-active={selected}
+            aria-pressed={selected}
+            onClick={() => onChoose(option)}
+          >
+            <span className="assistant-choice-check" aria-hidden="true">
+              {selected ? <CheckCircle2 className="h-4 w-4" /> : null}
+            </span>
+            <span>
+              <strong>{value}</strong>
+              {detail ? <small>{detail}</small> : null}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function TrainingBriefPreview({ items, progress, verifiedLabel }) {
+  return (
+    <aside className="assistant-live-brief" aria-label="Partner brief">
+      <div className="assistant-live-brief-head">
+        <p className="assistant-training-kicker">Brief</p>
+        <span>{progress.label}</span>
       </div>
-      <div className="assistant-choice-list" data-mode={mode}>
-        {options.map((option) => {
-          const value = typeof option === 'string' ? option : option.label
-          const detail = typeof option === 'string' ? '' : option.detail
-          const selected = isSelected(option)
-          return (
-            <button
-              key={value}
-              type="button"
-              className="assistant-choice-button"
-              data-active={selected}
-              onClick={() => onChoose(option)}
-            >
-              <span className="assistant-choice-check" aria-hidden="true">
-                {selected ? <CheckCircle2 className="h-4 w-4" /> : null}
-              </span>
-              <span>
-                <strong>{value}</strong>
-                {detail ? <small>{detail}</small> : null}
-              </span>
-            </button>
-          )
-        })}
+      <dl>
+        {items.map((item) => (
+          <div key={item.label}>
+            <dt>{item.label}</dt>
+            <dd>{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="assistant-live-verified">{verifiedLabel}</p>
+    </aside>
+  )
+}
+
+function TrainingSourceStep({
+  sources,
+  sourceCount,
+  label,
+  url,
+  sourceType,
+  isSaving,
+  busySourceId,
+  onLabelChange,
+  onUrlChange,
+  onSourceTypeChange,
+  onSave,
+  onToggleSource,
+  onDeleteSource,
+}) {
+  return (
+    <div className="assistant-live-source-step">
+      <div className="assistant-live-source-count">
+        <span>{sourceCount} active</span>
       </div>
-    </section>
+
+      <div className="assistant-source-list">
+        {sources.length ? sources.map((source) => (
+          <div key={source.id} className="assistant-source-row" data-inactive={!source.is_active}>
+            <div className="min-w-0">
+              <p>{source.label}</p>
+              <span>{getResearchSourceTypeLabel(source.source_type)} · {source.url ? getSourceHost(source.url) : source.handle}</span>
+            </div>
+            <div className="assistant-source-actions">
+              {source.url ? (
+                <a href={source.url} target="_blank" rel="noreferrer" aria-label={`Open ${source.label}`}>
+                  <Link2 className="h-4 w-4" />
+                </a>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => onToggleSource(source)}
+                disabled={busySourceId === source.id}
+              >
+                {source.is_active ? 'Active' : 'Paused'}
+              </button>
+              <button
+                type="button"
+                onClick={() => onDeleteSource(source)}
+                disabled={busySourceId === source.id}
+                aria-label={`Delete ${source.label}`}
+              >
+                {busySourceId === source.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+        )) : (
+          <div className="assistant-source-empty">
+            Add a website, schedule, or event page.
+          </div>
+        )}
+      </div>
+
+      <form className="assistant-live-source-form" onSubmit={onSave}>
+        <label htmlFor="assistant-source-label">Name
+          <input
+            id="assistant-source-label"
+            value={label}
+            onChange={(event) => onLabelChange(event.target.value)}
+            placeholder="Event calendar"
+          />
+        </label>
+        <label htmlFor="assistant-source-url">URL
+          <input
+            id="assistant-source-url"
+            value={url}
+            onChange={(event) => onUrlChange(event.target.value)}
+            placeholder="https://example.com/events"
+          />
+        </label>
+        <label htmlFor="assistant-source-type">Type
+          <select
+            id="assistant-source-type"
+            value={sourceType}
+            onChange={(event) => onSourceTypeChange(event.target.value)}
+          >
+            {RESEARCH_SOURCE_TYPES.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <button type="submit" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" disabled={isSaving}>
+          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          Save source
+        </button>
+      </form>
+    </div>
   )
 }
 
@@ -1150,22 +1426,109 @@ function TrainPartnerModal({
   isStartingRecommendations,
   recommendationStatus,
 }) {
-  const brandColors = normalizeBrandColors(client?.brand_colors)
-  const offerPreview = textToPreviewList(form.offerFocusText)
-  const avoidPreview = textToPreviewList(form.blockedTopicsText)
+  const [activeStepId, setActiveStepId] = useState('audience')
   const sourceCount = sources.filter((source) => source.is_active).length
   const guidedChoices = buildPartnerGuidedChoices({ client, form, sources })
   const requiredComplete = hasRequiredPartnerTraining(form)
+  const trainingProgress = resolveTrainingProgress(form, sources)
+  const briefItems = buildPartnerBriefItems({ client, form, sources })
+  const trainingSteps = PARTNER_TRAINING_STEPS.map((step) => ({
+    ...step,
+    Icon: TRAINING_STEP_ICONS[step.id] || Sparkles,
+    complete: resolveTrainingStepComplete(step, form, sources),
+  }))
+  const activeStep = trainingSteps.find((step) => step.id === activeStepId) || trainingSteps[0]
+  const activeStepIndex = trainingSteps.findIndex((step) => step.id === activeStep.id)
   const verifiedLabel = trainingStatus?.isVerified
     ? `Verified ${formatVerifiedDate(trainingStatus.verifiedAt)}`
     : 'Not verified yet'
-  const statusDetail = isRequired
-    ? 'Answer the two required choices below so MAP can build stronger first recommendations.'
-    : trainingStatus?.isVerified
-    ? trainingStatus.isStale
-      ? `It has been ${trainingStatus.ageDays} days. Review it so future posts, campaigns, and images stay current.`
-      : 'Your Partner is using confirmed business context.'
-    : 'Review what MAP found and verify it once it looks right.'
+  const stepTitles = {
+    audience: 'Who should MAP write for first?',
+    area: 'Where should posts feel local?',
+    promote: 'What should come up more?',
+    avoid: 'What should MAP avoid?',
+    sources: 'What should MAP trust?',
+  }
+
+  function goToRelativeStep(offset) {
+    const nextIndex = Math.min(Math.max(activeStepIndex + offset, 0), trainingSteps.length - 1)
+    setActiveStepId(trainingSteps[nextIndex].id)
+  }
+
+  function renderStepContent() {
+    if (activeStep.id === 'audience') {
+      return (
+        <TrainingChoiceList
+          options={guidedChoices.audienceOptions}
+          isSelected={(option) => normalizeChoice(form.audienceSummary) === normalizeChoice(option)}
+          onChoose={(option) => onFormChange('audienceSummary', option)}
+        />
+      )
+    }
+
+    if (activeStep.id === 'area') {
+      return (
+        <TrainingChoiceList
+          options={guidedChoices.reachOptions}
+          isSelected={(option) => option.active}
+          onChoose={(option) => {
+            Object.entries(option.updates).forEach(([field, value]) => onFormChange(field, value))
+          }}
+        />
+      )
+    }
+
+    if (activeStep.id === 'promote') {
+      return (
+        <TrainingChoiceList
+          mode="multi"
+          options={guidedChoices.offerOptions}
+          isSelected={(option) => listContainsValue(form.offerFocusText, option)}
+          onChoose={(option) => onFormChange('offerFocusText', toggleTextListValue(form.offerFocusText, option))}
+        />
+      )
+    }
+
+    if (activeStep.id === 'avoid') {
+      return (
+        <TrainingChoiceList
+          mode="multi"
+          options={guidedChoices.guardrailOptions}
+          isSelected={(option) => listContainsValue(form.blockedTopicsText, option)}
+          onChoose={(option) => onFormChange('blockedTopicsText', toggleTextListValue(form.blockedTopicsText, option))}
+        />
+      )
+    }
+
+    return (
+      <>
+        <TrainingSourceStep
+          sources={sources}
+          sourceCount={sourceCount}
+          label={label}
+          url={url}
+          sourceType={sourceType}
+          isSaving={isSaving}
+          busySourceId={busySourceId}
+          onLabelChange={onLabelChange}
+          onUrlChange={onUrlChange}
+          onSourceTypeChange={onSourceTypeChange}
+          onSave={onSave}
+          onToggleSource={onToggleSource}
+          onDeleteSource={onDeleteSource}
+        />
+        <label className="assistant-live-notes" htmlFor="partner-live-notes">
+          Notes
+          <textarea
+            id="partner-live-notes"
+            value={form.researchNotes}
+            onChange={(event) => onFormChange('researchNotes', event.target.value)}
+            placeholder="Seasonal priorities, tone notes, or anything MAP should know."
+          />
+        </label>
+      </>
+    )
+  }
 
   return createPortal(
     <div className="assistant-train-overlay" role="presentation" onMouseDown={isRequired ? undefined : onClose}>
@@ -1182,16 +1545,11 @@ function TrainPartnerModal({
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-              Train your Partner
+              Partner setup
             </p>
             <h2 id="assistant-train-title" className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-              {isRequired ? 'Set up your Publisher recommendations' : 'Bring your Partner up to speed'}
+              Train your Partner
             </h2>
-            <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-              {isRequired
-                ? 'Pick two quick answers. MAP will use them with your website and business profile before creating AI post recommendations.'
-                : 'MAP uses this confirmed profile to write sharper posts, build campaigns, and create better images.'}
-            </p>
           </div>
           {isRequired ? null : (
             <button type="button" className="assistant-train-close" onClick={onClose} aria-label="Close">
@@ -1201,153 +1559,83 @@ function TrainPartnerModal({
         </div>
 
         <div className="assistant-train-body">
-          <section className="assistant-training-review">
-            <div className="assistant-training-status" data-state={trainingStatus?.shouldPrompt ? 'due' : 'verified'}>
-              <div>
-                <p className="assistant-training-kicker">Partner checkup</p>
-                <h3>{trainingStatus?.shouldPrompt ? 'Review what your Partner found' : 'Training is current'}</h3>
-                <p>{statusDetail}</p>
-              </div>
-              <div className="assistant-training-status-actions">
-                <span>{verifiedLabel}</span>
-                <button
-                  type="button"
-                  className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold"
-                  onClick={onVerify}
-                  disabled={isVerifying || isSavingProfile || isStartingRecommendations || (isRequired && !requiredComplete)}
-                >
-                  {isVerifying || isStartingRecommendations ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  {isRequired ? 'Verify and build recommendations' : 'Verify training'}
-                </button>
-              </div>
-              {isRequired && !requiredComplete ? (
-                <p className="assistant-training-required-note">
-                  Choose one customer focus and at least one item to promote before Publisher recommendations start.
-                </p>
-              ) : null}
+          <section className="assistant-live-setup" aria-label="Partner setup">
+            <div className="assistant-live-status">
+              <span>{trainingProgress.label}</span>
+              <span>{verifiedLabel}</span>
             </div>
 
-            <div className="assistant-training-card-grid">
-              <article className="assistant-training-card">
-                <p className="assistant-training-kicker">Brand found</p>
-                <div className="assistant-brand-found">
-                  {client?.logo_url ? (
-                    <img src={client.logo_url} alt="" />
-                  ) : (
-                    <div className="assistant-brand-placeholder">{String(client?.business_name || 'Your Business').slice(0, 1)}</div>
-                  )}
-                  <div>
-                    <h4>{client?.business_name || 'Your business'}</h4>
-                    <p>{form.websiteUrl || 'Add your website so MAP can keep learning from it.'}</p>
-                  </div>
+            <div className="assistant-live-grid">
+              <aside className="assistant-live-steps" aria-label="Steps">
+                {trainingSteps.map((step) => {
+                  const Icon = step.Icon
+                  return (
+                    <button
+                      key={step.id}
+                      type="button"
+                      className="assistant-live-step"
+                      data-active={activeStep.id === step.id}
+                      onClick={() => setActiveStepId(step.id)}
+                    >
+                      <span className="assistant-live-step-icon" aria-hidden="true">
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span>
+                        <strong>{step.label}</strong>
+                        <small>{step.complete ? 'Set' : step.required ? 'Needed' : 'Optional'}</small>
+                      </span>
+                    </button>
+                  )
+                })}
+              </aside>
+
+              <section className="assistant-live-question">
+                <div className="assistant-live-question-head">
+                  <p className="assistant-training-kicker">{activeStep.label}</p>
+                  <h3>{stepTitles[activeStep.id]}</h3>
                 </div>
-                {brandColors.length ? (
-                  <div className="assistant-color-row">
-                    {brandColors.map((color) => (
-                      <span key={color} style={{ background: color.startsWith('#') ? color : `#${color}` }} />
-                    ))}
+
+                {renderStepContent()}
+
+                {(error || notice || recommendationStatus) && (
+                  <div className="assistant-train-message" data-tone={error ? 'error' : 'success'}>
+                    {error || notice || recommendationStatus}
                   </div>
-                ) : (
-                  <p className="assistant-training-muted">Brand colors can be learned from the website/logo as we expand this screen.</p>
                 )}
-              </article>
 
-              <article className="assistant-training-card">
-                <p className="assistant-training-kicker">Business focus</p>
-                <h4>{humanizeValue(form.businessSubtype || form.businessCategory) || 'Confirm your main offering'}</h4>
-                <p>{form.audienceSummary || 'Add the customer type your Partner should write for most often.'}</p>
-                <p className="assistant-training-muted">{form.serviceArea || 'Service area not set yet.'}</p>
-              </article>
-
-              <article className="assistant-training-card">
-                <p className="assistant-training-kicker">Promote more</p>
-                {offerPreview.length ? (
-                  <ul>
-                    {offerPreview.map((item) => <li key={item}>{item}</li>)}
-                  </ul>
-                ) : (
-                  <p>Add current offers, services, events, or seasonal priorities.</p>
-                )}
-              </article>
-
-              <article className="assistant-training-card">
-                <p className="assistant-training-kicker">Guardrails</p>
-                {avoidPreview.length ? (
-                  <ul>
-                    {avoidPreview.map((item) => <li key={item}>{item}</li>)}
-                  </ul>
-                ) : (
-                  <p>Add anything your Partner should avoid, such as old services, stale offers, or unsupported claims.</p>
-                )}
-                <p className="assistant-training-muted">{sourceCount} active research source{sourceCount === 1 ? '' : 's'}</p>
-              </article>
-            </div>
-          </section>
-
-          <section className="assistant-guided-training">
-            <div className="assistant-guided-intro">
-              <div>
-                <p className="assistant-training-kicker">Guided setup</p>
-                <h3>Choose what fits. Skip what does not.</h3>
-                <p>
-                  These choices are built from your website, saved profile, and research sources. They become more specific as your Partner learns.
-                </p>
-              </div>
-              <span>{sourceCount} active source{sourceCount === 1 ? '' : 's'}</span>
-            </div>
-
-            <div className="assistant-guided-grid">
-              <GuidedChoiceGroup
-                eyebrow="Customer focus"
-                title="Who should MAP write for most often?"
-                description="Pick the audience that should shape post ideas, captions, and images."
-                options={guidedChoices.audienceOptions}
-                isSelected={(option) => normalizeChoice(form.audienceSummary) === normalizeChoice(option)}
-                onChoose={(option) => onFormChange('audienceSummary', option)}
-                required
-              />
-
-              <GuidedChoiceGroup
-                eyebrow="Service area"
-                title="Where should the message feel relevant?"
-                description="This keeps posts from sounding too broad or too local."
-                options={guidedChoices.reachOptions}
-                isSelected={(option) => option.active}
-                onChoose={(option) => {
-                  Object.entries(option.updates).forEach(([field, value]) => onFormChange(field, value))
-                }}
-              />
-
-              <GuidedChoiceGroup
-                eyebrow="Promote more"
-                title="What should your Partner bring up more often?"
-                description="Choose several. MAP will use these as recurring content angles."
-                mode="multi"
-                options={guidedChoices.offerOptions}
-                isSelected={(option) => listContainsValue(form.offerFocusText, option)}
-                onChoose={(option) => onFormChange('offerFocusText', toggleTextListValue(form.offerFocusText, option))}
-                required
-              />
-
-              <GuidedChoiceGroup
-                eyebrow="Guardrails"
-                title="What should your Partner avoid?"
-                description="Choose several. These reduce generic, risky, or outdated suggestions."
-                mode="multi"
-                options={guidedChoices.guardrailOptions}
-                isSelected={(option) => listContainsValue(form.blockedTopicsText, option)}
-                onChoose={(option) => onFormChange('blockedTopicsText', toggleTextListValue(form.blockedTopicsText, option))}
-              />
-
-              <section className="assistant-guided-card assistant-guided-card-note">
-                <div className="assistant-guided-card-head">
-                  <p className="assistant-training-kicker">As MAP learns</p>
-                  <h4>These choices will get sharper.</h4>
-                  <p>
-                    Website details, saved sources, approved posts, edits, and rejected ideas should make future prompts more specific to this business.
-                  </p>
+                <div className="assistant-live-actions">
+                  <button
+                    type="button"
+                    className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold"
+                    onClick={() => goToRelativeStep(-1)}
+                    disabled={activeStepIndex === 0}
+                  >
+                    Back
+                  </button>
+                  {activeStepIndex < trainingSteps.length - 1 ? (
+                    <button
+                      type="button"
+                      className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold"
+                      onClick={() => goToRelativeStep(1)}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold"
+                      onClick={onVerify}
+                      disabled={isVerifying || isSavingProfile || isStartingRecommendations || (isRequired && !requiredComplete)}
+                    >
+                      {isVerifying || isStartingRecommendations ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                      {isRequired ? 'Verify and build' : 'Verify'}
+                    </button>
+                  )}
                 </div>
               </section>
+
+              <TrainingBriefPreview items={briefItems} progress={trainingProgress} verifiedLabel={verifiedLabel} />
             </div>
           </section>
 
@@ -1355,28 +1643,20 @@ function TrainPartnerModal({
             <summary>
               <span>
                 <PencilLine className="h-4 w-4" />
-                Fine-tune exact details
+                Exact details
               </span>
               <small>Optional</small>
             </summary>
 
           <form className="assistant-profile-form" onSubmit={onSaveProfile}>
             <div className="assistant-profile-section">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                  Advanced edits
-                </p>
-                <p className="mt-1 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                  Use this only when the choices above miss something important.
-                </p>
-              </div>
               <div className="assistant-profile-grid">
                 <div>
                   <label htmlFor="partner-category">Business category</label>
                   <input id="partner-category" value={form.businessCategory} onChange={(event) => onFormChange('businessCategory', event.target.value)} placeholder="Arts, fitness, local services..." />
                 </div>
                 <div>
-                  <label htmlFor="partner-subtype">Specific offering type</label>
+                  <label htmlFor="partner-subtype">Offering type</label>
                   <input id="partner-subtype" value={form.businessSubtype} onChange={(event) => onFormChange('businessSubtype', event.target.value)} placeholder="Dance studio, kids classes..." />
                 </div>
                 <div>
@@ -1410,11 +1690,6 @@ function TrainPartnerModal({
             </div>
 
             <div className="assistant-profile-section">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                  Offerings and guidance
-                </p>
-              </div>
               <div className="assistant-profile-grid">
                 <div>
                   <label htmlFor="partner-service-area">Service area</label>
@@ -1425,25 +1700,19 @@ function TrainPartnerModal({
                   <input id="partner-audience" value={form.audienceSummary} onChange={(event) => onFormChange('audienceSummary', event.target.value)} placeholder="Families, adult beginners, competitive dancers..." />
                 </div>
                 <div>
-                  <label htmlFor="partner-offers">Current offerings to promote</label>
+                  <label htmlFor="partner-offers">Promote</label>
                   <textarea id="partner-offers" value={form.offerFocusText} onChange={(event) => onFormChange('offerFocusText', event.target.value)} placeholder={'Summer camp\nRecital tickets\nAdult beginner classes'} />
                 </div>
                 <div>
-                  <label htmlFor="partner-blocked">Avoid or downplay</label>
+                  <label htmlFor="partner-blocked">Avoid</label>
                   <textarea id="partner-blocked" value={form.blockedTopicsText} onChange={(event) => onFormChange('blockedTopicsText', event.target.value)} placeholder={'Old location\nSold-out classes\nOffers no longer available'} />
                 </div>
                 <div className="assistant-profile-wide">
                   <label htmlFor="partner-notes">Partner notes</label>
-                  <textarea id="partner-notes" value={form.researchNotes} onChange={(event) => onFormChange('researchNotes', event.target.value)} placeholder="Tell MAP about seasonal priorities, new services, a location move, tone preferences, or anything that should steer future ideas." />
+                  <textarea id="partner-notes" value={form.researchNotes} onChange={(event) => onFormChange('researchNotes', event.target.value)} placeholder="Seasonal priorities, tone, or key context." />
                 </div>
               </div>
             </div>
-
-            {(error || notice || recommendationStatus) && (
-              <div className="assistant-train-message" data-tone={error ? 'error' : 'success'}>
-                {error || notice || recommendationStatus}
-              </div>
-            )}
 
             <button type="submit" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" disabled={isSavingProfile}>
               {isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -1452,102 +1721,6 @@ function TrainPartnerModal({
           </form>
           </details>
 
-          <details className="assistant-profile-advanced">
-            <summary>
-              <span>
-                <Link2 className="h-4 w-4" />
-                Add exact research sources
-              </span>
-              <small>Optional</small>
-            </summary>
-
-          <div className="assistant-train-grid">
-          <form className="assistant-train-form" onSubmit={onSave}>
-            <div>
-              <label htmlFor="assistant-source-label">Source name</label>
-              <input
-                id="assistant-source-label"
-                value={label}
-                onChange={(event) => onLabelChange(event.target.value)}
-                placeholder="Dancescapes event calendar"
-              />
-            </div>
-            <div>
-              <label htmlFor="assistant-source-url">Calendar or event page URL</label>
-              <input
-                id="assistant-source-url"
-                value={url}
-                onChange={(event) => onUrlChange(event.target.value)}
-                placeholder="https://example.com/events"
-              />
-            </div>
-            <div>
-              <label htmlFor="assistant-source-type">How should MAP use it?</label>
-              <select
-                id="assistant-source-type"
-                value={sourceType}
-                onChange={(event) => onSourceTypeChange(event.target.value)}
-              >
-                {RESEARCH_SOURCE_TYPES.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <button type="submit" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" disabled={isSaving}>
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save source
-            </button>
-          </form>
-
-          <div className="assistant-train-sources">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-                Current training sources
-              </p>
-              <p className="mt-1 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                Event calendars and approved pages help your Partner turn real dates into post ideas, reminders, and campaigns.
-              </p>
-            </div>
-            <div className="assistant-source-list">
-              {sources.length ? sources.map((source) => (
-                <div key={source.id} className="assistant-source-row" data-inactive={!source.is_active}>
-                  <div className="min-w-0">
-                    <p>{source.label}</p>
-                    <span>{getResearchSourceTypeLabel(source.source_type)} · {source.url ? getSourceHost(source.url) : source.handle}</span>
-                  </div>
-                  <div className="assistant-source-actions">
-                    {source.url ? (
-                      <a href={source.url} target="_blank" rel="noreferrer" aria-label={`Open ${source.label}`}>
-                        <Link2 className="h-4 w-4" />
-                      </a>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => onToggleSource(source)}
-                      disabled={busySourceId === source.id}
-                    >
-                      {source.is_active ? 'Active' : 'Paused'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDeleteSource(source)}
-                      disabled={busySourceId === source.id}
-                      aria-label={`Delete ${source.label}`}
-                    >
-                      {busySourceId === source.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
-              )) : (
-                <div className="assistant-source-empty">
-                  Add a public calendar, events page, or important schedule page so your Partner can use real dates in future AI runs.
-                </div>
-              )}
-            </div>
-          </div>
-          </div>
-          </details>
         </div>
       </div>
     </div>,
@@ -1657,6 +1830,12 @@ export default function ContentCalendar() {
     queryKey: ['post-boosts', clientId],
     queryFn: () => fetchPostBoosts(clientId),
     enabled: !!clientId,
+  })
+
+  const { data: boostReadiness = null, isLoading: boostReadinessLoading } = useQuery({
+    queryKey: ['post-boost-readiness', boostItem?.post?.id],
+    queryFn: () => fetchPostBoostReadiness(boostItem.post.id),
+    enabled: Boolean(boostItem?.post?.id),
   })
 
   const { data: drafts = [], isLoading: draftsLoading, refetch: refetchDrafts, isRefetching: isRefetchingDrafts } = useQuery({
@@ -1796,6 +1975,7 @@ export default function ContentCalendar() {
           imagePrompt: post.media_url ? 'Media is attached to this post.' : 'No media is attached yet.',
           proof: [post.status === 'published' ? 'Posted content' : 'Scheduled content'],
           thumbnailUrl: post.media_url || '',
+          mediaType: /\.(mp4|mov|m4v|webm)(\?|#|$)/i.test(String(post.media_url || '')) ? 'video' : 'image',
           platforms: post.platforms || [],
           boosts,
           boostStatus,
@@ -2354,6 +2534,7 @@ export default function ContentCalendar() {
       setActionError('Boost is available after a post is published.')
       return
     }
+    setHoverPreview(null)
     setBoostError('')
     setBoostItem(item)
   }
@@ -2486,6 +2667,33 @@ export default function ContentCalendar() {
     setTrainingPromptOpen(true)
   }, [clientId, isLoading, trainingStatus.isVerified, trainingStatus.shouldPrompt])
 
+  useEffect(() => {
+    if (!hoverPreview) return undefined
+
+    const closePreview = () => setHoverPreview(null)
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') closePreview()
+    }
+
+    window.addEventListener('pointerdown', closePreview, true)
+    window.addEventListener('scroll', closePreview, true)
+    window.addEventListener('wheel', closePreview, { passive: true })
+    window.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      window.removeEventListener('pointerdown', closePreview, true)
+      window.removeEventListener('scroll', closePreview, true)
+      window.removeEventListener('wheel', closePreview)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [hoverPreview])
+
+  useEffect(() => {
+    if (boostItem || trainAssistantOpen || trainingPromptOpen || activeStatusView) {
+      setHoverPreview(null)
+    }
+  }, [activeStatusView, boostItem, trainAssistantOpen, trainingPromptOpen])
+
   if (isLoading) {
     return (
       <div className="portal-page flex min-h-[60vh] items-center justify-center">
@@ -2565,7 +2773,7 @@ export default function ContentCalendar() {
               setTrainingPromptOpen(false)
               setTrainAssistantOpen(true)
             }}
-            className="portal-ai-action portal-ai-action-compact inline-flex items-center gap-2 rounded-full px-3.5 py-2.5 text-sm font-semibold"
+            className="portal-ai-action portal-ai-action-compact content-plan-train-action inline-flex items-center gap-2 rounded-full px-3.5 py-2.5 text-sm font-semibold"
           >
             <Sparkles className="h-4 w-4" />
             Train your Partner
@@ -2863,7 +3071,7 @@ export default function ContentCalendar() {
       </section>
       )}
 
-      <CalendarHoverPreview preview={hoverPreview} />
+      {boostItem || trainAssistantOpen || trainingPromptOpen ? null : <CalendarHoverPreview preview={hoverPreview} />}
 
       <section className="content-plan-footer">
         <div className="portal-command-bar-group">
@@ -2933,6 +3141,8 @@ export default function ContentCalendar() {
         <BoostPostModal
           item={boostItem}
           defaultPlatform={(boostItem.platforms || []).find((platform) => ['facebook', 'instagram'].includes(platform)) || (boostItem.platforms || [])[0]}
+          readiness={boostReadiness}
+          isReadinessLoading={boostReadinessLoading}
           onClose={() => {
             setBoostItem(null)
             setBoostError('')

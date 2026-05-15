@@ -1,8 +1,8 @@
-const READ_ONLY_STATUSES = new Set(['payment_method_needed', 'past_due'])
+const READ_ONLY_STATUSES = new Set(['payment_method_needed', 'past_due', 'canceled', 'cancelled'])
 const BLOCKED_STATUSES = new Set(['suspended'])
 const WARNING_STATUSES = new Set(['trial_expiring'])
 const TRIAL_STATUSES = new Set(['trial_active', 'trial_pending'])
-const ACTIVE_STATUSES = new Set(['active_paid', 'active', 'paid'])
+const ACTIVE_STATUSES = new Set(['active_paid', 'comped_active', 'active', 'paid'])
 const LIVE_STRIPE_CUTOVER_AT = Date.parse('2026-05-08T00:45:00Z')
 
 function normalizeValue(value) {

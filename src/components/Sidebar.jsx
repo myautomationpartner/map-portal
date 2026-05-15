@@ -142,12 +142,6 @@ export default function Sidebar({
                     style={{ color: isActive ? 'var(--portal-primary)' : 'var(--portal-nav-text-muted)' }}
                     strokeWidth={2.2}
                   />
-                  {to === '/inbox' && (
-                    <span className="absolute -right-2.5 -top-2 flex h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 px-1 text-[9px] font-black text-[var(--portal-dark)] shadow-sm"
-                      style={{ borderColor: 'white', background: 'var(--portal-primary)' }}>
-                      3
-                    </span>
-                  )}
                 </div>
                 {label}
                 {isActive && (

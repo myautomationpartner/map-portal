@@ -1,4 +1,4 @@
-import { buildSharedPortalPath, inferPathTenant } from './portalPath'
+import { buildSharedPortalPath, inferPathTenant } from './portalPath.js'
 
 const DEFAULT_DISPLAY_NAME = 'My Automation Partner'
 const DEFAULT_PORTAL_LABEL = 'Client Portal'
@@ -45,6 +45,7 @@ export function buildTenantConfig(input = {}) {
   const client = input.client || null
   const claims = input.claims || {}
   const sharePayload = input.sharePayload || {}
+  const env = input.env || import.meta.env || {}
   const pathTenant = typeof window === 'undefined'
     ? { clientSlug: '', basename: '', routeModel: 'host' }
     : inferPathTenant()
@@ -66,15 +67,15 @@ export function buildTenantConfig(input = {}) {
   const displayName =
     businessName ||
     titleCaseFromSlug(clientSlug) ||
-    import.meta.env.VITE_PORTAL_DISPLAY_NAME ||
+    env.VITE_PORTAL_DISPLAY_NAME ||
     DEFAULT_DISPLAY_NAME
 
   const portalLabel =
-    import.meta.env.VITE_PORTAL_LABEL ||
+    env.VITE_PORTAL_LABEL ||
     DEFAULT_PORTAL_LABEL
 
   const supportEmail =
-    import.meta.env.VITE_PORTAL_SUPPORT_EMAIL ||
+    env.VITE_PORTAL_SUPPORT_EMAIL ||
     client?.support_email ||
     sharePayload.support_email ||
     DEFAULT_SUPPORT_EMAIL
@@ -85,14 +86,14 @@ export function buildTenantConfig(input = {}) {
     .replace(/[_\s]+/g, '-') === 'my-automation-partner'
 
   const logoUrl =
-    import.meta.env.VITE_PORTAL_LOGO_URL ||
+    env.VITE_PORTAL_LOGO_URL ||
     (isMapWorkspace ? DEFAULT_LOGO_URL : '') ||
     client?.logo_url ||
     sharePayload.logo_url ||
     DEFAULT_LOGO_URL
 
   const canonicalHost =
-    import.meta.env.VITE_PORTAL_CANONICAL_HOST ||
+    env.VITE_PORTAL_CANONICAL_HOST ||
     sharePayload.portal_domain ||
     client?.portal_domain ||
     ''
@@ -102,15 +103,15 @@ export function buildTenantConfig(input = {}) {
     (clientSlug ? buildSharedPortalPath(clientSlug) : '')
 
   const workerName =
-    import.meta.env.VITE_PORTAL_WORKER_NAME ||
+    env.VITE_PORTAL_WORKER_NAME ||
     sharePayload.worker_name ||
     ''
 
   const billingStatus =
-    import.meta.env.VITE_PORTAL_BILLING_STATUS ||
     client?.billing_status ||
     claims.billing_status ||
     sharePayload.billing_status ||
+    env.VITE_PORTAL_BILLING_STATUS ||
     ''
   const billingProvider =
     client?.billing_provider ||
@@ -134,15 +135,15 @@ export function buildTenantConfig(input = {}) {
     ''
 
   const billingPortalUrl =
-    import.meta.env.VITE_PORTAL_BILLING_PORTAL_URL ||
     client?.billing_portal_url ||
     sharePayload.billing_portal_url ||
+    env.VITE_PORTAL_BILLING_PORTAL_URL ||
     null
 
   const billingCheckoutUrl =
-    import.meta.env.VITE_PORTAL_BILLING_CHECKOUT_URL ||
     client?.billing_checkout_url ||
     sharePayload.billing_checkout_url ||
+    env.VITE_PORTAL_BILLING_CHECKOUT_URL ||
     null
 
   const selectedPlan =

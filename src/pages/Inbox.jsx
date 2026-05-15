@@ -16,11 +16,13 @@ import {
   MonitorSmartphone,
   QrCode,
   RefreshCw,
+  Radio,
   Search,
   Send,
   Settings,
   ShieldCheck,
   Sparkles,
+  Star,
   Smartphone,
   StickyNote,
   X,
@@ -48,6 +50,14 @@ const STATUS_STYLES = {
   pending: { color: '#38bdf8', background: 'rgba(56,189,248,0.1)', borderColor: 'rgba(56,189,248,0.24)' },
   resolved: { color: '#64748b', background: 'rgba(100,116,139,0.1)', borderColor: 'rgba(100,116,139,0.18)' },
 }
+
+const INBOX_SECTIONS = [
+  { value: 'messages', label: 'Messages', icon: MessageCircle },
+  { value: 'comments', label: 'Comments', icon: StickyNote },
+  { value: 'reviews', label: 'Reviews', icon: Star },
+  { value: 'campaigns', label: 'Campaigns', icon: Radio },
+  { value: 'contacts', label: 'Contacts', icon: UserRound },
+]
 
 // Data fetching
 
@@ -110,6 +120,32 @@ function sendMobileSetupEmail() {
   return websiteChatPortalFetch('/api/inbox/mobile-setup-email', {
     method: 'POST',
     body: JSON.stringify({}),
+  })
+}
+
+function zernioPortalFetch(path, options = {}) {
+  return websiteChatPortalFetch(`/api/zernio/${path.replace(/^\/+/, '')}`, options)
+}
+
+async function fetchCommentPosts({ queryKey }) {
+  const [, filters] = queryKey
+  const params = new URLSearchParams({ limit: '50', minComments: '1' })
+  if (filters.platform) params.set('platform', filters.platform)
+  if (filters.accountId) params.set('accountId', filters.accountId)
+  return zernioPortalFetch(`/comments?${params.toString()}`)
+}
+
+async function fetchPostComments({ queryKey }) {
+  const [, postId, accountId] = queryKey
+  if (!postId || !accountId) return { comments: [] }
+  const params = new URLSearchParams({ accountId })
+  return zernioPortalFetch(`/comments/${encodeURIComponent(postId)}?${params.toString()}`)
+}
+
+function sendCommentReply({ postId, accountId, commentId, message }) {
+  return zernioPortalFetch(`/comments/${encodeURIComponent(postId)}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({ accountId, commentId, message }),
   })
 }
 
@@ -214,6 +250,29 @@ function formatRelativeTime(value) {
   const diffDays = Math.floor(diffHours / 24)
   if (diffDays < 7) return `${diffDays}d ago`
   return date.toLocaleDateString()
+}
+
+function isoToDate(value) {
+  const date = new Date(value || '')
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function formatInboxDate(value) {
+  const date = isoToDate(value)
+  if (!date) return 'No date'
+  return date.toLocaleString([], {
+    month: 'numeric',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function formatInboxShortDate(value) {
+  const date = isoToDate(value)
+  if (!date) return ''
+  return date.toLocaleDateString([], { month: 'numeric', day: 'numeric', year: 'numeric' })
 }
 
 function conversationTitle(conversation) {
@@ -354,6 +413,26 @@ function channelBadge(conversation, inboxes = []) {
   if (name.includes('linkedin')) return { label: 'IN', style: { background: '#0a66c2', color: '#fff' } }
   if (name.includes('website') || name.includes('chat')) return { label: 'WEB', style: { background: '#20a67a', color: '#fff' } }
   return { label: 'MSG', style: { background: '#64748b', color: '#fff' } }
+}
+
+function platformBadge(platform) {
+  const name = String(platform || '').toLowerCase()
+  if (name === 'instagram') return { label: 'IG', style: { background: '#c13584', color: '#fff' } }
+  if (name === 'facebook') return { label: 'FB', style: { background: '#1b74e4', color: '#fff' } }
+  if (name === 'twitter') return { label: 'X', style: { background: '#111827', color: '#fff' } }
+  if (name === 'linkedin') return { label: 'IN', style: { background: '#0a66c2', color: '#fff' } }
+  return { label: String(platform || 'SOC').slice(0, 3).toUpperCase(), style: { background: '#64748b', color: '#fff' } }
+}
+
+function commentPostTitle(post) {
+  return String(post?.content || '').trim() || 'Untitled post'
+}
+
+function commentAuthorDisplayName(comment, platform) {
+  const name = String(comment?.authorName || '').trim()
+  if (name && name.toLowerCase() !== 'social commenter') return name
+  const platformName = String(platform || comment?.platform || '').trim()
+  return platformName ? `${platformName[0].toUpperCase()}${platformName.slice(1)} commenter` : 'Social commenter'
 }
 
 function ticketStepState(selectedConversation, step) {
@@ -896,13 +975,317 @@ function ErrorBanner({ message }) {
   )
 }
 
+function InboxSectionNav({ activeSection, onSectionChange }) {
+  return (
+    <aside className="hidden min-h-[calc(100vh-150px)] w-[190px] shrink-0 border-r bg-white px-3 py-4 md:block" style={{ borderColor: 'var(--portal-border)' }}>
+      <div className="mb-3 flex items-center gap-2 px-2 text-sm font-semibold" style={{ color: 'var(--portal-text-muted)' }}>
+        <InboxIcon className="h-4 w-4" />
+        <span>Inbox</span>
+      </div>
+      <div className="grid gap-1">
+        {INBOX_SECTIONS.map((section) => {
+          const Icon = section.icon
+          const active = activeSection === section.value
+          return (
+            <button
+              key={section.value}
+              type="button"
+              onClick={() => onSectionChange(section.value)}
+              className="flex h-9 items-center gap-2 rounded-md px-2 text-left text-sm font-medium"
+              style={active
+                ? { background: '#eef2f7', color: 'var(--portal-text)' }
+                : { background: 'transparent', color: 'var(--portal-text-muted)' }}
+            >
+              <Icon className="h-4 w-4" />
+              {section.label}
+            </button>
+          )
+        })}
+      </div>
+    </aside>
+  )
+}
+
+function SectionPlaceholder({ title, detail, icon: Icon }) {
+  return (
+    <div className="flex min-h-[calc(100vh-150px)] flex-1 items-center justify-center bg-white">
+      <div className="max-w-md px-6 text-center">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg border" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-primary)', background: 'rgba(255,255,255,0.82)' }}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <h2 className="text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>{title}</h2>
+        <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>{detail}</p>
+      </div>
+    </div>
+  )
+}
+
+function CommentsInbox({
+  posts,
+  postsLoading,
+  postsFetching,
+  postsError,
+  accounts,
+  selectedPost,
+  selectedPostId,
+  onSelectPost,
+  comments,
+  commentsLoading,
+  commentsError,
+  platformFilter,
+  accountFilter,
+  onPlatformFilter,
+  onAccountFilter,
+  onRefresh,
+  replyTargetId,
+  replyText,
+  replyPending,
+  replyError,
+  onStartReply,
+  onCancelReply,
+  onReplyTextChange,
+  onSubmitReply,
+}) {
+  const selectedAccountId = selectedPost?.accountId || ''
+
+  return (
+    <div className="grid min-h-[calc(100vh-150px)] flex-1 bg-white lg:grid-cols-[360px_minmax(0,1fr)]">
+      <aside className="flex min-h-[calc(100vh-150px)] flex-col border-r" style={{ borderColor: 'var(--portal-border)' }}>
+        <div className="border-b px-4 py-4" style={{ borderColor: 'var(--portal-border)' }}>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Comments</h2>
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="portal-button-secondary inline-flex h-8 w-8 items-center justify-center"
+              aria-label="Refresh comments"
+            >
+              <RefreshCw className={`h-4 w-4 ${postsFetching ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <select
+              value={platformFilter}
+              onChange={(event) => onPlatformFilter(event.target.value)}
+              className="portal-input h-9 px-2 text-xs"
+            >
+              <option value="">All platforms</option>
+              {[...new Set(accounts.map((account) => account.platform).filter(Boolean))].map((platform) => (
+                <option key={platform} value={platform}>{platform}</option>
+              ))}
+            </select>
+            <select
+              value={accountFilter}
+              onChange={(event) => onAccountFilter(event.target.value)}
+              className="portal-input h-9 px-2 text-xs"
+            >
+              <option value="">All accounts</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.username || account.platform}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between border-b px-4 py-2 text-xs" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
+          <span>Posts</span>
+          <span>Newest first</span>
+        </div>
+
+        <div className="portal-scroll flex-1 overflow-y-auto">
+          {postsLoading ? (
+            <div className="flex h-52 items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} />
+            </div>
+          ) : postsError ? (
+            <EmptyState title="Could not load comments" detail={postsError.message || 'Zernio did not return comment posts.'} />
+          ) : posts.length === 0 ? (
+            <EmptyState title="No unanswered comments" detail="When Zernio sees comments that need attention, those posts will appear here." />
+          ) : (
+            posts.map((post) => {
+              const active = selectedPostId === post.id && selectedAccountId === post.accountId
+              const badge = platformBadge(post.platform)
+              return (
+                <button
+                  key={`${post.accountId}:${post.id}`}
+                  type="button"
+                  onClick={() => onSelectPost(post)}
+                  className="grid w-full grid-cols-[48px_1fr] gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-slate-50"
+                  style={{ borderColor: 'var(--portal-border)', background: active ? '#eef5ff' : '#fff' }}
+                >
+                  <div className="h-12 w-12 overflow-hidden rounded-md border bg-slate-100" style={{ borderColor: 'var(--portal-border)' }}>
+                    {post.picture ? (
+                      <img src={post.picture} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center">
+                        <StickyNote className="h-4 w-4" style={{ color: 'var(--portal-text-soft)' }} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="line-clamp-2 text-sm font-semibold leading-snug" style={{ color: 'var(--portal-text)' }}>
+                      {commentPostTitle(post)}
+                    </p>
+                    <div className="mt-2 flex min-w-0 items-center gap-2 text-[11px]" style={{ color: 'var(--portal-text-muted)' }}>
+                      <span className="rounded px-1.5 py-0.5 text-[10px] font-black" style={badge.style}>{badge.label}</span>
+                      <span className="truncate">@{post.accountUsername || post.platform}</span>
+                    </div>
+                    <p className="mt-1 text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>
+                      {post.commentCount} comments · {formatInboxShortDate(post.createdTime)}
+                    </p>
+                  </div>
+                </button>
+              )
+            })
+          )}
+        </div>
+      </aside>
+
+      <main className="flex min-h-[calc(100vh-150px)] min-w-0 flex-col" style={{ background: 'var(--portal-inbox-thread-bg, #f9fbfe)' }}>
+        {selectedPost ? (
+          <>
+            <div className="min-h-[68px] border-b bg-white px-4 py-3 md:px-5" style={{ borderColor: 'var(--portal-border)' }}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Comments ({comments.length || selectedPost.commentCount || 0})</p>
+                  <p className="mt-1 line-clamp-2 max-w-3xl text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                    {commentPostTitle(selectedPost)}
+                  </p>
+                </div>
+                {selectedPost.permalink && (
+                  <a
+                    href={selectedPost.permalink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="portal-button-secondary inline-flex shrink-0 items-center gap-2 px-3 py-2 text-xs font-semibold"
+                  >
+                    Open post
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                )}
+              </div>
+            </div>
+
+            <div className="portal-scroll flex-1 overflow-y-auto px-4 py-4 md:px-5">
+              {commentsLoading ? (
+                <div className="flex h-full items-center justify-center">
+                  <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} />
+                </div>
+              ) : commentsError ? (
+                <EmptyState title="Could not load post comments" detail={commentsError.message || 'Zernio did not return comments for this post.'} />
+              ) : comments.length === 0 ? (
+                <EmptyState title="No comments loaded" detail="Zernio shows the post, but no individual comments were returned yet." />
+              ) : (
+                <div className="space-y-3">
+                  {comments.map((comment) => (
+                    <article key={comment.id || `${comment.createdTime}-${comment.text}`} className="rounded-md border bg-white px-4 py-3" style={{ borderColor: 'var(--portal-border)' }}>
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold" style={{ color: 'var(--portal-text-muted)' }}>
+                          {comment.authorAvatar ? <img src={comment.authorAvatar} alt="" className="h-full w-full rounded-full object-cover" /> : '?'}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{commentAuthorDisplayName(comment, selectedPost.platform)}</p>
+                            <span
+                              className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+                              style={comment.replyCount > 0
+                                ? { borderColor: 'rgba(47,143,87,0.25)', background: 'rgba(47,143,87,0.1)', color: '#2f8f57' }
+                                : { borderColor: 'rgba(201,168,76,0.3)', background: 'rgba(201,168,76,0.09)', color: '#b8871f' }}
+                            >
+                              {comment.replyCount > 0 ? 'Answered' : 'Needs reply'}
+                            </span>
+                          </div>
+                          <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>{comment.text || '[No text]'}</p>
+                          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                            <span>{formatInboxDate(comment.createdTime)}</span>
+                            {comment.likeCount > 0 && <span>{comment.likeCount} likes</span>}
+                            {comment.replyCount > 0 && <span>{comment.replyCount} replies</span>}
+                            <span>{comment.hidden ? 'Hidden' : 'Visible'}</span>
+                            {comment.canReply && (
+                              <button
+                                type="button"
+                                onClick={() => onStartReply(comment.id)}
+                                className="font-semibold"
+                                style={{ color: 'var(--portal-primary)' }}
+                              >
+                                Reply
+                              </button>
+                            )}
+                          </div>
+                          {replyTargetId === comment.id && (
+                            <form
+                              onSubmit={(event) => {
+                                event.preventDefault()
+                                onSubmitReply(comment)
+                              }}
+                              className="mt-3 rounded-md border bg-slate-50 p-3"
+                              style={{ borderColor: 'var(--portal-border)' }}
+                            >
+                              <textarea
+                                value={replyText}
+                                onChange={(event) => onReplyTextChange(event.target.value)}
+                                placeholder={`Reply to ${commentAuthorDisplayName(comment, selectedPost.platform)}...`}
+                                className="portal-input min-h-20 resize-none p-3 text-sm"
+                              />
+                              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                                  Sends a public reply from the connected social account.
+                                </p>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={onCancelReply}
+                                    className="portal-button-secondary px-3 py-2 text-xs font-semibold"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    disabled={!replyText.trim() || replyPending}
+                                    className="portal-button-primary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {replyPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                                    Send reply
+                                  </button>
+                                </div>
+                              </div>
+                              {replyError && <ErrorBanner message={replyError.message || 'Could not send the reply.'} />}
+                            </form>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <EmptyState title="Select a post" detail="Choose a commented post to read and manage its comments." />
+        )}
+      </main>
+    </div>
+  )
+}
+
 export default function Inbox() {
   const queryClient = useQueryClient()
+  const [activeSection, setActiveSection] = useState(() => {
+    if (typeof window === 'undefined') return 'comments'
+    return new URLSearchParams(window.location.search).get('section') || 'comments'
+  })
   const [status, setStatus] = useState('open')
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [inboxId, setInboxId] = useState('')
   const [selectedId, setSelectedId] = useState(null)
+  const [commentPlatform, setCommentPlatform] = useState('')
+  const [commentAccountId, setCommentAccountId] = useState('')
+  const [selectedCommentPostKey, setSelectedCommentPostKey] = useState('')
+  const [commentReplyTargetId, setCommentReplyTargetId] = useState('')
+  const [commentReplyText, setCommentReplyText] = useState('')
   const [composer, setComposer] = useState('')
   const [isPrivate, setIsPrivate] = useState(false)
   const [mobileThreadOpen, setMobileThreadOpen] = useState(false)
@@ -949,12 +1332,34 @@ export default function Inbox() {
     queryKey: ['chatwoot-conversations', filters],
     queryFn: fetchConversations,
     refetchInterval: 30_000,
+    enabled: activeSection === 'messages',
+  })
+
+  const commentPostsQuery = useQuery({
+    queryKey: ['zernio-comment-posts', { platform: commentPlatform, accountId: commentAccountId }],
+    queryFn: fetchCommentPosts,
+    refetchInterval: activeSection === 'comments' ? 30_000 : false,
+    enabled: activeSection === 'comments',
   })
 
   const conversations = useMemo(
     () => conversationsQuery.data?.conversations || [],
     [conversationsQuery.data],
   )
+  const commentPosts = useMemo(
+    () => commentPostsQuery.data?.posts || [],
+    [commentPostsQuery.data],
+  )
+  const commentAccounts = useMemo(
+    () => commentPostsQuery.data?.accounts || [],
+    [commentPostsQuery.data],
+  )
+  const selectedCommentPost = useMemo(() => {
+    if (!commentPosts.length) return null
+    return commentPosts.find((post) => `${post.accountId}:${post.id}` === selectedCommentPostKey) || commentPosts[0]
+  }, [commentPosts, selectedCommentPostKey])
+  const selectedCommentPostId = selectedCommentPost?.id || ''
+  const selectedCommentAccountId = selectedCommentPost?.accountId || ''
   const selectedConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedId) || conversations[0] || null,
     [conversations, selectedId],
@@ -964,8 +1369,27 @@ export default function Inbox() {
   const messagesQuery = useQuery({
     queryKey: ['chatwoot-messages', activeConversationId],
     queryFn: fetchMessages,
-    enabled: Boolean(activeConversationId),
+    enabled: activeSection === 'messages' && Boolean(activeConversationId),
     refetchInterval: activeConversationId ? 20_000 : false,
+  })
+
+  const postCommentsQuery = useQuery({
+    queryKey: ['zernio-post-comments', selectedCommentPostId, selectedCommentAccountId],
+    queryFn: fetchPostComments,
+    enabled: activeSection === 'comments' && Boolean(selectedCommentPostId && selectedCommentAccountId),
+    refetchInterval: activeSection === 'comments' && selectedCommentPostId ? 30_000 : false,
+  })
+
+  const commentReplyMutation = useMutation({
+    mutationFn: sendCommentReply,
+    onSuccess: async () => {
+      setCommentReplyTargetId('')
+      setCommentReplyText('')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['zernio-comment-posts'] }),
+        queryClient.invalidateQueries({ queryKey: ['zernio-post-comments', selectedCommentPostId, selectedCommentAccountId] }),
+      ])
+    },
   })
 
   const replyMutation = useMutation({
@@ -1004,6 +1428,7 @@ export default function Inbox() {
   })
 
   const messages = messagesQuery.data || selectedConversation?.messages || []
+  const postComments = postCommentsQuery.data?.comments || []
   const meta = conversationsQuery.data?.meta || {}
   const totalCount = meta.all_count ?? conversations.length
   const chatwootAccountId = websiteChatQuery.data?.settings?.chatwoot_account_id
@@ -1021,6 +1446,33 @@ export default function Inbox() {
   function handleSelect(conversationId) {
     setSelectedId(conversationId)
     setMobileThreadOpen(true)
+  }
+
+  function handleSectionChange(section) {
+    setActiveSection(section)
+    setMobileThreadOpen(false)
+  }
+
+  function handleSelectCommentPost(post) {
+    setSelectedCommentPostKey(`${post.accountId}:${post.id}`)
+    setCommentReplyTargetId('')
+    setCommentReplyText('')
+  }
+
+  function handleStartCommentReply(commentId) {
+    setCommentReplyTargetId(commentId)
+    setCommentReplyText('')
+  }
+
+  function handleSubmitCommentReply(comment) {
+    const message = commentReplyText.trim()
+    if (!selectedCommentPostId || !selectedCommentAccountId || !comment?.id || !message || commentReplyMutation.isPending) return
+    commentReplyMutation.mutate({
+      postId: selectedCommentPostId,
+      accountId: selectedCommentAccountId,
+      commentId: comment.id,
+      message,
+    })
   }
 
   return (
@@ -1103,9 +1555,19 @@ export default function Inbox() {
         />
 
         <MobileAppBanner />
-        <ErrorBanner message={contentPartnerMutation.error?.message || conversationsQuery.error?.message || inboxesQuery.error?.message || messagesQuery.error?.message} />
+        <ErrorBanner
+          message={
+            contentPartnerMutation.error?.message
+            || (activeSection === 'messages' ? (conversationsQuery.error?.message || inboxesQuery.error?.message || messagesQuery.error?.message) : '')
+            || (activeSection === 'comments' ? (commentPostsQuery.error?.message || postCommentsQuery.error?.message) : '')
+          }
+        />
 
-        <div className="inbox-workspace-grid grid min-h-[calc(100vh-150px)] lg:grid-cols-[324px_minmax(0,1fr)_300px]">
+        <div className="flex min-h-[calc(100vh-150px)]">
+          <InboxSectionNav activeSection={activeSection} onSectionChange={handleSectionChange} />
+
+          {activeSection === 'messages' ? (
+        <div className="inbox-workspace-grid grid min-h-[calc(100vh-150px)] flex-1 lg:grid-cols-[324px_minmax(0,1fr)_300px]">
           <aside className={`inbox-conversation-list ${mobileThreadOpen ? 'hidden lg:flex' : 'flex'} min-h-[calc(100vh-150px)] flex-col border-r bg-white`} style={{ borderColor: 'var(--portal-border)' }}>
             <div className="border-b px-3 py-3" style={{ borderColor: 'var(--portal-border)' }}>
               <div className="relative mb-3 sm:hidden">
@@ -1469,6 +1931,65 @@ export default function Inbox() {
               </div>
             </div>
           </aside>
+        </div>
+          ) : activeSection === 'comments' ? (
+            <CommentsInbox
+              posts={commentPosts}
+              postsLoading={commentPostsQuery.isLoading}
+              postsFetching={commentPostsQuery.isFetching}
+              postsError={commentPostsQuery.error}
+              accounts={commentAccounts}
+              selectedPost={selectedCommentPost}
+              selectedPostId={selectedCommentPostId}
+              onSelectPost={handleSelectCommentPost}
+              comments={postComments}
+              commentsLoading={postCommentsQuery.isLoading}
+              commentsError={postCommentsQuery.error}
+              platformFilter={commentPlatform}
+              accountFilter={commentAccountId}
+              onPlatformFilter={(value) => {
+                setCommentPlatform(value)
+                setSelectedCommentPostKey('')
+              }}
+              onAccountFilter={(value) => {
+                setCommentAccountId(value)
+                setSelectedCommentPostKey('')
+              }}
+              onRefresh={() => {
+                commentPostsQuery.refetch()
+                postCommentsQuery.refetch()
+              }}
+              replyTargetId={commentReplyTargetId}
+              replyText={commentReplyText}
+              replyPending={commentReplyMutation.isPending}
+              replyError={commentReplyMutation.error}
+              onStartReply={handleStartCommentReply}
+              onCancelReply={() => {
+                setCommentReplyTargetId('')
+                setCommentReplyText('')
+              }}
+              onReplyTextChange={setCommentReplyText}
+              onSubmitReply={handleSubmitCommentReply}
+            />
+          ) : activeSection === 'reviews' ? (
+            <SectionPlaceholder
+              title="Reviews"
+              detail="Zernio separates reviews from DMs and comments. MAP will show this once the connected account returns review data."
+              icon={Star}
+            />
+          ) : activeSection === 'campaigns' ? (
+            <SectionPlaceholder
+              title="Campaigns"
+              detail="Campaign inbox automation is not wired into MAP yet. For now, use Comments and Messages for live customer service."
+              icon={Radio}
+            />
+          ) : (
+            <SectionPlaceholder
+              title="Contacts"
+              detail="Contact records still live behind Chatwoot today. This section is reserved for a Zernio-style contact view."
+              icon={UserRound}
+            />
+          )}
         </div>
       </section>
     </div>

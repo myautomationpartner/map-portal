@@ -2,6 +2,12 @@
 
 import { deployPortalUpdate, isProtectedMainSiteDomain, loadDeployableClients } from './deploy-portal-update.mjs'
 
+const SHARED_PORTAL_WORKER_NAME = 'map-shared-portal'
+
+function isSharedPortalClient(client) {
+  return client?.worker_name === SHARED_PORTAL_WORKER_NAME
+}
+
 function parseArgs(argv) {
   const args = {}
   for (let index = 0; index < argv.length; index += 1) {
@@ -29,8 +35,8 @@ async function main() {
   }
 
   const deployableClients = await loadDeployableClients()
-  const skipped = deployableClients.filter((client) => isProtectedMainSiteDomain(client.portal_domain))
-  const clients = deployableClients.filter((client) => !isProtectedMainSiteDomain(client.portal_domain))
+  const skipped = deployableClients.filter((client) => isProtectedMainSiteDomain(client.portal_domain) && !isSharedPortalClient(client))
+  const clients = deployableClients.filter((client) => !isProtectedMainSiteDomain(client.portal_domain) || isSharedPortalClient(client))
 
   if (skipped.length) {
     process.stdout.write('\nProtected main website domains skipped\n')
@@ -47,7 +53,10 @@ async function main() {
   const results = []
   for (const client of clients) {
     try {
-      const result = await deployPortalUpdate(client, { dryRun })
+      const result = await deployPortalUpdate(client, {
+        dryRun,
+        allowProtectedMainSiteDomain: isSharedPortalClient(client),
+      })
       results.push(result)
     } catch (error) {
       results.push({

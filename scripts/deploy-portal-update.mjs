@@ -206,6 +206,12 @@ function buildWranglerConfig(client, assetsDirectory) {
     `directory = "${assetsDirectory}"`,
     'binding = "ASSETS"',
     'not_found_handling = "single-page-application"',
+    ...(sharedMode ? [
+      '',
+      '[triggers]',
+      'crons = ["17 8 * * *"]',
+      '',
+    ] : ['']),
     '',
   ].join('\n')
 }

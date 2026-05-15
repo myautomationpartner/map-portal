@@ -4,6 +4,7 @@ import {
   Bot,
   CheckCircle2,
   Copy,
+  ExternalLink,
   LifeBuoy,
   Loader2,
   MessageCircle,
@@ -18,13 +19,16 @@ import {
 } from 'lucide-react'
 import {
   checkWebsiteChatInstallation,
+  fetchSocialConnections,
   fetchResearchProfile,
   fetchWebsiteChatSettings,
   openContentPartnerConversation,
   sendPortalPartnerMessage,
+  startSocialConnection,
   updateClientPartnerProfile,
   upsertResearchProfile,
 } from '../lib/portalApi'
+import { portalPath } from '../lib/portalPath'
 
 const FLOW_CARDS = [
   {
@@ -47,6 +51,13 @@ const FLOW_CARDS = [
     description: 'Use Publisher yourself',
     prompt: 'Help me create a post in Publisher.',
     Icon: PenLine,
+  },
+  {
+    id: 'social_setup',
+    label: 'Social setup',
+    description: 'Facebook, IG, TikTok',
+    prompt: 'Help me set up my social media accounts.',
+    Icon: Settings,
   },
   {
     id: 'website_chat',
@@ -86,6 +97,7 @@ const ACTION_LABELS = {
   open_inbox: 'Open Inbox',
   open_settings_chat: 'Website Chat settings',
   open_create_post: 'Open Publisher',
+  open_social_setup: 'Social setup',
   check_website_chat: 'Check install',
   copy_website_chat_script: 'Copy script',
   open_partner_training: 'Refresh training',
@@ -94,15 +106,52 @@ const ACTION_LABELS = {
   copy_content_request: 'Copy request',
 }
 
+const SOCIAL_SETUP_PLATFORMS = [
+  {
+    id: 'facebook',
+    label: 'Facebook',
+    setupUrl: 'https://www.facebook.com/pages/create',
+    setupLabel: 'Create Facebook Page',
+    requirements: [
+      'Start from a real person\'s Facebook login. Meta uses a personal account for ownership and admin access.',
+      'Create or claim a public Facebook Page for the business. The Page is separate from the personal profile customers see.',
+      'Make sure the person connecting has admin/full control access to the Page and any Meta Business portfolio that owns it.',
+    ],
+  },
+  {
+    id: 'instagram',
+    label: 'Instagram',
+    setupUrl: 'https://www.facebook.com/help/instagram/138925576505882',
+    setupLabel: 'Review Instagram professional setup',
+    requirements: [
+      'An Instagram Professional account, preferably Business for local companies',
+      'A connected Facebook Page for full Meta publishing and business tools',
+      'The connecting user must have access to both the Page and Instagram account',
+    ],
+  },
+  {
+    id: 'tiktok',
+    label: 'TikTok',
+    setupUrl: 'https://ads.us.tiktok.com/help/article/create-tiktok-business-center',
+    setupLabel: 'Set up TikTok Business Center',
+    requirements: [
+      'A TikTok account switched to Business Account when appropriate',
+      'TikTok Business Center if the customer needs ads, assets, or team access',
+      'The account owner must approve the secure MAP/Zernio connection',
+    ],
+  },
+]
+
 function buildWelcomeMessage(readOnly = false) {
   return createMessage(
     'assistant',
     readOnly
       ? 'This portal is read-only right now, but I can still answer questions, explain setup steps, and help you find the right place.'
-      : 'I can guide you through support, creating posts, Partner training, Website Chat setup, and draft-only content requests.',
+      : 'I can guide you through support, social setup, creating posts, Partner training, Website Chat setup, and draft-only content requests.',
     {
       actions: [
         { type: 'open_inbox' },
+        { type: 'open_social_setup' },
         { type: 'open_create_post' },
         ...(readOnly ? [] : [{ type: 'open_partner_training' }]),
         { type: 'open_settings_chat' },
@@ -193,6 +242,58 @@ function TrainingEditor({ form, saving, onChange, onCancel, onSave }) {
   )
 }
 
+function SocialSetupPanel({ connections, loading, connectingPlatform, readOnly, onConnect }) {
+  const connectedByPlatform = useMemo(
+    () => new Map((connections || []).map((connection) => [connection.platform, connection])),
+    [connections],
+  )
+
+  return (
+    <div className="portal-partner-social-setup">
+      <div className="portal-partner-social-intro">
+        <strong>Social setup checklist</strong>
+        <span>Use this when a new customer has no accounts yet, or when accounts exist but are not connected to MAP. Facebook setup usually starts under a personal login, then you create or manage a separate business Page.</span>
+      </div>
+      {SOCIAL_SETUP_PLATFORMS.map((platform) => {
+        const connection = connectedByPlatform.get(platform.id)
+        const isConnected = Boolean(connection?.zernio_account_id)
+        const isConnecting = connectingPlatform === platform.id
+
+        return (
+          <div key={platform.id} className="portal-partner-social-card">
+            <div className="portal-partner-social-heading">
+              <div>
+                <h3>{platform.label}</h3>
+                <p>{isConnected ? `Connected${connection?.username ? ` as ${connection.username}` : ''}` : 'Not connected yet'}</p>
+              </div>
+              <span data-connected={isConnected}>{isConnected ? 'Connected' : 'Setup needed'}</span>
+            </div>
+            <ul>
+              {platform.requirements.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <div className="portal-partner-social-actions">
+              <a href={platform.setupUrl} target="_blank" rel="noreferrer">
+                <ExternalLink className="h-3.5 w-3.5" />
+                {platform.setupLabel}
+              </a>
+              <button
+                type="button"
+                disabled={loading || readOnly || isConnected || isConnecting}
+                onClick={() => onConnect(platform)}
+              >
+                {isConnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                {isConnected ? 'Connected' : `Connect ${platform.label}`}
+              </button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function PortalPartner({ session, profile, tenant, billingAccess, requireWriteAccess }) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
@@ -202,6 +303,10 @@ export default function PortalPartner({ session, profile, tenant, billingAccess,
   const [actionPending, setActionPending] = useState('')
   const [trainingForm, setTrainingForm] = useState(null)
   const [trainingSaving, setTrainingSaving] = useState(false)
+  const [socialSetupOpen, setSocialSetupOpen] = useState(false)
+  const [socialConnections, setSocialConnections] = useState([])
+  const [socialLoading, setSocialLoading] = useState(false)
+  const [connectingPlatform, setConnectingPlatform] = useState('')
   const [messages, setMessages] = useState(() => [buildWelcomeMessage(false)])
   const panelRef = useRef(null)
 
@@ -232,14 +337,16 @@ export default function PortalPartner({ session, profile, tenant, billingAccess,
     if (!confirmed) return
 
     setTrainingForm(null)
+    setSocialSetupOpen(false)
     setInput('')
     setMessages([buildWelcomeMessage(Boolean(billingAccess?.readOnly))])
   }
 
   function showHelpGuide() {
-    appendMessage('assistant', 'Here are the safest ways I can help. I can open support, guide you to Publisher to create a post, refresh Partner training, check Website Chat, or hand a content idea to Content Partner for draft creation. I will ask before saving profile updates and I cannot publish posts for you.', {
+    appendMessage('assistant', 'Here are the safest ways I can help. I can open support, guide social setup, guide you to Publisher to create a post, refresh Partner training, check Website Chat, or hand a content idea to Content Partner for draft creation. I will ask before saving profile updates and I cannot publish posts for you.', {
       actions: [
         { type: 'open_inbox' },
+        { type: 'open_social_setup' },
         { type: 'open_create_post' },
         ...(canWrite ? [{ type: 'open_partner_training' }] : []),
         { type: 'open_settings_chat' },
@@ -247,6 +354,80 @@ export default function PortalPartner({ session, profile, tenant, billingAccess,
       ],
     })
     scrollToLatestMessage()
+  }
+
+  async function loadSocialSetup() {
+    if (!clientId) {
+      appendMessage('assistant', 'Your client profile is still loading.')
+      return
+    }
+
+    setSocialSetupOpen(true)
+    setSocialLoading(true)
+    setActionPending('open_social_setup')
+    try {
+      const connections = await fetchSocialConnections(clientId)
+      setSocialConnections(connections)
+      appendMessage('assistant', 'I opened the social setup checklist. I can show what is connected, what needs to exist first, and launch the secure connect flow when the account is ready.')
+    } catch (error) {
+      appendMessage('assistant', error instanceof Error ? error.message : 'Could not load social setup status.')
+    } finally {
+      setSocialLoading(false)
+      setActionPending('')
+      scrollToLatestMessage()
+    }
+  }
+
+  function buildConnectReturnUrl(platform) {
+    if (typeof window === 'undefined') return ''
+    const url = new URL(portalPath('/connect-return'), window.location.origin)
+    url.searchParams.set('connected', platform)
+    url.searchParams.set('cid', clientId)
+    url.searchParams.set('source', 'portal-partner-social-setup')
+    url.searchParams.set('returnTo', portalPath('/settings'))
+    return url.toString()
+  }
+
+  async function connectSocialPlatform(platform) {
+    if (!requireWriteAccess(`connect ${platform.label}`)) return
+
+    const connectPopup = typeof window !== 'undefined'
+      ? window.open('', '_blank', 'width=600,height=720')
+      : null
+
+    if (connectPopup && !connectPopup.closed) {
+      connectPopup.document.write(`
+        <title>Opening ${platform.label}...</title>
+        <body style="font-family: ui-sans-serif, system-ui, sans-serif; padding: 24px; color: #1f2937;">
+          <p style="margin: 0 0 8px; font-size: 15px; font-weight: 700;">Opening ${platform.label} auth...</p>
+          <p style="margin: 0; font-size: 14px; color: #6b7280;">Finish the secure connection in this window, then return to MAP.</p>
+        </body>
+      `)
+    }
+
+    setConnectingPlatform(platform.id)
+    try {
+      const payload = await startSocialConnection({
+        clientId,
+        platform: platform.id,
+        redirectUrl: buildConnectReturnUrl(platform.id),
+      })
+      if (!payload?.authUrl) throw new Error(`Could not start ${platform.label} auth.`)
+
+      if (connectPopup && !connectPopup.closed) {
+        connectPopup.opener = null
+        connectPopup.location.href = payload.authUrl
+        connectPopup.focus()
+      } else {
+        window.location.assign(payload.authUrl)
+      }
+      appendMessage('assistant', `Finish connecting ${platform.label} in the secure auth window. When it completes, Settings will confirm the connection.`)
+    } catch (error) {
+      if (connectPopup && !connectPopup.closed) connectPopup.close()
+      appendMessage('assistant', error instanceof Error ? error.message : `Could not start ${platform.label} connection.`)
+    } finally {
+      setConnectingPlatform('')
+    }
   }
 
   async function sendMessage(text) {
@@ -406,6 +587,11 @@ export default function PortalPartner({ session, profile, tenant, billingAccess,
       return
     }
 
+    if (action.type === 'open_social_setup') {
+      await loadSocialSetup()
+      return
+    }
+
     if (action.type === 'open_create_post') {
       appendMessage('assistant', 'I opened Publisher. Start with the post idea, choose the connected platforms, add media if needed, then preview before scheduling or publishing.')
       navigate('/post')
@@ -491,7 +677,18 @@ export default function PortalPartner({ session, profile, tenant, billingAccess,
 
           <div className="portal-partner-flow-grid">
             {FLOW_CARDS.map(({ id, label, description, prompt, Icon }) => (
-              <button key={id} type="button" onClick={() => sendMessage(prompt)} disabled={pending}>
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  if (id === 'social_setup') {
+                    void handleAction({ type: 'open_social_setup' })
+                    return
+                  }
+                  void sendMessage(prompt)
+                }}
+                disabled={pending || (id === 'social_setup' && Boolean(actionPending))}
+              >
                 <Icon className="h-4 w-4" />
                 <span>
                   <strong>{label}</strong>
@@ -540,6 +737,15 @@ export default function PortalPartner({ session, profile, tenant, billingAccess,
                 onChange={updateTrainingForm}
                 onCancel={() => setTrainingForm(null)}
                 onSave={saveTrainingForm}
+              />
+            ) : null}
+            {socialSetupOpen ? (
+              <SocialSetupPanel
+                connections={socialConnections}
+                loading={socialLoading}
+                connectingPlatform={connectingPlatform}
+                readOnly={Boolean(billingAccess?.readOnly)}
+                onConnect={connectSocialPlatform}
               />
             ) : null}
           </div>

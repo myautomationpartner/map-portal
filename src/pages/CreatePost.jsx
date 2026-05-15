@@ -12,6 +12,7 @@ import {
   reconcileScheduledPosts,
   fetchScheduledPosts,
   fetchSocialDrafts,
+  getSecureVaultDocumentUrl,
   generatePublisherAssist,
   generatePublisherImage,
   improvePublisherImage,
@@ -290,6 +291,32 @@ function buildDropboxMediaItem(file, index = 0) {
   }
 }
 
+function getCampaignRecommendedAssetRefs(draft) {
+  const refs = []
+  const seen = new Set()
+  const meta = parseDraftMeta(draft?.review_notes)
+  const addRef = (input = {}) => {
+    const documentId = input.document_id || input.documentId || input.id || ''
+    const name = input.name || input.assetName || input.file_name || ''
+    if (!documentId || seen.has(documentId)) return
+    seen.add(documentId)
+    refs.push({
+      documentId,
+      name,
+      use: input.suggestion || input.assetUse || input.use || '',
+    })
+  }
+
+  if (meta.recommendedAsset) addRef(meta.recommendedAsset)
+  if (Array.isArray(draft?.asset_requirements_json)) {
+    draft.asset_requirements_json
+      .filter((item) => item?.type === 'campaign_asset')
+      .forEach(addRef)
+  }
+
+  return refs
+}
+
 function buildExistingMediaItem(url) {
   if (!url) return null
   const mediaType = inferMediaType({ url })
@@ -512,7 +539,7 @@ async function fetchConnections(clientId) {
 
   const { data, error } = await supabase
     .from('social_connections')
-    .select('platform, zernio_account_id, username, connected_at')
+    .select('platform, zernio_account_id, zernio_profile_id, username, connected_at')
     .eq('client_id', clientId)
 
   if (error) throw error
@@ -865,15 +892,24 @@ function buildLocalHashtags(profile) {
 function buildImageGenerationBrandContext({ profile, slot, draft, mediaSuggestion, mode }) {
   const client = profile?.clients || {}
   const modeLabel = IMAGE_GENERATION_MODE_BY_ID[mode]?.label || 'Social photo'
+  const brandColors = client.brand_colors && typeof client.brand_colors === 'object'
+    ? Object.entries(client.brand_colors)
+      .map(([label, color]) => `${label}: ${color}`)
+      .join(', ')
+    : ''
+  const source = String(draft?.source_workflow || '').trim()
   return [
     `Generation style selected in portal: ${modeLabel}`,
     client.website_url ? `Business website: ${client.website_url}` : '',
-    client.logo_url ? 'Client has a logo URL stored; use only as brand inspiration unless an exact logo file is provided.' : '',
+    client.logo_url ? `Official logo/reference URL: ${client.logo_url}` : '',
+    brandColors ? `Brand colors: ${brandColors}` : '',
     client.business_category ? `Business category: ${client.business_category}` : '',
     client.business_subtype ? `Business specialty: ${client.business_subtype}` : '',
+    source ? `Draft source: ${source.replace(/_/g, ' ')}` : '',
     slot?.post_type ? `Planner post type: ${String(slot.post_type).replace(/_/g, ' ')}` : '',
     slot?.slot_label ? `Planner slot: ${slot.slot_label}` : '',
     draft?.title ? `Draft title: ${draft.title}` : '',
+    source === 'campaign_partner' ? 'Campaign Partner drafts should favor polished branded campaign creative over generic stock-style photos.' : '',
     mediaSuggestion ? `Partner media direction: ${mediaSuggestion}` : '',
   ].filter(Boolean).join('\n')
 }
@@ -1538,6 +1574,7 @@ export default function CreatePost() {
     setMediaSuggestion(extractMediaSuggestion(draft))
     setGeneratedCaption(draft.draft_caption || '')
     setContent(draft.draft_caption || '')
+    setImageGenerationMode(draft.source_workflow === 'campaign_partner' ? 'branded_post' : 'social_photo')
     setPlatformVariants(meta.platformVariants || {})
     setPlatformFormatStatus(meta.platformVariants ? 'Saved platform captions loaded.' : '')
     setImageFile(null)
@@ -1554,6 +1591,50 @@ export default function CreatePost() {
     setSelectedDay(slot.slot_date_local)
     const parsed = parseDateOnly(slot.slot_date_local)
     if (parsed) setViewedMonth(new Date(parsed.year, parsed.month - 1, 1))
+
+    const campaignAssetRefs = getCampaignRecommendedAssetRefs(draft)
+    if (campaignAssetRefs.length) {
+      setDraftStatus(`Loading ${campaignAssetRefs.length} campaign asset${campaignAssetRefs.length === 1 ? '' : 's'}...`)
+      Promise.all(campaignAssetRefs.map(async (asset, index) => {
+        const payload = await getSecureVaultDocumentUrl(asset.documentId, 'view')
+        return {
+          name: payload.file_name || asset.name || `Campaign asset ${index + 1}`,
+          link: payload.signed_url,
+          thumbnail: payload.signed_url,
+          size: Number(payload.size_bytes || 0),
+          mediaType: inferMediaType({
+            name: payload.file_name || asset.name,
+            mimeType: payload.mime_type,
+            url: payload.signed_url,
+          }),
+          contentType: payload.mime_type || '',
+          mimeType: payload.mime_type || '',
+          source: 'campaign_partner',
+          assetUse: asset.use || '',
+        }
+      }))
+        .then((campaignAssets) => {
+          const mediaAssets = campaignAssets.filter((asset) => (
+            asset.link
+            && (
+              isImageMime(asset.contentType)
+              || isVideoMime(asset.contentType)
+              || isImageAttachment(asset)
+              || isVideoAttachment(asset)
+            )
+          ))
+          if (!mediaAssets.length) return
+          setDropboxAttachments((current) => {
+            const links = new Set(current.map((asset) => asset.link).filter(Boolean))
+            return [...current, ...mediaAssets.filter((asset) => !links.has(asset.link))]
+          })
+          setDraftStatus(`${mediaAssets.length} Campaign Partner asset${mediaAssets.length === 1 ? '' : 's'} attached.`)
+        })
+        .catch((error) => {
+          console.error('[CampaignAssetLoad]', error)
+          setDraftStatus('Draft loaded. Recommended campaign asset could not be attached automatically.')
+        })
+    }
 
     window.setTimeout(() => {
       hydratingDraftRef.current = false
@@ -1573,6 +1654,7 @@ export default function CreatePost() {
     setMediaSuggestion(generated.mediaSuggestion)
     setGeneratedCaption(generated.caption)
     setContent(generated.caption)
+    setImageGenerationMode('branded_post')
     setPlatformVariants({})
     setPlatformFormatStatus('')
     setImageFile(null)
@@ -3167,7 +3249,6 @@ export default function CreatePost() {
                       <p>Partner Assist</p>
                       <h2>Improve this caption</h2>
                     </div>
-                    <span>1 credit</span>
                   </div>
                   <div className="partner-assist-actions">
                     {ASSIST_ACTIONS.map((action) => (

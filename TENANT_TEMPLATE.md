@@ -147,7 +147,7 @@ Current automation coverage:
 - attaches the MAP-managed custom domain from `portal_domain`
 - uploads/refreshes the current worker secret set
 - injects the tenant-specific Chatwoot account id, social inbox id, and webhook bridge secret into the Worker secret set
-- can register the Zernio account-events webhook through the live n8n helper
+- can register the central Zernio account-events webhook through the live n8n helper
 - can mirror deployment completion/follow-up state back into onboarding tables
 - sends/requests the customer's Chatwoot password reset after Chatwoot tenant provisioning
 
@@ -156,3 +156,4 @@ Current limitation:
 - brand-new worker provisioning now expects one MAP-level `ZERNIO_WEBHOOK_SECRET` to be available to the provisioning helper at deploy time
 - the current durable source on the operator machine is the macOS Keychain service `MAP_ZERNIO_WEBHOOK_SECRET` (with `ZERNIO_WEBHOOK_SECRET` as a legacy alias), and the helper also accepts env / `credential.txt` overrides when needed
 - if the secret is truly missing, the portal can still be deployed, but onboarding should remain in follow-up mode until the signed webhook secret is added and the Zernio helper is run
+- do not create per-tenant Zernio account-event webhooks for new portals; account connect/disconnect events should flow through the shared dispatcher at `https://myautomationpartner.com/portal/_zernio/api/zernio/account-events`

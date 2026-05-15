@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useOutletContext, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
@@ -13,8 +13,8 @@ import {
 } from 'lucide-react'
 
 const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
-const SETTINGS_SYNC_ENDPOINT = '/api/n8n/zernio-sync-accounts'
 const SETTINGS_DISCONNECT_ENDPOINT = '/api/social-connections/disconnect'
+const SETTINGS_REFRESH_ENDPOINT = '/api/social-connections/refresh'
 
 const PLATFORMS = DASHBOARD_PLATFORMS
 const TEAM_PERMISSION_OPTIONS = [
@@ -40,9 +40,16 @@ function buildTenantAwarePortalPath(path, clientSlug) {
 }
 
 async function fetchUserProfile() {
+  const { data: userData, error: userError } = await supabase.auth.getUser()
+  if (userError) throw userError
+
+  const userId = userData?.user?.id
+  if (!userId) throw new Error('You are not signed in.')
+
   const { data, error } = await supabase
     .from('users')
     .select('*, clients(*)')
+    .eq('id', userId)
     .single()
   if (error) throw error
   return data
@@ -52,7 +59,7 @@ async function fetchConnections(clientId) {
   if (!clientId) return []
   const { data, error } = await supabase
     .from('social_connections')
-    .select('platform, zernio_account_id, username, connected_at')
+    .select('platform, zernio_account_id, zernio_profile_id, username, connected_at')
     .eq('client_id', clientId)
   if (error) throw error
   return data || []
@@ -114,6 +121,26 @@ async function disconnectSocialConnection(platform) {
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
     throw new Error(payload?.error || 'Could not disconnect this account.')
+  }
+  return payload
+}
+
+async function refreshSocialConnections(platform) {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData?.session?.access_token
+  if (!token) throw new Error('You need to be signed in to refresh accounts.')
+
+  const response = await fetch(portalPath(SETTINGS_REFRESH_ENDPOINT), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ platform }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || payload?.success === false) {
+    throw new Error(payload?.error || 'Could not refresh connected accounts.')
   }
   return payload
 }
@@ -658,6 +685,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
   const [disconnectingPlatform, setDisconnectingPlatform] = useState(null)
   const [syncStatus, setSyncStatus] = useState(null)
   const autoSyncTimeoutRef = useRef(null)
+  const connectionQueryKey = useMemo(() => ['social_connections', clientId], [clientId])
 
   function buildConnectReturnUrl(platform) {
     if (typeof window === 'undefined') return ''
@@ -670,9 +698,11 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
   }
 
   const { data: connections = [], isLoading: connectionsLoading } = useQuery({
-    queryKey: ['social_connections', clientId],
+    queryKey: connectionQueryKey,
     queryFn: () => fetchConnections(clientId),
     enabled: !!clientId,
+    refetchInterval: connectingPlatform ? 2000 : false,
+    refetchIntervalInBackground: true,
   })
 
   const connectedMap = useMemo(
@@ -680,40 +710,18 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
     [connections],
   )
 
-  function clearAutoSyncTimer() {
+  const clearAutoSyncTimer = useCallback(() => {
     if (autoSyncTimeoutRef.current) {
       clearTimeout(autoSyncTimeoutRef.current)
       autoSyncTimeoutRef.current = null
     }
-  }
-
-  async function syncZernioAccounts(platform = null) {
-    if (!clientId) return { success: false, skipped: true }
-
-    const res = await fetch(portalPath(SETTINGS_SYNC_ENDPOINT), {
-      method: 'POST',
-      headers: await portalAuthHeaders(),
-      body: JSON.stringify({
-        clientId,
-        platform: platform ? normalizeConnectionPlatform(platform) : undefined,
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-
-    if (!res.ok || data?.success === false) {
-      const details = normalizeWorkflowError(data, 'Zernio did not return the connected account yet.')
-      throw new Error(details)
-    }
-
-    return data
-  }
+  }, [])
 
   async function checkConnectionStatus(platform = null, options = {}) {
     const {
       suppressNoAccountError = false,
       keepStatus = false,
       successPrefix = '',
-      syncFirst = true,
     } = options
     const normalizedPlatform = platform ? normalizeConnectionPlatform(platform) : null
 
@@ -724,14 +732,10 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
     }
 
     try {
-      if (syncFirst) {
-        await syncZernioAccounts(normalizedPlatform)
-      }
-
-      const latestConnections = await queryClient.fetchQuery({
-        queryKey: ['social_connections', clientId],
-        queryFn: () => fetchConnections(clientId),
-      })
+      await refreshSocialConnections(normalizedPlatform)
+      await queryClient.invalidateQueries({ queryKey: connectionQueryKey })
+      const latestConnections = await fetchConnections(clientId)
+      queryClient.setQueryData(connectionQueryKey, latestConnections)
 
       const foundConnection = normalizedPlatform
         ? latestConnections.find((entry) => normalizeConnectionPlatform(entry.platform) === normalizedPlatform)
@@ -749,8 +753,8 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
         setSyncStatus({
           type: 'info',
           message: normalizedPlatform
-            ? `We're still waiting for ${formatPlatformLabel(normalizedPlatform)} to finish connecting in Zernio.`
-            : 'We are still waiting for Zernio to finish connecting your account.',
+            ? `We're still waiting for MAP to receive the Zernio account event for ${formatPlatformLabel(normalizedPlatform)}.`
+            : 'We are still waiting for MAP to receive the Zernio account event.',
         })
       }
 
@@ -759,7 +763,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
       if (!suppressNoAccountError) {
         setSyncStatus({
           type: 'error',
-          message: error instanceof Error ? error.message : 'Could not refresh connected accounts from Zernio. Please try again.',
+          message: error instanceof Error ? error.message : 'Could not refresh connected accounts from Supabase. Please try again.',
         })
       }
       return { success: false, found: false }
@@ -789,7 +793,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
         setConnectingPlatform(null)
         setSyncStatus({
           type: 'info',
-          message: `${formatPlatformLabel(normalizedPlatform)} is still finishing in Zernio. This page will update automatically as soon as the connected account is available.`,
+          message: `${formatPlatformLabel(normalizedPlatform)} is still finishing in Zernio. This page will update automatically as soon as MAP receives the account event.`,
         })
         clearAutoSyncTimer()
         return
@@ -844,7 +848,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
         }
         setSyncStatus({
           type: 'info',
-          message: `Finish connecting ${formatPlatformLabel(normalizedPlatform)} in the new tab. We'll sync with Zernio and update this page automatically.`,
+          message: `Finish connecting ${formatPlatformLabel(normalizedPlatform)} in the new tab. This page will update when Zernio sends the account event to MAP.`,
         })
         startAutoSync(normalizedPlatform)
       } else {
@@ -876,7 +880,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
 
     try {
       await disconnectSocialConnection(normalizedPlatform)
-      await queryClient.invalidateQueries({ queryKey: ['social_connections', clientId] })
+      await queryClient.invalidateQueries({ queryKey: connectionQueryKey })
       setSyncStatus({
         type: 'success',
         message: `${label} is disconnected from this portal. You can connect it again anytime.`,
@@ -890,6 +894,16 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
       setDisconnectingPlatform(null)
     }
   }
+
+  useEffect(() => {
+    if (!connectingPlatform || !connectedMap[connectingPlatform]) return
+    clearAutoSyncTimer()
+    setConnectingPlatform(null)
+    setSyncStatus({
+      type: 'success',
+      message: `${formatPlatformLabel(connectingPlatform)} is connected and ready for publishing and metrics.`,
+    })
+  }, [connectingPlatform, connectedMap, clearAutoSyncTimer])
 
   useEffect(() => {
     if (!returnedPlatform || !clientId) return
@@ -910,7 +924,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
     const timer = window.setTimeout(() => {
       setSyncStatus({
         type: 'info',
-        message: `${formatPlatformLabel(normalizedPlatform)} returned from Zernio. Syncing the connected account…`,
+        message: `${formatPlatformLabel(normalizedPlatform)} returned from Zernio. Waiting for the MAP account event…`,
       })
     }, 0)
     startAutoSync(normalizedPlatform)
@@ -922,7 +936,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [returnedPlatform, clientId, connectedMap])
 
-  useEffect(() => () => clearAutoSyncTimer(), [])
+  useEffect(() => () => clearAutoSyncTimer(), [clearAutoSyncTimer])
 
   return (
     <Section
@@ -1029,7 +1043,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
 
       <div className="mt-4 border-t pt-4" style={{ borderColor: 'var(--portal-border)' }}>
         <p className="text-xs" style={{ color: 'var(--portal-text-soft)' }}>
-          Connect each platform once in Zernio and this page will keep Supabase updated automatically for publishing and metrics.
+          Connect each platform once in Zernio. Signed Zernio account events keep this page updated for publishing and metrics.
         </p>
       </div>
     </Section>

@@ -13,7 +13,10 @@
     "deploy:test-portal": "node ./scripts/deploy-portal-update.mjs --client-slug dancescapes-performing-arts",
     "deploy:portal": "node ./scripts/deploy-portal-update.mjs",
     "deploy:all-portals": "node ./scripts/deploy-all-portal-updates.mjs",
-    "rollback:portal": "node ./scripts/rollback-portal-update.mjs"
+    "rollback:portal": "node ./scripts/rollback-portal-update.mjs",
+    "zernio:auth": "zernio auth:check",
+    "zernio:profiles": "zernio profiles:list --pretty",
+    "zernio:accounts": "zernio accounts:list --pretty"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",
@@ -32,6 +35,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "@zernio/cli": "^0.3.0",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",

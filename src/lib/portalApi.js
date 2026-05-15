@@ -30,6 +30,10 @@ export const UPLOAD_MIME_OPTIONS = [
   'image/heic',
   'image/heif',
   'image/svg+xml',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+  'video/x-m4v',
   'application/msword',
   'application/vnd.ms-excel',
   'application/vnd.ms-powerpoint',
@@ -75,6 +79,10 @@ const MIME_BY_EXTENSION = {
   heic: 'image/heic',
   heif: 'image/heif',
   svg: 'image/svg+xml',
+  mp4: 'video/mp4',
+  m4v: 'video/x-m4v',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
   doc: 'application/msword',
   docm: 'application/vnd.ms-word.document.macroEnabled.12',
   xls: 'application/vnd.ms-excel',
@@ -111,9 +119,16 @@ export function resolveUploadMimeType(file) {
 }
 
 export async function fetchProfile() {
+  const { data: userData, error: userError } = await supabase.auth.getUser()
+  if (userError) throw userError
+
+  const userId = userData?.user?.id
+  if (!userId) throw new Error('You are not signed in.')
+
   const { data, error } = await supabase
     .from('users')
     .select('id, client_id, role, name, email, portal_permissions, disabled_at, clients(*, client_planner_profiles(*))')
+    .eq('id', userId)
     .single()
 
   if (error) throw error
@@ -139,11 +154,22 @@ export async function fetchSocialConnections(clientId) {
 
   const { data, error } = await supabase
     .from('social_connections')
-    .select('platform, zernio_account_id, username, connected_at')
+    .select('platform, zernio_account_id, zernio_profile_id, username, connected_at')
     .eq('client_id', clientId)
 
   if (error) throw error
   return data || []
+}
+
+export async function startSocialConnection({ clientId, platform, redirectUrl }) {
+  return callPortalWorker('/api/n8n/zernio-connect-url', {
+    method: 'POST',
+    body: JSON.stringify({
+      clientId,
+      platform,
+      redirectUrl,
+    }),
+  })
 }
 
 export async function fetchResearchSources(clientId) {
@@ -360,6 +386,77 @@ export async function deleteCampaignProject(projectId) {
   return true
 }
 
+function getCampaignDraftIds(project) {
+  const posts = Array.isArray(project?.plan_json?.posts) ? project.plan_json.posts : []
+  return [...new Set(posts.map((post) => post?.campaignDraftId).filter(Boolean))]
+}
+
+export async function fetchCampaignProjectDrafts(project) {
+  if (!project?.id || !project?.client_id) return []
+
+  const rowsById = new Map()
+  const draftIds = getCampaignDraftIds(project)
+  const selectColumns = 'id, client_id, source_workflow, slot_label, review_notes'
+
+  if (draftIds.length) {
+    const { data, error } = await supabase
+      .from('social_drafts')
+      .select(selectColumns)
+      .eq('client_id', project.client_id)
+      .in('id', draftIds)
+
+    if (error) throw error
+    ;(data ?? []).forEach((row) => rowsById.set(row.id, row))
+  }
+
+  const { data: slotRows, error: slotError } = await supabase
+    .from('social_drafts')
+    .select(selectColumns)
+    .eq('client_id', project.client_id)
+    .eq('source_workflow', 'campaign_partner')
+    .like('slot_label', `campaign_${project.id.slice(0, 8)}_%`)
+
+  if (slotError) throw slotError
+  ;(slotRows ?? []).forEach((row) => rowsById.set(row.id, row))
+
+  const { data: noteRows, error: noteError } = await supabase
+    .from('social_drafts')
+    .select(selectColumns)
+    .eq('client_id', project.client_id)
+    .eq('source_workflow', 'campaign_partner')
+    .ilike('review_notes', `%${project.id}%`)
+
+  if (noteError) throw noteError
+  ;(noteRows ?? []).forEach((row) => rowsById.set(row.id, row))
+
+  return [...rowsById.values()]
+}
+
+export async function deleteCampaignProjectWithDrafts(project) {
+  if (!project?.id) throw new Error('Campaign project is required.')
+  if (!project?.client_id) throw new Error('Campaign client is required.')
+
+  const drafts = await fetchCampaignProjectDrafts(project)
+  const draftIds = drafts.map((draft) => draft.id).filter(Boolean)
+
+  if (draftIds.length) {
+    const { error } = await supabase
+      .from('social_drafts')
+      .delete()
+      .eq('client_id', project.client_id)
+      .in('id', draftIds)
+
+    if (error) throw error
+  }
+
+  await deleteCampaignProject(project.id)
+
+  return {
+    deletedDraftCount: draftIds.length,
+    deletedDraftIds: draftIds,
+  }
+}
+
 export async function upsertWorkspacePreferences({ clientId, userId, workspaceTools }) {
   if (!clientId || !userId) {
     throw new Error('Client and user are required to save workspace preferences.')
@@ -451,6 +548,85 @@ export async function fetchPostBoosts(clientId, options = {}) {
 
   const postId = options.postId || ''
   return postId ? (data ?? []).filter((boost) => boost.post_id === postId) : (data ?? [])
+}
+
+export async function fetchPostMetrics(platform, options = {}) {
+  if (!platform) return { posts: [], sync: null }
+
+  const params = new URLSearchParams({
+    platform,
+    sync: options.sync === false ? '0' : '1',
+  })
+  if (options.force) params.set('force', '1')
+
+  return callPortalWorker(`/api/post-metrics?${params.toString()}`)
+}
+
+export async function fetchPostBoostReadiness(postId) {
+  if (!postId) return null
+
+  const accessToken = await getAccessToken()
+  const params = new URLSearchParams({ postId })
+  const response = await fetch(portalPath(`/api/post-boost-readiness?${params.toString()}`), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || payload?.success === false) {
+    const error = new Error(payload?.error || payload?.message || `Boost readiness check failed (${response.status}).`)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload.readiness ?? null
+}
+
+export async function fetchBoostAdAccounts(platform) {
+  const normalizedPlatform = String(platform || '').trim()
+  if (!normalizedPlatform) return []
+
+  const accessToken = await getAccessToken()
+  const params = new URLSearchParams({ platform: normalizedPlatform })
+  const response = await fetch(portalPath(`/api/boost-ad-accounts?${params.toString()}`), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || payload?.success === false) {
+    const error = new Error(payload?.error || payload?.message || `Boost ad account lookup failed (${response.status}).`)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload.accounts ?? []
+}
+
+export async function startBoostAdsConnection(input) {
+  const accessToken = await getAccessToken()
+  const response = await fetch(portalPath('/api/boost-ads-connect'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(input ?? {}),
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || payload?.success === false) {
+    const error = new Error(payload?.error || payload?.message || `Boost ads setup failed (${response.status}).`)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
 }
 
 export async function launchPostBoost(input) {
@@ -1004,8 +1180,9 @@ export async function revokeShareLink(shareLinkId) {
   return data
 }
 
-const SECURE_DOCUMENT_SELECT = 'id, client_id, uploaded_by, storage_path, file_name, mime_type, size_bytes, category, folder_id, description, is_archived, created_at, updated_at, secure_folders(id, name, parent_folder_id)'
-const SECURE_FOLDER_SELECT = 'id, client_id, parent_folder_id, created_by, name, is_archived, created_at, updated_at'
+const SECURE_DOCUMENT_BUCKET = 'secure-documents'
+const SECURE_DOCUMENT_SELECT = 'id, client_id, uploaded_by, storage_path, file_name, mime_type, size_bytes, category, folder_id, description, is_archived, archived_at, created_at, updated_at, secure_folders(id, name, parent_folder_id)'
+const SECURE_FOLDER_SELECT = 'id, client_id, parent_folder_id, created_by, name, is_archived, archived_at, created_at, updated_at'
 const SECURE_SHARE_LINK_SELECT = 'id, document_id, client_id, created_by, token_hash, expires_at, max_uses, use_count, revoked_at, created_at, updated_at'
 const SECURE_ROOM_SELECT = 'id, client_id, created_by, name, expires_at, revoked_at, passcode_hash, access_mode, created_at, updated_at, secure_share_room_documents(document_id, secure_documents(id, file_name, mime_type, size_bytes, is_archived)), secure_share_room_folders(folder_id, secure_folders(id, name, parent_folder_id, is_archived)), secure_share_room_recipients(id, email, name, invited_at, last_opened_at)'
 
@@ -1057,6 +1234,158 @@ export async function createSecureVaultFolder({ clientId, name, parentFolderId =
   })
 
   return data
+}
+
+export async function updateSecureVaultFolder(folderId, changes = {}) {
+  if (!folderId) throw new Error('Folder is required.')
+
+  const payload = {}
+  if (Object.prototype.hasOwnProperty.call(changes, 'name')) {
+    const nextName = String(changes.name || '').trim()
+    if (!nextName) throw new Error('Folder name is required.')
+    payload.name = nextName
+  }
+  if (Object.prototype.hasOwnProperty.call(changes, 'parent_folder_id')) {
+    payload.parent_folder_id = changes.parent_folder_id || null
+  }
+  if (Object.prototype.hasOwnProperty.call(changes, 'is_archived')) {
+    payload.is_archived = Boolean(changes.is_archived)
+  }
+
+  if (!Object.keys(payload).length) throw new Error('No folder changes were provided.')
+
+  const { data, error } = await supabase
+    .from('secure_folders')
+    .update(payload)
+    .eq('id', folderId)
+    .select(SECURE_FOLDER_SELECT)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function archiveSecureVaultFolderTree(folderIds = []) {
+  const ids = Array.from(new Set(folderIds.filter(Boolean)))
+  if (!ids.length) throw new Error('Folder is required.')
+
+  const { data: documents, error: documentsError } = await supabase
+    .from('secure_documents')
+    .update({ is_archived: true })
+    .in('folder_id', ids)
+    .eq('is_archived', false)
+    .select('id')
+
+  if (documentsError) throw documentsError
+
+  const { data: folders, error: foldersError } = await supabase
+    .from('secure_folders')
+    .update({ is_archived: true })
+    .in('id', ids)
+    .select(SECURE_FOLDER_SELECT)
+
+  if (foldersError) throw foldersError
+
+  return {
+    folders: folders ?? [],
+    archivedDocumentCount: documents?.length || 0,
+  }
+}
+
+async function deleteSecureVaultDocumentsByRows(documents = []) {
+  const rows = documents.filter(Boolean)
+  const storagePaths = Array.from(new Set(rows.map((document) => document.storage_path).filter(Boolean)))
+  const documentIds = rows.map((document) => document.id).filter(Boolean)
+
+  if (storagePaths.length) {
+    const { error: storageError } = await supabase.storage
+      .from(SECURE_DOCUMENT_BUCKET)
+      .remove(storagePaths)
+
+    if (storageError) throw storageError
+  }
+
+  if (documentIds.length) {
+    const { error } = await supabase
+      .from('secure_documents')
+      .delete()
+      .in('id', documentIds)
+
+    if (error) throw error
+  }
+
+  return {
+    deletedDocumentCount: documentIds.length,
+    deletedStorageCount: storagePaths.length,
+  }
+}
+
+export async function permanentlyDeleteSecureVaultDocument(documentId) {
+  if (!documentId) throw new Error('Document is required.')
+
+  const { data: document, error } = await supabase
+    .from('secure_documents')
+    .select('id, storage_path')
+    .eq('id', documentId)
+    .single()
+
+  if (error) throw error
+  return deleteSecureVaultDocumentsByRows([document])
+}
+
+export async function permanentlyDeleteSecureVaultFolderTree(folderIds = []) {
+  const ids = Array.from(new Set(folderIds.filter(Boolean)))
+  if (!ids.length) throw new Error('Folder is required.')
+
+  const { data: documents, error: documentsError } = await supabase
+    .from('secure_documents')
+    .select('id, storage_path')
+    .in('folder_id', ids)
+
+  if (documentsError) throw documentsError
+
+  const result = await deleteSecureVaultDocumentsByRows(documents ?? [])
+
+  const { data: folders, error: foldersError } = await supabase
+    .from('secure_folders')
+    .delete()
+    .in('id', ids)
+    .select('id')
+
+  if (foldersError) throw foldersError
+
+  return {
+    ...result,
+    deletedFolderCount: folders?.length || 0,
+  }
+}
+
+export async function emptySecureVaultArchive(clientId) {
+  if (!clientId) throw new Error('Client profile is still loading.')
+
+  const { data: documents, error: documentsError } = await supabase
+    .from('secure_documents')
+    .select('id, storage_path')
+    .eq('client_id', clientId)
+    .eq('is_archived', true)
+
+  if (documentsError) throw documentsError
+
+  const result = await deleteSecureVaultDocumentsByRows(documents ?? [])
+
+  const { data: folders, error: foldersError } = await supabase
+    .from('secure_folders')
+    .delete()
+    .eq('client_id', clientId)
+    .eq('is_archived', true)
+    .select('id')
+
+  if (foldersError) throw foldersError
+
+  return {
+    ...result,
+    deletedFolderCount: folders?.length || 0,
+  }
 }
 
 export async function updateSecureVaultDocument(documentId, changes) {

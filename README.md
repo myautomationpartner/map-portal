@@ -94,7 +94,7 @@ What it does:
 - builds the SPA with tenant branding/canonical-host env
 - deploys a dedicated Cloudflare Worker with the MAP-managed custom domain
 - preserves existing worker vars/secrets while updating the current runtime secret set
-- optionally registers and tests the Zernio account-events webhook
+- optionally registers and tests the central Zernio account-events webhook at `/portal/_zernio/api/zernio/account-events`
 - mirrors deployment state back into onboarding tables when a matching signup/run exists
 
 Required runtime inputs:
@@ -113,7 +113,7 @@ Notes:
 - `ZERNIO_WEBHOOK_SECRET` now resolves from env / `credential.txt` first, then from the macOS Keychain services `MAP_ZERNIO_WEBHOOK_SECRET` or `ZERNIO_WEBHOOK_SECRET`.
 - Recommended setup for this machine:
   - `security add-generic-password -U -a "$USER" -s MAP_ZERNIO_WEBHOOK_SECRET -w '<secret>'`
-- Use `--skip-webhook-config` if you want to deploy first and wire Zernio later.
+- Use `--skip-webhook-config` if you want to deploy first and wire Zernio later. Fresh provisioning should use the central dispatcher, not per-tenant Zernio account-event webhook URLs.
 
 ## Notes
 

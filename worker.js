@@ -256,12 +256,81 @@ async function proxyN8nWebhook(request, env, webhookPath) {
     return json({ error: 'This portal session is not authorized for the requested tenant.' }, { status: 403 })
   }
 
+  const platform = normalizePlatform(body?.platform)
+  if (!platform) {
+    return json({ error: 'Choose a supported social platform to connect.' }, { status: 400 })
+  }
+
+  const zernioProfileId = firstString(auth.envConfig.zernioProfileId)
+  if (!zernioProfileId) {
+    return json({
+      error: 'This customer does not have a Zernio profile configured yet. Run the Zernio profile reconciliation before connecting social accounts.',
+    }, { status: 409 })
+  }
+
   const tenantSlug = String(auth.user?.clients?.slug || '').trim().toLowerCase()
+  const stateToken = `map-connect:${auth.user.client_id}:${platform}:${randomHex(24)}`
+  const safeRedirectUrl = buildSafeN8nRedirectUrl(request, env, body?.redirectUrl, tenantSlug)
+  const redirectUrl = appendConnectStateToRedirectUrl(safeRedirectUrl, stateToken)
+
+  try {
+    await expirePendingSocialConnectionAttempts(auth.envConfig, { platform })
+    await createSocialConnectionAttempt(auth.envConfig, {
+      platform,
+      stateToken,
+      redirectUrl,
+      userId: auth.user.id,
+      zernioProfileId,
+    })
+  } catch (error) {
+    return json({
+      error: error?.message || 'Could not prepare the social connection attempt.',
+    }, { status: 502 })
+  }
+
   const securedBody = {
     ...(body && typeof body === 'object' ? body : {}),
     clientId: auth.user.client_id,
+    platform,
     tenantSlug,
-    redirectUrl: buildSafeN8nRedirectUrl(request, env, body?.redirectUrl, tenantSlug),
+    redirectUrl,
+    state: stateToken,
+    connectState: stateToken,
+    profileId: zernioProfileId,
+    profile_id: zernioProfileId,
+    zernioProfileId,
+  }
+
+  if (webhookPath === 'zernio-connect-url') {
+    try {
+      const params = new URLSearchParams({
+        profileId: zernioProfileId,
+        redirect_url: redirectUrl,
+      })
+      const payload = await zernioFetch(env, `/connect/${encodeURIComponent(platform)}?${params.toString()}`)
+      const authUrl = firstString(payload?.authUrl, payload?.url, payload?.redirectUrl, payload?.connectUrl, payload?.data?.authUrl, payload?.data?.url)
+      if (!authUrl) {
+        return json({
+          success: false,
+          error: payload?.message || 'Zernio did not return a connect URL.',
+          payload,
+        }, { status: 502 })
+      }
+
+      return json({
+        success: true,
+        authUrl,
+        platform,
+        profileId: zernioProfileId,
+        state: payload?.state || stateToken,
+      })
+    } catch (error) {
+      return json({
+        success: false,
+        error: error?.message || 'Could not start the Zernio connect flow.',
+        details: error?.payload || null,
+      }, { status: error?.status || 502 })
+    }
   }
 
   try {
@@ -307,6 +376,10 @@ function normalizePlatform(platform) {
     x: 'twitter',
     x_twitter: 'twitter',
     xtwitter: 'twitter',
+    google: 'google',
+    google_business: 'google',
+    google_business_profile: 'google',
+    gbp: 'google',
   }
 
   return platformMap[value] || null
@@ -335,8 +408,14 @@ function normalizeTeamPermissions(input) {
   return Array.from(new Set(normalized))
 }
 
-function userHasPermission(user, permission) {
+export function getUserPermissions(user) {
   const permissions = Array.isArray(user?.portal_permissions) ? user.portal_permissions : []
+  if (user?.role === 'admin' && !permissions.length) return ['full_admin']
+  return permissions
+}
+
+function userHasPermission(user, permission) {
+  const permissions = getUserPermissions(user)
   return permissions.includes('full_admin') || permissions.includes(permission)
 }
 
@@ -358,6 +437,21 @@ function safeCompareHex(left, right) {
   return mismatch === 0
 }
 
+function randomHex(bytes = 24) {
+  const values = new Uint8Array(bytes)
+  crypto.getRandomValues(values)
+  return Array.from(values)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value || '')))
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
 async function verifyZernioWebhookSignature(rawBody, signature, secret) {
   const normalizedSignature = String(signature || '').trim().toLowerCase()
   const normalizedSecret = String(secret || '')
@@ -377,6 +471,64 @@ async function verifyZernioWebhookSignature(rawBody, signature, secret) {
     .join('')
 
   return safeCompareHex(expected, normalizedSignature)
+}
+
+function appendConnectStateToRedirectUrl(redirectUrl, stateToken) {
+  if (!stateToken) return redirectUrl
+  try {
+    const url = new URL(redirectUrl)
+    url.searchParams.set('connect_attempt', stateToken)
+    return url.toString()
+  } catch {
+    return redirectUrl
+  }
+}
+
+async function expirePendingSocialConnectionAttempts(envConfig, { platform }) {
+  const filters = new URLSearchParams({
+    client_id: `eq.${envConfig.clientId}`,
+    platform: `eq.${platform}`,
+    status: 'eq.pending',
+  })
+
+  await supabaseRest(
+    envConfig,
+    `/rest/v1/social_connection_attempts?${filters.toString()}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'expired',
+        completed_at: new Date().toISOString(),
+      }),
+    },
+  )
+}
+
+async function createSocialConnectionAttempt(envConfig, { platform, stateToken, redirectUrl, userId, zernioProfileId = '' }) {
+  const stateTokenHash = await sha256Hex(stateToken)
+  const profileId = firstString(zernioProfileId, envConfig.zernioProfileId)
+  const payload = [{
+    client_id: envConfig.clientId,
+    created_by: userId || null,
+    platform,
+    state_token_hash: stateTokenHash,
+    zernio_profile_id: profileId || null,
+    redirect_url: redirectUrl,
+    metadata: {
+      source: 'portal-connect-url',
+      client_slug: envConfig.clientSlug || null,
+      zernio_profile_id: profileId || null,
+    },
+  }]
+
+  const response = await supabaseRest(envConfig, '/rest/v1/social_connection_attempts', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(payload),
+  })
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
 }
 
 function getSupabaseConfig(env) {
@@ -462,7 +614,7 @@ async function authorizePortalUser(request, env) {
     || '',
   ).trim().toLowerCase()
   const filters = new URLSearchParams({
-    select: 'id,client_id,role,email,name,portal_permissions,disabled_at,clients(slug)',
+    select: 'id,client_id,role,email,name,portal_permissions,disabled_at,clients(slug,business_name,zernio_profile_id,zernio_profile_status)',
     id: `eq.${authUserId}`,
     limit: '1',
   })
@@ -486,6 +638,8 @@ async function authorizePortalUser(request, env) {
   }
 
   const profileSlug = String(portalUser?.clients?.slug || '').trim().toLowerCase()
+  const zernioProfileId = firstString(portalUser?.clients?.zernio_profile_id)
+  const zernioProfileStatus = firstString(portalUser?.clients?.zernio_profile_status)
   if (requestedTenantSlug && profileSlug && requestedTenantSlug !== profileSlug) {
     return { error: json({ error: 'This portal session is not authorized for this tenant path.' }, { status: 403 }) }
   }
@@ -496,6 +650,8 @@ async function authorizePortalUser(request, env) {
       ...envConfig,
       clientId: envConfig.clientId || portalUser.client_id,
       clientSlug: profileSlug,
+      zernioProfileId,
+      zernioProfileStatus,
     },
     bearerToken,
   }
@@ -873,6 +1029,164 @@ async function zernioFetch(env, path, init = {}) {
   return payload
 }
 
+export function buildZernioScopedSearchParams(params = {}, profileId = '') {
+  const query = new URLSearchParams()
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (key === 'profileId' || key === 'profile_id') return
+    const normalized = String(value ?? '').trim()
+    if (normalized) query.set(key, normalized)
+  })
+
+  const resolvedProfileId = firstString(profileId, params?.profileId, params?.profile_id)
+  if (resolvedProfileId) query.set('profileId', resolvedProfileId)
+  return query
+}
+
+function getConnectionZernioProfileId(connection = {}, envConfig = {}) {
+  return firstString(connection?.zernio_profile_id, envConfig?.zernioProfileId, envConfig?.zernio_profile_id)
+}
+
+function getPostZernioPostId(post = {}) {
+  return firstString(post?.zernio_post_id, post?.n8n_execution_id)
+}
+
+function zernioAdsPlatformForPortalPlatform(platform) {
+  const normalized = normalizePlatform(platform)
+  const map = {
+    facebook: 'facebook',
+    instagram: 'instagram',
+    tiktok: 'tiktok',
+    linkedin: 'linkedin',
+    twitter: 'twitter',
+  }
+  return map[normalized] || ''
+}
+
+function zernioAdsAccountLookupPlatforms(platform) {
+  const normalized = normalizePlatform(platform)
+  if (['facebook', 'instagram'].includes(normalized)) return ['metaads', normalized]
+
+  const adsPlatform = zernioAdsPlatformForPortalPlatform(normalized)
+  return adsPlatform ? [adsPlatform] : []
+}
+
+function extractZernioAccountId(account) {
+  return firstString(account?._id, account?.id, account?.accountId, account?.zernioAccountId)
+}
+
+function extractZernioProfileId(account) {
+  const metadata = account?.metadata || {}
+  return firstString(
+    typeof account?.profileId === 'string' ? account.profileId : '',
+    account?.profileId?._id,
+    account?.profileId?.id,
+    account?.profile_id,
+    account?.profile?.id,
+    account?.profile?._id,
+    metadata.profileId,
+    metadata.profile_id,
+  )
+}
+
+function extractPlatformAdAccountId(account) {
+  const metadata = account?.metadata || {}
+  const candidates = [
+    account?.adAccountId,
+    account?.ad_account_id,
+    account?.platformAdAccountId,
+    account?.platform_ad_account_id,
+    account?.platformAccountId,
+    account?.platform_account_id,
+    account?.externalAccountId,
+    account?.external_account_id,
+    account?.accountId,
+    metadata.adAccountId,
+    metadata.ad_account_id,
+    metadata.platformAdAccountId,
+    metadata.platform_ad_account_id,
+    metadata.externalAccountId,
+    metadata.external_account_id,
+    Array.isArray(metadata.subscribedAdAccountIds) ? metadata.subscribedAdAccountIds[0] : '',
+  ]
+
+  for (const candidate of candidates) {
+    const value = firstString(candidate)
+    if (value) return value
+  }
+
+  return ''
+}
+
+function normalizeZernioAdAccount(account) {
+  const adAccountId = extractPlatformAdAccountId(account)
+  const zernioAccountId = extractZernioAccountId(account)
+  const displayName = firstString(account?.displayName, account?.name, account?.username, account?.handle)
+  const platform = String(account?.platform || account?.provider || '').trim().toLowerCase()
+
+  return {
+    id: zernioAccountId || adAccountId,
+    zernioAccountId,
+    adAccountId,
+    platform,
+    label: displayName || maskBoostAdAccountId(adAccountId || zernioAccountId) || 'Ad account',
+    rawStatus: firstString(account?.status, account?.state),
+  }
+}
+
+export function normalizeZernioAdAccounts(accounts = []) {
+  return (Array.isArray(accounts) ? accounts : [])
+    .map(normalizeZernioAdAccount)
+    .filter((account) => account.id && account.adAccountId)
+}
+
+async function listZernioAccounts(env, params = {}) {
+  const query = buildZernioScopedSearchParams(params, params.profileId)
+
+  const payload = await zernioFetch(env, `/accounts${query.toString() ? `?${query.toString()}` : ''}`)
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.accounts)) return payload.accounts
+  if (Array.isArray(payload?.data)) return payload.data
+  if (Array.isArray(payload?.data?.accounts)) return payload.data.accounts
+  return []
+}
+
+async function findZernioAccountById(env, accountId, profileId = '') {
+  const targetId = String(accountId || '').trim()
+  if (!targetId) return null
+
+  const accounts = await listZernioAccounts(env, { limit: 100, profileId })
+  return accounts.find((account) => extractZernioAccountId(account) === targetId) || null
+}
+
+async function listBoostAdAccountsForConnection(env, connection, platform) {
+  const adsPlatform = zernioAdsPlatformForPortalPlatform(platform)
+  if (!adsPlatform) return { adsPlatform: '', profileId: '', accounts: [] }
+
+  const socialAccount = await findZernioAccountById(env, connection?.zernio_account_id, connection?.zernio_profile_id)
+  const profileId = getConnectionZernioProfileId(connection) || extractZernioProfileId(socialAccount)
+  if (!profileId) return { adsPlatform, profileId: '', accounts: [] }
+
+  const accountPlatforms = zernioAdsAccountLookupPlatforms(platform)
+  const adsAccountsByPlatform = await Promise.all(
+    accountPlatforms.map((accountPlatform) => listZernioAccounts(env, {
+      platform: accountPlatform,
+      profileId,
+      limit: 100,
+    })),
+  )
+  const adsAccountsById = new Map()
+  adsAccountsByPlatform.flat().forEach((account) => {
+    const id = extractZernioAccountId(account) || extractPlatformAdAccountId(account)
+    if (id && !adsAccountsById.has(id)) adsAccountsById.set(id, account)
+  })
+
+  return {
+    adsPlatform,
+    profileId,
+    accounts: normalizeZernioAdAccounts([...adsAccountsById.values()]),
+  }
+}
+
 function normalizeBoostGoal(goal) {
   const value = String(goal || '').trim().toLowerCase()
   const allowed = new Set([
@@ -921,6 +1235,31 @@ function parseBoostAmount(value) {
   return Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) / 100 : null
 }
 
+export function validateBoostAdAccountId(platform, adAccountId) {
+  const value = String(adAccountId || '').trim()
+  if (!value) return 'Add an ad account once to launch the first boost.'
+  if (['facebook', 'instagram'].includes(platform) && !/^(act_)?\d+$/.test(value)) {
+    return 'Meta boosts need a numeric ad account ID, with or without the act_ prefix.'
+  }
+  return ''
+}
+
+function maskBoostAdAccountId(adAccountId) {
+  const value = String(adAccountId || '').trim()
+  if (!value) return ''
+  if (value.length <= 10) return value
+  return `${value.slice(0, 6)}...${value.slice(-4)}`
+}
+
+export function pickBoostAdAccountId(inputValue, previousBoosts = []) {
+  const manualValue = String(inputValue || '').trim()
+  if (manualValue) return manualValue
+
+  const previous = (Array.isArray(previousBoosts) ? previousBoosts : [])
+    .find((boost) => String(boost?.ad_account_id || '').trim())
+  return String(previous?.ad_account_id || '').trim()
+}
+
 async function loadBoostRows(envConfig, { postId } = {}) {
   const filters = new URLSearchParams({
     select: '*',
@@ -936,7 +1275,7 @@ async function loadBoostRows(envConfig, { postId } = {}) {
 
 async function loadPostForBoost(envConfig, postId) {
   const filters = new URLSearchParams({
-    select: 'id,client_id,content,platforms,status,published_at,n8n_execution_id',
+    select: 'id,client_id,content,platforms,status,published_at,n8n_execution_id,zernio_post_id,zernio_profile_id',
     id: `eq.${postId}`,
     client_id: `eq.${envConfig.clientId}`,
     limit: '1',
@@ -949,7 +1288,7 @@ async function loadPostForBoost(envConfig, postId) {
 
 async function loadSocialConnectionForBoost(envConfig, platform) {
   const filters = new URLSearchParams({
-    select: 'id,platform,zernio_account_id,username',
+    select: 'id,platform,zernio_account_id,zernio_profile_id,username',
     client_id: `eq.${envConfig.clientId}`,
     platform: `eq.${platform}`,
     limit: '1',
@@ -960,6 +1299,515 @@ async function loadSocialConnectionForBoost(envConfig, platform) {
   return Array.isArray(rows) ? rows[0] : null
 }
 
+async function loadSocialConnectionsForBoost(envConfig) {
+  const filters = new URLSearchParams({
+    select: 'id,platform,zernio_account_id,zernio_profile_id,username',
+    client_id: `eq.${envConfig.clientId}`,
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/social_connections?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows : []
+}
+
+async function loadTenantSocialConnections(envConfig) {
+  const filters = new URLSearchParams({
+    select: 'id,platform,zernio_account_id,zernio_profile_id,username',
+    client_id: `eq.${envConfig.clientId}`,
+    order: 'platform.asc',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/social_connections?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows : []
+}
+
+function zernioCommentPostTimestamp(post) {
+  return firstString(post?.createdTime, post?.createdAt, post?.timestamp, post?.date)
+}
+
+function normalizeZernioCommentPost(post, connection = {}) {
+  const accountId = firstString(post?.accountId, post?.account_id, connection.zernio_account_id)
+  return {
+    id: firstString(post?.id, post?.postId, post?.platformPostId),
+    platform: normalizePlatform(firstString(post?.platform, connection.platform)),
+    accountId,
+    accountUsername: firstString(post?.accountUsername, post?.account_username, connection.username),
+    content: firstString(post?.content, post?.text, post?.caption, post?.message),
+    picture: firstString(post?.picture, post?.image, post?.thumbnail, post?.mediaUrl),
+    permalink: firstString(post?.permalink, post?.url, post?.link),
+    createdTime: zernioCommentPostTimestamp(post),
+    commentCount: Number(post?.commentCount ?? post?.comments ?? 0) || 0,
+    likeCount: Number(post?.likeCount ?? post?.likes ?? 0) || 0,
+    raw: post,
+  }
+}
+
+export function normalizeZernioInboxComment(comment, postId = '', context = {}) {
+  const author = comment?.from || comment?.author || comment?.sender || comment?.user || {}
+  return {
+    id: firstString(comment?.id, comment?.commentId),
+    postId: firstString(comment?.postId, postId),
+    platform: normalizePlatform(firstString(comment?.platform, context.platform)),
+    authorId: firstString(author.id, author.userId, comment?.authorId, comment?.senderId),
+    authorName: firstString(author.name, author.displayName, author.username, comment?.authorName, comment?.username, 'Social commenter'),
+    authorAvatar: firstString(author.picture, author.avatarUrl, author.avatar, author.profilePictureUrl),
+    text: firstString(comment?.text, comment?.content, comment?.message),
+    createdTime: firstString(comment?.createdTime, comment?.createdAt, comment?.timestamp),
+    likeCount: Number(comment?.likeCount ?? comment?.likes ?? 0) || 0,
+    replyCount: Number(comment?.replyCount ?? comment?.replies?.length ?? 0) || 0,
+    hidden: Boolean(comment?.isHidden || comment?.hidden),
+    canReply: comment?.canReply !== false,
+    replies: Array.isArray(comment?.replies) ? comment.replies : [],
+    raw: comment,
+  }
+}
+
+function normalizeZernioCommentListPayload(payload, postId = '', context = {}) {
+  const comments = Array.isArray(payload?.comments)
+    ? payload.comments
+    : (Array.isArray(payload?.data) ? payload.data : (Array.isArray(payload) ? payload : []))
+  return comments.map((comment) => normalizeZernioInboxComment(comment, postId, context))
+}
+
+async function handleZernioCommentPosts(request, env) {
+  if (!['GET', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'GET, OPTIONS' } })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const requestedPlatform = normalizePlatform(url.searchParams.get('platform') || '')
+  const requestedAccountId = firstString(url.searchParams.get('accountId'))
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 50) || 50, 1), 100)
+
+  const allConnections = await loadTenantSocialConnections(auth.envConfig)
+  const connections = allConnections.filter((connection) => {
+    if (!connection.zernio_account_id) return false
+    if (requestedPlatform && normalizePlatform(connection.platform) !== requestedPlatform) return false
+    if (requestedAccountId && String(connection.zernio_account_id) !== requestedAccountId) return false
+    return true
+  })
+
+  if (requestedAccountId && !connections.length) {
+    return json({ error: 'That social account is not connected to this portal.' }, { status: 403 })
+  }
+
+  const results = []
+  const failures = []
+
+  await Promise.all(connections.map(async (connection) => {
+    const params = new URLSearchParams({
+      accountId: connection.zernio_account_id,
+      platform: normalizePlatform(connection.platform),
+      minComments: '1',
+      sortBy: 'date',
+      sortOrder: 'desc',
+      limit: String(limit),
+    })
+    const profileId = getConnectionZernioProfileId(connection, auth.envConfig)
+    if (profileId) params.set('profileId', profileId)
+
+    try {
+      const payload = await zernioFetch(env, `/inbox/comments?${params.toString()}`)
+      const posts = Array.isArray(payload?.data) ? payload.data : (Array.isArray(payload?.posts) ? payload.posts : [])
+      results.push(...posts.map((post) => normalizeZernioCommentPost(post, connection)))
+    } catch (error) {
+      failures.push({
+        accountId: connection.zernio_account_id,
+        platform: normalizePlatform(connection.platform),
+        username: connection.username || '',
+        error: error.message || 'Could not load comments.',
+      })
+    }
+  }))
+
+  results.sort((left, right) => {
+    const leftTime = Date.parse(left.createdTime || '') || 0
+    const rightTime = Date.parse(right.createdTime || '') || 0
+    return rightTime - leftTime
+  })
+
+  return json({
+    posts: results.slice(0, limit),
+    accounts: allConnections
+      .filter((connection) => connection.zernio_account_id)
+      .map((connection) => ({
+        id: connection.zernio_account_id,
+        platform: normalizePlatform(connection.platform),
+        username: connection.username || '',
+      })),
+    failures,
+  })
+}
+
+async function handleZernioPostComments(request, env, postId) {
+  if (!['GET', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'GET, OPTIONS' } })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const accountId = firstString(url.searchParams.get('accountId'))
+  if (!accountId) return json({ error: 'Missing accountId.' }, { status: 400 })
+
+  const connections = await loadTenantSocialConnections(auth.envConfig)
+  const connection = connections.find((entry) => String(entry.zernio_account_id || '') === accountId)
+  if (!connection) return json({ error: 'That social account is not connected to this portal.' }, { status: 403 })
+
+  const params = new URLSearchParams({ accountId })
+  const profileId = getConnectionZernioProfileId(connection, auth.envConfig)
+  if (profileId) params.set('profileId', profileId)
+  const cursor = firstString(url.searchParams.get('cursor'))
+  if (cursor) params.set('cursor', cursor)
+
+  try {
+    const payload = await zernioFetch(env, `/inbox/comments/${encodeURIComponent(postId)}?${params.toString()}`)
+    const comments = normalizeZernioCommentListPayload(payload, postId, { platform: connection.platform })
+    const chatwootSync = await getChatwootConfigForClient(env, auth.envConfig)
+      .then((chatwootConfig) => syncZernioCommentsToChatwoot(chatwootConfig, connection, comments, postId))
+      .catch((error) => [{
+        synced: false,
+        error: sanitizeChatwootError(error?.message || 'Could not sync comments to Chatwoot.'),
+      }])
+    return json({
+      comments,
+      pagination: payload?.pagination || null,
+      postId,
+      accountId,
+      chatwootSync,
+    })
+  } catch (error) {
+    return json({ error: error.message || 'Could not load post comments.' }, { status: error.status || 502 })
+  }
+}
+
+async function handleZernioCommentReply(request, env, postId) {
+  if (!['POST', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'POST, OPTIONS' } })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const body = await request.json().catch(() => ({}))
+  const accountId = firstString(body.accountId)
+  const commentId = firstString(body.commentId)
+  const message = firstString(body.message)
+
+  if (!accountId) return json({ error: 'Missing accountId.' }, { status: 400 })
+  if (!message) return json({ error: 'Reply message is required.' }, { status: 400 })
+
+  const connections = await loadTenantSocialConnections(auth.envConfig)
+  const connection = connections.find((entry) => String(entry.zernio_account_id || '') === accountId)
+  if (!connection) return json({ error: 'That social account is not connected to this portal.' }, { status: 403 })
+
+  try {
+    const payload = await zernioFetch(env, `/inbox/comments/${encodeURIComponent(postId)}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        accountId,
+        ...(getConnectionZernioProfileId(connection, auth.envConfig) ? { profileId: getConnectionZernioProfileId(connection, auth.envConfig) } : {}),
+        message,
+        ...(commentId ? { commentId } : {}),
+      }),
+    })
+
+    return json({
+      success: payload?.success !== false,
+      data: payload?.data || payload,
+      postId,
+      commentId: commentId || payload?.data?.commentId || payload?.commentId || null,
+      accountId,
+    })
+  } catch (error) {
+    return json({ error: error.message || 'Could not send the comment reply.' }, { status: error.status || 502 })
+  }
+}
+
+function asMetricInteger(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 0
+}
+
+function asMetricNumber(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
+}
+
+function pickZernioAnalyticsPayload(payload) {
+  if (payload?.data?.post && typeof payload.data.post === 'object') return payload.data.post
+  if (payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) return payload.data
+  if (payload?.post && typeof payload.post === 'object') return payload.post
+  return payload && typeof payload === 'object' ? payload : {}
+}
+
+export function normalizeZernioPostAnalytics(payload, { post, platform, connection, zernioProfileId = '' } = {}) {
+  const normalizedPlatform = normalizePlatform(platform)
+  const source = pickZernioAnalyticsPayload(payload)
+  const platformRows = Array.isArray(source.platformAnalytics)
+    ? source.platformAnalytics
+    : Array.isArray(source.platforms)
+      ? source.platforms
+      : []
+  const platformEntry = platformRows.find((entry) => normalizePlatform(entry?.platform) === normalizedPlatform) || null
+  const analytics = platformEntry?.analytics && typeof platformEntry.analytics === 'object'
+    ? platformEntry.analytics
+    : !platformEntry && source.analytics && typeof source.analytics === 'object'
+      ? source.analytics
+      : {}
+  const syncStatus = normalizeZernioMetricSyncStatus(platformEntry?.syncStatus || source.syncStatus)
+
+  if (!Object.keys(analytics).length && !platformEntry) return null
+
+  const likes = asMetricInteger(analytics.likes)
+  const comments = asMetricInteger(analytics.comments)
+  const shares = asMetricInteger(analytics.shares)
+  const saves = asMetricInteger(analytics.saves)
+  const clicks = asMetricInteger(analytics.clicks)
+  const engagements = asMetricInteger(
+    analytics.engagements
+    ?? analytics.engagement
+    ?? analytics.totalEngagements
+    ?? (likes + comments + shares + saves + clicks),
+  )
+  const lastUpdated = firstString(
+    analytics.lastUpdated,
+    analytics.last_updated,
+    source.lastUpdated,
+    source.last_updated,
+  )
+  const metricDate = lastUpdated && !Number.isNaN(Date.parse(lastUpdated))
+    ? new Date(lastUpdated).toISOString().slice(0, 10)
+    : new Date().toISOString().slice(0, 10)
+
+  return {
+    client_id: post?.client_id || '',
+    post_id: post?.id || '',
+    social_connection_id: connection?.id || null,
+    zernio_profile_id: firstString(connection?.zernio_profile_id, zernioProfileId, post?.zernio_profile_id),
+    platform: normalizedPlatform,
+    metric_date: metricDate,
+    zernio_post_id: firstString(source.latePostId, source.postId, post?.zernio_post_id, post?.n8n_execution_id),
+    platform_post_id: firstString(platformEntry?.platformPostId, source.platformPostId),
+    platform_post_url: firstString(platformEntry?.platformPostUrl, !platformEntry ? source.platformPostUrl : ''),
+    source: source.isExternal ? 'imported' : 'zernio',
+    sync_status: syncStatus,
+    views: asMetricInteger(analytics.views),
+    impressions: asMetricInteger(analytics.impressions),
+    reach: asMetricInteger(analytics.reach),
+    likes,
+    comments,
+    shares,
+    saves,
+    clicks,
+    engagements,
+    engagement_rate: asMetricNumber(analytics.engagementRate ?? analytics.engagement_rate),
+    raw_json: {
+      zernio: source,
+      platformAnalytics: platformEntry,
+    },
+    last_synced_at: new Date().toISOString(),
+  }
+}
+
+function normalizeZernioMetricSyncStatus(value) {
+  const status = firstString(value).toLowerCase()
+  if (status === 'pending' || status === 'partial' || status === 'processing') return 'pending'
+  if (status === 'failed' || status === 'error') return 'failed'
+  if (status === 'unavailable') return 'unavailable'
+  return 'synced'
+}
+
+async function loadPublishedPostsForMetrics(envConfig, platform, limit = 12) {
+  const filters = new URLSearchParams({
+    select: 'id,client_id,content,media_url,platforms,status,published_at,created_at,n8n_execution_id,zernio_post_id,zernio_profile_id',
+    client_id: `eq.${envConfig.clientId}`,
+    status: 'eq.published',
+    order: 'published_at.desc.nullslast,created_at.desc',
+    limit: String(limit),
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/posts?${filters.toString()}`)
+  const rows = await response.json()
+  const normalizedPlatform = normalizePlatform(platform)
+
+  return (Array.isArray(rows) ? rows : [])
+    .filter((post) => Array.isArray(post.platforms) && post.platforms.map(normalizePlatform).includes(normalizedPlatform))
+}
+
+async function loadPostDailyMetrics(envConfig, platform, postIds = []) {
+  if (!postIds.length) return []
+
+  const encodedIds = postIds.map((postId) => encodeURIComponent(postId)).join(',')
+  const filters = new URLSearchParams({
+    select: '*',
+    client_id: `eq.${envConfig.clientId}`,
+    platform: `eq.${normalizePlatform(platform)}`,
+    post_id: `in.(${encodedIds})`,
+    order: 'metric_date.desc,last_synced_at.desc',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/post_daily_metrics?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows : []
+}
+
+async function upsertPostDailyMetric(envConfig, metric) {
+  const payload = {
+    ...metric,
+    client_id: envConfig.clientId,
+  }
+  const response = await supabaseRest(envConfig, '/rest/v1/post_daily_metrics?on_conflict=post_id,platform,metric_date', {
+    method: 'POST',
+    headers: {
+      Prefer: 'resolution=merge-duplicates,return=representation',
+    },
+    body: JSON.stringify(payload),
+  })
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+function latestMetricByPost(metrics = []) {
+  const latest = new Map()
+  for (const metric of metrics) {
+    if (!metric?.post_id || latest.has(metric.post_id)) continue
+    latest.set(metric.post_id, metric)
+  }
+  return latest
+}
+
+function metricIsStale(metric, staleAfterMs = 6 * 60 * 60 * 1000) {
+  if (!metric?.last_synced_at) return true
+  const syncedAt = Date.parse(metric.last_synced_at)
+  if (Number.isNaN(syncedAt)) return true
+  return Date.now() - syncedAt > staleAfterMs
+}
+
+async function syncZernioPostMetrics(env, envConfig, posts, platform, existingMetrics = [], options = {}) {
+  const normalizedPlatform = normalizePlatform(platform)
+  const connections = await loadSocialConnectionsForBoost(envConfig)
+  const connection = connections.find((item) => normalizePlatform(item.platform) === normalizedPlatform) || null
+  const profileId = getConnectionZernioProfileId(connection, envConfig)
+  const latest = latestMetricByPost(existingMetrics)
+  const force = Boolean(options.force)
+  const maxPosts = Math.max(1, Math.min(Number(options.maxPosts || 6), 12))
+  const summary = {
+    attempted: 0,
+    synced: 0,
+    pending: 0,
+    skipped: 0,
+    failed: 0,
+    analyticsAvailable: true,
+    message: '',
+  }
+
+  const candidates = posts
+    .filter((post) => firstString(post?.zernio_post_id, post?.n8n_execution_id))
+    .filter((post) => force || metricIsStale(latest.get(post.id)))
+    .slice(0, maxPosts)
+
+  summary.skipped = posts.filter((post) => !firstString(post?.zernio_post_id, post?.n8n_execution_id)).length
+
+  for (const post of candidates) {
+    summary.attempted += 1
+    const zernioPostId = firstString(post?.zernio_post_id, post?.n8n_execution_id)
+
+    const query = new URLSearchParams({
+      postId: zernioPostId,
+      platform: normalizedPlatform,
+    })
+    if (connection?.zernio_account_id) query.set('accountId', connection.zernio_account_id)
+    if (profileId) query.set('profileId', profileId)
+
+    try {
+      const payload = await zernioFetch(env, `/analytics?${query.toString()}`)
+      const metric = normalizeZernioPostAnalytics(payload, { post, platform: normalizedPlatform, connection, zernioProfileId: profileId })
+      if (!metric) {
+        summary.pending += 1
+        continue
+      }
+
+      await upsertPostDailyMetric(envConfig, metric)
+      if (metric.sync_status === 'pending') {
+        summary.pending += 1
+      } else if (metric.sync_status === 'failed' || metric.sync_status === 'unavailable') {
+        summary.failed += 1
+      } else {
+        summary.synced += 1
+      }
+    } catch (error) {
+      summary.failed += 1
+      if (error.status === 402 || error.payload?.code === 'analytics_addon_required') {
+        summary.analyticsAvailable = false
+        summary.message = 'Zernio analytics add-on is required before post metrics can sync.'
+        break
+      }
+      if (!summary.message) summary.message = error.message || 'Some post metrics could not be synced yet.'
+    }
+  }
+
+  return summary
+}
+
+function buildPostMetricsResponse(posts, metrics, sync = null) {
+  const latest = latestMetricByPost(metrics)
+  return {
+    success: true,
+    sync,
+    posts: posts.map((post) => ({
+      post,
+      metrics: latest.get(post.id) || null,
+    })),
+  }
+}
+
+async function handlePostMetrics(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'GET, OPTIONS' } })
+  }
+
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const platform = normalizePlatform(url.searchParams.get('platform'))
+  if (!platform) return json({ error: 'Choose a supported platform.' }, { status: 400 })
+
+  const force = url.searchParams.get('force') === '1'
+  const shouldSync = url.searchParams.get('sync') !== '0'
+
+  try {
+    const posts = await loadPublishedPostsForMetrics(auth.envConfig, platform)
+    let metrics = await loadPostDailyMetrics(auth.envConfig, platform, posts.map((post) => post.id))
+    let sync = null
+
+    if (shouldSync && posts.length) {
+      sync = await syncZernioPostMetrics(env, auth.envConfig, posts, platform, metrics, { force })
+      metrics = await loadPostDailyMetrics(auth.envConfig, platform, posts.map((post) => post.id))
+    }
+
+    return json(buildPostMetricsResponse(posts, metrics, sync))
+  } catch (error) {
+    return json({
+      error: error.message || 'Could not load post metrics.',
+      details: error.payload || null,
+    }, { status: error.status || 502 })
+  }
+}
+
 async function insertPostBoost(envConfig, payload) {
   const response = await supabaseRest(envConfig, '/rest/v1/post_boosts', {
     method: 'POST',
@@ -968,6 +1816,220 @@ async function insertPostBoost(envConfig, payload) {
   })
   const rows = await response.json()
   return Array.isArray(rows) ? rows[0] : null
+}
+
+async function buildPostBoostReadiness(envConfig, postId) {
+  const post = await loadPostForBoost(envConfig, postId)
+  if (!post) return { postFound: false, platforms: [] }
+
+  const postPlatforms = [...new Set(Array.isArray(post.platforms) ? post.platforms.map(normalizePlatform).filter(Boolean) : [])]
+  const [connections, boosts] = await Promise.all([
+    loadSocialConnectionsForBoost(envConfig),
+    loadBoostRows(envConfig, {}),
+  ])
+
+  const connectionsByPlatform = new Map()
+  connections.forEach((connection) => {
+    const platform = normalizePlatform(connection.platform)
+    if (platform && !connectionsByPlatform.has(platform)) connectionsByPlatform.set(platform, connection)
+  })
+
+  const platformReadiness = postPlatforms.map((platform) => {
+    const connection = connectionsByPlatform.get(platform)
+    const previousBoost = boosts.find((boost) => normalizePlatform(boost.platform) === platform && String(boost.ad_account_id || '').trim())
+    const issues = []
+
+    if (post.status !== 'published') {
+      issues.push({ code: 'not_published', message: 'Boost is available after this post is published.' })
+    }
+    const zernioPostId = getPostZernioPostId(post)
+    if (!zernioPostId) {
+      issues.push({ code: 'missing_zernio_post_id', message: 'This post is missing its Zernio post ID.' })
+    }
+    if (!connection?.zernio_account_id) {
+      issues.push({ code: 'missing_social_connection', message: `Connect ${platform} in Settings before boosting.` })
+    }
+
+    return {
+      platform,
+      connected: Boolean(connection?.zernio_account_id),
+      publishedToPlatform: postPlatforms.includes(platform),
+      hasZernioPostId: Boolean(zernioPostId),
+      canBoost: issues.length === 0,
+      zernioAccountId: connection?.zernio_account_id || '',
+      savedAdAccountId: previousBoost?.ad_account_id || '',
+      savedAdAccountLabel: maskBoostAdAccountId(previousBoost?.ad_account_id || ''),
+      issues,
+    }
+  })
+
+  return {
+    postFound: true,
+    postId: post.id,
+    postStatus: post.status || '',
+    hasZernioPostId: Boolean(getPostZernioPostId(post)),
+    platforms: platformReadiness,
+  }
+}
+
+async function handlePostBoostReadiness(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'GET, OPTIONS' } })
+  }
+
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const postId = String(url.searchParams.get('postId') || '').trim()
+  if (!postId) return json({ error: 'Choose a post to check boost readiness.' }, { status: 400 })
+
+  try {
+    const readiness = await buildPostBoostReadiness(auth.envConfig, postId)
+    return json({ success: true, readiness })
+  } catch (error) {
+    return json({ error: error.message || 'Could not check boost readiness.' }, { status: error.status || 502 })
+  }
+}
+
+async function handleBoostAdAccounts(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'GET, OPTIONS' } })
+  }
+
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const platform = normalizePlatform(url.searchParams.get('platform'))
+  if (!platform) return json({ error: 'Choose a supported platform.' }, { status: 400 })
+
+  try {
+    const connection = await loadSocialConnectionForBoost(auth.envConfig, platform)
+    if (!connection?.zernio_account_id) {
+      return json({ error: `Connect ${platform} in Settings before setting up boosts.` }, { status: 409 })
+    }
+
+    const previousBoosts = await loadBoostRows(auth.envConfig, {})
+    const saved = previousBoosts
+      .filter((boost) => normalizePlatform(boost.platform) === platform && String(boost.ad_account_id || '').trim())
+      .map((boost) => ({
+        id: boost.ad_account_id,
+        adAccountId: boost.ad_account_id,
+        label: maskBoostAdAccountId(boost.ad_account_id),
+        source: 'saved',
+      }))
+
+    const live = await listBoostAdAccountsForConnection(env, connection, platform)
+    const seen = new Set()
+    const accounts = [...live.accounts.map((account) => ({ ...account, source: 'zernio' })), ...saved]
+      .filter((account) => {
+        const key = String(account.adAccountId || account.id || '').trim()
+        if (!key || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+    return json({
+      success: true,
+      platform,
+      adsPlatform: live.adsPlatform,
+      profileIdAvailable: Boolean(live.profileId),
+      accounts,
+    })
+  } catch (error) {
+    return json({
+      error: error.message || 'Could not load boost ad accounts.',
+      details: error.payload || null,
+    }, { status: error.status || 502 })
+  }
+}
+
+async function handleBoostAdsConnect(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'POST, OPTIONS' } })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+  if (auth.user.role !== 'admin') {
+    return json({ error: 'Only client admins can connect ad accounts.' }, { status: 403 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const platform = normalizePlatform(body.platform)
+  if (!platform) return json({ error: 'Choose a supported platform.' }, { status: 400 })
+
+  const adsPlatform = zernioAdsPlatformForPortalPlatform(platform)
+  if (!adsPlatform) {
+    return json({ error: 'Ads setup is not available for this platform yet.' }, { status: 400 })
+  }
+
+  try {
+    const connection = await loadSocialConnectionForBoost(auth.envConfig, platform)
+    if (!connection?.zernio_account_id) {
+      return json({ error: `Connect ${platform} in Settings before setting up boosts.` }, { status: 409 })
+    }
+
+    const live = await listBoostAdAccountsForConnection(env, connection, platform)
+    if (live.accounts.length) {
+      return json({
+        success: true,
+        alreadyConnected: true,
+        accounts: live.accounts,
+      })
+    }
+
+    if (!live.profileId) {
+      return json({
+        error: 'Zernio did not return a profile ID for this social account yet. Reconnect the social account, then try Ads setup again.',
+      }, { status: 409 })
+    }
+
+    const tenantSlug = String(auth.user?.clients?.slug || '').trim().toLowerCase()
+    const safeReturnUrl = buildSafeN8nRedirectUrl(request, env, body.redirectUrl, tenantSlug)
+    const params = new URLSearchParams({
+      profileId: live.profileId,
+      returnUrl: safeReturnUrl,
+      redirect_url: safeReturnUrl,
+    })
+
+    const requestedAdAccountId = String(body.adAccountId || '').trim()
+    if (requestedAdAccountId) params.set('adAccountId', requestedAdAccountId)
+    if (connection.zernio_account_id) params.set('accountId', connection.zernio_account_id)
+
+    const payload = await zernioFetch(env, `/connect/${adsPlatform}/ads?${params.toString()}`)
+    const authUrl = firstString(payload?.authUrl, payload?.url, payload?.redirectUrl, payload?.connectUrl, payload?.data?.authUrl, payload?.data?.url)
+
+    if (!authUrl) {
+      return json({
+        success: true,
+        alreadyConnected: Boolean(payload?.alreadyConnected || payload?.connected),
+        message: payload?.message || 'Zernio accepted the ads setup request.',
+        payload,
+      })
+    }
+
+    return json({ success: true, authUrl, adsPlatform })
+  } catch (error) {
+    const status = error.status || 502
+    return json({
+      error: error.message || 'Could not start Zernio Ads setup.',
+      details: error.payload || null,
+    }, { status })
+  }
 }
 
 async function handlePostBoosts(request, env) {
@@ -1016,7 +2078,6 @@ async function handlePostBoosts(request, env) {
   if (!platform) return json({ error: 'Choose a supported platform to boost.' }, { status: 400 })
   if (!goal) return json({ error: 'Choose a supported boost goal.' }, { status: 400 })
   if (!budgetAmount) return json({ error: 'Enter a boost budget greater than $0.' }, { status: 400 })
-  if (!adAccountId) return json({ error: 'Enter the ad account ID from Zernio.' }, { status: 400 })
 
   try {
     const post = await loadPostForBoost(auth.envConfig, postId)
@@ -1024,7 +2085,8 @@ async function handlePostBoosts(request, env) {
     if (post.status !== 'published') {
       return json({ error: 'Boost is available after a post is published.' }, { status: 409 })
     }
-    if (!post.n8n_execution_id) {
+    const zernioPostId = getPostZernioPostId(post)
+    if (!zernioPostId) {
       return json({ error: 'This post is missing its Zernio post ID and cannot be boosted yet.' }, { status: 409 })
     }
     if (!Array.isArray(post.platforms) || !post.platforms.includes(platform)) {
@@ -1036,10 +2098,19 @@ async function handlePostBoosts(request, env) {
       return json({ error: `Connect ${platform} in Settings before boosting.` }, { status: 409 })
     }
 
-    const zernioBody = {
-      postId: post.n8n_execution_id,
-      accountId: connection.zernio_account_id,
+    const previousBoosts = await loadBoostRows(auth.envConfig, {})
+    const resolvedAdAccountId = pickBoostAdAccountId(
       adAccountId,
+      previousBoosts.filter((boost) => normalizePlatform(boost.platform) === platform),
+    )
+    const adAccountError = validateBoostAdAccountId(platform, resolvedAdAccountId)
+    if (adAccountError) return json({ error: adAccountError }, { status: 400 })
+
+    const zernioBody = {
+      postId: zernioPostId,
+      accountId: connection.zernio_account_id,
+      ...(getConnectionZernioProfileId(connection, auth.envConfig) ? { profileId: getConnectionZernioProfileId(connection, auth.envConfig) } : {}),
+      adAccountId: resolvedAdAccountId,
       name,
       goal,
       budget: {
@@ -1061,8 +2132,9 @@ async function handlePostBoosts(request, env) {
       post_id: post.id,
       social_connection_id: connection.id || null,
       platform,
+      zernio_profile_id: getConnectionZernioProfileId(connection, auth.envConfig) || null,
       zernio_account_id: connection.zernio_account_id,
-      ad_account_id: adAccountId,
+      ad_account_id: resolvedAdAccountId,
       name,
       goal,
       budget_amount: budgetAmount,
@@ -1108,7 +2180,7 @@ function isMissingRemoteScheduledDelete(payload, raw) {
 
 async function loadTenantPostForDelete(envConfig, postId) {
   const filters = new URLSearchParams({
-    select: 'id,client_id,status,n8n_execution_id',
+    select: 'id,client_id,status,n8n_execution_id,zernio_post_id,zernio_profile_id',
     id: `eq.${postId}`,
     client_id: `eq.${envConfig.clientId}`,
     limit: '1',
@@ -1120,7 +2192,8 @@ async function loadTenantPostForDelete(envConfig, postId) {
 }
 
 async function cancelRemoteScheduledPost(env, envConfig, post) {
-  if (!post.n8n_execution_id) {
+  const zernioPostId = getPostZernioPostId(post)
+  if (!zernioPostId) {
     return { attempted: false, skipped: true, reason: 'No Zernio scheduled post id was stored.' }
   }
 
@@ -1131,7 +2204,8 @@ async function cancelRemoteScheduledPost(env, envConfig, post) {
       action: 'delete',
       postId: post.id,
       clientId: envConfig.clientId,
-      zernioPostId: post.n8n_execution_id,
+      zernioPostId,
+      zernioProfileId: firstString(post?.zernio_profile_id, envConfig.zernioProfileId),
     }),
   })
   const raw = await response.text()
@@ -1573,6 +2647,10 @@ function classifyPortalPartnerIntent(message) {
   const text = String(message || '').toLowerCase()
   const hasAny = (terms) => terms.some((term) => text.includes(term))
 
+  if (hasAny(['social setup', 'social media accounts', 'set up social', 'set up my social', 'setup social', 'connect social', 'connect facebook', 'connect instagram', 'connect tiktok', 'facebook business', 'facebook page', 'meta business', 'personal account', 'business page', 'no social media', 'new social media'])) {
+    return 'social_setup'
+  }
+
   if (
     hasAny(['content partner', 'make a post for me', 'make a social post', 'make me a post', 'write a post for me', 'draft for me', 'map to make', 'map make'])
     || (hasAny(['content request', 'request content']) && !hasAny(['how do i', 'help me create', 'help me post']))
@@ -1651,6 +2729,18 @@ function buildPortalPartnerReply(intent, { message, currentPath, readOnly, clien
       actions: [
         { type: 'open_create_post' },
         ...(readOnly ? [] : [{ type: 'open_content_partner' }]),
+      ],
+    }
+  }
+
+  if (intent === 'social_setup') {
+    return {
+      reply: readOnly
+        ? 'I can explain social setup, but this portal is read-only right now so I cannot launch account connections.'
+        : 'I can walk through Facebook, Instagram, and TikTok setup. Key Facebook note: Meta starts from a personal Facebook login, then you create or manage a separate public business Page for the company.',
+      actions: [
+        { type: 'open_social_setup' },
+        { type: 'open_settings_chat' },
       ],
     }
   }
@@ -3019,7 +4109,7 @@ async function scheduleApprovedContentPartnerDraft(env, envConfig, context) {
   const mediaUrl = mediaUrls[0] || null
   const platformVariants = parseJsonObject(context.reviewNotes?.platformVariants)
 
-  const insertResponse = await supabaseRest(envConfig, '/rest/v1/posts?select=id,client_id,content,media_url,platforms,status,scheduled_for,n8n_execution_id', {
+  const insertResponse = await supabaseRest(envConfig, '/rest/v1/posts?select=id,client_id,content,media_url,platforms,status,scheduled_for,n8n_execution_id,zernio_post_id,zernio_profile_id', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
     body: JSON.stringify({
@@ -3030,6 +4120,7 @@ async function scheduleApprovedContentPartnerDraft(env, envConfig, context) {
       status: 'draft',
       scheduled_for: scheduledFor,
       platform_variants_json: platformVariants,
+      zernio_profile_id: envConfig.zernioProfileId || null,
     }),
   })
   const insertedRows = await insertResponse.json()
@@ -3051,6 +4142,8 @@ async function scheduleApprovedContentPartnerDraft(env, envConfig, context) {
       dropboxLinks: [],
       platforms,
       scheduledFor,
+      zernioProfileId: envConfig.zernioProfileId || undefined,
+      profileId: envConfig.zernioProfileId || undefined,
     }),
   })
   const n8nRawText = await n8nResponse.text()
@@ -3074,6 +4167,8 @@ async function scheduleApprovedContentPartnerDraft(env, envConfig, context) {
     body: JSON.stringify({
       status: n8nSuccess ? 'scheduled' : 'failed',
       n8n_execution_id: n8nSuccess ? (n8nData?.zernioPostId ?? post.n8n_execution_id ?? null) : (post.n8n_execution_id || null),
+      zernio_post_id: n8nSuccess ? (n8nData?.zernioPostId ?? post.zernio_post_id ?? post.n8n_execution_id ?? null) : (post.zernio_post_id || post.n8n_execution_id || null),
+      zernio_profile_id: envConfig.zernioProfileId || post.zernio_profile_id || null,
       published_at: null,
     }),
   })
@@ -3339,26 +4434,104 @@ function normalizeZernioAccount(payload) {
   const account = payload.account || {}
   return {
     id: firstString(account.id, account.accountId, payload.accountId, payload.zernioAccountId),
+    profileId: firstString(
+      typeof account.profileId === 'string' ? account.profileId : '',
+      account.profileId?._id,
+      account.profileId?.id,
+      account.profile_id,
+      payload.profileId,
+      payload.profile_id,
+      payload.data?.profileId,
+      payload.data?.profile_id,
+    ),
     platform: normalizePlatform(firstString(account.platform, payload.platform)),
     username: firstString(account.username, account.handle, account.displayName, payload.username),
   }
 }
 
-function normalizeZernioMessage(payload) {
+export function normalizeZernioAccountEventDetails(payload) {
+  const account = payload.account || payload.data?.account || payload.data || {}
+  const metadata = payload.metadata || payload.data?.metadata || account.metadata || {}
+  return {
+    id: firstString(
+      account.id,
+      account._id,
+      account.accountId,
+      payload.accountId,
+      payload.zernioAccountId,
+      payload.id,
+    ),
+    profileId: firstString(
+      typeof account.profileId === 'string' ? account.profileId : '',
+      account.profileId?._id,
+      account.profileId?.id,
+      account.profile_id,
+      account.profile?.id,
+      account.profile?._id,
+      payload.profileId,
+      payload.profile_id,
+      payload.data?.profileId,
+      payload.data?.profile_id,
+      metadata.profileId,
+      metadata.profile_id,
+    ),
+    platform: normalizePlatform(firstString(account.platform, account.provider, account.network, payload.platform)),
+    username: firstString(
+      account.username,
+      account.handle,
+      account.displayName,
+      account.name,
+      payload.username,
+      payload.displayName,
+    ) || null,
+    state: firstString(
+      payload.state,
+      payload.oauthState,
+      payload.connectState,
+      payload.connectionState,
+      payload.data?.state,
+      payload.data?.oauthState,
+      metadata.state,
+      metadata.oauthState,
+      metadata.connectState,
+      account.state,
+      account.oauthState,
+    ),
+  }
+}
+
+export function normalizeZernioMessage(payload) {
   const message = payload.message || payload.data?.message || {}
   const conversation = payload.conversation || payload.data?.conversation || {}
-  const sender = message.sender || conversation.contact || payload.contact || {}
+  const comment = payload.comment || payload.data?.comment || {}
+  const post = payload.post || payload.data?.post || comment.post || {}
+  const sender = message.sender || comment.author || comment.sender || comment.from || conversation.contact || payload.contact || {}
   const attachments = Array.isArray(message.attachments)
     ? message.attachments
-    : (Array.isArray(payload.attachments) ? payload.attachments : [])
-  const messageId = firstString(message.id, message.messageId, payload.messageId, payload.id)
-  const conversationId = firstString(conversation.id, conversation.conversationId, message.conversationId, payload.conversationId)
+    : (Array.isArray(comment.attachments)
+        ? comment.attachments
+        : (Array.isArray(payload.attachments) ? payload.attachments : []))
+  const messageId = firstString(comment.id, comment.commentId, message.id, message.messageId, payload.commentId, payload.messageId, payload.id)
+  const conversationId = firstString(
+    conversation.id,
+    conversation.conversationId,
+    message.conversationId,
+    comment.conversationId,
+    comment.postId,
+    post.id,
+    post.postId,
+    payload.conversationId,
+    payload.postId,
+  )
   const senderId = firstString(
     sender.id,
     sender.contactId,
     sender.platformIdentifier,
     sender.username,
+    sender.handle,
     message.senderId,
+    comment.senderId,
+    comment.authorId,
     conversation.contactId,
     conversation.participantId,
     conversationId,
@@ -3371,7 +4544,7 @@ function normalizeZernioMessage(payload) {
     conversation.title,
     'Social contact',
   )
-  const content = firstString(message.text, message.content, message.message, payload.text, payload.content)
+  const content = firstString(comment.text, comment.content, comment.message, message.text, message.content, message.message, payload.text, payload.content)
 
   return {
     id: messageId,
@@ -3383,7 +4556,7 @@ function normalizeZernioMessage(payload) {
     senderAvatar: firstString(sender.avatarUrl, sender.avatar, sender.profilePictureUrl),
     content,
     attachments,
-    timestamp: firstString(message.timestamp, message.createdAt, payload.timestamp),
+    timestamp: firstString(comment.timestamp, comment.createdAt, message.timestamp, message.createdAt, payload.timestamp),
   }
 }
 
@@ -3418,7 +4591,7 @@ function getContactInboxSourceId(contact, inboxId) {
 async function findOrCreateChatwootZernioContact(env, inboxId, account, message) {
   const identifier = buildZernioContactIdentifier(account.id, message.senderId)
   const existing = await findChatwootContactByIdentifier(env, identifier)
-  if (existing?.id && getContactInboxSourceId(existing, inboxId)) return existing
+  if (existing?.id) return ensureChatwootContactInbox(env, existing, inboxId, identifier)
 
   const created = await chatwootFetch(env, '/contacts', {
     method: 'POST',
@@ -3435,6 +4608,7 @@ async function findOrCreateChatwootZernioContact(env, inboxId, account, message)
       },
       custom_attributes: {
         zernio_account_id: account.id,
+        zernio_profile_id: account.profileId || null,
         zernio_platform: account.platform,
         zernio_sender_id: message.senderId,
       },
@@ -3442,7 +4616,7 @@ async function findOrCreateChatwootZernioContact(env, inboxId, account, message)
   })
 
   const contact = Array.isArray(created?.payload) ? created.payload[0] : created?.payload || created
-  if (contact?.id && getContactInboxSourceId(contact, inboxId)) return contact
+  if (contact?.id) return ensureChatwootContactInbox(env, contact, inboxId, identifier)
 
   return findChatwootContactByIdentifier(env, identifier)
 }
@@ -3477,6 +4651,7 @@ async function findOrCreateChatwootZernioConversation(env, contact, inboxId, acc
       status: 'open',
       custom_attributes: {
         zernio_account_id: account.id,
+        zernio_profile_id: account.profileId || null,
         zernio_conversation_id: message.conversationId,
         zernio_platform: account.platform,
         zernio_username: account.username || null,
@@ -3485,6 +4660,7 @@ async function findOrCreateChatwootZernioConversation(env, contact, inboxId, acc
         source: 'zernio',
         platform: account.platform,
         zernio_account_id: account.id,
+        zernio_profile_id: account.profileId || null,
       },
     }),
   })
@@ -3501,21 +4677,121 @@ async function chatwootMessageExists(env, conversationId, externalMessageId) {
   ))
 }
 
-async function ensureZernioAccountIsConnected(envConfig, account) {
-  const filters = new URLSearchParams({
-    select: 'id,platform,zernio_account_id,username',
-    client_id: `eq.${envConfig.clientId}`,
-    zernio_account_id: `eq.${account.id}`,
-    limit: '1',
+async function findDefaultChatwootAgent(env) {
+  const payload = await chatwootFetch(env, '/agents')
+  const agents = Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
+  return agents.find((agent) => getChatwootAgentId(agent)) || null
+}
+
+async function assignChatwootZernioConversation(env, conversation) {
+  const conversationId = getChatwootConversationId(conversation)
+  if (!conversationId) return { assigned: false, reason: 'missing_conversation_id' }
+  if (getChatwootConversationAssigneeId(conversation)) return { assigned: false, alreadyAssigned: true }
+
+  const agent = await findDefaultChatwootAgent(env)
+  const assigneeId = getChatwootAgentId(agent)
+  if (!assigneeId) return { assigned: false, reason: 'chatwoot_agent_not_found' }
+
+  await chatwootFetch(env, `/conversations/${conversationId}/assignments`, {
+    method: 'POST',
+    body: JSON.stringify({ assignee_id: assigneeId }),
   })
 
-  const response = await supabaseRest(envConfig, `/rest/v1/social_connections?${filters.toString()}`)
-  const rows = await response.json()
-  const row = Array.isArray(rows) ? rows[0] : null
-  if (!row) return null
+  return { assigned: true, assigneeId }
+}
 
-  if (account.platform && normalizePlatform(row.platform) !== account.platform) return null
-  return row
+function fallbackCommentAuthorName(comment, platform) {
+  const name = firstString(comment?.authorName)
+  if (name && name.toLowerCase() !== 'social commenter') return name
+  const platformName = firstString(platform)
+  return platformName ? `${platformName[0].toUpperCase()}${platformName.slice(1)} commenter` : 'Social commenter'
+}
+
+async function syncZernioCommentToChatwoot(chatwootConfig, connection, comment, postId) {
+  const account = {
+    id: firstString(connection?.zernio_account_id),
+    platform: normalizePlatform(firstString(connection?.platform, comment?.platform)),
+    username: firstString(connection?.username),
+  }
+  const message = {
+    id: firstString(comment?.id),
+    conversationId: firstString(comment?.postId, postId),
+    senderId: firstString(comment?.authorId, comment?.id),
+    senderName: fallbackCommentAuthorName(comment, account.platform),
+    senderEmail: '',
+    senderPhone: '',
+    senderAvatar: firstString(comment?.authorAvatar),
+    content: firstString(comment?.text),
+    attachments: [],
+    timestamp: firstString(comment?.createdTime),
+  }
+
+  if (!account.id || !account.platform || !message.id || !message.conversationId || !message.senderId) {
+    return { synced: false, skipped: true, reason: 'missing_comment_identity', commentId: message.id || null }
+  }
+
+  const inbox = await resolveChatwootSocialInbox(chatwootConfig)
+  const contact = await findOrCreateChatwootZernioContact(chatwootConfig, inbox.id, account, message)
+  const conversation = await findOrCreateChatwootZernioConversation(chatwootConfig, contact, inbox.id, account, message)
+  const conversationId = getChatwootConversationId(conversation)
+  if (!conversationId) throw new Error('Chatwoot conversation could not be created.')
+
+  const assignment = await assignChatwootZernioConversation(chatwootConfig, conversation).catch((error) => ({
+    assigned: false,
+    reason: sanitizeChatwootError(error?.message || 'Could not assign social conversation.'),
+  }))
+
+  if (await chatwootMessageExists(chatwootConfig, conversationId, message.id)) {
+    return { synced: false, deduped: true, conversationId, commentId: message.id, assignment }
+  }
+
+  const createdMessage = await chatwootFetch(chatwootConfig, `/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      content: appendAttachmentLinks(message.content, message.attachments).slice(0, 5000),
+      message_type: 'incoming',
+      private: false,
+      source_id: `zernio:${message.id}`,
+      content_type: 'text',
+      content_attributes: {
+        zernio_event: 'comment.received',
+        zernio_sync_source: 'zernio_comments_poll',
+        zernio_message_id: message.id,
+        zernio_comment_id: message.id,
+        zernio_comment_post_id: zernioCommentPostIdFromIds(message.id, message.conversationId),
+        zernio_conversation_id: message.conversationId,
+        zernio_account_id: account.id,
+        zernio_profile_id: account.profileId || connection.zernio_profile_id || null,
+        zernio_platform: account.platform,
+        zernio_timestamp: message.timestamp || null,
+        zernio_attachments: message.attachments,
+      },
+    }),
+  })
+
+  return {
+    synced: true,
+    conversationId,
+    messageId: createdMessage?.id || createdMessage?.payload?.id || null,
+    commentId: message.id,
+    assignment,
+  }
+}
+
+async function syncZernioCommentsToChatwoot(chatwootConfig, connection, comments, postId) {
+  const results = []
+  for (const comment of comments) {
+    try {
+      results.push(await syncZernioCommentToChatwoot(chatwootConfig, connection, comment, postId))
+    } catch (error) {
+      results.push({
+        synced: false,
+        error: sanitizeChatwootError(error?.message || 'Could not sync comment to Chatwoot.'),
+        commentId: firstString(comment?.id) || null,
+      })
+    }
+  }
+  return results
 }
 
 async function handleZernioInboxWebhook(request, env) {
@@ -3573,24 +4849,43 @@ async function handleZernioInboxWebhook(request, env) {
     return json({ error: 'Missing account, platform, conversation, or sender identifier.' }, { status: 400 })
   }
 
-  const connection = await ensureZernioAccountIsConnected(envConfig, account)
+  let connection = null
+  try {
+    connection = await findSocialConnectionByAccountId(envConfig, account.id, account.profileId)
+  } catch (error) {
+    return json({ error: sanitizeChatwootError(error?.message || 'Could not resolve the Zernio account tenant.'), event: eventName }, { status: error?.status || 502 })
+  }
   if (!connection) {
-    return json({ success: true, skipped: true, reason: 'Zernio account is not connected to this tenant.', event: eventName })
+    return json({ success: true, skipped: true, reason: 'Zernio account is not uniquely connected to a MAP tenant.', event: eventName })
+  }
+  if (account.platform && normalizePlatform(connection.platform) !== account.platform) {
+    return json({ success: true, skipped: true, reason: 'Zernio account platform did not match the MAP connection.', event: eventName })
+  }
+
+  const tenantEnvConfig = { ...envConfig, clientId: connection.client_id }
+  const connectedAccount = {
+    ...account,
+    username: account.username || connection.username,
   }
 
   try {
-    const inbox = await resolveChatwootSocialInbox(env)
-    const contact = await findOrCreateChatwootZernioContact(env, inbox.id, account, message)
-    const conversation = await findOrCreateChatwootZernioConversation(env, contact, inbox.id, account, message)
-    const conversationId = conversation?.id
+    const chatwootConfig = await getChatwootConfigForClient(env, tenantEnvConfig)
+    const inbox = await resolveChatwootSocialInbox(chatwootConfig)
+    const contact = await findOrCreateChatwootZernioContact(chatwootConfig, inbox.id, connectedAccount, message)
+    const conversation = await findOrCreateChatwootZernioConversation(chatwootConfig, contact, inbox.id, connectedAccount, message)
+    const conversationId = getChatwootConversationId(conversation)
     if (!conversationId) throw new Error('Chatwoot conversation could not be created.')
+    const assignment = await assignChatwootZernioConversation(chatwootConfig, conversation).catch((error) => ({
+      assigned: false,
+      reason: sanitizeChatwootError(error?.message || 'Could not assign social conversation.'),
+    }))
 
-    if (await chatwootMessageExists(env, conversationId, message.id)) {
-      return json({ success: true, deduped: true, conversationId, event: eventName })
+    if (await chatwootMessageExists(chatwootConfig, conversationId, message.id)) {
+      return json({ success: true, deduped: true, conversationId, event: eventName, assignment })
     }
 
     const content = appendAttachmentLinks(message.content, message.attachments).slice(0, 5000)
-    const createdMessage = await chatwootFetch(env, `/conversations/${conversationId}/messages`, {
+    const createdMessage = await chatwootFetch(chatwootConfig, `/conversations/${conversationId}/messages`, {
       method: 'POST',
       body: JSON.stringify({
         content,
@@ -3601,9 +4896,12 @@ async function handleZernioInboxWebhook(request, env) {
         content_attributes: {
           zernio_event: eventName,
           zernio_message_id: message.id || null,
+          zernio_comment_id: eventName === 'comment.received' ? (message.id || null) : null,
+          zernio_comment_post_id: eventName === 'comment.received' ? (zernioCommentPostIdFromIds(message.id, message.conversationId) || null) : null,
           zernio_conversation_id: message.conversationId,
-          zernio_account_id: account.id,
-          zernio_platform: account.platform,
+          zernio_account_id: connectedAccount.id,
+          zernio_profile_id: connectedAccount.profileId || connection.zernio_profile_id || null,
+          zernio_platform: connectedAccount.platform,
           zernio_timestamp: message.timestamp || null,
           zernio_attachments: message.attachments,
         },
@@ -3613,18 +4911,19 @@ async function handleZernioInboxWebhook(request, env) {
     return json({
       success: true,
       event: eventName,
-      platform: account.platform,
+      platform: connectedAccount.platform,
       inboxId: inbox.id,
       contactId: contact.id,
       conversationId,
-      messageId: createdMessage?.id || null,
+      messageId: createdMessage?.id || createdMessage?.payload?.id || null,
+      assignment,
     })
   } catch (error) {
     return json({ error: sanitizeChatwootError(error?.message), event: eventName }, { status: error?.status || 502 })
   }
 }
 
-async function sendZernioConversationReply(env, conversation, content) {
+async function sendZernioConversationReply(env, conversation, content, chatwootConfig = null) {
   const attrs = getConversationCustomAttributes(conversation)
   const zernioConversationId = firstString(attrs.zernio_conversation_id)
   const zernioAccountId = firstString(attrs.zernio_account_id)
@@ -3633,25 +4932,22 @@ async function sendZernioConversationReply(env, conversation, content) {
   }
 
   const n8nWebhookUrl = String(env.ZERNIO_INBOX_SEND_WEBHOOK_URL || '').trim()
-  const requestBody = {
-    accountId: zernioAccountId,
-    conversationId: zernioConversationId,
-    message: content.slice(0, 5000),
-  }
+  const conversationId = getChatwootConversationId(conversation)
+  const messages = chatwootConfig ? await loadChatwootConversationMessages(chatwootConfig, conversationId) : []
+  const request = buildZernioOutboundReplyRequest(conversation, messages, content)
+  if (!request) throw new Error('This Chatwoot conversation is missing Zernio routing metadata.')
 
-  const payload = n8nWebhookUrl
-    ? await sendZernioReplyThroughN8n(env, n8nWebhookUrl, requestBody)
-    : await zernioFetch(env, `/inbox/conversations/${encodeURIComponent(zernioConversationId)}/messages`, {
+  const payload = n8nWebhookUrl && request.kind === 'conversation'
+    ? await sendZernioReplyThroughN8n(env, n8nWebhookUrl, request.body)
+    : await zernioFetch(env, request.path, {
       method: 'POST',
-      body: JSON.stringify({
-        accountId: zernioAccountId,
-        message: content.slice(0, 5000),
-      }),
+      body: JSON.stringify(request.body),
     })
 
   return {
     payload,
     messageId: firstString(payload?.message?.id, payload?.id, payload?.data?.id),
+    kind: request.kind,
   }
 }
 
@@ -3674,6 +4970,80 @@ async function sendZernioReplyThroughN8n(env, webhookUrl, body) {
   }
 
   return payload
+}
+
+function zernioCommentPostIdFromIds(commentId, conversationId) {
+  const normalizedCommentId = firstString(commentId)
+  if (normalizedCommentId.includes('_')) return normalizedCommentId.split('_')[0]
+
+  const normalizedConversationId = firstString(conversationId)
+  if (normalizedConversationId.includes('_')) {
+    const segments = normalizedConversationId.split('_').filter(Boolean)
+    return segments[segments.length - 1] || ''
+  }
+
+  return ''
+}
+
+function getMessageContentAttributes(message) {
+  return message?.content_attributes || message?.payload?.content_attributes || {}
+}
+
+function findZernioCommentRoutingMessage(messages = []) {
+  return [...(Array.isArray(messages) ? messages : [])].reverse().find((message) => {
+    const attrs = getMessageContentAttributes(message)
+    return firstString(attrs.zernio_comment_id, attrs.zernio_message_id)
+      && firstString(attrs.zernio_event) === 'comment.received'
+  }) || null
+}
+
+export function buildZernioOutboundReplyRequest(conversation, messages = [], content = '') {
+  const attrs = getConversationCustomAttributes(conversation)
+  const accountId = firstString(attrs.zernio_account_id)
+  const profileId = firstString(attrs.zernio_profile_id)
+  const conversationId = firstString(attrs.zernio_conversation_id)
+  const message = firstString(content).slice(0, 5000)
+  if (!accountId || !conversationId || !message) return null
+
+  const commentMessage = findZernioCommentRoutingMessage(messages)
+  const commentAttrs = getMessageContentAttributes(commentMessage)
+  const commentId = firstString(commentAttrs.zernio_comment_id, commentAttrs.zernio_message_id)
+  if (commentId) {
+    const postId = firstString(
+      commentAttrs.zernio_comment_post_id,
+      commentAttrs.zernio_post_id,
+      zernioCommentPostIdFromIds(commentId, firstString(commentAttrs.zernio_conversation_id, conversationId)),
+    )
+    if (postId) {
+      return {
+        kind: 'comment',
+        path: `/inbox/comments/${encodeURIComponent(postId)}`,
+        body: {
+          accountId,
+          ...(profileId ? { profileId } : {}),
+          commentId,
+          message,
+        },
+      }
+    }
+  }
+
+  return {
+    kind: 'conversation',
+    path: `/inbox/conversations/${encodeURIComponent(conversationId)}/messages`,
+    body: {
+      accountId,
+      ...(profileId ? { profileId } : {}),
+      conversationId,
+      message,
+    },
+  }
+}
+
+async function loadChatwootConversationMessages(env, conversationId) {
+  if (!conversationId) return []
+  const payload = await chatwootFetch(env, `/conversations/${conversationId}/messages`)
+  return Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
 }
 
 async function handleChatwootMessageWebhook(request, env, ctx = null) {
@@ -3763,18 +5133,34 @@ async function handleChatwootMessageWebhook(request, env, ctx = null) {
   }
 
   try {
-    const zernioResult = await sendZernioConversationReply(env, conversation, firstString(message.content))
+    const envConfig = await getPortalWebhookConfig(request, env)
+    const webhookAccountId = getWebhookChatwootAccountId(payload, message, conversation)
+    const chatwootContext = webhookAccountId ? { accountId: webhookAccountId } : {}
+    const chatwootConfig = await getChatwootConfigForClient(env, envConfig, chatwootContext)
+    const zernioResult = await sendZernioConversationReply(env, conversation, firstString(message.content), chatwootConfig)
     return json({
       success: true,
       event: eventName || 'message_created',
       zernioMessageId: zernioResult.messageId || null,
+      kind: zernioResult.kind || null,
     })
   } catch (error) {
     return json({ error: error.message || 'Could not bridge Chatwoot reply to Zernio.' }, { status: error?.status || 502 })
   }
 }
 
-async function replaceSocialConnection(envConfig, { platform, accountId, username }) {
+async function replaceSocialConnection(envConfig, { platform, accountId, profileId, username, accountMetadata = {} }) {
+  const zernioProfileId = firstString(profileId, envConfig.zernioProfileId)
+  const accountFilters = new URLSearchParams({
+    zernio_account_id: `eq.${accountId}`,
+  })
+  if (zernioProfileId) accountFilters.set('zernio_profile_id', `eq.${zernioProfileId}`)
+  await supabaseRest(
+    envConfig,
+    `/rest/v1/social_connections?${accountFilters.toString()}`,
+    { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
+  )
+
   const filters = new URLSearchParams({
     client_id: `eq.${envConfig.clientId}`,
     platform: `eq.${platform}`,
@@ -3790,7 +5176,11 @@ async function replaceSocialConnection(envConfig, { platform, accountId, usernam
     client_id: envConfig.clientId,
     platform,
     zernio_account_id: accountId,
+    zernio_profile_id: zernioProfileId || null,
     username,
+    zernio_account_metadata: accountMetadata && typeof accountMetadata === 'object' && !Array.isArray(accountMetadata)
+      ? accountMetadata
+      : {},
     connected_at: new Date().toISOString(),
   }]
 
@@ -3803,6 +5193,285 @@ async function replaceSocialConnection(envConfig, { platform, accountId, usernam
       body: JSON.stringify(payload),
     },
   )
+}
+
+async function findSocialConnectionByAccountId(envConfig, accountId, profileId = '') {
+  if (!accountId) return null
+  const filters = new URLSearchParams({
+    select: 'id,client_id,platform,zernio_account_id,zernio_profile_id,username',
+    zernio_account_id: `eq.${accountId}`,
+    limit: '2',
+  })
+  const normalizedProfileId = firstString(profileId)
+  if (normalizedProfileId) filters.set('zernio_profile_id', `eq.${normalizedProfileId}`)
+
+  const response = await supabaseRest(envConfig, `/rest/v1/social_connections?${filters.toString()}`)
+  const rows = await response.json()
+  if (!Array.isArray(rows) || rows.length === 0) return null
+  if (rows.length === 1) return rows[0]
+  if (!normalizedProfileId) return null
+  const profileScopedRows = rows.filter((row) => firstString(row.zernio_profile_id) === normalizedProfileId)
+  return profileScopedRows.length === 1 ? profileScopedRows[0] : null
+}
+
+async function loadPendingSocialConnectionAttemptByState(envConfig, stateToken) {
+  if (!stateToken) return null
+  const filters = new URLSearchParams({
+    select: 'id,client_id,platform,zernio_profile_id,status,expires_at,created_at',
+    state_token_hash: `eq.${await sha256Hex(stateToken)}`,
+    status: 'eq.pending',
+    expires_at: `gte.${new Date().toISOString()}`,
+    limit: '1',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/social_connection_attempts?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function loadPendingSocialConnectionAttemptsByProfilePlatform(envConfig, profileId, platform) {
+  const zernioProfileId = firstString(profileId)
+  if (!zernioProfileId) return []
+  const filters = new URLSearchParams({
+    select: 'id,client_id,platform,zernio_profile_id,status,expires_at,created_at',
+    zernio_profile_id: `eq.${zernioProfileId}`,
+    platform: `eq.${platform}`,
+    status: 'eq.pending',
+    expires_at: `gte.${new Date().toISOString()}`,
+    order: 'created_at.desc',
+    limit: '2',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/social_connection_attempts?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows : []
+}
+
+async function loadClientByZernioProfileId(envConfig, profileId) {
+  const zernioProfileId = firstString(profileId)
+  if (!zernioProfileId) return null
+  const filters = new URLSearchParams({
+    select: 'id,slug,zernio_profile_id,zernio_profile_status',
+    zernio_profile_id: `eq.${zernioProfileId}`,
+    limit: '2',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/clients?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) && rows.length === 1 ? rows[0] : null
+}
+
+async function updateSocialConnectionAttempt(envConfig, attemptId, updates) {
+  if (!attemptId) return
+  const filters = new URLSearchParams({ id: `eq.${attemptId}` })
+  await supabaseRest(
+    envConfig,
+    `/rest/v1/social_connection_attempts?${filters.toString()}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify(updates),
+    },
+  )
+}
+
+async function completePendingSocialConnectionAttemptsByProfilePlatform(envConfig, { profileId, platform, accountId, username, source = 'zernio-profile-refresh' }) {
+  const zernioProfileId = firstString(profileId)
+  if (!zernioProfileId || !platform) return
+  const filters = new URLSearchParams({
+    client_id: `eq.${envConfig.clientId}`,
+    zernio_profile_id: `eq.${zernioProfileId}`,
+    platform: `eq.${platform}`,
+    status: 'eq.pending',
+  })
+  await supabaseRest(
+    envConfig,
+    `/rest/v1/social_connection_attempts?${filters.toString()}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'completed',
+        zernio_account_id: accountId || null,
+        username: username || null,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          source,
+          resolution: 'profile_refresh',
+          zernio_profile_id: zernioProfileId,
+        },
+      }),
+    },
+  )
+}
+
+function normalizeZernioListAccount(account) {
+  return {
+    id: extractZernioAccountId(account),
+    profileId: extractZernioProfileId(account),
+    platform: normalizePlatform(firstString(account?.platform, account?.provider)),
+    username: firstString(account?.username, account?.handle, account?.displayName, account?.name),
+    profileName: firstString(account?.profileId?.name, account?.profile?.name),
+    platformUserId: firstString(account?.platformUserId, account?.platform_user_id),
+  }
+}
+
+async function syncZernioProfileAccountsForClient(env, envConfig, options = {}) {
+  const zernioProfileId = firstString(envConfig.zernioProfileId)
+  if (!zernioProfileId) {
+    throw new Error('This customer does not have a Zernio profile configured yet.')
+  }
+
+  const requestedPlatform = normalizePlatform(options.platform)
+  const accounts = await listZernioAccounts(env, { profileId: zernioProfileId, limit: 100 })
+  const normalizedAccounts = accounts
+    .map(normalizeZernioListAccount)
+    .filter((account) => account.id && account.platform && account.profileId === zernioProfileId)
+    .filter((account) => !requestedPlatform || account.platform === requestedPlatform)
+
+  for (const account of normalizedAccounts) {
+    await replaceSocialConnection(envConfig, {
+      platform: account.platform,
+      accountId: account.id,
+      profileId: account.profileId,
+      username: account.username,
+      accountMetadata: {
+        source: 'zernio-profile-refresh',
+        profileName: account.profileName || null,
+        platformUserId: account.platformUserId || null,
+        zernioProfileMatchesClient: true,
+        syncedAt: new Date().toISOString(),
+      },
+    })
+    await completePendingSocialConnectionAttemptsByProfilePlatform(envConfig, {
+      profileId: account.profileId,
+      platform: account.platform,
+      accountId: account.id,
+      username: account.username,
+    })
+  }
+
+  return normalizedAccounts
+}
+
+async function markAmbiguousSocialConnectionAttempts(envConfig, attempts, { accountId, platform }) {
+  const ids = Array.isArray(attempts) ? attempts.map((attempt) => attempt.id).filter(Boolean) : []
+  if (!ids.length) return
+  const filters = new URLSearchParams({
+    id: `in.(${ids.join(',')})`,
+    status: 'eq.pending',
+  })
+  await supabaseRest(
+    envConfig,
+    `/rest/v1/social_connection_attempts?${filters.toString()}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'ambiguous',
+        zernio_account_id: accountId || null,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          source: 'zernio-account-webhook',
+          reason: 'multiple_pending_attempts',
+          platform,
+        },
+      }),
+    },
+  )
+}
+
+async function resolveSocialConnectionTarget(envConfig, { platform, accountId, profileId, stateToken }) {
+  const existingConnection = await findSocialConnectionByAccountId(envConfig, accountId, profileId)
+  if (existingConnection) {
+    const existingPlatform = normalizePlatform(existingConnection.platform)
+    if (existingPlatform && existingPlatform !== platform) {
+      return {
+        skipped: true,
+        reason: 'Zernio account is already connected under a different platform.',
+      }
+    }
+
+    return {
+      clientId: existingConnection.client_id,
+      source: 'existing_connection',
+      connection: existingConnection,
+    }
+  }
+
+  const stateAttempt = await loadPendingSocialConnectionAttemptByState(envConfig, stateToken)
+  if (stateAttempt) {
+    if (stateAttempt.zernio_profile_id && profileId && stateAttempt.zernio_profile_id !== profileId) {
+      await updateSocialConnectionAttempt(envConfig, stateAttempt.id, {
+        status: 'failed',
+        zernio_account_id: accountId || null,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          source: 'zernio-account-webhook',
+          reason: 'profile_mismatch',
+          event_profile_id: profileId,
+        },
+      })
+      return {
+        skipped: true,
+        reason: 'Connect attempt profile did not match the Zernio account event.',
+      }
+    }
+
+    const attemptPlatform = normalizePlatform(stateAttempt.platform)
+    if (attemptPlatform && attemptPlatform !== platform) {
+      await updateSocialConnectionAttempt(envConfig, stateAttempt.id, {
+        status: 'failed',
+        zernio_account_id: accountId || null,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          source: 'zernio-account-webhook',
+          reason: 'platform_mismatch',
+          event_platform: platform,
+        },
+      })
+      return {
+        skipped: true,
+        reason: 'Connect attempt platform did not match the Zernio account event.',
+      }
+    }
+
+    return {
+      clientId: stateAttempt.client_id,
+      source: 'state_attempt',
+      attempt: stateAttempt,
+    }
+  }
+
+  const profileClient = await loadClientByZernioProfileId(envConfig, profileId)
+  if (profileClient?.id) {
+    return {
+      clientId: profileClient.id,
+      source: 'profile_match',
+    }
+  }
+
+  const pendingAttempts = await loadPendingSocialConnectionAttemptsByProfilePlatform(envConfig, profileId, platform)
+  if (pendingAttempts.length === 1) {
+    return {
+      clientId: pendingAttempts[0].client_id,
+      source: 'single_pending_attempt',
+      attempt: pendingAttempts[0],
+    }
+  }
+
+  if (pendingAttempts.length > 1) {
+    await markAmbiguousSocialConnectionAttempts(envConfig, pendingAttempts, { accountId, platform })
+    return {
+      skipped: true,
+      reason: 'Multiple pending connect attempts matched this account event.',
+    }
+  }
+
+  return {
+    skipped: true,
+    reason: 'No existing connection or pending connect attempt matched this account event.',
+  }
 }
 
 async function removeSocialConnection(envConfig, { platform, accountId }) {
@@ -3821,20 +5490,6 @@ async function removeSocialConnection(envConfig, { platform, accountId }) {
     `/rest/v1/social_connections?${filters.toString()}`,
     { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
   )
-}
-
-async function resolveClientIdFromTenantSlug(envConfig, tenantSlug) {
-  const slug = String(tenantSlug || '').trim().toLowerCase()
-  if (!slug) return ''
-
-  const filters = new URLSearchParams({
-    select: 'id',
-    slug: `eq.${slug}`,
-    limit: '1',
-  })
-  const response = await supabaseRest(envConfig, `/rest/v1/clients?${filters.toString()}`)
-  const rows = await response.json()
-  return Array.isArray(rows) && rows[0]?.id ? String(rows[0].id) : ''
 }
 
 async function handleSocialConnectionDisconnect(request, env) {
@@ -3860,6 +5515,40 @@ async function handleSocialConnectionDisconnect(request, env) {
     platform,
     message: `${platform} is disconnected from this MAP portal.`,
   })
+}
+
+async function handleSocialConnectionsRefresh(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'POST, OPTIONS' } })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+  if (auth.user.role !== 'admin') {
+    return json({ error: 'Only client admins can refresh social accounts.' }, { status: 403 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  try {
+    const accounts = await syncZernioProfileAccountsForClient(env, auth.envConfig, {
+      platform: body?.platform,
+    })
+    return json({
+      success: true,
+      profileId: auth.envConfig.zernioProfileId || null,
+      accounts,
+    })
+  } catch (error) {
+    return json({
+      success: false,
+      error: error?.message || 'Could not refresh Zernio profile accounts.',
+      details: error?.payload || null,
+    }, { status: error?.status || 502 })
+  }
 }
 
 async function handleZernioAccountWebhook(request, env) {
@@ -3912,18 +5601,10 @@ async function handleZernioAccountWebhook(request, env) {
     return json({ success: true, message: 'Webhook test received.' })
   }
 
-  if (!envConfig.clientId) {
-    const tenantSlug = request.headers.get('x-map-tenant-slug') || ''
-    const clientId = await resolveClientIdFromTenantSlug(envConfig, tenantSlug).catch(() => '')
-    if (!clientId) {
-      return json({ error: 'Could not resolve tenant for account webhook.' }, { status: 404 })
-    }
-    envConfig = { ...envConfig, clientId }
-  }
-
-  const platform = normalizePlatform(payload.platform)
-  const accountId = String(payload.accountId || payload.id || '').trim()
-  const username = String(payload.username || payload.displayName || '').trim() || null
+  const account = normalizeZernioAccountEventDetails(payload)
+  const platform = account.platform
+  const accountId = account.id
+  const username = account.username
 
   if (!platform) {
     return json({ success: true, skipped: true, reason: 'Unsupported or missing platform.', event: eventName })
@@ -3935,17 +5616,88 @@ async function handleZernioAccountWebhook(request, env) {
         return json({ error: 'Missing accountId in account.connected payload.' }, { status: 400 })
       }
 
-      await replaceSocialConnection(envConfig, { platform, accountId, username })
-      return json({ success: true, event: eventName, platform, accountId, action: 'upserted' })
-    }
+      const target = await resolveSocialConnectionTarget(envConfig, {
+        platform,
+        accountId,
+        profileId: account.profileId,
+        stateToken: account.state,
+      })
+      if (target.skipped || !target.clientId) {
+        return json({
+          success: true,
+          skipped: true,
+          reason: target.reason || 'Could not safely attribute account event.',
+          event: eventName,
+          platform,
+          accountId,
+          profileId: account.profileId || null,
+        })
+      }
 
-    if (eventName === 'account.disconnected') {
-      await removeSocialConnection(envConfig, { platform, accountId })
+      const targetEnvConfig = { ...envConfig, clientId: target.clientId, zernioProfileId: account.profileId }
+      await replaceSocialConnection(targetEnvConfig, {
+        platform,
+        accountId,
+        profileId: account.profileId,
+        username,
+        accountMetadata: { source: 'zernio-account-webhook', eventId: payload.id || null },
+      })
+      if (target.attempt?.id) {
+        await updateSocialConnectionAttempt(envConfig, target.attempt.id, {
+          status: 'completed',
+          zernio_account_id: accountId,
+          zernio_profile_id: account.profileId || target.attempt.zernio_profile_id || null,
+          username,
+          completed_at: new Date().toISOString(),
+          metadata: {
+            source: 'zernio-account-webhook',
+            resolution: target.source,
+            zernio_profile_id: account.profileId || null,
+          },
+        })
+      }
       return json({
         success: true,
         event: eventName,
         platform,
-        accountId: accountId || null,
+        accountId,
+        profileId: account.profileId || null,
+        action: 'upserted',
+        attribution: target.source,
+      })
+    }
+
+    if (eventName === 'account.disconnected') {
+      if (!accountId) {
+        return json({
+          success: true,
+          skipped: true,
+          reason: 'Missing accountId in account.disconnected payload.',
+          event: eventName,
+          platform,
+        })
+      }
+
+      const existingConnection = await findSocialConnectionByAccountId(envConfig, accountId, account.profileId)
+      if (!existingConnection) {
+        return json({
+          success: true,
+          skipped: true,
+          reason: 'No connected MAP tenant owns this Zernio account.',
+          event: eventName,
+          platform,
+          accountId,
+          profileId: account.profileId || null,
+        })
+      }
+
+      await removeSocialConnection({ ...envConfig, clientId: existingConnection.client_id }, { platform, accountId })
+      return json({
+        success: true,
+        event: eventName,
+        platform,
+        accountId,
+        profileId: account.profileId || null,
         disconnectionType: payload.disconnectionType || null,
         action: 'removed',
       })
@@ -4369,9 +6121,74 @@ async function handleDropboxThumbnail(request, env) {
   }
 }
 
+async function deleteSecureVaultStorageObject(envConfig, storagePath) {
+  const normalizedPath = String(storagePath || '')
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+  if (!normalizedPath) return false
+
+  const response = await fetch(`${envConfig.url}/storage/v1/object/secure-documents/${normalizedPath}`, {
+    method: 'DELETE',
+    headers: {
+      apikey: envConfig.serviceRoleKey,
+      Authorization: `Bearer ${envConfig.serviceRoleKey}`,
+    },
+  })
+
+  if (!response.ok && response.status !== 404) {
+    const text = await response.text().catch(() => '')
+    throw new Error(text || `Storage delete failed (${response.status}).`)
+  }
+
+  return response.ok
+}
+
+async function purgeExpiredSecureVaultArchive(env) {
+  const envConfig = getPortalAuthConfig(env)
+  const retentionDays = Number(env.SECURE_VAULT_ARCHIVE_RETENTION_DAYS || 30)
+  const cutoff = new Date(Date.now() - Math.max(1, retentionDays) * 24 * 60 * 60 * 1000).toISOString()
+  const filters = new URLSearchParams({
+    select: 'id,storage_path',
+    is_archived: 'eq.true',
+    archived_at: `lt.${cutoff}`,
+    limit: '100',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/secure_documents?${filters.toString()}`)
+  const documents = await response.json()
+  const rows = Array.isArray(documents) ? documents : []
+  if (!rows.length) {
+    return { deletedDocuments: 0, deletedStorageObjects: 0, cutoff }
+  }
+
+  let deletedStorageObjects = 0
+  for (const document of rows) {
+    if (await deleteSecureVaultStorageObject(envConfig, document.storage_path)) {
+      deletedStorageObjects += 1
+    }
+  }
+
+  const ids = rows.map((document) => document.id).filter(Boolean)
+  if (ids.length) {
+    await supabaseRest(envConfig, `/rest/v1/secure_documents?id=in.(${ids.map(encodeURIComponent).join(',')})`, {
+      method: 'DELETE',
+      headers: {
+        Prefer: 'return=minimal',
+      },
+    })
+  }
+
+  return { deletedDocuments: ids.length, deletedStorageObjects, cutoff }
+}
+
 export { getIsoWeekFolder }
 
 export default {
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(purgeExpiredSecureVaultArchive(env))
+  },
+
   async fetch(request, env, ctx) {
     const canonicalRedirect = buildCanonicalRedirect(request, env)
     if (canonicalRedirect) {
@@ -4392,15 +6209,26 @@ export default {
     }
 
     if (url.pathname === '/api/n8n/zernio-sync-accounts') {
-      return proxyN8nWebhook(request, env, 'zernio-sync-accounts')
+      return json({
+        success: false,
+        error: 'Zernio account sync is disabled because the account list is not tenant scoped. Signed Zernio account events update connected accounts instead.',
+      }, { status: 409 })
     }
 
     if (url.pathname === '/api/social-connections/disconnect') {
       return handleSocialConnectionDisconnect(request, env)
     }
 
+    if (url.pathname === '/api/social-connections/refresh') {
+      return handleSocialConnectionsRefresh(request, env)
+    }
+
     if (url.pathname === '/api/team-access/users') {
       return handleTeamAccessUsers(request, env)
+    }
+
+    if (url.pathname === '/api/post-metrics') {
+      return handlePostMetrics(request, env)
     }
 
     const teamAccessUserMatch = /^\/api\/team-access\/users\/([^/]+)$/.exec(url.pathname)
@@ -4410,6 +6238,18 @@ export default {
 
     if (url.pathname === '/api/post-boosts') {
       return handlePostBoosts(request, env)
+    }
+
+    if (url.pathname === '/api/post-boost-readiness') {
+      return handlePostBoostReadiness(request, env)
+    }
+
+    if (url.pathname === '/api/boost-ad-accounts') {
+      return handleBoostAdAccounts(request, env)
+    }
+
+    if (url.pathname === '/api/boost-ads-connect') {
+      return handleBoostAdsConnect(request, env)
     }
 
     const scheduledPostDeleteMatch = /^\/api\/posts\/([^/]+)\/delete$/.exec(url.pathname)
@@ -4423,6 +6263,20 @@ export default {
 
     if (url.pathname === '/api/zernio/inbox-events') {
       return handleZernioInboxWebhook(request, env)
+    }
+
+    if (url.pathname === '/api/zernio/comments') {
+      return handleZernioCommentPosts(request, env)
+    }
+
+    const zernioPostCommentsMatch = /^\/api\/zernio\/comments\/([^/]+)$/.exec(url.pathname)
+    if (zernioPostCommentsMatch) {
+      return handleZernioPostComments(request, env, decodeURIComponent(zernioPostCommentsMatch[1]))
+    }
+
+    const zernioCommentReplyMatch = /^\/api\/zernio\/comments\/([^/]+)\/reply$/.exec(url.pathname)
+    if (zernioCommentReplyMatch) {
+      return handleZernioCommentReply(request, env, decodeURIComponent(zernioCommentReplyMatch[1]))
     }
 
     const chatwootMessageWebhookMatch = /^\/api\/chatwoot\/webhooks\/messages(?:\/[^/]+)?$/.exec(url.pathname)
