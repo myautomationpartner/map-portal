@@ -101,5 +101,6 @@ test('Chatwoot account lookup failures verify the saved tenant account before fa
   assert.match(script, /\/platform\/api\/v1\/accounts\/\$\{accountId\}/)
   assert.match(findSource, /findChatwootAccountFromSavedSettings\(client\)/)
   assert.match(findSource, /return savedAccount/)
+  assert.match(findSource, /Using saved Chatwoot account/)
   assert.match(findSource, /Saved account fallback/)
 })

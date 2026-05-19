@@ -651,7 +651,10 @@ async function findChatwootAccountForClient(client) {
 
     try {
       const savedAccount = await findChatwootAccountFromSavedSettings(client)
-      if (savedAccount?.id) return savedAccount
+      if (savedAccount?.id) {
+        process.stderr.write(`Using saved Chatwoot account ${savedAccount.id} for ${client.slug || client.id} after account-list lookup failed.\n`)
+        return savedAccount
+      }
     } catch (fallbackError) {
       fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
     }
