@@ -71,3 +71,16 @@ test('GitHub onboarding action passes shared-path provisioning controls into por
   assert.match(workflow, /args\+=\(--shared-path\)/)
   assert.match(workflow, /args\+=\(--deploy-shared-worker\)/)
 })
+
+test('Chatwoot account lookup failures stop before creating a replacement account', async () => {
+  const script = await source('scripts/provision-client-portal.mjs')
+  const findStart = script.indexOf('async function findChatwootAccountForClient')
+  const findEnd = script.indexOf('async function createOrUpdateChatwootAccount', findStart)
+  const findSource = script.slice(findStart, findEnd)
+
+  assert.notEqual(findStart, -1)
+  assert.notEqual(findEnd, -1)
+  assert.match(findSource, /Unable to verify existing Chatwoot account/)
+  assert.match(findSource, /throw new Error/)
+  assert.doesNotMatch(findSource, /creating a fresh account/)
+})

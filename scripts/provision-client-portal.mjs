@@ -617,8 +617,11 @@ async function findChatwootAccountForClient(client) {
     accounts = await listChatwootAccounts()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    process.stderr.write(`Chatwoot account lookup failed; creating a fresh account for ${client.slug || client.id}: ${message}\n`)
-    return null
+    throw new Error(
+      `Unable to verify existing Chatwoot account for ${client.slug || client.id}; ` +
+      `refusing to create a replacement account while Chatwoot account lookup is unavailable. ` +
+      `Retry provisioning after the Chatwoot Platform API recovers. Root cause: ${message}`,
+    )
   }
 
   return accounts.find((account) => {
