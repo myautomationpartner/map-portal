@@ -52,6 +52,25 @@ test('portal provisioning re-reads Zernio profiles when create response lacks an
   assert.match(helperSource, /profile = findZernioProfileForClient\(client, refreshedProfiles\) \|\| profile/)
 })
 
+test('portal provisioning treats unverified Partner training as a non-fatal Radar skip', async () => {
+  const script = await source('scripts/provision-client-portal.mjs')
+  const fetchStart = script.indexOf('async function fetchJson')
+  const fetchEnd = script.indexOf('function normalizeName', fetchStart)
+  const fetchSource = script.slice(fetchStart, fetchEnd)
+  const radarStart = script.indexOf('async function runInitialOpportunityRadar')
+  const radarEnd = script.indexOf('function getDateParts', radarStart)
+  const radarSource = script.slice(radarStart, radarEnd)
+
+  assert.notEqual(fetchStart, -1)
+  assert.notEqual(fetchEnd, -1)
+  assert.notEqual(radarStart, -1)
+  assert.notEqual(radarEnd, -1)
+  assert.match(fetchSource, /lastError\.status = response\.status/)
+  assert.match(fetchSource, /lastError\.payload = payload/)
+  assert.match(radarSource, /if \(error\?\.status === 409 && error\?\.payload\?\.skipped\)/)
+  assert.match(radarSource, /reason: error\.payload\.reason \|\| 'Initial Opportunity Radar skipped\.'/)
+})
+
 test('portal provisioning repairs existing social connections into the customer Zernio profile', async () => {
   const script = await source('scripts/provision-client-portal.mjs')
   const moveIndex = script.indexOf('async function moveZernioAccountToProfile')

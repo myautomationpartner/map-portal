@@ -232,6 +232,8 @@ async function fetchJson(url, init = {}) {
     if (response.ok) return payload
 
     lastError = new Error(`${requestInit.method || 'GET'} ${url} failed with ${response.status} ${response.statusText}: ${typeof payload === 'string' ? payload : JSON.stringify(payload)}`)
+    lastError.status = response.status
+    lastError.payload = payload
     if (!shouldRetryHttpStatus(response.status) || attempt === attempts) break
 
     const delay = retryDelayMs * attempt
@@ -1352,8 +1354,22 @@ async function runInitialOpportunityRadar({ client, deploymentState, dryRun, ski
     }
   }
 
-  const monthlyFoundation = await triggerOpportunityRadar(client, 'monthly_foundation')
-  const weeklyDeep = await triggerOpportunityRadar(client, 'weekly_deep')
+  let monthlyFoundation = null
+  let weeklyDeep = null
+  try {
+    monthlyFoundation = await triggerOpportunityRadar(client, 'monthly_foundation')
+    weeklyDeep = await triggerOpportunityRadar(client, 'weekly_deep')
+  } catch (error) {
+    if (error?.status === 409 && error?.payload?.skipped) {
+      return {
+        skipped: true,
+        reason: error.payload.reason || 'Initial Opportunity Radar skipped.',
+        clientId: error.payload.clientId || client.id,
+        clientSlug: error.payload.clientSlug || client.slug,
+      }
+    }
+    throw error
+  }
 
   return {
     skipped: false,
