@@ -84,3 +84,22 @@ test('Chatwoot account lookup failures stop before creating a replacement accoun
   assert.match(findSource, /throw new Error/)
   assert.doesNotMatch(findSource, /creating a fresh account/)
 })
+
+test('Chatwoot account lookup failures verify the saved tenant account before failing', async () => {
+  const script = await source('scripts/provision-client-portal.mjs')
+  const savedSettingsIndex = script.indexOf('async function loadWebsiteChatSettingsForClient')
+  const savedAccountIndex = script.indexOf('async function findChatwootAccountFromSavedSettings')
+  const findStart = script.indexOf('async function findChatwootAccountForClient')
+  const findEnd = script.indexOf('async function createOrUpdateChatwootAccount', findStart)
+  const findSource = script.slice(findStart, findEnd)
+
+  assert.notEqual(savedSettingsIndex, -1)
+  assert.notEqual(savedAccountIndex, -1)
+  assert.ok(savedSettingsIndex < findStart)
+  assert.ok(savedAccountIndex < findStart)
+  assert.match(script, /client_website_chat_settings\?select=chatwoot_account_id/)
+  assert.match(script, /\/platform\/api\/v1\/accounts\/\$\{accountId\}/)
+  assert.match(findSource, /findChatwootAccountFromSavedSettings\(client\)/)
+  assert.match(findSource, /return savedAccount/)
+  assert.match(findSource, /Saved account fallback/)
+})

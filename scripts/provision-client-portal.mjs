@@ -610,6 +610,36 @@ async function listChatwootAccounts() {
   return Array.isArray(accounts) ? accounts : (Array.isArray(accounts?.payload) ? accounts.payload : [])
 }
 
+function chatwootAccountRecord(response) {
+  if (!response) return null
+  if (response?.id) return response
+  if (response?.payload?.id) return response.payload
+  if (response?.data?.id) return response.data
+  if (response?.account?.id) return response.account
+  return null
+}
+
+async function loadWebsiteChatSettingsForClient(clientId) {
+  if (!clientId) return null
+
+  const rows = await fetchSupabaseRows(`/rest/v1/client_website_chat_settings?select=chatwoot_account_id&client_id=eq.${encodeURIComponent(clientId)}&limit=1`)
+  return Array.isArray(rows) ? (rows[0] || null) : null
+}
+
+async function findChatwootAccountFromSavedSettings(client) {
+  const settings = await loadWebsiteChatSettingsForClient(client?.id)
+  const accountId = parsePositiveInteger(settings?.chatwoot_account_id)
+  if (!accountId) return null
+
+  const response = await chatwootPlatformFetch(`/platform/api/v1/accounts/${accountId}`)
+  const account = chatwootAccountRecord(response)
+  if (!account?.id) {
+    throw new Error(`Saved Chatwoot account ${accountId} did not return a usable account record.`)
+  }
+
+  return account
+}
+
 async function findChatwootAccountForClient(client) {
   const accountName = String(client.business_name || client.slug || client.id).trim().toLowerCase()
   let accounts = []
@@ -617,10 +647,20 @@ async function findChatwootAccountForClient(client) {
     accounts = await listChatwootAccounts()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
+    let fallbackMessage = ''
+
+    try {
+      const savedAccount = await findChatwootAccountFromSavedSettings(client)
+      if (savedAccount?.id) return savedAccount
+    } catch (fallbackError) {
+      fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+    }
+
     throw new Error(
       `Unable to verify existing Chatwoot account for ${client.slug || client.id}; ` +
       `refusing to create a replacement account while Chatwoot account lookup is unavailable. ` +
-      `Retry provisioning after the Chatwoot Platform API recovers. Root cause: ${message}`,
+      `Retry provisioning after the Chatwoot Platform API recovers. Root cause: ${message}` +
+      (fallbackMessage ? ` Saved account fallback also failed: ${fallbackMessage}` : ''),
     )
   }
 
