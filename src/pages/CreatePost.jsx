@@ -106,6 +106,14 @@ const PLATFORM_IMAGE_TARGETS = {
   linkedin: { label: 'LinkedIn feed', aspectRatio: '1.91:1', width: 1200, height: 628, guidance: 'Wide professional feed crop.' },
   twitter: { label: 'X / Twitter', aspectRatio: '16:9', width: 1200, height: 675, guidance: 'Wide timeline crop.' },
 }
+const SHARED_SOCIAL_IMAGE_TARGET = {
+  label: 'Social-safe image',
+  aspectRatio: '1.90:1',
+  width: 1200,
+  height: 632,
+  guidance: 'One shared feed-safe image for multi-platform publishing.',
+  source: 'shared_social_safe_fit',
+}
 
 const ASSIST_ACTIONS = [
   { id: 'improve', label: 'Improve', description: 'Clean up the caption and make it stronger.' },
@@ -496,26 +504,17 @@ async function normalizeRemoteImageForAssist(imageUrl) {
   }
 }
 
-function centerCropRect(sourceWidth, sourceHeight, targetWidth, targetHeight) {
-  const sourceRatio = sourceWidth / sourceHeight
-  const targetRatio = targetWidth / targetHeight
-
-  if (sourceRatio > targetRatio) {
-    const width = sourceHeight * targetRatio
-    return { sx: (sourceWidth - width) / 2, sy: 0, sw: width, sh: sourceHeight }
-  }
-
-  const height = sourceWidth / targetRatio
-  return { sx: 0, sy: (sourceHeight - height) / 2, sw: sourceWidth, sh: height }
-}
-
-async function cropImageForTarget(source, target) {
+async function formatImageForTarget(source, target) {
   const image = await loadImageElement(source, { crossOrigin: /^https?:\/\//i.test(source) })
   const sourceWidth = image.naturalWidth || image.width
   const sourceHeight = image.naturalHeight || image.height
   if (!sourceWidth || !sourceHeight) throw new Error('Could not read the selected image size.')
 
-  const { sx, sy, sw, sh } = centerCropRect(sourceWidth, sourceHeight, target.width, target.height)
+  const scale = Math.min(target.width / sourceWidth, target.height / sourceHeight)
+  const drawWidth = Math.max(1, Math.round(sourceWidth * scale))
+  const drawHeight = Math.max(1, Math.round(sourceHeight * scale))
+  const drawX = Math.round((target.width - drawWidth) / 2)
+  const drawY = Math.round((target.height - drawHeight) / 2)
   const canvas = document.createElement('canvas')
   canvas.width = target.width
   canvas.height = target.height
@@ -524,7 +523,7 @@ async function cropImageForTarget(source, target) {
 
   context.fillStyle = '#f4f1ec'
   context.fillRect(0, 0, target.width, target.height)
-  context.drawImage(image, sx, sy, sw, sh, 0, 0, target.width, target.height)
+  context.drawImage(image, drawX, drawY, drawWidth, drawHeight)
   return canvas.toDataURL('image/png')
 }
 
@@ -2323,9 +2322,11 @@ export default function CreatePost() {
     if (!platformsToFormat.length) return {}
 
     const source = await getMasterImageSourceForFormatting()
+    const sharedTarget = platformsToFormat.length > 1 ? SHARED_SOCIAL_IMAGE_TARGET : null
+    const sharedPreviewUrl = sharedTarget ? await formatImageForTarget(source, sharedTarget) : ''
     const entries = await Promise.all(platformsToFormat.map(async (platformId) => {
-      const target = PLATFORM_IMAGE_TARGETS[platformId]
-      const previewUrl = await cropImageForTarget(source, target)
+      const target = sharedTarget || PLATFORM_IMAGE_TARGETS[platformId]
+      const previewUrl = sharedPreviewUrl || await formatImageForTarget(source, target)
       return [platformId, {
         preview_url: previewUrl,
         aspect_ratio: target.aspectRatio,
@@ -2333,7 +2334,7 @@ export default function CreatePost() {
         height: target.height,
         label: target.label,
         guidance: target.guidance,
-        source: 'smart_crop',
+        source: target.source || 'smart_fit',
         generated_at: new Date().toISOString(),
       }]
     }))
@@ -2632,21 +2633,30 @@ export default function CreatePost() {
   async function uploadPlatformImageVariants(variants) {
     const nextVariants = { ...variants }
     const entries = Object.entries(nextVariants).filter(([, variant]) => variant?.image?.preview_url?.startsWith('data:image/'))
+    const uploadedByPreviewUrl = new Map()
 
     for (const [platformId, variant] of entries) {
       const target = PLATFORM_IMAGE_TARGETS[platformId]
-      const file = dataUrlToFile(
-        variant.image.preview_url,
-        `${platformId}-${target?.aspectRatio || 'social'}.png`.replace(/[^a-z0-9.-]+/gi, '-'),
-      )
-      const url = await uploadToR2(file)
+      const previewUrl = variant.image.preview_url
+      let upload = uploadedByPreviewUrl.get(previewUrl)
+      if (!upload) {
+        const file = dataUrlToFile(
+          previewUrl,
+          `${platformId}-${variant.image.aspect_ratio || target?.aspectRatio || 'social'}.png`.replace(/[^a-z0-9.-]+/gi, '-'),
+        )
+        upload = {
+          url: await uploadToR2(file),
+          uploaded_at: new Date().toISOString(),
+        }
+        uploadedByPreviewUrl.set(previewUrl, upload)
+      }
       nextVariants[platformId] = {
         ...variant,
         image: {
           ...variant.image,
-          url,
+          url: upload.url,
           preview_url: undefined,
-          uploaded_at: new Date().toISOString(),
+          uploaded_at: upload.uploaded_at,
         },
       }
     }
@@ -3599,7 +3609,7 @@ export default function CreatePost() {
                     onClick={handleFormatPlatformImages}
                     disabled={isSubmitting || activeCreativeIsVideo || imageFormatState === 'formatting' || imageGenerateState === 'generating'}
                     data-locked={!canImproveImage ? 'true' : undefined}
-                    title="Create platform-specific crops from the selected image."
+                    title="Create social-safe image formatting from the selected image."
                     className="portal-ai-mini-action inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed"
                     data-active={imageFormatState === 'formatting'}
                   >
@@ -3640,7 +3650,6 @@ export default function CreatePost() {
                     {activePlatforms.map((platformId) => {
                       const platform = PLATFORMS.find((item) => item.id === platformId)
                       const image = platformImageVariants[platformId]
-                      const target = PLATFORM_IMAGE_TARGETS[platformId]
                       if (!platform || !image) return null
 
                       return (
@@ -3657,7 +3666,7 @@ export default function CreatePost() {
                             className="h-7 w-7 rounded-full object-cover"
                           />
                           <span className="text-[11px] font-semibold" style={{ color: 'var(--portal-text)' }}>{platform.shortLabel || platform.label}</span>
-                          <span className="text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>{target?.aspectRatio || image.aspect_ratio}</span>
+                          <span className="text-[10px]" style={{ color: 'var(--portal-text-soft)' }}>{image.aspect_ratio}</span>
                         </button>
                       )
                     })}
