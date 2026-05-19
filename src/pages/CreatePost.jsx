@@ -437,11 +437,19 @@ function dataUrlToFile(dataUrl, filename = 'platform-image.png') {
 
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
+    if (!isReadableFileBlob(file)) {
+      reject(new Error('Could not read the selected image file.'))
+      return
+    }
     const reader = new FileReader()
     reader.onload = (event) => resolve(event.target?.result || '')
     reader.onerror = () => reject(new Error('Could not read the selected image.'))
     reader.readAsDataURL(file)
   })
+}
+
+function isReadableFileBlob(file) {
+  return typeof Blob !== 'undefined' && file instanceof Blob
 }
 
 function loadImageElement(source, { crossOrigin = false } = {}) {
@@ -2107,7 +2115,10 @@ export default function CreatePost() {
       if (imageUrl && /^https?:\/\//i.test(imageUrl)) return normalizeRemoteImageForAssist(imageUrl)
     }
 
-    const activeFile = sourceItem?.file || imageFile
+    const sourceFile = sourceItem?.file
+    const activeFile = isReadableFileBlob(sourceFile)
+      ? sourceFile
+      : (!sourceItem && isReadableFileBlob(imageFile) ? imageFile : null)
     if (activeFile) {
       const fileType = String(activeFile.type || '').toLowerCase()
       const fileName = String(activeFile.name || '').toLowerCase()
@@ -2279,7 +2290,10 @@ export default function CreatePost() {
   }
 
   async function getMasterImageSourceForFormatting() {
-    const activeFile = activeCreativeItem?.file || imageFile
+    const itemFile = activeCreativeItem?.file
+    const activeFile = isReadableFileBlob(itemFile)
+      ? itemFile
+      : (!activeCreativeItem && isReadableFileBlob(imageFile) ? imageFile : null)
     if (activeFile) {
       const fileType = String(activeFile.type || '').toLowerCase()
       const fileName = String(activeFile.name || '').toLowerCase()
