@@ -693,12 +693,18 @@ function localDateTimeToIso(value) {
     throw new Error('Please choose a valid schedule time from the calendar.')
   }
 
-  const scheduled = new Date(parsed.year, parsed.month - 1, parsed.day, parsed.hour, parsed.minute)
+  const scheduled = localDateTimeToDate(value)
   if (Number.isNaN(scheduled.getTime())) {
     throw new Error('Please choose a valid schedule time from the calendar.')
   }
 
   return scheduled.toISOString()
+}
+
+function localDateTimeToDate(value) {
+  const parsed = parseLocalDateTime(value)
+  if (!parsed) return new Date(Number.NaN)
+  return new Date(parsed.year, parsed.month - 1, parsed.day, parsed.hour, parsed.minute)
 }
 
 function normalizeTimeForInput(value) {
@@ -723,7 +729,7 @@ function isoToLocalInputValue(value, timeZone) {
 }
 
 function getMinScheduleValue() {
-  const threshold = new Date(Date.now() + 5 * 60_000)
+  const threshold = new Date(Date.now() + 60_000)
   threshold.setSeconds(0, 0)
   const local = new Date(threshold.getTime() - threshold.getTimezoneOffset() * 60_000)
   return local.toISOString().slice(0, 16)
@@ -2280,7 +2286,8 @@ export default function CreatePost() {
       if (fileType.includes('heic') || fileType.includes('heif') || /\.(heic|heif)$/.test(fileName)) {
         throw new Error('iPhone HEIC photos need to be saved or exported as JPG before image formatting.')
       }
-      if (!/^image\/(png|jpe?g|webp)$/i.test(fileType)) {
+      const isSupportedImageType = /^image\/(png|jpe?g|webp)$/i.test(fileType) || /\.(png|jpe?g|webp)$/i.test(fileName)
+      if (!isSupportedImageType) {
         throw new Error('Image formatting supports JPG, PNG, and WebP images.')
       }
       return readFileAsDataUrl(activeFile)
@@ -2295,6 +2302,29 @@ export default function CreatePost() {
     if (imageUrl && /^https?:\/\//i.test(imageUrl)) return imageUrl
 
     throw new Error('Add or select an image before formatting it for platforms.')
+  }
+
+  async function buildPlatformImageVariants(platformIds) {
+    const platformsToFormat = [...new Set((platformIds || []).filter((platformId) => PLATFORM_IMAGE_TARGETS[platformId]))]
+    if (!platformsToFormat.length) return {}
+
+    const source = await getMasterImageSourceForFormatting()
+    const entries = await Promise.all(platformsToFormat.map(async (platformId) => {
+      const target = PLATFORM_IMAGE_TARGETS[platformId]
+      const previewUrl = await cropImageForTarget(source, target)
+      return [platformId, {
+        preview_url: previewUrl,
+        aspect_ratio: target.aspectRatio,
+        width: target.width,
+        height: target.height,
+        label: target.label,
+        guidance: target.guidance,
+        source: 'smart_crop',
+        generated_at: new Date().toISOString(),
+      }]
+    }))
+
+    return Object.fromEntries(entries)
   }
 
   async function handleFormatPlatformImages(targetPlatformIds = activePlatforms) {
@@ -2318,26 +2348,11 @@ export default function CreatePost() {
     setErrorMsg('')
 
     try {
-      const source = await getMasterImageSourceForFormatting()
-      const entries = await Promise.all(platformsToFormat.map(async (platformId) => {
-        const target = PLATFORM_IMAGE_TARGETS[platformId]
-        if (!target) return null
-        const previewUrl = await cropImageForTarget(source, target)
-        return [platformId, {
-          preview_url: previewUrl,
-          aspect_ratio: target.aspectRatio,
-          width: target.width,
-          height: target.height,
-          label: target.label,
-          guidance: target.guidance,
-          source: 'smart_crop',
-          generated_at: new Date().toISOString(),
-        }]
-      }))
+      const imageVariants = await buildPlatformImageVariants(platformsToFormat)
 
       setPlatformVariants((current) => {
         const withCaptions = buildPlatformVariants(activePlatforms, content, profile, current)
-        entries.filter(Boolean).forEach(([platformId, image]) => {
+        Object.entries(imageVariants).forEach(([platformId, image]) => {
           withCaptions[platformId] = {
             ...(withCaptions[platformId] || {}),
             image,
@@ -2657,7 +2672,7 @@ export default function CreatePost() {
           ? 'Choose a custom date and time.'
           : 'Pick a time from the calendar before scheduling.'
       }
-      if (scheduledFor < minScheduleValue) {
+      if (localDateTimeToDate(scheduledFor).getTime() <= Date.now()) {
         return 'Please choose a future time.'
       }
 
@@ -2782,6 +2797,26 @@ export default function CreatePost() {
       const targetStatus = timingMode === 'now' ? 'published' : 'scheduled'
       const targetPlatforms = connectedActivePlatforms
       let targetPlatformVariants = getResolvedPlatformVariants(targetPlatforms)
+      const shouldAutoCropPlatforms = Boolean(mediaAssets.length && !activeCreativeIsVideo)
+      const missingImageVariantPlatforms = shouldAutoCropPlatforms
+        ? targetPlatforms.filter((platformId) => PLATFORM_IMAGE_TARGETS[platformId] && !targetPlatformVariants?.[platformId]?.image)
+        : []
+      if (missingImageVariantPlatforms.length) {
+        setSubmitState('uploading')
+        const imageVariants = await buildPlatformImageVariants(missingImageVariantPlatforms)
+        targetPlatformVariants = {
+          ...targetPlatformVariants,
+          ...Object.fromEntries(
+            Object.entries(imageVariants).map(([platformId, image]) => [
+              platformId,
+              {
+                ...(targetPlatformVariants[platformId] || {}),
+                image,
+              },
+            ]),
+          ),
+        }
+      }
       if (Object.values(targetPlatformVariants).some((variant) => variant?.image?.preview_url?.startsWith('data:image/'))) {
         setSubmitState('uploading')
         targetPlatformVariants = await uploadPlatformImageVariants(targetPlatformVariants)
