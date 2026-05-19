@@ -59,3 +59,15 @@ test('GitHub onboarding action passes the Zernio API key into portal provisionin
 
   assert.match(workflow, /ZERNIO_API_KEY:\s*\$\{\{\s*secrets\.ZERNIO_API_KEY\s*\}\}/)
 })
+
+test('GitHub onboarding action passes shared-path provisioning controls into portal provisioning', async () => {
+  const workflow = await source('.github/workflows/provision-client-portal.yml')
+
+  assert.match(workflow, /CHATWOOT_WEBHOOK_BRIDGE_SECRET:\s*\$\{\{\s*secrets\.CHATWOOT_WEBHOOK_BRIDGE_SECRET\s*\}\}/)
+  assert.match(workflow, /DEPLOYMENT_MODE:\s*\$\{\{\s*github\.event\.inputs\.deployment_mode\s*\|\|\s*github\.event\.client_payload\.deployment_mode\s*\|\|\s*'shared-path'\s*\}\}/)
+  assert.match(workflow, /DEPLOY_SHARED_WORKER:\s*\$\{\{\s*github\.event\.inputs\.deploy_shared_worker\s*\|\|\s*github\.event\.client_payload\.deploy_shared_worker\s*\|\|\s*'false'\s*\}\}/)
+  assert.match(workflow, /MAP_SHARED_PORTAL_HOST:\s*\$\{\{\s*vars\.MAP_SHARED_PORTAL_HOST\s*\|\|\s*'myautomationpartner\.com'\s*\}\}/)
+  assert.match(workflow, /MAP_SHARED_PORTAL_PATH_PREFIX:\s*\$\{\{\s*vars\.MAP_SHARED_PORTAL_PATH_PREFIX\s*\|\|\s*'portal'\s*\}\}/)
+  assert.match(workflow, /args\+=\(--shared-path\)/)
+  assert.match(workflow, /args\+=\(--deploy-shared-worker\)/)
+})
