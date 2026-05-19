@@ -520,6 +520,11 @@ async function ensureZernioCustomerProfile({ client, dryRun, skipZernioProfilePr
     created = true
   }
 
+  if (!resolveZernioProfileId(profile)) {
+    const refreshedProfiles = await listZernioProfilesForProvisioning()
+    profile = findZernioProfileForClient(client, refreshedProfiles) || profile
+  }
+
   const profileId = resolveZernioProfileId(profile)
   if (!profileId) {
     throw new Error(`Zernio did not return a profile id for ${client.slug}.`)

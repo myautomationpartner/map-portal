@@ -39,6 +39,19 @@ test('portal provisioning stores Zernio profile metadata on the client and run',
   assert.ok(summarySource.includes('zernio_profile: zernioProfile || null'))
 })
 
+test('portal provisioning re-reads Zernio profiles when create response lacks an id', async () => {
+  const script = await source('scripts/provision-client-portal.mjs')
+  const helperStart = script.indexOf('async function ensureZernioCustomerProfile')
+  const helperEnd = script.indexOf('async function persistProvisioningSummary', helperStart)
+  const helperSource = script.slice(helperStart, helperEnd)
+
+  assert.notEqual(helperStart, -1)
+  assert.notEqual(helperEnd, -1)
+  assert.match(helperSource, /if \(!resolveZernioProfileId\(profile\)\)/)
+  assert.match(helperSource, /const refreshedProfiles = await listZernioProfilesForProvisioning\(\)/)
+  assert.match(helperSource, /profile = findZernioProfileForClient\(client, refreshedProfiles\) \|\| profile/)
+})
+
 test('portal provisioning repairs existing social connections into the customer Zernio profile', async () => {
   const script = await source('scripts/provision-client-portal.mjs')
   const moveIndex = script.indexOf('async function moveZernioAccountToProfile')
