@@ -104,3 +104,18 @@ test('Chatwoot account lookup failures verify the saved tenant account before fa
   assert.match(findSource, /Using saved Chatwoot account/)
   assert.match(findSource, /Saved account fallback/)
 })
+
+test('Chatwoot account lookup prefers the saved tenant account before list matches', async () => {
+  const script = await source('scripts/provision-client-portal.mjs')
+  const findStart = script.indexOf('async function findChatwootAccountForClient')
+  const findEnd = script.indexOf('async function createOrUpdateChatwootAccount', findStart)
+  const findSource = script.slice(findStart, findEnd)
+  const savedLookupIndex = findSource.indexOf('findChatwootAccountFromSavedSettings(client)')
+  const listLookupIndex = findSource.indexOf('await listChatwootAccounts()')
+
+  assert.notEqual(findStart, -1)
+  assert.notEqual(findEnd, -1)
+  assert.notEqual(savedLookupIndex, -1)
+  assert.notEqual(listLookupIndex, -1)
+  assert.ok(savedLookupIndex < listLookupIndex)
+})

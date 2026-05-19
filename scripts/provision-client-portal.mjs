@@ -642,28 +642,29 @@ async function findChatwootAccountFromSavedSettings(client) {
 
 async function findChatwootAccountForClient(client) {
   const accountName = String(client.business_name || client.slug || client.id).trim().toLowerCase()
+  let savedAccountFallbackError = ''
+
+  try {
+    const savedAccount = await findChatwootAccountFromSavedSettings(client)
+    if (savedAccount?.id) {
+      process.stderr.write(`Using saved Chatwoot account ${savedAccount.id} for ${client.slug || client.id} from tenant settings.\n`)
+      return savedAccount
+    }
+  } catch (error) {
+    savedAccountFallbackError = error instanceof Error ? error.message : String(error)
+  }
+
   let accounts = []
   try {
     accounts = await listChatwootAccounts()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    let fallbackMessage = ''
-
-    try {
-      const savedAccount = await findChatwootAccountFromSavedSettings(client)
-      if (savedAccount?.id) {
-        process.stderr.write(`Using saved Chatwoot account ${savedAccount.id} for ${client.slug || client.id} after account-list lookup failed.\n`)
-        return savedAccount
-      }
-    } catch (fallbackError) {
-      fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
-    }
 
     throw new Error(
       `Unable to verify existing Chatwoot account for ${client.slug || client.id}; ` +
       `refusing to create a replacement account while Chatwoot account lookup is unavailable. ` +
       `Retry provisioning after the Chatwoot Platform API recovers. Root cause: ${message}` +
-      (fallbackMessage ? ` Saved account fallback also failed: ${fallbackMessage}` : ''),
+      (savedAccountFallbackError ? ` Saved account fallback also failed: ${savedAccountFallbackError}` : ''),
     )
   }
 
