@@ -65,12 +65,12 @@ jobs:
       PORTAL_TEMPLATE_REF: phase4-documents-share
     steps:
       - name: Checkout portal template
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.PORTAL_TEMPLATE_REF }}
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
