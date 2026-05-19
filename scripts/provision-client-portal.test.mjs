@@ -117,6 +117,24 @@ test('Chatwoot account lookup failures stop before creating a replacement accoun
   assert.doesNotMatch(findSource, /creating a fresh account/)
 })
 
+test('Chatwoot account lookup failures can fall through for first-time tenant creation', async () => {
+  const script = await source('scripts/provision-client-portal.mjs')
+  const findStart = script.indexOf('async function findChatwootAccountForClient')
+  const findEnd = script.indexOf('async function createOrUpdateChatwootAccount', findStart)
+  const findSource = script.slice(findStart, findEnd)
+  const createStart = script.indexOf('async function createOrUpdateChatwootAccount')
+  const createEnd = script.indexOf('async function createOrUpdateChatwootUser', createStart)
+  const createSource = script.slice(createStart, createEnd)
+
+  assert.notEqual(findStart, -1)
+  assert.notEqual(findEnd, -1)
+  assert.notEqual(createStart, -1)
+  assert.notEqual(createEnd, -1)
+  assert.match(findSource, /options\.allowCreateWhenLookupUnavailable && !savedAccountFallbackError/)
+  assert.match(findSource, /continuing with account creation/)
+  assert.match(createSource, /findChatwootAccountForClient\(client, \{ allowCreateWhenLookupUnavailable: true \}\)/)
+})
+
 test('Chatwoot account lookup failures verify the saved tenant account before failing', async () => {
   const script = await source('scripts/provision-client-portal.mjs')
   const savedSettingsIndex = script.indexOf('async function loadWebsiteChatSettingsForClient')

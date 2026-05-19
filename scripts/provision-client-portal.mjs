@@ -647,7 +647,7 @@ async function findChatwootAccountFromSavedSettings(client) {
   return account
 }
 
-async function findChatwootAccountForClient(client) {
+async function findChatwootAccountForClient(client, options = {}) {
   const accountName = String(client.business_name || client.slug || client.id).trim().toLowerCase()
   let savedAccountFallbackError = ''
 
@@ -666,6 +666,13 @@ async function findChatwootAccountForClient(client) {
     accounts = await listChatwootAccounts()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
+    if (options.allowCreateWhenLookupUnavailable && !savedAccountFallbackError) {
+      process.stderr.write(
+        `Chatwoot account lookup is unavailable for new client ${client.slug || client.id}; ` +
+        `continuing with account creation. Root cause: ${message}\n`,
+      )
+      return null
+    }
 
     throw new Error(
       `Unable to verify existing Chatwoot account for ${client.slug || client.id}; ` +
@@ -688,7 +695,7 @@ async function findChatwootAccountForClient(client) {
 async function createOrUpdateChatwootAccount(client) {
   const accountName = String(client.business_name || client.slug || client.id).trim()
   const supportEmail = normalizeEmail(client.support_email) || DEFAULT_SUPPORT_EMAIL
-  const existing = await findChatwootAccountForClient(client)
+  const existing = await findChatwootAccountForClient(client, { allowCreateWhenLookupUnavailable: true })
 
   if (existing?.id) {
     const updated = await chatwootPlatformFetch(`/platform/api/v1/accounts/${existing.id}`, {
