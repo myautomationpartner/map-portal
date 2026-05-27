@@ -10,6 +10,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import Inbox from './pages/Inbox'
+import Attention from './pages/Attention'
 import CreatePost from './pages/CreatePost'
 import PostHistory from './pages/PostHistory'
 import ScheduledPosts from './pages/ScheduledPosts'
@@ -105,6 +106,27 @@ function PortalTheme({ theme }) {
   }, [theme])
 
   return null
+}
+
+function useMobileInboxRoute() {
+  const [isMobile, setIsMobile] = useState(() => (
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false
+  ))
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const media = window.matchMedia('(max-width: 767px)')
+    const handleChange = () => setIsMobile(media.matches)
+    handleChange()
+    media.addEventListener('change', handleChange)
+    return () => media.removeEventListener('change', handleChange)
+  }, [])
+
+  return isMobile
+}
+
+function ResponsiveInboxRoute() {
+  return useMobileInboxRoute() ? <Attention /> : <Inbox />
 }
 
 function normalizeHost(value) {
@@ -258,7 +280,15 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     !pathTenantMismatch,
   )
   const tenantRouteMismatch = Boolean(session && profile?.clients && pathTenantMismatch)
-  const showBillingBanner = location.pathname !== '/' && !location.pathname.startsWith('/stats/') && !location.pathname.startsWith('/documents') && location.pathname !== '/calendar' && location.pathname !== '/post'
+  const showBillingBanner =
+    location.pathname !== '/' &&
+    !location.pathname.startsWith('/stats/') &&
+    !location.pathname.startsWith('/documents') &&
+    location.pathname !== '/calendar' &&
+    location.pathname !== '/post' &&
+    location.pathname !== '/inbox' &&
+    location.pathname !== '/attention'
+  const suppressPartnerLauncher = ['/inbox', '/attention', '/post'].some((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
 
   useEffect(() => {
     const url = new URL(window.location.href)
@@ -292,6 +322,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
 
   async function handleBillingAction() {
     if (billingActionPending) return
+    if (billingAccess.actionType === 'none') return
 
     const currentUrl = new URL(window.location.href)
     currentUrl.searchParams.set('billing', 'updated')
@@ -400,6 +431,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
               tenant={tenant}
               billingAccess={billingAccess}
               requireWriteAccess={requirePortalAccess}
+              suppressMobileLauncher={suppressPartnerLauncher}
             />
           ) : null}
         </main>
@@ -457,7 +489,8 @@ export default function App() {
                 <Route path="/documents" element={<Documents />} />
                 <Route path="/secure-vault" element={<Navigate to="/documents" replace />} />
                 <Route path="/opportunities" element={<OpportunityRadar />} />
-                <Route path="/inbox" element={<Inbox />} />
+                <Route path="/attention" element={<Attention />} />
+                <Route path="/inbox" element={<ResponsiveInboxRoute />} />
                 <Route path="/post" element={<CreatePost />} />
                 <Route path="/post/scheduled" element={<ScheduledPosts />} />
                 <Route path="/post/history" element={<PostHistory />} />

@@ -577,6 +577,239 @@ async function supabaseRest(envConfig, path, init = {}) {
   return response
 }
 
+function getPortalPushConfig(env) {
+  const publicKey = firstString(env.PORTAL_PUSH_VAPID_PUBLIC_KEY)
+  const privateKey = firstString(env.PORTAL_PUSH_VAPID_PRIVATE_KEY)
+  const subject = firstString(env.PORTAL_PUSH_VAPID_SUBJECT, 'mailto:info@myautomationpartner.com')
+
+  return {
+    configured: Boolean(publicKey && privateKey),
+    publicKey,
+    privateKey,
+    subject,
+  }
+}
+
+function base64UrlEncodeBytes(bytes) {
+  const binary = Array.from(new Uint8Array(bytes), (byte) => String.fromCharCode(byte)).join('')
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+function base64UrlDecodeBytes(value) {
+  const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/')
+  const padding = '='.repeat((4 - (normalized.length % 4)) % 4)
+  const binary = atob(`${normalized}${padding}`)
+  const output = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) {
+    output[index] = binary.charCodeAt(index)
+  }
+  return output
+}
+
+async function buildVapidJwt(endpoint, config, now = new Date()) {
+  const publicBytes = base64UrlDecodeBytes(config.publicKey)
+  if (publicBytes.length !== 65 || publicBytes[0] !== 4) {
+    throw new Error('PORTAL_PUSH_VAPID_PUBLIC_KEY must be an uncompressed P-256 public key.')
+  }
+
+  const privateJwk = {
+    kty: 'EC',
+    crv: 'P-256',
+    x: base64UrlEncodeBytes(publicBytes.slice(1, 33)),
+    y: base64UrlEncodeBytes(publicBytes.slice(33, 65)),
+    d: config.privateKey,
+    ext: true,
+    key_ops: ['sign'],
+  }
+  const key = await crypto.subtle.importKey(
+    'jwk',
+    privateJwk,
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['sign'],
+  )
+  const header = base64UrlEncodeBytes(new TextEncoder().encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })))
+  const body = base64UrlEncodeBytes(new TextEncoder().encode(JSON.stringify({
+    aud: new URL(endpoint).origin,
+    exp: Math.floor(now.getTime() / 1000) + (12 * 60 * 60),
+    sub: config.subject,
+  })))
+  const signingInput = `${header}.${body}`
+  const signature = await crypto.subtle.sign(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    key,
+    new TextEncoder().encode(signingInput),
+  )
+
+  return `${signingInput}.${base64UrlEncodeBytes(signature)}`
+}
+
+async function sendNoPayloadWebPush(subscription, config) {
+  const endpoint = firstString(subscription?.endpoint)
+  if (!endpoint) return { ok: false, expired: true, status: 0, error: 'Missing push endpoint.' }
+
+  const jwt = await buildVapidJwt(endpoint, config)
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      TTL: '900',
+      Urgency: 'high',
+      Authorization: `vapid t=${jwt}, k=${config.publicKey}`,
+      'Crypto-Key': `p256ecdsa=${config.publicKey}`,
+      'Content-Length': '0',
+    },
+  })
+
+  if (response.ok || response.status === 201 || response.status === 202) {
+    return { ok: true, status: response.status }
+  }
+
+  return {
+    ok: false,
+    expired: response.status === 404 || response.status === 410,
+    status: response.status,
+    error: await response.text().catch(() => ''),
+  }
+}
+
+async function markPortalPushSubscriptionSent(envConfig, id) {
+  if (!id) return
+  await supabaseRest(envConfig, `/rest/v1/portal_push_subscriptions?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      last_sent_at: new Date().toISOString(),
+      last_error: null,
+    }),
+  }).catch(() => undefined)
+}
+
+async function markPortalPushSubscriptionFailed(envConfig, id, result) {
+  if (!id) return
+  const patch = {
+    failure_count: result?.expired ? 1 : undefined,
+    last_error: firstString(result?.error, result?.status ? `Push service returned ${result.status}.` : 'Push notification delivery failed.').slice(0, 500),
+    ...(result?.expired ? { enabled: false, disabled_at: new Date().toISOString() } : {}),
+  }
+
+  await supabaseRest(envConfig, `/rest/v1/portal_push_subscriptions?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  }).catch(() => undefined)
+}
+
+async function loadPortalPushSubscriptions(envConfig) {
+  const params = new URLSearchParams({
+    select: 'id,endpoint',
+    client_id: `eq.${envConfig.clientId}`,
+    enabled: 'eq.true',
+    order: 'last_seen_at.desc',
+    limit: '50',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/portal_push_subscriptions?${params.toString()}`)
+  const rows = await response.json().catch(() => [])
+  return Array.isArray(rows) ? rows : []
+}
+
+async function notifyPortalPushSubscribers(env, envConfig) {
+  const config = getPortalPushConfig(env)
+  if (!config.configured || !envConfig?.clientId) {
+    return { attempted: 0, sent: 0, skipped: true, reason: 'portal_push_not_configured' }
+  }
+
+  const subscriptions = await loadPortalPushSubscriptions(envConfig).catch(() => [])
+  let sent = 0
+  const results = await Promise.allSettled(subscriptions.map(async (subscription) => {
+    const result = await sendNoPayloadWebPush(subscription, config)
+    if (result.ok) {
+      sent += 1
+      await markPortalPushSubscriptionSent(envConfig, subscription.id)
+    } else {
+      await markPortalPushSubscriptionFailed(envConfig, subscription.id, result)
+    }
+    return result
+  }))
+
+  return {
+    attempted: subscriptions.length,
+    sent,
+    failed: results.filter((result) => result.status === 'rejected' || result.value?.ok === false).length,
+  }
+}
+
+async function handlePortalPushPublicKey(request, env) {
+  if (!['GET', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'GET, OPTIONS' } })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const config = getPortalPushConfig(env)
+  if (!config.publicKey) {
+    return json({ error: 'Phone notifications are not configured yet.' }, { status: 503 })
+  }
+
+  return json({ publicKey: config.publicKey, configured: config.configured })
+}
+
+async function handlePortalPushSubscriptions(request, env) {
+  if (!['POST', 'DELETE', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'POST, DELETE, OPTIONS' } })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const body = await request.json().catch(() => ({}))
+  const endpoint = firstString(body?.endpoint, body?.subscription?.endpoint)
+  if (!endpoint) return json({ error: 'Push subscription endpoint is required.' }, { status: 400 })
+
+  if (request.method === 'DELETE') {
+    await supabaseRest(auth.envConfig, `/rest/v1/portal_push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}&client_id=eq.${encodeURIComponent(auth.envConfig.clientId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        enabled: false,
+        disabled_at: new Date().toISOString(),
+        last_seen_at: new Date().toISOString(),
+      }),
+    })
+    return json({ success: true, subscribed: false })
+  }
+
+  const keys = body?.subscription?.keys || {}
+  const p256dh = firstString(keys.p256dh)
+  const authSecret = firstString(keys.auth)
+  if (!p256dh || !authSecret) {
+    return json({ error: 'Push subscription keys are required.' }, { status: 400 })
+  }
+
+  const response = await supabaseRest(auth.envConfig, '/rest/v1/portal_push_subscriptions?on_conflict=endpoint', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify([{
+      client_id: auth.envConfig.clientId,
+      user_id: auth.user.id,
+      endpoint,
+      p256dh,
+      auth: authSecret,
+      subscription_json: body.subscription,
+      user_agent: firstString(body.userAgent).slice(0, 500) || null,
+      device_label: firstString(body.deviceLabel).slice(0, 120) || null,
+      enabled: true,
+      failure_count: 0,
+      last_error: null,
+      disabled_at: null,
+      last_seen_at: new Date().toISOString(),
+    }]),
+  })
+  const rows = await response.json().catch(() => [])
+  const row = Array.isArray(rows) ? rows[0] : null
+
+  return json({ success: true, subscribed: true, id: row?.id || null })
+}
+
 async function authorizePortalUser(request, env) {
   const authHeader = request.headers.get('authorization') || ''
   const bearerToken = authHeader.replace(/^Bearer\s+/i, '').trim()
@@ -947,9 +1180,173 @@ function chatwootHeaders(apiToken, extra = {}) {
 }
 
 function sanitizeChatwootError(message) {
-  return String(message || 'Chatwoot request failed.')
+  return sanitizePortalCustomerError(message || 'Chatwoot request failed.')
     .replace(/api_access_token=[^&\s]+/gi, 'api_access_token=<redacted>')
     .replace(/api_access_token:?\s*["']?[^"',\s]+/gi, 'api_access_token: <redacted>')
+}
+
+function sanitizePortalCustomerError(message) {
+  const text = String(message || '').trim()
+  if (!text) return 'Inbox request failed.'
+
+  let parsed = null
+  if (text.startsWith('{') && text.endsWith('}')) {
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      parsed = null
+    }
+  }
+
+  const combined = [
+    text,
+    parsed?.code,
+    parsed?.message,
+    parsed?.details,
+    parsed?.hint,
+  ].filter(Boolean).join(' ').toLowerCase()
+
+  if (
+    combined.includes('social_drafts_slot_unique')
+    || (combined.includes('23505') && combined.includes('duplicate key'))
+  ) {
+    return 'That draft already exists. Open Publisher to review the existing draft or send a different request.'
+  }
+
+  return text
+}
+
+function classifyContentPartnerCommand(content) {
+  const text = String(content || '').trim().toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[.!?]+$/g, '')
+
+  if (!text) return ''
+  if (['menu', '/menu', 'help', '/help', 'options', 'start', 'restart'].includes(text)) return 'menu'
+  if (['show drafts', 'drafts', 'review drafts', 'see drafts', 'open drafts'].includes(text)) return 'drafts'
+  if (['scheduled', 'show scheduled', 'see scheduled', 'what is scheduled', 'scheduled posts', 'see scheduled posts'].includes(text)) return 'scheduled'
+  if (['create post', 'create a post', 'new post', 'make a post'].includes(text)) return 'create'
+  return ''
+}
+
+const CLOSED_CONTENT_PARTNER_DRAFT_STATES = new Set(['published', 'published_manually', 'archived', 'superseded'])
+const DELETABLE_CALENDAR_POST_STATUSES = new Set(['scheduled', 'published'])
+
+function isVisibleContentDraft(draft = {}) {
+  return !CLOSED_CONTENT_PARTNER_DRAFT_STATES.has(firstString(draft?.review_state).toLowerCase())
+}
+
+function canDeleteCalendarPost(post = {}) {
+  return DELETABLE_CALENDAR_POST_STATUSES.has(firstString(post?.status).toLowerCase())
+}
+
+function shouldRemoveLocalCalendarPostAfterRemoteDeleteError() {
+  return false
+}
+
+function buildRemoteCalendarPostDeletePayload(post = {}, envConfig = {}) {
+  const zernioPostId = getPostZernioPostId(post)
+  if (!zernioPostId) return null
+
+  return {
+    action: 'delete',
+    postId: post.id,
+    clientId: envConfig.clientId,
+    zernioPostId,
+    zernioProfileId: firstString(post?.zernio_profile_id, envConfig.zernioProfileId),
+  }
+}
+
+function parseContentPartnerDraftTime(value) {
+  const time = Date.parse(value || '')
+  return Number.isFinite(time) ? time : 0
+}
+
+function getContentPartnerDraftScheduledTime(draft) {
+  const scheduledTime = parseContentPartnerDraftTime(draft?.scheduled_for)
+  if (scheduledTime) return scheduledTime
+  return parseContentPartnerDraftTime(draft?.slot_date_local ? `${draft.slot_date_local}T23:59:59` : '')
+}
+
+function getContentPartnerDraftTouchedTime(draft) {
+  return parseContentPartnerDraftTime(draft?.updated_at) || parseContentPartnerDraftTime(draft?.created_at)
+}
+
+function selectContentPartnerReviewDraft(drafts = [], options = {}) {
+  const nowTime = options.now ? new Date(options.now).getTime() : Date.now()
+  return (drafts || [])
+    .filter((draft) => draft?.id && !CLOSED_CONTENT_PARTNER_DRAFT_STATES.has(String(draft.review_state || '').toLowerCase()))
+    .map((draft) => ({
+      draft,
+      scheduledTime: getContentPartnerDraftScheduledTime(draft),
+      touchedTime: getContentPartnerDraftTouchedTime(draft),
+    }))
+    .sort((left, right) => {
+      const leftUpcoming = left.scheduledTime >= nowTime
+      const rightUpcoming = right.scheduledTime >= nowTime
+      if (leftUpcoming !== rightUpcoming) return leftUpcoming ? -1 : 1
+      if (leftUpcoming && rightUpcoming && left.scheduledTime !== right.scheduledTime) {
+        return left.scheduledTime - right.scheduledTime
+      }
+      if (left.touchedTime !== right.touchedTime) return right.touchedTime - left.touchedTime
+      return String(left.draft.id).localeCompare(String(right.draft.id))
+    })[0]?.draft || null
+}
+
+function buildContentPartnerCommandReply(command, { basePath = '', draftId = '' } = {}) {
+  const portalBasePath = String(basePath || '').replace(/\/$/, '')
+  const postPath = `${portalBasePath}/post`
+  const reviewDraftPath = draftId ? `${postPath}?draftId=${encodeURIComponent(draftId)}` : postPath
+
+  if (command === 'drafts') {
+    return [
+      'Review drafts:',
+      reviewDraftPath,
+      '',
+      'Open the draft, adjust the text or image, then schedule it when it looks right.',
+    ].join('\n')
+  }
+
+  if (command === 'scheduled') {
+    return [
+      'See scheduled posts:',
+      postPath,
+      '',
+      'Open Publisher to review what is already on the calendar.',
+    ].join('\n')
+  }
+
+  if (command === 'create') {
+    return [
+      'Create a new post:',
+      postPath,
+      '',
+      'You can also send me the rough idea here and I will create a draft for review.',
+    ].join('\n')
+  }
+
+  return [
+    'What do you want to work on?',
+    '',
+    '1. Create a new post',
+    '2. Review drafts',
+    '3. See scheduled posts',
+    '4. Ask for help',
+    '',
+    'You can also just tell me what you need.',
+  ].join('\n')
+}
+
+async function loadNextContentPartnerReviewDraft(envConfig) {
+  const draftParams = new URLSearchParams({
+    select: 'id,scheduled_for,slot_date_local,review_state,created_at,updated_at',
+    client_id: `eq.${envConfig.clientId}`,
+    order: 'scheduled_for.asc.nullslast',
+    limit: '100',
+  })
+  const draftRowsResponse = await supabaseRest(envConfig, `/rest/v1/social_drafts?${draftParams.toString()}`)
+  const draftRows = await draftRowsResponse.json()
+  return selectContentPartnerReviewDraft(Array.isArray(draftRows) ? draftRows : [])
 }
 
 async function readChatwootResponse(response) {
@@ -1780,7 +2177,7 @@ function normalizeZernioMetricSyncStatus(value) {
 
 async function loadPublishedPostsForMetrics(envConfig, platform, limit = 12) {
   const filters = new URLSearchParams({
-    select: 'id,client_id,content,media_url,platforms,status,published_at,created_at,n8n_execution_id,zernio_post_id,zernio_profile_id',
+    select: 'id,client_id,content,media_url,platforms,status,published_at,created_at,n8n_execution_id,zernio_post_id,zernio_profile_id,platform_variants_json',
     client_id: `eq.${envConfig.clientId}`,
     status: 'eq.published',
     order: 'published_at.desc.nullslast,created_at.desc',
@@ -2527,22 +2924,19 @@ async function loadTenantPostForDelete(envConfig, postId) {
   return Array.isArray(rows) ? rows[0] : null
 }
 
-async function cancelRemoteScheduledPost(env, envConfig, post) {
-  const zernioPostId = getPostZernioPostId(post)
-  if (!zernioPostId) {
-    return { attempted: false, skipped: true, reason: 'No Zernio scheduled post id was stored.' }
+async function deleteRemoteCalendarPost(env, envConfig, post) {
+  const deletePayload = buildRemoteCalendarPostDeletePayload(post, envConfig)
+  if (!deletePayload) {
+    const error = new Error('This calendar item is missing its provider post ID, so MAP cannot safely remove it from the connected social channels.')
+    error.status = 409
+    error.payload = { reason: 'missing_provider_post_id' }
+    throw error
   }
 
   const response = await fetch(`${getN8nBaseUrl(env)}/webhook/social-publish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      action: 'delete',
-      postId: post.id,
-      clientId: envConfig.clientId,
-      zernioPostId,
-      zernioProfileId: firstString(post?.zernio_profile_id, envConfig.zernioProfileId),
-    }),
+    body: JSON.stringify(deletePayload),
   })
   const raw = await response.text()
   let payload = {}
@@ -2557,10 +2951,10 @@ async function cancelRemoteScheduledPost(env, envConfig, post) {
       return {
         attempted: true,
         ignoredMissingRemotePost: true,
-        message: payload?.message || payload?.error || raw || 'Remote scheduled post was already missing.',
+        message: payload?.message || payload?.error || raw || 'Remote post was already missing.',
       }
     }
-    const error = new Error(payload?.message || payload?.error || raw || 'Could not cancel this scheduled post in the publisher workflow.')
+    const error = new Error(payload?.message || payload?.error || raw || 'Could not delete this post in the publisher workflow.')
     error.status = response.status || 502
     error.payload = payload
     throw error
@@ -2569,7 +2963,7 @@ async function cancelRemoteScheduledPost(env, envConfig, post) {
   return {
     attempted: true,
     success: true,
-    message: payload?.message || 'Remote scheduled post cancelled.',
+    message: payload?.message || 'Remote post deleted.',
   }
 }
 
@@ -2605,22 +2999,37 @@ async function handleScheduledPostDelete(request, env, postId) {
   if (auth.error) return auth.error
 
   if (auth.user.role !== 'admin') {
-    return json({ error: 'Only client admins can delete scheduled posts.' }, { status: 403 })
+    return json({ error: 'Only client admins can delete calendar posts.' }, { status: 403 })
   }
 
   try {
     const post = await loadTenantPostForDelete(auth.envConfig, postId)
     if (!post) {
-      return json({ error: 'Scheduled post was not found for this portal.' }, { status: 404 })
+      return json({ error: 'Calendar post was not found for this portal.' }, { status: 404 })
     }
-    if (post.status !== 'scheduled') {
-      return json({ error: 'Only scheduled posts can be deleted here.' }, { status: 409 })
+    if (!canDeleteCalendarPost(post)) {
+      return json({ error: 'Only scheduled or posted calendar items can be deleted here.' }, { status: 409 })
     }
 
-    const remoteDelete = await cancelRemoteScheduledPost(env, auth.envConfig, post)
+    let remoteDelete = null
+    try {
+      remoteDelete = await deleteRemoteCalendarPost(env, auth.envConfig, post)
+    } catch (remoteError) {
+      if (!shouldRemoveLocalCalendarPostAfterRemoteDeleteError(post)) {
+        throw remoteError
+      }
+      remoteDelete = {
+        attempted: true,
+        success: false,
+        localCleanupAfterRemoteError: true,
+        message: remoteError.message || 'Remote post delete could not be confirmed.',
+        details: remoteError.payload || null,
+      }
+    }
+
     const deletedRows = await deleteTenantPost(auth.envConfig, post.id)
     if (!deletedRows.length) {
-      return json({ error: 'The scheduled post was not deleted. Please refresh and try again.' }, { status: 409 })
+      return json({ error: 'The calendar post was not deleted. Please refresh and try again.' }, { status: 409 })
     }
 
     return json({
@@ -2630,7 +3039,7 @@ async function handleScheduledPostDelete(request, env, postId) {
     })
   } catch (error) {
     return json({
-      error: error.message || 'Could not delete this scheduled post.',
+      error: error.message || 'Could not delete this calendar post.',
       details: error.payload || null,
     }, { status: error.status || 502 })
   }
@@ -3350,7 +3759,7 @@ function isContentPartnerConversation(conversation) {
 
 function isContentPartnerAutomationMessage(message) {
   const attrs = message?.content_attributes || {}
-  const sourceId = firstString(message?.source_id)
+  const sourceId = firstString(message?.source_id, message?.echo_id)
 
   return attrs?.map_content_partner_reply === true
     || attrs?.map_content_partner_system === true
@@ -3358,12 +3767,32 @@ function isContentPartnerAutomationMessage(message) {
     || sourceId.startsWith('map-content-partner:greeting:')
 }
 
+function isContentPartnerGeneratedReplyContent(content) {
+  const text = firstString(content)
+  return text.startsWith('Here ya go!')
+    || text.startsWith('Draft ready.')
+    || text.startsWith('What do you want to work on?')
+    || text.startsWith('Tell me what the post should be about')
+    || text.startsWith('I can help fill an open spot.')
+    || text.startsWith('Drafts waiting:')
+    || text.startsWith('Upcoming scheduled posts:')
+    || text.startsWith('No drafts are waiting right now.')
+    || text.startsWith('No upcoming posts are scheduled right now.')
+}
+
 function shouldProcessContentPartnerWebhookMessage(message, conversation) {
   if (!isContentPartnerConversation(conversation)) return false
   if (message?.private) return false
+  const messageType = firstString(message?.message_type).toLowerCase()
+  if (messageType === 'incoming' || Number(message?.message_type) === 0) return false
+  const senderIdentifier = firstString(message?.sender?.identifier, message?.contact?.identifier)
+  if (senderIdentifier.startsWith('map-content-partner:')) return false
   if (isContentPartnerAutomationMessage(message)) return false
 
-  const hasContent = Boolean(firstString(message?.content))
+  const content = firstString(message?.content)
+  if (isContentPartnerGeneratedReplyContent(content)) return false
+
+  const hasContent = Boolean(content)
   const hasAttachments = normalizeChatwootMessageAttachments({}, message).length > 0
   return hasContent || hasAttachments
 }
@@ -3590,10 +4019,14 @@ async function contentPartnerReplyExists(env, conversationId, triggerMessageId) 
   if (!conversationId || !triggerMessageId) return false
   const payload = await chatwootFetch(env, `/conversations/${conversationId}/messages`)
   const messages = Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
+  const triggerNumericId = parsePositiveInteger(triggerMessageId)
   return messages.some((message) => (
     String(message?.content_attributes?.map_content_partner_trigger_message_id || '') === String(triggerMessageId)
+    || String(message?.echo_id || '') === `map-content-partner:${triggerMessageId}`
+    || String(message?.echo_id || '') === `map-content-partner:reply:${triggerMessageId}`
     || String(message?.source_id || '') === `map-content-partner:${triggerMessageId}`
     || String(message?.source_id || '') === `map-content-partner:reply:${triggerMessageId}`
+    || (triggerNumericId && Number(message?.id) > triggerNumericId && isContentPartnerGeneratedReplyContent(message?.content))
   ))
 }
 
@@ -4728,6 +5161,38 @@ async function sendContentPartnerChatwootReply(env, envConfig, conversationId, t
   })
 }
 
+async function sendContentPartnerCommandChatwootReply(env, envConfig, conversationId, triggerMessageId, command, chatwootContext = {}) {
+  let reviewDraft = null
+  if (command === 'drafts') {
+    try {
+      reviewDraft = await loadNextContentPartnerReviewDraft(envConfig)
+    } catch {
+      reviewDraft = null
+    }
+  }
+
+  const content = buildContentPartnerCommandReply(command, {
+    basePath: getPortalBasePath(envConfig),
+    draftId: reviewDraft?.id || '',
+  }).slice(0, 5000)
+  const chatwootConfig = await getChatwootConfigForClient(env, envConfig, chatwootContext)
+  return chatwootFetch(chatwootConfig, `/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      content,
+      message_type: 'incoming',
+      private: false,
+      content_type: 'text',
+      source_id: `map-content-partner:reply:${triggerMessageId}`,
+      content_attributes: {
+        map_content_partner_reply: true,
+        map_content_partner_trigger_message_id: String(triggerMessageId),
+        map_content_partner_command: command,
+      },
+    }),
+  })
+}
+
 async function processContentPartnerMessage(env, envConfig, payload, message, conversation, gatewayToken = '', chatwootContext = {}) {
   const triggerMessageId = firstString(message.id, message.source_id)
   const conversationId = firstString(conversation.id, message.conversation_id)
@@ -4741,6 +5206,12 @@ async function processContentPartnerMessage(env, envConfig, payload, message, co
   const alreadyReplied = await contentPartnerReplyExists(chatwootConfig, conversationId, triggerMessageId)
   if (alreadyReplied) {
     return { deduped: true, reason: 'Content Partner reply already exists.' }
+  }
+
+  const command = classifyContentPartnerCommand(message.content)
+  if (command) {
+    await sendContentPartnerCommandChatwootReply(env, envConfig, conversationId, triggerMessageId, command, chatwootContext)
+    return { command, chatwootReplySent: true }
   }
 
   const result = await createContentPartnerDraft(env, envConfig, payload, message, conversation, gatewayToken, chatwootContext)
@@ -5243,6 +5714,11 @@ async function handleZernioInboxWebhook(request, env) {
         },
       }),
     })
+    const portalPush = await notifyPortalPushSubscribers(env, tenantEnvConfig).catch((error) => ({
+      attempted: 0,
+      sent: 0,
+      error: sanitizePortalCustomerError(error?.message || 'Portal push notification failed.'),
+    }))
 
     return json({
       success: true,
@@ -5253,6 +5729,7 @@ async function handleZernioInboxWebhook(request, env) {
       conversationId,
       messageId: createdMessage?.id || createdMessage?.payload?.id || null,
       assignment,
+      portalPush,
     })
   } catch (error) {
     return json({ error: sanitizeChatwootError(error?.message), event: eventName }, { status: error?.status || 502 })
@@ -6518,7 +6995,18 @@ async function purgeExpiredSecureVaultArchive(env) {
   return { deletedDocuments: ids.length, deletedStorageObjects, cutoff }
 }
 
-export { getIsoWeekFolder }
+export {
+  buildVapidJwt,
+  buildContentPartnerCommandReply,
+  buildRemoteCalendarPostDeletePayload,
+  classifyContentPartnerCommand,
+  canDeleteCalendarPost,
+  getIsoWeekFolder,
+  isVisibleContentDraft,
+  shouldRemoveLocalCalendarPostAfterRemoteDeleteError,
+  selectContentPartnerReviewDraft,
+  sanitizePortalCustomerError,
+}
 
 export default {
   async scheduled(_controller, env, ctx) {
@@ -6603,6 +7091,14 @@ export default {
 
     if (url.pathname === '/api/zernio/inbox-events') {
       return handleZernioInboxWebhook(request, env)
+    }
+
+    if (url.pathname === '/api/portal-push/public-key') {
+      return handlePortalPushPublicKey(request, env)
+    }
+
+    if (url.pathname === '/api/portal-push/subscriptions') {
+      return handlePortalPushSubscriptions(request, env)
     }
 
     if (url.pathname === '/api/zernio/comments') {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useOutletContext } from 'react-router-dom'
@@ -23,6 +23,7 @@ import {
   Loader2,
   LockKeyhole,
   Mail,
+  Maximize2,
   MoreHorizontal,
   Search,
   Share2,
@@ -911,7 +912,61 @@ function SecureRoomDialog({
   )
 }
 
-function DocumentPreview({ selectedDocument, previewState, onRefreshPreview, onDownload }) {
+function FullScreenDocumentPreview({ selectedDocument, previewState, onClose, onDownload }) {
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  if (!selectedDocument || !previewState.url || previewState.loading || previewState.error || typeof window === 'undefined') return null
+
+  const isImage = NATIVE_IMAGE_PREVIEW_MIME.has(selectedDocument.mime_type)
+  const isPdf = selectedDocument.mime_type === 'application/pdf'
+  const isText = TEXT_PREVIEW_MIME.has(selectedDocument.mime_type)
+
+  return createPortal(
+    <div className="documents-fullscreen-preview" role="dialog" aria-modal="true" aria-label={`Full screen preview for ${selectedDocument.file_name}`} onClick={(event) => {
+      if (event.target === event.currentTarget) onClose()
+    }}>
+      <div className="documents-fullscreen-preview-shell">
+        <header className="documents-fullscreen-preview-header">
+          <button type="button" onClick={onClose} className="documents-fullscreen-icon-button" aria-label="Close full screen preview">
+            <X className="h-5 w-5" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedDocument.file_name}</p>
+            <p className="truncate text-xs" style={{ color: 'var(--portal-text-muted)' }}>{documentFolder(selectedDocument)} - {formatVaultBytes(selectedDocument.size_bytes)}</p>
+          </div>
+          <button type="button" onClick={onDownload} className="documents-fullscreen-download-button">
+            <Download className="h-4 w-4" />
+            <span>Download</span>
+          </button>
+        </header>
+        <div className="documents-fullscreen-preview-body">
+          {isImage ? (
+            <img src={previewState.url} alt={selectedDocument.file_name} className="documents-fullscreen-image" />
+          ) : isPdf ? (
+            <PdfDocumentViewer url={previewState.url} fileName={selectedDocument.file_name} />
+          ) : isText ? (
+            <TextDocumentViewer url={previewState.url} fileName={selectedDocument.file_name} mimeType={selectedDocument.mime_type === 'application/csv' ? 'text/csv' : selectedDocument.mime_type} />
+          ) : (
+            <div className="documents-fullscreen-unavailable">
+              <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Preview not available inline</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>Open or download the signed file to view it.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    window.document.body,
+  )
+}
+
+function DocumentPreview({ selectedDocument, previewState, onRefreshPreview, onDownload, onMobileClose, onOpenFullScreen }) {
   if (!selectedDocument) {
     return (
       <div className="documents-preview-panel portal-panel flex min-h-[360px] flex-col items-center justify-center rounded-[28px] p-6 text-center">
@@ -928,16 +983,22 @@ function DocumentPreview({ selectedDocument, previewState, onRefreshPreview, onD
 
   return (
     <div className="documents-preview-panel portal-panel space-y-4 rounded-[28px] p-4 md:p-5">
-      <div className="flex items-start gap-3">
+      <div className="documents-preview-header flex items-start gap-3">
         <div className="documents-preview-file-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px]" style={{ background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.18), rgba(232, 213, 160, 0.12))' }}>
           <DocumentFileIcon mimeType={selectedDocument.mime_type} className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />
         </div>
-        <div className="min-w-0">
+        <div className="documents-preview-title min-w-0 flex-1">
           <h3 className="truncate text-base font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedDocument.file_name}</h3>
           <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
             {documentFolder(selectedDocument)} - {formatVaultBytes(selectedDocument.size_bytes)} - {formatDate(selectedDocument.updated_at || selectedDocument.created_at)}
           </p>
         </div>
+        {onMobileClose ? (
+          <button type="button" onClick={onMobileClose} className="documents-mobile-preview-close ml-auto inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full border px-3 text-sm font-semibold" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text)' }} aria-label="Close file preview and return to files">
+            <X className="h-4 w-4" />
+            <span>Done</span>
+          </button>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -954,6 +1015,12 @@ function DocumentPreview({ selectedDocument, previewState, onRefreshPreview, onD
             <ExternalLink className="h-3.5 w-3.5" />
             Open
           </a>
+        ) : null}
+        {previewState.url && !previewState.loading && !previewState.error ? (
+          <button type="button" onClick={onOpenFullScreen} className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold">
+            <Maximize2 className="h-3.5 w-3.5" />
+            Full screen
+          </button>
         ) : null}
       </div>
 
@@ -973,7 +1040,13 @@ function DocumentPreview({ selectedDocument, previewState, onRefreshPreview, onD
           ) : TEXT_PREVIEW_MIME.has(selectedDocument.mime_type) ? (
             <TextDocumentViewer url={previewState.url} fileName={selectedDocument.file_name} mimeType={selectedDocument.mime_type === 'application/csv' ? 'text/csv' : selectedDocument.mime_type} />
           ) : NATIVE_IMAGE_PREVIEW_MIME.has(selectedDocument.mime_type) ? (
-            <img src={previewState.url} alt={selectedDocument.file_name} className="max-h-[72vh] w-full rounded-[22px] border bg-white object-contain" style={{ borderColor: 'var(--portal-border)' }} />
+            <button type="button" onClick={onOpenFullScreen} className="documents-preview-image-button" aria-label={`Open ${selectedDocument.file_name} full screen`}>
+              <img src={previewState.url} alt={selectedDocument.file_name} className="max-h-[72vh] w-full rounded-[22px] border bg-white object-contain" style={{ borderColor: 'var(--portal-border)' }} />
+              <span className="documents-preview-expand-hint">
+                <Maximize2 className="h-3.5 w-3.5" />
+                Tap to view full screen
+              </span>
+            </button>
           ) : (
             <div className="portal-surface-strong rounded-[26px] p-5">
               <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Preview not available inline</p>
@@ -1016,6 +1089,8 @@ export default function Documents() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFolder, setSelectedFolder] = useState(ALL_FILES_FOLDER)
   const [libraryView, setLibraryView] = useState('list')
+  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false)
+  const [fullScreenPreviewOpen, setFullScreenPreviewOpen] = useState(false)
   const [folderDraft, setFolderDraft] = useState('')
   const [openActionMenuId, setOpenActionMenuId] = useState(null)
   const [openFolderMenuId, setOpenFolderMenuId] = useState(null)
@@ -1030,6 +1105,30 @@ export default function Documents() {
   })
   const [isFileColumnResizing, setIsFileColumnResizing] = useState(false)
   const documentsLayoutRef = useRef(null)
+
+  const resetMobileFilesView = useCallback(() => {
+    setActiveView('files')
+    setSelectedFolder(ALL_FILES_FOLDER)
+    setSearchQuery('')
+    setSelectedId(null)
+    setSelectedDocumentIds([])
+    setPreviewState({ loading: false, error: '', url: '' })
+    setMobilePreviewOpen(false)
+    setFullScreenPreviewOpen(false)
+    setOpenActionMenuId(null)
+    setOpenFolderMenuId(null)
+    setAuditQuery('')
+  }, [])
+
+  useEffect(() => {
+    function handleActiveNavTap(event) {
+      if (event.detail?.to !== '/documents') return
+      resetMobileFilesView()
+    }
+
+    window.addEventListener('map:mobile-nav-active-tap', handleActiveNavTap)
+    return () => window.removeEventListener('map:mobile-nav-active-tap', handleActiveNavTap)
+  }, [resetMobileFilesView])
 
   const { data: documents = [], isLoading: documentsLoading, error: documentsError } = useQuery({
     queryKey: ['secure-vault-documents'],
@@ -1468,6 +1567,13 @@ export default function Documents() {
       current.includes(documentId) ? current.filter((id) => id !== documentId) : [...current, documentId])
   }
 
+  function openDocumentPreview(documentId) {
+    setSelectedId(documentId)
+    setMobilePreviewOpen(true)
+    setFullScreenPreviewOpen(false)
+    previewMutation.mutate({ documentId, action: 'view' })
+  }
+
   function openUploadDialog() {
     if (!requireWriteAccess('upload documents')) return
     const activeFolder = folderRows.find((folder) => folder.id === selectedFolder)
@@ -1679,8 +1785,9 @@ export default function Documents() {
       />
 
       <section className="documents-page-header portal-command-bar rounded-[22px] px-3 py-2 md:px-4">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <h1 className="font-display text-xl font-semibold leading-none" style={{ color: 'var(--portal-text)' }}>Documents</h1>
+        <div className="documents-title-stack flex min-w-0 flex-wrap items-center gap-2">
+          <span className="documents-mobile-eyebrow">MAP Files</span>
+          <h1 className="documents-page-title font-display text-xl font-semibold leading-none" style={{ color: 'var(--portal-text)' }}>Files</h1>
           <span className="documents-kicker portal-chip inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]">
             <ShieldCheck className="h-3 w-3" />
             Secure sharing
@@ -1707,19 +1814,19 @@ export default function Documents() {
         <div className="portal-command-bar-group">
           <button type="button" onClick={openUploadDialog} aria-disabled={billingAccess?.readOnly ? 'true' : undefined} title={billingAccess?.readOnly ? 'Payment is required to upload documents.' : undefined} className={`documents-primary-action portal-button-primary inline-flex cursor-pointer items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold ${billingAccess?.readOnly ? 'opacity-70' : ''}`}>
             <Upload className="h-4 w-4" />
-            Upload document
+            Upload
           </button>
           <button type="button" onClick={openSelectedRoomDialog} aria-disabled={selectedDocumentIds.length === 0 || billingAccess?.readOnly ? 'true' : undefined} title={billingAccess?.readOnly ? 'Payment is required to create secure access rooms.' : selectedDocumentIds.length === 0 ? 'Select at least one document first.' : undefined} className={`documents-secondary-action portal-button-secondary inline-flex cursor-pointer items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold ${selectedDocumentIds.length === 0 || billingAccess?.readOnly ? 'opacity-70' : ''}`}>
             <Link2 className="h-4 w-4" />
-            Create secure access room
+            Share selected
           </button>
           <button type="button" onClick={() => setActiveView('rooms')} className="documents-secondary-action portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
             <Users className="h-4 w-4" />
-            View rooms
+            Rooms
           </button>
           <button type="button" onClick={() => setActiveView('log')} className="documents-secondary-action portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold">
             <History className="h-4 w-4" />
-            Access log
+            Activity
           </button>
           {activeView !== 'files' ? (
             <button type="button" onClick={() => setActiveView('files')} className="portal-button-ghost rounded-2xl px-4 py-3 text-sm font-semibold">
@@ -1904,20 +2011,20 @@ export default function Documents() {
           className="documents-workspace-layout space-y-4 xl:grid xl:grid-cols-[260px_minmax(380px,var(--documents-file-column-width))_14px_minmax(440px,1fr)] xl:items-start xl:gap-4 xl:space-y-0"
           style={{ '--documents-file-column-width': `${fileColumnWidth}px` }}
         >
-          <aside className="space-y-4">
+          <aside className="documents-folder-column space-y-4">
             <section className="documents-folder-panel portal-panel overflow-hidden rounded-[28px]">
               <div className="border-b px-4 py-4" style={{ borderColor: 'var(--portal-border)' }}>
                 <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>Folders</h2>
               </div>
-              <div className="space-y-3 p-4">
-                <form onSubmit={handleCreateFolder} className="flex gap-2">
+              <div className="documents-folder-controls space-y-3 p-4">
+                <form onSubmit={handleCreateFolder} className="documents-folder-create-form flex gap-2">
                   <input type="text" value={folderDraft} onChange={(event) => setFolderDraft(event.target.value)} placeholder={folderRows.some((folder) => folder.id === selectedFolder) ? 'New subfolder' : 'New folder'} className="portal-input px-3 py-2.5 text-sm" disabled={billingAccess?.readOnly} />
                   <button type="submit" disabled={billingAccess?.readOnly || folderMutation.isPending} className="portal-button-secondary inline-flex items-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
                     <FolderPlus className="h-4 w-4" />
                   </button>
                 </form>
 
-                <div className="space-y-2">
+                <div className="documents-folder-list space-y-2">
                   {folders.map((folder) => (
                     <div
                       key={folder.id}
@@ -2033,20 +2140,20 @@ export default function Documents() {
                             onDelete={handleDeleteDocument}
                           />
                         </div>
-                        <button type="button" onClick={() => { setSelectedId(document.id); previewMutation.mutate({ documentId: document.id, action: 'view' }) }} className="block w-full text-left">
+                        <button type="button" onClick={() => openDocumentPreview(document.id)} className="block w-full text-left">
                           <div className="documents-file-icon mb-3 ml-6 flex h-8 w-8 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
                             <DocumentFileIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
                           </div>
                           <div className="flex items-center gap-2 pr-7">
-                            <p className="truncate text-[13px] font-semibold" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                            <p className="documents-file-title truncate text-[13px] font-semibold">{document.file_name}</p>
                             {roomDocumentIds.has(document.id) ? <Users className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--portal-success)' }} /> : null}
                           </div>
-                          <p className="mt-1 truncate text-[11px]" style={{ color: 'var(--portal-text-muted)' }}>
+                          <p className="documents-file-meta mt-1 truncate text-[11px]">
                             {compactFolderPath(document.folder_id, foldersById, selectedFolder) || documentFolder(document)} - {formatVaultBytes(document.size_bytes)}
                           </p>
                         </button>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          <button type="button" onClick={() => previewMutation.mutate({ documentId: document.id, action: 'view' })} className="portal-button-ghost inline-flex h-8 w-8 items-center justify-center rounded-full" aria-label={`Preview ${document.file_name}`}>
+                          <button type="button" onClick={() => openDocumentPreview(document.id)} className="portal-button-ghost inline-flex h-8 w-8 items-center justify-center rounded-full" aria-label={`Preview ${document.file_name}`}>
                             <Eye className="h-3.5 w-3.5" />
                           </button>
                         </div>
@@ -2066,7 +2173,7 @@ export default function Documents() {
                             key={document.id}
                             data-selected={isSelected}
                             className="documents-file-row portal-table-row cursor-pointer transition-all"
-                            onClick={() => { setSelectedId(document.id); previewMutation.mutate({ documentId: document.id, action: 'view' }) }}
+                            onClick={() => openDocumentPreview(document.id)}
                             style={isSelected ? { background: 'rgba(201, 168, 76, 0.1)' } : undefined}
                           >
                             <td className="border-t px-4 py-2" style={{ borderColor: 'var(--portal-border)' }}>
@@ -2083,10 +2190,10 @@ export default function Documents() {
                                 <div className="flex min-w-0 flex-1 items-center gap-3">
                                   <div className="min-w-0">
                                     <div className="flex min-w-0 items-center gap-2">
-                                      <p className="truncate text-[12px] font-semibold leading-5" style={{ color: 'var(--portal-text)' }}>{document.file_name}</p>
+                                      <p className="documents-file-title truncate text-[12px] font-semibold leading-5">{document.file_name}</p>
                                       {roomDocumentIds.has(document.id) ? <Users className="h-3 w-3 shrink-0" style={{ color: 'var(--portal-success)' }} /> : null}
                                     </div>
-                                    <p className="max-w-full truncate whitespace-nowrap text-[11px]" style={{ color: 'var(--portal-text-muted)' }}>
+                                    <p className="documents-file-meta max-w-full truncate whitespace-nowrap text-[11px]">
                                       {compactFolderPath(document.folder_id, foldersById, selectedFolder) || documentFolder(document)} - {formatVaultBytes(document.size_bytes)}
                                     </p>
                                   </div>
@@ -2159,12 +2266,17 @@ export default function Documents() {
             <div className="my-4 w-1 rounded-full" style={{ background: isFileColumnResizing ? 'var(--portal-primary)' : 'var(--portal-border-strong)' }} />
           </div>
 
-          <aside className="documents-preview-column space-y-4">
+          <aside className="documents-preview-column space-y-4" data-mobile-open={mobilePreviewOpen ? 'true' : 'false'}>
             <DocumentPreview
               selectedDocument={selectedDocument}
               previewState={previewState}
               onRefreshPreview={() => selectedDocument && previewMutation.mutate({ documentId: selectedDocument.id, action: 'view' })}
               onDownload={() => selectedDocument && previewMutation.mutate({ documentId: selectedDocument.id, action: 'download' })}
+              onMobileClose={() => {
+                setFullScreenPreviewOpen(false)
+                setMobilePreviewOpen(false)
+              }}
+              onOpenFullScreen={() => setFullScreenPreviewOpen(true)}
             />
 
             <section className="documents-selection-panel portal-panel rounded-[24px] p-4">
@@ -2182,6 +2294,14 @@ export default function Documents() {
           </aside>
         </div>
       )}
+      {fullScreenPreviewOpen ? (
+        <FullScreenDocumentPreview
+          selectedDocument={selectedDocument}
+          previewState={previewState}
+          onClose={() => setFullScreenPreviewOpen(false)}
+          onDownload={() => selectedDocument && previewMutation.mutate({ documentId: selectedDocument.id, action: 'download' })}
+        />
+      ) : null}
     </div>
   )
 }

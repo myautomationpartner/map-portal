@@ -43,6 +43,7 @@ import {
   fetchResearchProfile,
   fetchResearchSources,
   fetchSocialDrafts,
+  getSecureVaultDocumentUrl,
   launchPostBoost,
   recordPlannerFeedbackEvent,
   startBoostAdsConnection,
@@ -63,9 +64,10 @@ import {
 } from '../lib/partnerTrainingFlow'
 import { recommendBoostSetup } from '../lib/boostAssistant'
 import { parseDraftMeta, stringifyDraftMeta } from '../lib/socialDrafting'
+import { getDraftMediaRefs } from '../lib/campaignDraftAssets'
 
-const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 const HIDDEN_RADAR_STATES = new Set(['dismissed', 'archived', 'converted_to_draft'])
+const CLOSED_DRAFT_STATES = new Set(['published', 'published_manually', 'archived', 'superseded'])
 const BADGE_STYLES = {
   radar: { label: 'Partner Idea', background: 'rgba(53,104,166,0.1)', color: '#3568a6', border: 'rgba(53,104,166,0.18)' },
   open: { label: 'Open', background: 'rgba(56,189,248,0.12)', color: '#38bdf8', border: 'rgba(56,189,248,0.24)' },
@@ -108,7 +110,7 @@ const BOOST_DURATIONS = [
   { value: 7, label: '7 days' },
 ]
 const BOOSTABLE_PLATFORMS = new Set(['facebook', 'instagram', 'tiktok', 'linkedin', 'twitter'])
-const WEEKLY_PARTNER_IDEA_LIMIT = 3
+const WEEKLY_PARTNER_IDEA_LIMIT = 5
 const DAILY_PARTNER_IDEA_LIMIT = 1
 const RESEARCH_SOURCE_TYPES = [
   { value: 'local_event_calendar', label: 'Event calendar' },
@@ -120,18 +122,18 @@ const RESEARCH_SOURCE_TYPES = [
   { value: 'manual_reference', label: 'Reference page' },
 ]
 const PARTNER_TRAINING_REFRESH_DAYS = 60
+const GAP_FILL_PULL_FORWARD_DAYS = 10
+const GAP_FILL_FLEXIBLE_OPPORTUNITY_TYPES = new Set([
+  'ad_opportunity',
+  'community_topic',
+  'competitor_gap',
+  'customer_prompt',
+  'local_trend',
+  'seasonal_moment',
+])
 
-function isMissingRemoteDelete(payload, raw) {
-  const message = [
-    payload?.message,
-    payload?.error,
-    raw,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-
-  return message.includes('404') && message.includes('post not found')
+function isVisibleDraft(draft = {}) {
+  return !CLOSED_DRAFT_STATES.has(String(draft.review_state || '').trim().toLowerCase())
 }
 
 function normalizeSentence(value, fallback = '') {
@@ -438,8 +440,139 @@ function isDateInWeek(value, weekStart) {
   return date >= start && date < end
 }
 
+function compareDateStrings(a, b) {
+  return String(a || '').localeCompare(String(b || ''))
+}
+
+function getWeekDateStrings(weekStart) {
+  return Array.from({ length: 7 }, (_, index) => toDateString(addDays(weekStart, index)))
+}
+
+function parseDateAtNoon(value) {
+  if (!value) return null
+  const date = new Date(String(value).includes('T') ? value : `${value}T12:00:00`)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function canUseOpportunityOnDate(opportunity, dateString) {
+  const target = parseDateAtNoon(dateString)
+  if (!target) return false
+
+  const startsAt = parseDateAtNoon(opportunity?.starts_at)
+  if (startsAt && target < startsAt) return false
+
+  const endsAt = parseDateAtNoon(opportunity?.expires_at || opportunity?.ends_at)
+  if (endsAt) {
+    const endOfDay = new Date(endsAt)
+    endOfDay.setHours(23, 59, 59, 999)
+    if (target > endOfDay) return false
+  }
+
+  return true
+}
+
+function canUseOpportunityForGapFillDate(opportunity, dateString) {
+  if (canUseOpportunityOnDate(opportunity, dateString)) return true
+  if (!GAP_FILL_FLEXIBLE_OPPORTUNITY_TYPES.has(String(opportunity?.opportunity_type || ''))) return false
+
+  const target = parseDateAtNoon(dateString)
+  const startsAt = parseDateAtNoon(opportunity?.starts_at)
+  const endsAt = parseDateAtNoon(opportunity?.expires_at || opportunity?.ends_at)
+  if (!target || !startsAt) return false
+  if (endsAt && target > endsAt) return false
+  if (target >= startsAt) return false
+
+  const daysUntilStart = Math.ceil((startsAt.getTime() - target.getTime()) / (24 * 60 * 60 * 1000))
+  return daysUntilStart > 0 && daysUntilStart <= GAP_FILL_PULL_FORWARD_DAYS
+}
+
 function getPostDisplayDate(post) {
   return post?.scheduled_for || post?.published_at || post?.created_at
+}
+
+function getDraftPrimaryMediaRef(draft) {
+  return getDraftMediaRefs(draft).find((ref) => ref.url || ref.documentId) || null
+}
+
+function getDraftMediaRefKey(ref) {
+  if (!ref) return ''
+  return [
+    ref.documentId || '',
+    ref.url || '',
+    ref.thumbnail || '',
+    ref.contentType || '',
+    ref.mediaType || '',
+  ].join(':')
+}
+
+function normalizePostMediaCandidate(candidate = {}) {
+  if (!candidate || typeof candidate !== 'object') return null
+  const url = [
+    candidate.url,
+    candidate.thumbnail,
+    candidate.previewUrl,
+    candidate.preview_url,
+    candidate.mediaUrl,
+    candidate.media_url,
+    candidate.link,
+    candidate.signed_url,
+  ].find((value) => typeof value === 'string' && value.trim())
+
+  if (!url) return null
+
+  const mediaType = String(
+    candidate.mediaType ||
+    candidate.media_type ||
+    candidate.kind ||
+    candidate.type ||
+    '',
+  ).toLowerCase()
+  const contentType = String(
+    candidate.contentType ||
+    candidate.content_type ||
+    candidate.mimeType ||
+    candidate.mime_type ||
+    '',
+  ).toLowerCase()
+  const resolvedMediaType = mediaType === 'video' || contentType.startsWith('video/') || /\.(mp4|mov|m4v|webm)(\?|#|$)/i.test(url)
+    ? 'video'
+    : 'image'
+
+  return {
+    url: String(url).trim(),
+    mediaType: resolvedMediaType,
+    source: candidate.source || 'platform_variant',
+  }
+}
+
+function getPostVariantMediaPreview(post = {}) {
+  const variants = post.platform_variants_json && typeof post.platform_variants_json === 'object'
+    ? post.platform_variants_json
+    : {}
+  const platformOrder = [
+    ...(Array.isArray(post.platforms) ? post.platforms : []),
+    ...Object.keys(variants),
+  ]
+  const seen = new Set()
+
+  for (const platform of platformOrder) {
+    const key = String(platform || '').trim()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    const variant = variants[key]
+    const preview = normalizePostMediaCandidate(variant?.image || variant?.media || variant)
+    if (preview?.url) return preview
+  }
+
+  return null
+}
+
+function getPostMediaPreview(post = {}, linkedDraftPreview = null) {
+  const variantPreview = getPostVariantMediaPreview(post)
+  if (variantPreview?.url) return variantPreview
+  if (linkedDraftPreview?.url) return linkedDraftPreview
+  const fallback = normalizePostMediaCandidate({ url: post.media_url })
+  return fallback?.url ? fallback : null
 }
 
 function getWeekOffsetFromDate(value) {
@@ -499,27 +632,51 @@ function sortRadarOpportunitiesByPriority(items) {
   })
 }
 
-function selectWeeklyPartnerIdeas(opportunities, selectedWeekStart, fallbackDateString) {
+function selectWeeklyPartnerIdeas(opportunities, selectedWeekStart, fallbackDateString, occupiedDateStrings = []) {
   const selected = []
   const dateCounts = new Map()
+  const occupiedDates = new Set(occupiedDateStrings.filter(Boolean))
+  const todayString = toDateString(new Date())
+  const openWeekDates = getWeekDateStrings(selectedWeekStart)
+    .filter((dateString) => compareDateStrings(dateString, todayString) >= 0)
+    .filter((dateString) => !occupiedDates.has(dateString))
   const candidates = sortRadarOpportunitiesByPriority(opportunities)
-    .filter((opportunity) => isDateInWeek(getOpportunityPublishDateString(opportunity, fallbackDateString), selectedWeekStart))
 
   for (const opportunity of candidates) {
     const dateString = getOpportunityPublishDateString(opportunity, fallbackDateString)
+    if (!isDateInWeek(dateString, selectedWeekStart)) continue
+    if (compareDateStrings(dateString, todayString) < 0) continue
+    if (occupiedDates.has(dateString)) continue
+    if (!canUseOpportunityOnDate(opportunity, dateString)) continue
     const currentCount = dateCounts.get(dateString) || 0
     if (currentCount >= DAILY_PARTNER_IDEA_LIMIT) continue
 
-    selected.push(opportunity)
+    selected.push({ opportunity, dateString, isGapFill: false })
     dateCounts.set(dateString, currentCount + 1)
     if (selected.length >= WEEKLY_PARTNER_IDEA_LIMIT) break
   }
 
+  const selectedOpportunityIds = new Set(selected.map((item) => item.opportunity.id))
+  for (const dateString of openWeekDates) {
+    if (selected.length >= WEEKLY_PARTNER_IDEA_LIMIT) break
+    if ((dateCounts.get(dateString) || 0) >= DAILY_PARTNER_IDEA_LIMIT) continue
+    const opportunity = candidates.find((candidate) => (
+      !selectedOpportunityIds.has(candidate.id) &&
+      !isDateInWeek(getOpportunityPublishDateString(candidate, fallbackDateString), selectedWeekStart) &&
+      canUseOpportunityForGapFillDate(candidate, dateString)
+    ))
+    if (!opportunity) continue
+
+    selected.push({ opportunity, dateString, isGapFill: true })
+    selectedOpportunityIds.add(opportunity.id)
+    dateCounts.set(dateString, (dateCounts.get(dateString) || 0) + 1)
+  }
+
   return selected.sort((a, b) => {
-    const dateDelta = new Date(`${getOpportunityPublishDateString(a, fallbackDateString)}T12:00:00`) -
-      new Date(`${getOpportunityPublishDateString(b, fallbackDateString)}T12:00:00`)
+    const dateDelta = new Date(`${a.dateString}T12:00:00`) -
+      new Date(`${b.dateString}T12:00:00`)
     if (dateDelta !== 0) return dateDelta
-    return getRadarPriority(b) - getRadarPriority(a)
+    return getRadarPriority(b.opportunity) - getRadarPriority(a.opportunity)
   })
 }
 
@@ -577,8 +734,12 @@ function buildRadarAction(opportunity, suggestion) {
   }
 }
 
-function buildRadarDraftRow({ profile, opportunity, suggestion }) {
-  const publishDate = suggestion?.recommended_publish_at ? new Date(suggestion.recommended_publish_at) : nextDefaultPublishDate()
+function buildRadarDraftRow({ profile, opportunity, suggestion, dateString }) {
+  const publishDate = dateString
+    ? new Date(`${dateString}T10:00:00`)
+    : suggestion?.recommended_publish_at
+      ? new Date(suggestion.recommended_publish_at)
+      : nextDefaultPublishDate()
   const dateParts = getDateParts(publishDate)
   const client = profile?.clients || {}
   const plannerProfile = getPlannerProfile(profile)
@@ -609,6 +770,8 @@ function buildRadarDraftRow({ profile, opportunity, suggestion }) {
       sourceSurface: 'content_plan',
       opportunityId: opportunity.id,
       suggestionId: suggestion.id,
+      selectedDate: dateString || null,
+      dateSource: dateString ? 'publisher_current_week_gap_fill' : 'opportunity_radar_recommendation',
       opportunityType: opportunity.opportunity_type,
       adWorthiness: opportunity.ad_worthiness,
       radarAction: {
@@ -839,7 +1002,14 @@ function BoostPostModal({ item, defaultPlatform, readiness, isReadinessLoading, 
             <Badge type="published" />
             <p>{item.caption}</p>
           </div>
-          {item.thumbnailUrl ? <img src={item.thumbnailUrl} alt="" /> : null}
+          {item.thumbnailUrl ? (
+            <CalendarMediaThumb
+              item={item}
+              className=""
+              fallbackClassName="content-plan-chip-media-empty"
+              iconClassName="h-5 w-5"
+            />
+          ) : null}
         </div>
 
         <div className="boost-assistant-panel">
@@ -1046,6 +1216,7 @@ function RowActionMenu({ item, actions }) {
         className="content-plan-row-menu-button"
         onClick={(event) => {
           event.stopPropagation()
+          window.dispatchEvent(new CustomEvent('map-calendar-row-menu-open'))
           setIsOpen((value) => !value)
         }}
       >
@@ -1055,10 +1226,11 @@ function RowActionMenu({ item, actions }) {
       {isOpen ? createPortal(
         <div
           ref={menuRef}
-          className="content-plan-row-menu fixed z-[120] min-w-[188px] rounded-[18px] border p-2 shadow-lg"
+          className="content-plan-row-menu fixed z-[360] min-w-[188px] rounded-[18px] border p-2 shadow-lg"
           style={{
             top: `${menuPosition.top}px`,
             left: `${menuPosition.left}px`,
+            zIndex: 360,
             borderColor: 'var(--portal-border)',
             background: 'rgba(255,255,255,0.98)',
             boxShadow: '0 18px 40px rgba(26, 24, 20, 0.12)',
@@ -1093,6 +1265,30 @@ function RowActionMenu({ item, actions }) {
   )
 }
 
+function CalendarMediaThumb({ item, className = '', fallbackClassName = '', iconClassName = 'h-5 w-5' }) {
+  const [failedSrc, setFailedSrc] = useState('')
+  const src = item?.thumbnailUrl || ''
+  const mediaType = item?.mediaType || ''
+
+  if (src && failedSrc !== src) {
+    return (
+      <img
+        src={src}
+        alt=""
+        className={className}
+        loading="lazy"
+        onError={() => setFailedSrc(src)}
+      />
+    )
+  }
+
+  return (
+    <div className={fallbackClassName} aria-hidden="true">
+      {mediaType === 'video' ? <FileSearch className={iconClassName} /> : <Sparkles className={iconClassName} />}
+    </div>
+  )
+}
+
 function CalendarHoverPreview({ preview }) {
   if (!preview?.item) return null
 
@@ -1110,13 +1306,12 @@ function CalendarHoverPreview({ preview }) {
         <span>{item.dayLabel} · {item.timeLabel}</span>
       </div>
       <div className="content-plan-hover-preview-body">
-        {item.thumbnailUrl ? (
-          <img src={item.thumbnailUrl} alt="" />
-        ) : (
-          <div className="content-plan-hover-preview-empty">
-            <Sparkles className="h-5 w-5" />
-          </div>
-        )}
+        <CalendarMediaThumb
+          item={item}
+          className=""
+          fallbackClassName="content-plan-hover-preview-empty"
+          iconClassName="h-5 w-5"
+        />
         <div className="min-w-0">
           <h3>{item.title}</h3>
           <p>{item.caption || item.subtitle}</p>
@@ -1154,10 +1349,11 @@ function PlanItemChip({ item, selected, onSelect, actions, onPreviewOpen, onPrev
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-3">
           {item.thumbnailUrl ? (
-            <img
-              src={item.thumbnailUrl}
-              alt=""
+            <CalendarMediaThumb
+              item={item}
               className="h-10 w-10 shrink-0 rounded-[10px] object-cover"
+              fallbackClassName="content-plan-chip-media-empty h-10 w-10 shrink-0 rounded-[10px]"
+              iconClassName="h-4 w-4"
             />
           ) : null}
           <div className="min-w-0">
@@ -1844,6 +2040,51 @@ export default function ContentCalendar() {
     enabled: !!clientId,
   })
 
+  const draftMediaRefs = useMemo(() => (
+    drafts.flatMap((draft) => {
+      const ref = getDraftPrimaryMediaRef(draft)
+      if (!ref?.url && !ref?.documentId) return []
+      const entries = [[`draft:${draft.id}`, ref]]
+      if (draft.published_reference) {
+        entries.push([`post:${draft.published_reference}`, ref])
+      }
+      return entries
+    })
+  ), [drafts])
+
+  const draftMediaRefKey = useMemo(() => (
+    draftMediaRefs.map(([draftId, ref]) => `${draftId}:${getDraftMediaRefKey(ref)}`).join('|')
+  ), [draftMediaRefs])
+
+  const { data: draftMediaPreviews = {} } = useQuery({
+    queryKey: ['social-draft-media-previews', clientId, draftMediaRefKey],
+    queryFn: async () => {
+      const entries = await Promise.all(draftMediaRefs.map(async ([mediaKey, ref]) => {
+        if (ref.url || ref.thumbnail) {
+          return [mediaKey, {
+            url: ref.thumbnail || ref.url,
+            name: ref.name || 'Draft media',
+            mediaType: ref.mediaType || '',
+            source: ref.source || '',
+          }]
+        }
+
+        const payload = await getSecureVaultDocumentUrl(ref.documentId, 'view')
+        return [mediaKey, {
+          url: payload.signed_url || '',
+          name: payload.file_name || ref.name || 'Draft media',
+          mediaType: ref.mediaType || (String(payload.mime_type || '').startsWith('video/') ? 'video' : 'image'),
+          source: ref.source || 'campaign_partner',
+        }]
+      }))
+
+      return Object.fromEntries(entries.filter(([, preview]) => preview.url))
+    },
+    enabled: !!clientId && draftMediaRefs.length > 0,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  })
+
   const { data: researchSources = [], isLoading: researchSourcesLoading } = useQuery({
     queryKey: ['research-sources', clientId],
     queryFn: () => fetchResearchSources(clientId),
@@ -1884,30 +2125,47 @@ export default function ContentCalendar() {
     setPartnerProfileForm(buildPartnerProfileForm(profile?.clients, researchProfile))
   }, [trainAssistantOpen, profile?.clients, researchProfile])
 
+  const occupiedWeekDates = useMemo(() => {
+    const dates = new Set()
+    drafts
+      .filter(isVisibleDraft)
+      .filter((draft) => isDateInWeek(draft.slot_date_local, selectedWeekStart))
+      .forEach((draft) => dates.add(draft.slot_date_local))
+    calendarPosts
+      .filter((post) => isDateInWeek(getPostDisplayDate(post), selectedWeekStart))
+      .forEach((post) => dates.add(toDateString(new Date(getPostDisplayDate(post)))))
+    return [...dates]
+  }, [calendarPosts, drafts, selectedWeekStart])
+
+  const activeRadarOpportunities = useMemo(() => (
+    opportunities
+      .filter((opportunity) => !HIDDEN_RADAR_STATES.has(opportunity.review_state))
+      .filter((opportunity) => getActiveSuggestions(opportunity).length > 0)
+  ), [opportunities])
+
   const radarItems = useMemo(() => (
     selectWeeklyPartnerIdeas(
-      opportunities
-      .filter((opportunity) => !HIDDEN_RADAR_STATES.has(opportunity.review_state))
-      .filter((opportunity) => getActiveSuggestions(opportunity).length > 0),
+      activeRadarOpportunities,
       selectedWeekStart,
       selectedWeekStartString,
+      occupiedWeekDates,
     )
-      .map((opportunity, index) => {
+      .map(({ opportunity, dateString, isGapFill }, index) => {
         const suggestion = getPrimarySuggestion(opportunity)
         const action = buildRadarAction(opportunity, suggestion)
-        const dateString = getOpportunityPublishDateString(opportunity, selectedWeekStartString)
         return {
           id: `radar:${opportunity.id}`,
           source: 'radar',
           badgeType: 'radar',
           dateString,
+          isGapFill,
           dayLabel: isDateInWeek(dateString, selectedWeekStart) ? formatSlotDate(dateString) : (index === 0 ? 'Today' : 'This week'),
-          timeLabel: opportunity.expires_at ? `By ${formatDate(opportunity.expires_at, { month: 'short', day: 'numeric' })}` : 'Review',
+          timeLabel: isGapFill ? 'Open day' : opportunity.expires_at ? `By ${formatDate(opportunity.expires_at, { month: 'short', day: 'numeric' })}` : 'Review',
           title: suggestion?.title || opportunity.title,
-          subtitle: opportunity.title,
+          subtitle: isGapFill ? `Suggested for an open ${formatSlotDate(dateString)} slot` : opportunity.title,
           detailTitle: opportunity.title,
           caption: action.readyCaption,
-          whyNow: action.whyNow,
+          whyNow: isGapFill ? `This idea can fill an open day on ${formatSlotDate(dateString)} before anything posts.` : action.whyNow,
           imagePrompt: action.imagePrompt,
           proof: (opportunity.source_urls || []).slice(0, 2),
           adWorthiness: opportunity.ad_worthiness,
@@ -1916,31 +2174,36 @@ export default function ContentCalendar() {
           suggestion,
         }
       })
-  ), [opportunities, selectedWeekStart, selectedWeekStartString])
+  ), [activeRadarOpportunities, occupiedWeekDates, selectedWeekStart, selectedWeekStartString])
 
   const draftItems = useMemo(() => (
     drafts
-      .filter((draft) => draft.review_state !== 'published')
+      .filter(isVisibleDraft)
       .filter((draft) => isDateInWeek(draft.slot_date_local, selectedWeekStart))
-      .map((draft) => ({
-        id: `draft:${draft.id}`,
-        source: 'draft',
-        badgeType: 'draft',
-        dateString: draft.slot_date_local,
-        dayLabel: formatSlotDate(draft.slot_date_local),
-        timeLabel: draft.slot_start_local || 'Draft',
-        title: draft.draft_title || draft.post_type?.replace(/_/g, ' ') || 'Saved draft',
-        subtitle: draft.review_state?.replace(/_/g, ' ') || 'Draft saved',
-        detailTitle: draft.draft_title || 'Saved draft',
-        caption: draft.draft_caption || draft.draft_body || 'Open this draft in Publisher to continue editing.',
-        whyNow: 'This is already saved and ready for review.',
-        imagePrompt: Array.isArray(draft.asset_requirements_json)
-          ? draft.asset_requirements_json.find((item) => item?.suggestion)?.suggestion || 'Review media needs in Publisher.'
-          : 'Review media needs in Publisher.',
-        proof: ['Saved draft'],
-        draft,
-      }))
-  ), [drafts, selectedWeekStart])
+      .map((draft) => {
+        const mediaPreview = draftMediaPreviews[`draft:${draft.id}`]
+        return {
+          id: `draft:${draft.id}`,
+          source: 'draft',
+          badgeType: 'draft',
+          dateString: draft.slot_date_local,
+          dayLabel: formatSlotDate(draft.slot_date_local),
+          timeLabel: draft.slot_start_local || 'Draft',
+          title: draft.draft_title || draft.post_type?.replace(/_/g, ' ') || 'Saved draft',
+          subtitle: mediaPreview ? `${draft.review_state?.replace(/_/g, ' ') || 'Draft saved'} · media attached` : draft.review_state?.replace(/_/g, ' ') || 'Draft saved',
+          detailTitle: draft.draft_title || 'Saved draft',
+          caption: draft.draft_caption || draft.draft_body || 'Open this draft in Publisher to continue editing.',
+          whyNow: 'This is already saved and ready for review.',
+          imagePrompt: Array.isArray(draft.asset_requirements_json)
+            ? draft.asset_requirements_json.find((item) => item?.suggestion)?.suggestion || 'Review media needs in Publisher.'
+            : 'Review media needs in Publisher.',
+          proof: ['Saved draft'],
+          thumbnailUrl: mediaPreview?.url || '',
+          mediaType: mediaPreview?.mediaType || '',
+          draft,
+        }
+      })
+  ), [draftMediaPreviews, drafts, selectedWeekStart])
 
   const postBoostsByPostId = useMemo(() => {
     const groups = new Map()
@@ -1958,6 +2221,7 @@ export default function ContentCalendar() {
       .map((post) => {
         const boosts = postBoostsByPostId.get(post.id) || []
         const boostStatus = getBoostStatus(boosts)
+        const mediaPreview = getPostMediaPreview(post, draftMediaPreviews[`post:${post.id}`])
         return {
           id: `post:${post.id}`,
           source: 'post',
@@ -1972,87 +2236,59 @@ export default function ContentCalendar() {
           whyNow: post.status === 'published'
             ? 'This content has already gone out and stays visible here for context.'
             : 'This item is already planned and helps avoid overfilling the calendar.',
-          imagePrompt: post.media_url ? 'Media is attached to this post.' : 'No media is attached yet.',
+          imagePrompt: mediaPreview ? 'Media is attached to this post.' : 'No media is attached yet.',
           proof: [post.status === 'published' ? 'Posted content' : 'Scheduled content'],
-          thumbnailUrl: post.media_url || '',
-          mediaType: /\.(mp4|mov|m4v|webm)(\?|#|$)/i.test(String(post.media_url || '')) ? 'video' : 'image',
+          thumbnailUrl: mediaPreview?.url || '',
+          mediaType: mediaPreview?.mediaType || '',
           platforms: post.platforms || [],
           boosts,
           boostStatus,
           post,
         }
       })
-  ), [calendarPosts, postBoostsByPostId, selectedWeekStart])
+  ), [calendarPosts, draftMediaPreviews, postBoostsByPostId, selectedWeekStart])
 
   const studioCounts = useMemo(() => ({
-    ideas: opportunities
-      .filter((opportunity) => !HIDDEN_RADAR_STATES.has(opportunity.review_state))
-      .filter((opportunity) => getActiveSuggestions(opportunity).length > 0)
-      .length,
-    drafts: drafts.filter((draft) => draft.review_state !== 'published').length,
+    ideas: radarItems.length,
+    drafts: drafts.filter(isVisibleDraft).length,
     scheduled: calendarPosts.filter((post) => post.status === 'scheduled').length,
     posted: calendarPosts.filter((post) => post.status === 'published').length,
-  }), [calendarPosts, drafts, opportunities])
+  }), [calendarPosts, drafts, radarItems.length])
 
   const allDetailItems = useMemo(() => {
-    const radarDetailItems = opportunities
-      .filter((opportunity) => !HIDDEN_RADAR_STATES.has(opportunity.review_state))
-      .filter((opportunity) => getActiveSuggestions(opportunity).length > 0)
-      .map((opportunity, index) => {
-        const suggestion = getPrimarySuggestion(opportunity)
-        const action = buildRadarAction(opportunity, suggestion)
-        const suggestedDate = suggestion?.recommended_publish_at ||
-          opportunity.starts_at ||
-          opportunity.ends_at ||
-          opportunity.expires_at ||
-          selectedWeekStartString
-        const dateString = toDateString(new Date(String(suggestedDate).includes('T') ? suggestedDate : `${suggestedDate}T12:00:00`))
-        return {
-          id: `radar:${opportunity.id}`,
-          source: 'radar',
-          badgeType: 'radar',
-          dateString,
-          dayLabel: isDateInWeek(dateString, selectedWeekStart) ? formatSlotDate(dateString) : (index === 0 ? 'Today' : 'This week'),
-          timeLabel: opportunity.expires_at ? `By ${formatDate(opportunity.expires_at, { month: 'short', day: 'numeric' })}` : 'Review',
-          title: suggestion?.title || opportunity.title,
-          subtitle: opportunity.title,
-          detailTitle: opportunity.title,
-          caption: action.readyCaption,
-          whyNow: action.whyNow,
-          imagePrompt: action.imagePrompt,
-          proof: (opportunity.source_urls || []).slice(0, 2),
-          adWorthiness: opportunity.ad_worthiness,
-          platforms: suggestion?.recommended_platforms || [],
-          opportunity,
-          suggestion,
-        }
-      })
+    const radarDetailItems = radarItems
 
     const draftDetailItems = drafts
-      .filter((draft) => draft.review_state !== 'published')
-      .map((draft) => ({
-        id: `draft:${draft.id}`,
-        source: 'draft',
-        badgeType: 'draft',
-        dateString: draft.slot_date_local,
-        dayLabel: formatSlotDate(draft.slot_date_local),
-        timeLabel: draft.slot_start_local || 'Draft',
-        title: draft.draft_title || draft.post_type?.replace(/_/g, ' ') || 'Saved draft',
-        subtitle: draft.review_state?.replace(/_/g, ' ') || 'Draft saved',
-        detailTitle: draft.draft_title || 'Saved draft',
-        caption: draft.draft_caption || draft.draft_body || 'Open this draft in Publisher to continue editing.',
-        whyNow: 'This is already saved and ready for review.',
-        imagePrompt: Array.isArray(draft.asset_requirements_json)
-          ? draft.asset_requirements_json.find((item) => item?.suggestion)?.suggestion || 'Review media needs in Publisher.'
-          : 'Review media needs in Publisher.',
-        proof: ['Saved draft'],
-        draft,
-      }))
+      .filter(isVisibleDraft)
+      .map((draft) => {
+        const mediaPreview = draftMediaPreviews[`draft:${draft.id}`]
+        return {
+          id: `draft:${draft.id}`,
+          source: 'draft',
+          badgeType: 'draft',
+          dateString: draft.slot_date_local,
+          dayLabel: formatSlotDate(draft.slot_date_local),
+          timeLabel: draft.slot_start_local || 'Draft',
+          title: draft.draft_title || draft.post_type?.replace(/_/g, ' ') || 'Saved draft',
+          subtitle: mediaPreview ? `${draft.review_state?.replace(/_/g, ' ') || 'Draft saved'} · media attached` : draft.review_state?.replace(/_/g, ' ') || 'Draft saved',
+          detailTitle: draft.draft_title || 'Saved draft',
+          caption: draft.draft_caption || draft.draft_body || 'Open this draft in Publisher to continue editing.',
+          whyNow: 'This is already saved and ready for review.',
+          imagePrompt: Array.isArray(draft.asset_requirements_json)
+            ? draft.asset_requirements_json.find((item) => item?.suggestion)?.suggestion || 'Review media needs in Publisher.'
+            : 'Review media needs in Publisher.',
+          proof: ['Saved draft'],
+          thumbnailUrl: mediaPreview?.url || '',
+          mediaType: mediaPreview?.mediaType || '',
+          draft,
+        }
+      })
 
     const postDetailItems = calendarPosts
       .map((post) => {
         const boosts = postBoostsByPostId.get(post.id) || []
         const boostStatus = getBoostStatus(boosts)
+        const mediaPreview = getPostMediaPreview(post, draftMediaPreviews[`post:${post.id}`])
         return {
           id: `post:${post.id}`,
           source: 'post',
@@ -2067,9 +2303,10 @@ export default function ContentCalendar() {
           whyNow: post.status === 'published'
             ? 'This content has already gone out and stays visible here for context.'
             : 'This item is already planned and helps avoid overfilling the calendar.',
-          imagePrompt: post.media_url ? 'Media is attached to this post.' : 'No media is attached yet.',
+          imagePrompt: mediaPreview ? 'Media is attached to this post.' : 'No media is attached yet.',
           proof: [post.status === 'published' ? 'Posted content' : 'Scheduled content'],
-          thumbnailUrl: post.media_url || '',
+          thumbnailUrl: mediaPreview?.url || '',
+          mediaType: mediaPreview?.mediaType || '',
           platforms: post.platforms || [],
           boosts,
           boostStatus,
@@ -2078,7 +2315,7 @@ export default function ContentCalendar() {
       })
 
     return [...radarDetailItems, ...draftDetailItems, ...postDetailItems]
-  }, [calendarPosts, drafts, opportunities, postBoostsByPostId, selectedWeekStart, selectedWeekStartString])
+  }, [calendarPosts, draftMediaPreviews, drafts, postBoostsByPostId, radarItems])
 
   const detailItemsById = useMemo(() => new Map(allDetailItems.map((item) => [item.id, item])), [allDetailItems])
 
@@ -2137,7 +2374,7 @@ export default function ContentCalendar() {
       })
     })
     drafts
-      .filter((draft) => draft.review_state !== 'published')
+      .filter(isVisibleDraft)
       .forEach((draft) => {
         addItem(draft.slot_date_local, {
           type: 'Draft',
@@ -2182,6 +2419,7 @@ export default function ContentCalendar() {
         profile,
         opportunity: item.opportunity,
         suggestion: item.suggestion,
+        dateString: item.dateString,
       }))
 
       await updateOpportunitySuggestionState(item.suggestion.id, {
@@ -2201,6 +2439,8 @@ export default function ContentCalendar() {
             source: 'content_plan',
             opportunityId: item.opportunity.id,
             suggestionId: item.suggestion.id,
+            selectedDate: item.dateString || null,
+            dateSource: item.isGapFill ? 'publisher_current_week_gap_fill' : 'opportunity_radar_recommendation',
           },
         })
       } catch (error) {
@@ -2480,48 +2720,36 @@ export default function ContentCalendar() {
     }
   }
 
-  async function handleDeleteScheduledPostItem(item) {
-    if (!requireWriteAccess('delete scheduled posts')) return
+  async function handleDeleteCalendarPostItem(item) {
+    const isPublished = item?.badgeType === 'published'
+    if (!requireWriteAccess(isPublished ? 'delete posted items' : 'delete scheduled posts')) return
     const post = item?.post
     if (!post?.id) return
-    if (!window.confirm('Delete this scheduled post? This will also try to cancel it in the publisher workflow.')) return
+    const confirmMessage = isPublished
+      ? 'Delete this posted item? MAP will also try to remove it from the connected social channels. If the platform post is already gone, MAP will remove the local calendar record.'
+      : 'Delete this scheduled post? This will also try to cancel it in the publisher workflow.'
+    if (!window.confirm(confirmMessage)) return
 
     try {
       setActionBusyId(item.id)
       setActionError('')
       setActionNotice('')
-      if (post.n8n_execution_id) {
-        const response = await fetch(`${N8N_BASE}/webhook/social-publish`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'delete',
-            postId: post.id,
-            clientId,
-            zernioPostId: post.n8n_execution_id,
-          }),
-        })
-        const raw = await response.text()
-        let payload = {}
-        try {
-          payload = raw ? JSON.parse(raw) : {}
-        } catch {
-          payload = {}
-        }
 
-        if (!response.ok || payload?.success === false) {
-          if (!isMissingRemoteDelete(payload, raw)) {
-            throw new Error(payload?.message || raw || 'Could not delete this scheduled post.')
-          }
-        }
-      }
-
-      await deletePost(post.id)
+      const payload = await deletePost(post.id)
       if (selectedItemId === item.id) setSelectedItemId('')
+      queryClient.setQueryData(['calendar-posts', clientId], (current = []) => (
+        Array.isArray(current) ? current.filter((calendarPost) => calendarPost.id !== post.id) : current
+      ))
       await queryClient.invalidateQueries({ queryKey: ['calendar-posts', clientId] })
-      setActionNotice('Scheduled post deleted.')
+      setActionNotice(payload?.remoteDelete?.localCleanupAfterRemoteError
+        ? `${isPublished ? 'Posted item' : 'Scheduled post'} removed from the calendar. MAP could not confirm the platform delete, so check the connected social channels.`
+        : payload?.remoteDelete?.ignoredMissingRemotePost
+          ? `${isPublished ? 'Posted item' : 'Scheduled post'} removed from the calendar. The provider reported that the remote post was already gone.`
+        : payload?.remoteDelete?.skipped
+          ? `${isPublished ? 'Posted item' : 'Scheduled post'} removed from the calendar. No provider post id was stored for remote deletion.`
+          : `${isPublished ? 'Posted item' : 'Scheduled post'} deleted.`)
     } catch (error) {
-      setActionError(error.message || 'Could not delete this scheduled post.')
+      setActionError(error.message || `Could not delete this ${isPublished ? 'posted item' : 'scheduled post'}.`)
     } finally {
       setActionBusyId('')
     }
@@ -2574,7 +2802,7 @@ export default function ContentCalendar() {
       return [
         { label: 'Edit', Icon: PencilLine, onSelect: () => handlePrimaryAction(item) },
         { label: 'Reschedule', Icon: CalendarDays, onSelect: () => handlePrimaryAction(item) },
-        { label: 'Delete', Icon: Trash2, destructive: true, onSelect: () => handleDeleteScheduledPostItem(item) },
+        { label: 'Delete', Icon: Trash2, destructive: true, onSelect: () => handleDeleteCalendarPostItem(item) },
       ]
     }
     if (item.source === 'post') {
@@ -2583,6 +2811,7 @@ export default function ContentCalendar() {
           { label: item.boostStatus ? 'Boost again' : 'Boost post', Icon: Megaphone, onSelect: () => handleOpenBoost(item) },
         ] : []),
         { label: 'View history', Icon: ArrowUpRight, onSelect: () => navigate('/post/history') },
+        { label: 'Delete', Icon: Trash2, destructive: true, onSelect: () => handleDeleteCalendarPostItem(item) },
       ]
     }
     return []
@@ -2679,12 +2908,14 @@ export default function ContentCalendar() {
     window.addEventListener('scroll', closePreview, true)
     window.addEventListener('wheel', closePreview, { passive: true })
     window.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('map-calendar-row-menu-open', closePreview)
 
     return () => {
       window.removeEventListener('pointerdown', closePreview, true)
       window.removeEventListener('scroll', closePreview, true)
       window.removeEventListener('wheel', closePreview)
       window.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('map-calendar-row-menu-open', closePreview)
     }
   }, [hoverPreview])
 
@@ -2855,10 +3086,10 @@ export default function ContentCalendar() {
                     {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <PencilLine className="h-4 w-4" />}
                     Edit post
                   </button>
-                  {item.source === 'post' && item.badgeType === 'scheduled' ? (
+                  {item.source === 'post' && ['scheduled', 'published'].includes(item.badgeType) ? (
                     <button
                       type="button"
-                      onClick={() => handleDeleteScheduledPostItem(item)}
+                      onClick={() => handleDeleteCalendarPostItem(item)}
                       disabled={actionBusyId === item.id}
                       className="inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
                       style={{ background: 'rgba(196, 85, 110, 0.10)', color: '#b44660', border: '1px solid rgba(196, 85, 110, 0.18)' }}

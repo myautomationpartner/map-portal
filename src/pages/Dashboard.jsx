@@ -218,10 +218,10 @@ function PlatformMetricCard({ platform, summary, connectedPlatforms, connectingP
             <Icon className="h-3.5 w-3.5" />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-xs font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
+            <p className="dashboard-platform-name truncate text-xs font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>
               {platform.label}
             </p>
-            <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color: isConnected ? platform.accent : 'var(--portal-text-soft)' }}>
+            <p className="dashboard-platform-status mt-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color: isConnected ? platform.accent : 'var(--portal-text-soft)' }}>
               {statusLabel}
             </p>
           </div>
@@ -233,14 +233,14 @@ function PlatformMetricCard({ platform, summary, connectedPlatforms, connectingP
 
       <div className="mt-2 flex items-end justify-between gap-2">
         <div>
-          <p className="text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--portal-text-soft)' }}>
+          <p className="dashboard-platform-metric-label text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--portal-text-soft)' }}>
             {metricLabel}
           </p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums tracking-[-0.04em]" style={{ color: 'var(--portal-text)' }}>
+          <p className="dashboard-platform-metric-value mt-0.5 text-lg font-semibold tabular-nums tracking-[-0.04em]" style={{ color: 'var(--portal-text)' }}>
             {hasMetrics ? metricValue : '—'}
           </p>
           {freshness ? (
-            <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--portal-text-soft)' }}>
+            <p className="dashboard-platform-freshness mt-0.5 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--portal-text-soft)' }}>
               {freshness}
             </p>
           ) : null}
@@ -251,7 +251,7 @@ function PlatformMetricCard({ platform, summary, connectedPlatforms, connectingP
             type="button"
             onClick={() => onConnect(platform.id)}
             disabled={isConnecting}
-            className="rounded-full px-2 py-1 text-[10px] font-semibold transition-all disabled:cursor-wait disabled:opacity-60"
+            className="dashboard-platform-action rounded-full px-2 py-1 text-[10px] font-semibold transition-all disabled:cursor-wait disabled:opacity-60"
             style={{ background: platform.soft, color: platform.accent }}
           >
             {isConnecting ? 'Opening...' : 'Connect now'}
@@ -259,7 +259,7 @@ function PlatformMetricCard({ platform, summary, connectedPlatforms, connectingP
         ) : isConnected || hasMetrics ? (
           <Link
             to={`/stats/${platform.id}`}
-            className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold transition-all"
+            className="dashboard-platform-action inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold transition-all"
             style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-muted)' }}
           >
             View
@@ -268,7 +268,7 @@ function PlatformMetricCard({ platform, summary, connectedPlatforms, connectingP
         ) : (
           <Link
             to="/settings"
-            className="rounded-full px-2 py-1 text-[10px] font-semibold transition-all"
+            className="dashboard-platform-action rounded-full px-2 py-1 text-[10px] font-semibold transition-all"
             style={{ background: 'rgba(26, 24, 20, 0.05)', color: 'var(--portal-text-muted)' }}
           >
             Connect now

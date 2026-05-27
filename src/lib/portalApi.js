@@ -398,12 +398,35 @@ function getCampaignDraftIds(project) {
   return [...new Set(posts.map((post) => post?.campaignDraftId).filter(Boolean))]
 }
 
+export function getLinkedCampaignPostIds(drafts = []) {
+  return [...new Set(drafts.map((draft) => String(draft?.published_reference || '').trim()).filter(Boolean))]
+}
+
+export function isFutureCampaignCalendarPost(post) {
+  if (!post) return false
+  return post.status === 'scheduled'
+}
+
+export async function fetchCampaignLinkedPosts(clientId, postIds = []) {
+  const ids = [...new Set(postIds.filter(Boolean))]
+  if (!clientId || !ids.length) return []
+
+  const { data, error } = await supabase
+    .from('posts')
+    .select('id, client_id, status, scheduled_for, published_at')
+    .eq('client_id', clientId)
+    .in('id', ids)
+
+  if (error) throw error
+  return data ?? []
+}
+
 export async function fetchCampaignProjectDrafts(project) {
   if (!project?.id || !project?.client_id) return []
 
   const rowsById = new Map()
   const draftIds = getCampaignDraftIds(project)
-  const selectColumns = 'id, client_id, source_workflow, slot_label, review_notes'
+  const selectColumns = 'id, client_id, source_workflow, slot_label, review_state, review_notes, published_reference'
 
   if (draftIds.length) {
     const { data, error } = await supabase
@@ -445,6 +468,15 @@ export async function deleteCampaignProjectWithDrafts(project) {
 
   const drafts = await fetchCampaignProjectDrafts(project)
   const draftIds = drafts.map((draft) => draft.id).filter(Boolean)
+  const linkedPostIds = getLinkedCampaignPostIds(drafts)
+  const linkedPosts = await fetchCampaignLinkedPosts(project.client_id, linkedPostIds)
+  const futurePostIds = linkedPosts
+    .filter(isFutureCampaignCalendarPost)
+    .map((post) => post.id)
+
+  for (const postId of futurePostIds) {
+    await deletePost(postId)
+  }
 
   if (draftIds.length) {
     const { error } = await supabase
@@ -461,6 +493,9 @@ export async function deleteCampaignProjectWithDrafts(project) {
   return {
     deletedDraftCount: draftIds.length,
     deletedDraftIds: draftIds,
+    deletedPostCount: futurePostIds.length,
+    deletedPostIds: futurePostIds,
+    preservedPublishedPostCount: linkedPosts.filter((post) => post.status === 'published').length,
   }
 }
 

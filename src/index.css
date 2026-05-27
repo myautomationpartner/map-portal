@@ -59,9 +59,9 @@ html[data-portal-theme="map-dark"] {
   --portal-surface-muted: #0f1419;
   --portal-border: #2f3336;
   --portal-border-strong: #3a3f45;
-  --portal-text: #e7e9ea;
-  --portal-text-muted: #8b98a5;
-  --portal-text-soft: #71767b;
+  --portal-text: #ffffff;
+  --portal-text-muted: #c8d0d8;
+  --portal-text-soft: #9aa4ad;
   --portal-primary: #1d9bf0;
   --portal-primary-strong: #1d9bf0;
   --portal-secondary: #8b98a5;

@@ -294,7 +294,7 @@ function SocialSetupPanel({ connections, loading, connectingPlatform, readOnly, 
   )
 }
 
-export default function PortalPartner({ session, profile, tenant, billingAccess, requireWriteAccess }) {
+export default function PortalPartner({ session, profile, tenant, billingAccess, requireWriteAccess, suppressMobileLauncher = false }) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [minimized, setMinimized] = useState(false)
@@ -646,7 +646,11 @@ export default function PortalPartner({ session, profile, tenant, billingAccess,
   if (!session || !clientId) return null
 
   return (
-    <div className={`portal-partner ${open ? 'is-open' : ''} ${minimized ? 'is-minimized' : ''}`} ref={panelRef}>
+    <div
+      className={`portal-partner ${open ? 'is-open' : ''} ${minimized ? 'is-minimized' : ''}`}
+      data-suppress-mobile-launcher={suppressMobileLauncher ? 'true' : undefined}
+      ref={panelRef}
+    >
       {open && !minimized ? (
         <section className="portal-partner-panel" aria-label="MAP Partner">
           <header className="portal-partner-header">

@@ -4,6 +4,7 @@ export default function PortalBillingBanner({ billingAccess, onAction, actionPen
   if (!billingAccess?.showBanner) return null
 
   const Icon = billingAccess.mode === 'blocked' || billingAccess.mode === 'warning' ? AlertTriangle : Lock
+  const canAct = billingAccess.actionType !== 'none' && Boolean(billingAccess.ctaLabel) && Boolean(billingAccess.actionUrl || onAction)
 
   return (
     <section
@@ -35,7 +36,7 @@ export default function PortalBillingBanner({ billingAccess, onAction, actionPen
           </div>
         </div>
 
-        {billingAccess.actionUrl || onAction ? (
+        {canAct ? (
           <button
             type="button"
             onClick={onAction}

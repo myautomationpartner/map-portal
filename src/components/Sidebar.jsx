@@ -27,8 +27,8 @@ function resolveSubscriptionStatus(billingAccess) {
 
   if (billingAccess?.mode === 'trial') {
     return {
-      label: 'Trial active',
-      compactLabel: 'Trial active',
+      label: 'Manual trial active',
+      compactLabel: 'Manual trial',
       color: 'var(--portal-success)',
       background: 'rgba(133,247,169,0.12)',
       border: 'rgba(133,247,169,0.30)',
@@ -37,8 +37,8 @@ function resolveSubscriptionStatus(billingAccess) {
 
   if (billingAccess?.mode === 'warning') {
     return {
-      label: 'Subscription active',
-      compactLabel: 'Active',
+      label: 'Manual trial review',
+      compactLabel: 'Manual trial',
       color: 'var(--portal-success)',
       background: 'rgba(133,247,169,0.12)',
       border: 'rgba(133,247,169,0.30)',

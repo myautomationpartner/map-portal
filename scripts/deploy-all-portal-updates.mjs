@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
 import { deployPortalUpdate, isProtectedMainSiteDomain, loadDeployableClients } from './deploy-portal-update.mjs'
 
 const SHARED_PORTAL_WORKER_NAME = 'map-shared-portal'
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
+const PORTAL_REGRESSION_TESTS = [
+  '../src/lib/portalApi.source.test.mjs',
+]
 
 function isSharedPortalClient(client) {
   return client?.worker_name === SHARED_PORTAL_WORKER_NAME
@@ -25,6 +32,18 @@ function parseArgs(argv) {
   return args
 }
 
+function runPortalRegressionGuards() {
+  const testFiles = PORTAL_REGRESSION_TESTS.map((filePath) => resolve(SCRIPT_DIR, filePath))
+  const result = spawnSync(process.execPath, ['--test', ...testFiles], {
+    cwd: resolve(SCRIPT_DIR, '..'),
+    stdio: 'inherit',
+  })
+
+  if (result.status !== 0) {
+    throw new Error('Portal regression guards failed. Fix them before deploying customer portals.')
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   const dryRun = Boolean(args['dry-run'])
@@ -33,6 +52,8 @@ async function main() {
   if (!dryRun && !confirmed) {
     throw new Error('Deploying all customer portals requires --yes. Run with --dry-run first, then rerun with --yes after testing.')
   }
+
+  runPortalRegressionGuards()
 
   const deployableClients = await loadDeployableClients()
   const skipped = deployableClients.filter((client) => isProtectedMainSiteDomain(client.portal_domain) && !isSharedPortalClient(client))

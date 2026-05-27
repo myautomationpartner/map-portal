@@ -48,14 +48,14 @@ export function resolveBillingAccess(tenant = {}) {
     return {
       billingStatus,
       mode: 'warning',
-      actionType: 'checkout',
+      actionType: 'none',
       readOnly: false,
       showBanner: true,
-      eyebrow: 'Billing',
-      title: 'Trial ends in 5 days',
-      message: 'Your 30-day trial is in its final 5 days. Add payment now to keep full access active when the trial ends.',
-      ctaLabel: 'Add payment now',
-      actionUrl,
+      eyebrow: 'Manual trial',
+      title: 'Manual trial under review',
+      message: 'MAP is holding this workspace in manual trial access. No payment action is needed unless MAP converts this account to paid.',
+      ctaLabel: '',
+      actionUrl: '',
     }
   }
 
@@ -63,14 +63,14 @@ export function resolveBillingAccess(tenant = {}) {
     return {
       billingStatus,
       mode: 'trial',
-      actionType: 'checkout',
+      actionType: 'none',
       readOnly: false,
       showBanner: true,
-      eyebrow: 'Billing',
-      title: 'Trial active',
-      message: 'Add payment now to keep full access active after your trial.',
-      ctaLabel: 'Add payment now',
-      actionUrl,
+      eyebrow: 'Manual trial',
+      title: 'Manual trial active',
+      message: 'MAP is intentionally holding this workspace in manual trial access. No Stripe payment action is needed unless MAP converts this account to paid.',
+      ctaLabel: '',
+      actionUrl: '',
     }
   }
 

@@ -1,9 +1,10 @@
-import { NavLink } from 'react-router-dom'
-import { CalendarDays, LayoutDashboard, MessageSquare, Settings, CreditCard } from 'lucide-react'
+import { NavLink, useLocation } from 'react-router-dom'
+import { CalendarDays, FolderOpen, LayoutDashboard, MessageSquare, Settings, CreditCard } from 'lucide-react'
 import ThemeToggle from './ThemeToggle'
 
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/documents', icon: FolderOpen,     label: 'Files'     },
   { to: '/calendar', icon: CalendarDays,     label: 'Publisher' },
   { to: '/inbox',    icon: MessageSquare,   label: 'Inbox'      },
   { to: '/settings', icon: Settings,        label: 'Settings'   },
@@ -16,54 +17,61 @@ export default function BottomNav({
   portalTheme = 'dark',
   onPortalThemeChange,
 }) {
+  const location = useLocation()
+
+  function isCurrentNavItem(to) {
+    if (to === '/') return location.pathname === '/'
+    return location.pathname === to || location.pathname.startsWith(`${to}/`)
+  }
+
+  function handleNavClick(to, label) {
+    if (typeof window === 'undefined' || !isCurrentNavItem(to)) return
+    window.dispatchEvent(new CustomEvent('map:mobile-nav-active-tap', { detail: { to, label } }))
+  }
+
   return (
-    <nav className="fixed bottom-3 left-3 right-3 z-50 rounded-[28px] border shadow-2xl md:hidden"
+    <nav className="portal-bottom-nav fixed bottom-3 left-3 right-3 z-50 rounded-[28px] border shadow-2xl md:hidden"
       style={{ background: 'var(--portal-nav)', borderColor: 'var(--portal-border)', backdropFilter: 'blur(20px)' }}>
-      <div className="flex items-center">
+      <div className="portal-bottom-nav-inner flex items-center">
         {navItems.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}
             end={to === '/'}
-            className="flex-1 flex flex-col items-center gap-1 py-3 transition-all duration-200"
+            onClick={() => handleNavClick(to, label)}
+            className="portal-bottom-nav-link flex-1 flex flex-col items-center gap-1 py-3 transition-all duration-200"
             style={({ isActive }) => ({ color: isActive ? 'var(--portal-primary)' : 'var(--portal-nav-text-muted)' })}
           >
             {({ isActive }) => (
               <>
-                <div className="relative rounded-2xl p-2.5 transition-all duration-200"
+                <div className="portal-bottom-nav-icon relative rounded-2xl p-2.5 transition-all duration-200"
                   style={{ background: isActive ? 'linear-gradient(135deg, color-mix(in srgb, var(--portal-primary) 18%, transparent), color-mix(in srgb, var(--portal-cyan) 10%, transparent))' : 'transparent' }}>
                   <Icon className="h-5 w-5" strokeWidth={isActive ? 2.5 : 2} />
-                  {to === '/inbox' && (
-                    <span className="absolute -right-1 -top-1 z-10 flex h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 px-1 text-[9px] font-black shadow-lg"
-                      style={{ borderColor: 'white', background: 'var(--portal-primary)', color: 'var(--portal-dark)' }}>
-                      3
-                    </span>
-                  )}
                   {isActive && (
                     <div className="absolute -bottom-1 left-1/2 h-0.5 w-4 -translate-x-1/2 rounded-full"
                       style={{ background: 'linear-gradient(90deg, var(--portal-primary), var(--portal-cyan))', boxShadow: '0 0 12px color-mix(in srgb, var(--portal-cyan) 40%, transparent)' }} />
                   )}
                 </div>
-                <span className="text-[9px] font-semibold uppercase tracking-[0.24em]">{label}</span>
+                <span className="portal-bottom-nav-label text-[8px] font-semibold uppercase tracking-[0.08em]">{label}</span>
               </>
             )}
           </NavLink>
         ))}
-        {billingAccess?.showBanner && (billingAccess?.actionUrl || onBillingAction) ? (
+        {billingAccess?.showBanner && billingAccess?.actionType !== 'none' && billingAccess?.ctaLabel && (billingAccess?.actionUrl || onBillingAction) ? (
           <button
             type="button"
             onClick={onBillingAction}
             disabled={billingActionPending}
-            className="flex-1 flex flex-col items-center gap-1 py-3 transition-all duration-200"
+            className="portal-bottom-nav-link flex-1 flex flex-col items-center gap-1 py-3 transition-all duration-200"
             style={{ color: 'var(--portal-primary)' }}
           >
             <div
-              className="relative rounded-2xl p-2.5 transition-all duration-200"
+              className="portal-bottom-nav-icon relative rounded-2xl p-2.5 transition-all duration-200"
               style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--portal-primary) 18%, transparent), color-mix(in srgb, var(--portal-cyan) 10%, transparent))' }}
             >
               <CreditCard className="h-5 w-5" strokeWidth={2.5} />
             </div>
-            <span className="text-[9px] font-semibold uppercase tracking-[0.24em]">{billingActionPending ? '...' : 'Pay'}</span>
+            <span className="portal-bottom-nav-label text-[8px] font-semibold uppercase tracking-[0.08em]">{billingActionPending ? '...' : 'Billing'}</span>
           </button>
         ) : null}
         <div className="flex flex-1 items-center justify-center py-3">

@@ -7,9 +7,15 @@ import { buildSharedPortalPath, portalPath } from '../lib/portalPath'
 import { DASHBOARD_PLATFORMS } from '../lib/platformCatalog'
 import { fetchTeamAccessUsers, inviteTeamAccessUser, updateTeamAccessUser } from '../lib/portalApi'
 import {
+  getCurrentPushSubscription,
+  getPushNotificationStatus,
+  subscribeToPortalPush,
+  unsubscribeFromPortalPush,
+} from '../lib/pushNotifications'
+import {
   User, Lock, Building2, CheckCircle2, Loader2, AlertCircle,
   Link2, ExternalLink, Wifi, WifiOff, MessageCircle, Copy, RefreshCw, Mail, Save, Unlink2,
-  UserPlus, ShieldCheck, Ban, CreditCard, ChevronDown
+  UserPlus, ShieldCheck, Ban, CreditCard, ChevronDown, Bell, BellOff
 } from 'lucide-react'
 
 const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
@@ -219,9 +225,9 @@ function resolveSubscriptionStatus(billingAccess) {
 
   if (billingAccess?.mode === 'trial') {
     return {
-      label: 'Trial active',
+      label: 'Manual trial active',
       tone: 'active',
-      description: billingAccess?.message || 'Your trial is active. Add payment before the trial ends.',
+      description: billingAccess?.message || 'MAP is intentionally holding this workspace in manual trial access.',
       color: 'var(--portal-success)',
       background: 'rgba(133,247,169,0.10)',
       border: 'rgba(133,247,169,0.24)',
@@ -230,9 +236,9 @@ function resolveSubscriptionStatus(billingAccess) {
 
   if (billingAccess?.mode === 'warning') {
     return {
-      label: 'Active',
+      label: 'Manual trial review',
       tone: 'active',
-      description: billingAccess?.message || 'Your subscription is active. Add payment details before access changes.',
+      description: billingAccess?.message || 'MAP is reviewing this manual trial before access changes.',
       color: 'var(--portal-success)',
       background: 'rgba(133,247,169,0.10)',
       border: 'rgba(133,247,169,0.24)',
@@ -283,7 +289,8 @@ function SubscriptionSection({ tenant, billingAccess, onBillingAction, billingAc
   const primaryLabel = billingAccess?.showBanner
     ? billingAccess.ctaLabel || 'Buy now'
     : 'Manage subscription'
-  const canOpenBilling = Boolean(onBillingAction)
+  const canOpenBilling = Boolean(onBillingAction) && billingAccess?.actionType !== 'none'
+  const showBillingActions = billingAccess?.actionType !== 'none'
 
   return (
     <Section title="Subscription" description="Status, payment, and cancellation options" icon={CreditCard}>
@@ -311,29 +318,37 @@ function SubscriptionSection({ tenant, billingAccess, onBillingAction, billingAc
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={onBillingAction}
-            disabled={!canOpenBilling || billingActionPending}
-            className="portal-button-primary inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
-          >
-            {billingActionPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-            {billingActionPending ? 'Opening billing...' : primaryLabel}
-          </button>
-          <button
-            type="button"
-            onClick={onBillingAction}
-            disabled={!canOpenBilling || billingActionPending}
-            className="portal-button-secondary inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
-          >
-            Cancel or change plan
-          </button>
-        </div>
+        {showBillingActions ? (
+          <>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={onBillingAction}
+                disabled={!canOpenBilling || billingActionPending}
+                className="portal-button-primary inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
+              >
+                {billingActionPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                {billingActionPending ? 'Opening billing...' : primaryLabel}
+              </button>
+              <button
+                type="button"
+                onClick={onBillingAction}
+                disabled={!canOpenBilling || billingActionPending}
+                className="portal-button-secondary inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
+              >
+                Cancel or change plan
+              </button>
+            </div>
 
-        <p className="text-xs leading-relaxed" style={{ color: 'var(--portal-text-soft)' }}>
-          Subscription changes open in Stripe's secure billing flow. Cancellations and payment-method updates are handled there.
-        </p>
+            <p className="text-xs leading-relaxed" style={{ color: 'var(--portal-text-soft)' }}>
+              Subscription changes open in Stripe's secure billing flow. Cancellations and payment-method updates are handled there.
+            </p>
+          </>
+        ) : (
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--portal-text-soft)' }}>
+            Manual trial access is managed by MAP. Stripe checkout and subscription management stay disabled until the operator approves conversion to paid.
+          </p>
+        )}
       </div>
     </Section>
   )
@@ -1377,6 +1392,122 @@ function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant 
   )
 }
 
+function PhoneNotificationsSection({ billingAccess }) {
+  const [support, setSupport] = useState(() => ({
+    supported: false,
+    permission: 'default',
+    standalone: false,
+    secure: false,
+  }))
+  const [subscribed, setSubscribed] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [status, setStatus] = useState(null)
+
+  const refreshState = useCallback(async () => {
+    const nextSupport = getPushNotificationStatus()
+    setSupport(nextSupport)
+    if (!nextSupport.supported || !nextSupport.secure) {
+      setSubscribed(false)
+      setLoading(false)
+      return
+    }
+
+    const subscription = await getCurrentPushSubscription().catch(() => null)
+    setSubscribed(Boolean(subscription))
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    refreshState()
+  }, [refreshState])
+
+  async function handleEnable() {
+    setSaving(true)
+    setStatus(null)
+    try {
+      await subscribeToPortalPush({ deviceLabel: support.standalone ? 'Installed MAP app' : 'Browser' })
+      await refreshState()
+      setStatus({ type: 'success', message: 'Phone notifications are on for this device.' })
+    } catch (error) {
+      setStatus({ type: 'error', message: error.message || 'Could not turn on phone notifications.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDisable() {
+    setSaving(true)
+    setStatus(null)
+    try {
+      await unsubscribeFromPortalPush()
+      await refreshState()
+      setStatus({ type: 'info', message: 'Phone notifications are off for this device.' })
+    } catch (error) {
+      setStatus({ type: 'error', message: error.message || 'Could not turn off phone notifications.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const unavailable = !support.supported || !support.secure
+  const disabled = saving || loading || billingAccess?.readOnly || unavailable
+
+  return (
+    <Section title="Phone notifications" description="Inbox alerts for this phone or tablet" icon={Bell}>
+      <div className="space-y-4">
+        <div
+          className="rounded-2xl px-4 py-4 text-sm"
+          style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid var(--portal-border)', color: 'var(--portal-text-muted)' }}
+        >
+          {unavailable
+            ? 'This browser cannot receive MAP phone notifications.'
+            : support.standalone
+              ? 'This installed MAP app can receive Inbox alerts.'
+              : 'On iPhone, add MAP to your Home Screen and open it from the app icon before turning alerts on.'}
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
+              {loading ? 'Checking this device...' : subscribed ? 'Notifications on' : 'Notifications off'}
+            </p>
+            <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
+              Permission: {support.permission === 'granted' ? 'Allowed' : support.permission === 'denied' ? 'Blocked' : 'Not set'}
+            </p>
+          </div>
+
+          {subscribed ? (
+            <button
+              type="button"
+              onClick={handleDisable}
+              disabled={saving || loading}
+              className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-50"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellOff className="h-4 w-4" />}
+              Turn off
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleEnable}
+              disabled={disabled}
+              className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
+              Turn on alerts
+            </button>
+          )}
+        </div>
+
+        {status && <StatusBadge status={status.type} message={status.message} />}
+      </div>
+    </Section>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Settings() {
@@ -1536,6 +1667,14 @@ export default function Settings() {
               tenant={tenant}
             />
           )}
+        </SettingsCategory>
+
+        <SettingsCategory
+          title="Mobile app"
+          description="Phone setup and Inbox alerts"
+          icon={Bell}
+        >
+          <PhoneNotificationsSection billingAccess={billingAccess} />
         </SettingsCategory>
 
         <SettingsCategory

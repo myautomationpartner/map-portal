@@ -6,15 +6,52 @@ import {
   buildDashboardSocialPlatformSummary,
   buildZernioOutboundReplyRequest,
   buildZernioScopedSearchParams,
+  buildVapidJwt,
+  buildContentPartnerCommandReply,
+  buildRemoteCalendarPostDeletePayload,
+  classifyContentPartnerCommand,
+  canDeleteCalendarPost,
+  selectContentPartnerReviewDraft,
   getUserPermissions,
+  isVisibleContentDraft,
   normalizeZernioPostAnalytics,
   normalizeZernioAdAccounts,
   normalizeZernioAccountEventDetails,
   normalizeZernioInboxComment,
   normalizeZernioMessage,
   pickBoostAdAccountId,
+  sanitizePortalCustomerError,
+  shouldRemoveLocalCalendarPostAfterRemoteDeleteError,
   validateBoostAdAccountId,
 } from './worker.js'
+
+test('builds VAPID JWTs scoped to the push endpoint origin', async () => {
+  const pair = await crypto.subtle.generateKey(
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    true,
+    ['sign', 'verify'],
+  )
+  const publicJwk = await crypto.subtle.exportKey('jwk', pair.publicKey)
+  const privateJwk = await crypto.subtle.exportKey('jwk', pair.privateKey)
+  const publicBytes = new Uint8Array([
+    4,
+    ...Buffer.from(publicJwk.x, 'base64url'),
+    ...Buffer.from(publicJwk.y, 'base64url'),
+  ])
+  const publicKey = Buffer.from(publicBytes).toString('base64url')
+
+  const jwt = await buildVapidJwt('https://updates.push.services.mozilla.com/wpush/v2/example', {
+    publicKey,
+    privateKey: privateJwk.d,
+    subject: 'mailto:info@myautomationpartner.com',
+  }, new Date('2026-05-25T12:00:00Z'))
+  const [, payload] = jwt.split('.')
+  const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
+
+  assert.equal(parsed.aud, 'https://updates.push.services.mozilla.com')
+  assert.equal(parsed.sub, 'mailto:info@myautomationpartner.com')
+  assert.equal(parsed.exp, 1779753600)
+})
 
 test('treats legacy admin users without explicit portal permissions as full admins', () => {
   assert.deepEqual(getUserPermissions({ role: 'admin', portal_permissions: null }), ['full_admin'])
@@ -35,6 +72,112 @@ test('allows Meta ad account IDs with or without the act_ prefix for boosted pos
 test('allows non-Meta ad account IDs to be provider-specific for boosted posts', () => {
   assert.equal(validateBoostAdAccountId('tiktok', 'tt-ad-account-123'), '')
   assert.equal(validateBoostAdAccountId('twitter', 'x-ad-account-123'), '')
+})
+
+test('sanitizes duplicate draft storage errors before showing them to customers', () => {
+  const raw = '{"code":"23505","details":"Key (client_id, slot_date_local, slot_label) already exists.","message":"duplicate key value violates unique constraint \\"social_drafts_slot_unique\\""}'
+
+  assert.equal(
+    sanitizePortalCustomerError(raw),
+    'That draft already exists. Open Publisher to review the existing draft or send a different request.',
+  )
+})
+
+test('hides closed Content Partner drafts from the customer calendar', () => {
+  assert.equal(isVisibleContentDraft({ review_state: 'draft' }), true)
+  assert.equal(isVisibleContentDraft({ review_state: 'needs_review' }), true)
+  assert.equal(isVisibleContentDraft({ review_state: 'published' }), false)
+  assert.equal(isVisibleContentDraft({ review_state: 'published_manually' }), false)
+  assert.equal(isVisibleContentDraft({ review_state: 'archived' }), false)
+  assert.equal(isVisibleContentDraft({ review_state: 'superseded' }), false)
+})
+
+test('allows calendar delete for scheduled and posted rows only', () => {
+  assert.equal(canDeleteCalendarPost({ status: 'scheduled' }), true)
+  assert.equal(canDeleteCalendarPost({ status: 'published' }), true)
+  assert.equal(canDeleteCalendarPost({ status: 'draft' }), false)
+  assert.equal(canDeleteCalendarPost({ status: 'failed' }), false)
+})
+
+test('builds provider delete payload for scheduled and posted calendar posts', () => {
+  assert.deepEqual(
+    buildRemoteCalendarPostDeletePayload({
+      id: 'post-row-123',
+      zernio_post_id: 'zernio-post-123',
+      status: 'published',
+      zernio_profile_id: 'profile-row-123',
+    }, {
+      clientId: 'client-123',
+      zernioProfileId: 'profile-env-123',
+    }),
+    {
+      action: 'delete',
+      postId: 'post-row-123',
+      clientId: 'client-123',
+      zernioPostId: 'zernio-post-123',
+      zernioProfileId: 'profile-row-123',
+    },
+  )
+
+  assert.deepEqual(
+    buildRemoteCalendarPostDeletePayload({
+      id: 'post-row-456',
+      n8n_execution_id: 'legacy-zernio-post-456',
+      status: 'scheduled',
+    }, {
+      clientId: 'client-456',
+      zernioProfileId: 'profile-env-456',
+    }),
+    {
+      action: 'delete',
+      postId: 'post-row-456',
+      clientId: 'client-456',
+      zernioPostId: 'legacy-zernio-post-456',
+      zernioProfileId: 'profile-env-456',
+    },
+  )
+})
+
+test('calendar delete does not clean up local rows after unconfirmed remote delete errors', () => {
+  assert.equal(shouldRemoveLocalCalendarPostAfterRemoteDeleteError({ status: 'published' }), false)
+  assert.equal(shouldRemoveLocalCalendarPostAfterRemoteDeleteError({ status: 'scheduled' }), false)
+  assert.equal(shouldRemoveLocalCalendarPostAfterRemoteDeleteError({ status: 'draft' }), false)
+})
+
+test('routes Content Partner menu commands without creating a draft', () => {
+  assert.equal(classifyContentPartnerCommand('Menu'), 'menu')
+  assert.equal(classifyContentPartnerCommand('/help'), 'menu')
+  assert.equal(classifyContentPartnerCommand('show drafts'), 'drafts')
+  assert.equal(classifyContentPartnerCommand('what is scheduled'), 'scheduled')
+
+  assert.match(
+    buildContentPartnerCommandReply('menu', { basePath: '/portal/my-automation-partner' }),
+    /^What do you want to work on\?/,
+  )
+})
+
+test('Content Partner review draft selector avoids old scheduled drafts', () => {
+  const now = new Date('2026-05-25T16:00:00Z')
+  const selected = selectContentPartnerReviewDraft([
+    {
+      id: 'old-open',
+      scheduled_for: '2026-05-08T19:00:00Z',
+      review_state: 'draft',
+      updated_at: '2026-05-08T12:00:00Z',
+    },
+    {
+      id: 'next-upcoming',
+      scheduled_for: '2026-05-26T18:00:00Z',
+      review_state: 'draft',
+      updated_at: '2026-05-20T12:00:00Z',
+    },
+  ], { now })
+
+  assert.equal(selected?.id, 'next-upcoming')
+  assert.match(
+    buildContentPartnerCommandReply('drafts', { basePath: '/portal/my-automation-partner', draftId: selected.id }),
+    /\/portal\/my-automation-partner\/post\?draftId=next-upcoming/,
+  )
 })
 
 test('reuses a previous tenant-scoped ad account when launching another boost', () => {
@@ -472,6 +615,13 @@ test('keeps pending platform post metrics separate from another platform analyti
   assert.equal(metric.views, 0)
   assert.equal(metric.impressions, 0)
   assert.equal(metric.reach, 0)
+})
+
+test('post metrics include durable platform variant media for analytics thumbnails', async () => {
+  const workerSource = await readFile(new URL('./worker.js', import.meta.url), 'utf8')
+  assert.match(workerSource, /loadPublishedPostsForMetrics/)
+  assert.match(workerSource, /platform_variants_json/)
+  assert.match(workerSource, /buildPostMetricsResponse\(posts, metrics, sync\)/)
 })
 
 test('normalizes Zernio account event ids, platforms, usernames, and state tokens', () => {

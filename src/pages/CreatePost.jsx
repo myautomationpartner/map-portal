@@ -31,6 +31,7 @@ import {
   parseDraftMeta,
   stringifyDraftMeta,
 } from '../lib/socialDrafting'
+import { getDraftDocumentMediaRefs } from '../lib/campaignDraftAssets'
 import {
   AlertCircle, ArrowUpRight, Calendar, CalendarDays, Check, CheckCircle2,
   ChevronLeft, ChevronRight, Clock3, History, Images, Loader2,
@@ -300,29 +301,7 @@ function buildDropboxMediaItem(file, index = 0) {
 }
 
 function getCampaignRecommendedAssetRefs(draft) {
-  const refs = []
-  const seen = new Set()
-  const meta = parseDraftMeta(draft?.review_notes)
-  const addRef = (input = {}) => {
-    const documentId = input.document_id || input.documentId || input.id || ''
-    const name = input.name || input.assetName || input.file_name || ''
-    if (!documentId || seen.has(documentId)) return
-    seen.add(documentId)
-    refs.push({
-      documentId,
-      name,
-      use: input.suggestion || input.assetUse || input.use || '',
-    })
-  }
-
-  if (meta.recommendedAsset) addRef(meta.recommendedAsset)
-  if (Array.isArray(draft?.asset_requirements_json)) {
-    draft.asset_requirements_json
-      .filter((item) => item?.type === 'campaign_asset')
-      .forEach(addRef)
-  }
-
-  return refs
+  return getDraftDocumentMediaRefs(draft)
 }
 
 function buildExistingMediaItem(url) {
@@ -3730,6 +3709,72 @@ export default function CreatePost() {
                 {platformFormatStatus}
               </p>
             ) : null}
+
+            <div className="create-post-mobile-platform-list mt-5" aria-label="Mobile platform selection">
+              {PLATFORMS.map(({ id, label, Icon, accent, soft }) => {
+                const active = selectedPlatforms[id]
+                const hasCrop = Boolean(platformImageVariants[id])
+                return (
+                  <article key={id} className="create-post-mobile-platform-row" data-active={active}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextValue = !selectedPlatforms[id]
+                        const next = { ...selectedPlatforms, [id]: nextValue }
+                        setSelectedPlatforms(next)
+                        if (nextValue) {
+                          setPreviewPlatform(id)
+                        } else if (previewPlatform === id) {
+                          setPreviewPlatform(Object.entries(next).find(([, enabled]) => enabled)?.[0] || '')
+                        }
+                      }}
+                      style={active
+                        ? { '--platform-accent': accent, '--platform-soft': soft }
+                        : { '--platform-accent': accent, '--platform-soft': 'transparent' }}
+                    >
+                      <span className="create-post-checkmark" data-active={active}>
+                        {active ? <Check className="h-3.5 w-3.5" /> : null}
+                      </span>
+                      <Icon className="h-4 w-4" />
+                      <span>
+                        <b>{label}</b>
+                        <small>{active ? hasCrop ? 'Selected · custom crop ready' : 'Selected · uses main creative' : 'Not selected'}</small>
+                      </span>
+                    </button>
+                    {active && (
+                      <div className="create-post-mobile-platform-actions">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewPlatform(id)
+                            handleImproveImage('cleanup', activeCreativeItem)
+                          }}
+                          disabled={!active || isSubmitting || activeCreativeIsVideo || imageImproveState === 'improving' || imageGenerateState === 'generating'}
+                        >
+                          {imageImproveState === 'improving' && imageImproveMode === 'cleanup'
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : null}
+                          Improve image
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewPlatform(id)
+                            handleFormatPlatformImages([id])
+                          }}
+                          disabled={!active || isSubmitting || activeCreativeIsVideo || imageFormatState === 'formatting' || imageGenerateState === 'generating'}
+                        >
+                          {imageFormatState === 'formatting' && previewPlatform === id
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : null}
+                          Crop
+                        </button>
+                      </div>
+                    )}
+                  </article>
+                )
+              })}
+            </div>
 
             <div className="create-post-preview-grid mt-5">
               {PLATFORMS.map(({ id, label, Icon, accent, soft }) => {

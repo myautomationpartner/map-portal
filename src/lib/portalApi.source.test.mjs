@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import { test } from 'node:test'
+
+const source = await readFile(new URL('./portalApi.js', import.meta.url), 'utf8')
+const campaignSource = await readFile(new URL('../pages/CampaignPartner.jsx', import.meta.url), 'utf8')
+
+test('Campaign Partner delete removes future scheduled posts but preserves published history', () => {
+  assert.match(source, /export function getLinkedCampaignPostIds\(drafts = \[\]\)/)
+  assert.match(source, /export function isFutureCampaignCalendarPost\(post\)/)
+  assert.match(source, /return post\.status === 'scheduled'/)
+  assert.match(source, /const linkedPosts = await fetchCampaignLinkedPosts\(project\.client_id, linkedPostIds\)/)
+  assert.match(source, /filter\(isFutureCampaignCalendarPost\)/)
+  assert.match(source, /preservedPublishedPostCount: linkedPosts\.filter\(\(post\) => post\.status === 'published'\)\.length/)
+  assert.doesNotMatch(source, /for \(const postId of linkedPostIds\)/)
+  assert.match(campaignSource, /Already-posted social posts will stay in Publisher history\./)
+})

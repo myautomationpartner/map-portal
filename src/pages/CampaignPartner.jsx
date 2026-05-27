@@ -37,6 +37,7 @@ import {
   uploadSecureVaultFileToSignedUrl,
 } from '../lib/portalApi'
 import { formatVaultBytes, validateSecureVaultFile } from '../lib/secureVault'
+import { buildCampaignDraftMediaAssets } from '../lib/campaignDraftAssets'
 
 const CAMPAIGN_TYPES = [
   { value: 'event', label: 'Event', description: 'Webinars, open houses, trade shows, community visits, or scheduled happenings.' },
@@ -610,6 +611,15 @@ function buildDraftRow({ project, post, profile }) {
   const time = post.time || '10:00'
   const [hour = '10', minute = '00'] = time.split(':')
   const endHour = String(Math.min(Number(hour) + 1, 23)).padStart(2, '0')
+  const mediaAssets = buildCampaignDraftMediaAssets({
+    post,
+    campaignAssets: project.prompt_json?.campaignAssets,
+  })
+  const recommendedAsset = mediaAssets[0] || (post.assetName ? {
+    id: post.assetId || '',
+    name: post.assetName,
+    use: post.assetUse || '',
+  } : null)
 
   return {
     client_id: profile.client_id,
@@ -640,16 +650,14 @@ function buildDraftRow({ project, post, profile }) {
       campaignMode: project.prompt_json?.campaignMode || 'standard',
       platforms: post.platforms || [],
       imageIdea: post.imageIdea || '',
-      recommendedAsset: post.assetName ? {
-        id: post.assetId || '',
-        name: post.assetName,
-        use: post.assetUse || '',
-      } : null,
+      recommendedAsset,
+      mediaAssets,
       generatedAt: new Date().toISOString(),
     }),
     asset_requirements_json: [
       { type: 'media_concept', suggestion: post.imageIdea || 'Use an approved campaign image.' },
       post.assetName ? { type: 'campaign_asset', document_id: post.assetId || null, name: post.assetName, suggestion: post.assetUse || post.imageIdea || '' } : null,
+      ...mediaAssets,
       { type: 'media_action', options: ['generate_image', 'upload_photo'] },
     ].filter(Boolean),
     seasonal_modifier_context_json: [
@@ -1009,7 +1017,7 @@ export default function CampaignPartner() {
 
   async function handleDelete(project) {
     if (!requireWriteAccess('delete Campaign Partner projects')) return
-    if (!window.confirm(`Delete ${project.title}? This removes the saved campaign project and Campaign Partner drafts it created in Publisher.`)) return
+    if (!window.confirm(`Delete ${project.title}? This removes the saved campaign project plus future Publisher drafts and scheduled posts it created. Already-posted social posts will stay in Publisher history.`)) return
     try {
       const cleanup = await deleteCampaignProjectWithDrafts(project)
       await Promise.all([
@@ -1017,9 +1025,18 @@ export default function CampaignPartner() {
         queryClient.invalidateQueries({ queryKey: ['social-drafts', clientId] }),
         queryClient.invalidateQueries({ queryKey: ['calendar-posts', clientId] }),
       ])
-      setNotice(cleanup.deletedDraftCount
-        ? `Campaign deleted. ${cleanup.deletedDraftCount} Publisher draft${cleanup.deletedDraftCount === 1 ? '' : 's'} removed.`
-        : 'Campaign deleted.')
+      const cleanupParts = [
+        cleanup.deletedDraftCount
+          ? `${cleanup.deletedDraftCount} Publisher draft${cleanup.deletedDraftCount === 1 ? '' : 's'} removed`
+          : '',
+        cleanup.deletedPostCount
+          ? `${cleanup.deletedPostCount} future scheduled post${cleanup.deletedPostCount === 1 ? '' : 's'} removed`
+          : '',
+        cleanup.preservedPublishedPostCount
+          ? `${cleanup.preservedPublishedPostCount} posted item${cleanup.preservedPublishedPostCount === 1 ? '' : 's'} kept in history`
+          : '',
+      ].filter(Boolean)
+      setNotice(cleanupParts.length ? `Campaign deleted. ${cleanupParts.join('; ')}.` : 'Campaign deleted.')
     } catch (err) {
       setError(err.message || 'Could not delete this campaign.')
     }

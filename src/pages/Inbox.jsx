@@ -16,7 +16,6 @@ import {
   MonitorSmartphone,
   QrCode,
   RefreshCw,
-  Radio,
   Search,
   Send,
   Settings,
@@ -26,10 +25,10 @@ import {
   Smartphone,
   StickyNote,
   X,
-  UserRound,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { portalPath } from '../lib/portalPath'
+import { splitMessageLinks } from '../lib/messageLinks'
 
 const DEFAULT_CHATWOOT_APP_URL = 'https://chatwoot.myautomationpartner.com/app'
 const CHATWOOT_APP_URL = stripTrailingSlash(import.meta.env.VITE_CHATWOOT_APP_URL || DEFAULT_CHATWOOT_APP_URL)
@@ -52,11 +51,9 @@ const STATUS_STYLES = {
 }
 
 const INBOX_SECTIONS = [
-  { value: 'messages', label: 'Messages', icon: MessageCircle },
+  { value: 'messages', label: 'Regular DMs', icon: MessageCircle },
   { value: 'comments', label: 'Comments', icon: StickyNote },
-  { value: 'reviews', label: 'Reviews', icon: Star },
-  { value: 'campaigns', label: 'Campaigns', icon: Radio },
-  { value: 'contacts', label: 'Contacts', icon: UserRound },
+  { value: 'reviews', label: 'Reviews', icon: Star, disabled: true, note: 'Soon' },
 ]
 
 // Data fetching
@@ -292,6 +289,44 @@ function conversationPreview(conversation) {
   return lastMessage?.content || conversation?.additional_attributes?.browser?.device_name || 'No message preview yet.'
 }
 
+function conversationSearchText(conversation, inboxes = []) {
+  return [
+    conversationTitle(conversation),
+    conversationPreview(conversation),
+    conversationSubtitle(conversation),
+    inboxName(conversation, inboxes),
+    conversation?.channel,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function isMyPartnerConversation(conversation) {
+  const title = conversationTitle(conversation).trim().toLowerCase()
+  const sender = conversation?.meta?.sender || {}
+  const senderText = [
+    sender.name,
+    sender.email,
+    sender.identifier,
+    sender.additional_attributes?.identifier,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  return title === 'my partner' || senderText.includes('map-content-partner')
+}
+
+function isPublicCommentConversation(conversation, inboxes = []) {
+  const text = conversationSearchText(conversation, inboxes)
+  return /\b(comment|comments|commenter|commented)\b/.test(text)
+}
+
+function isPrivateMessageConversation(conversation, inboxes = []) {
+  return !isMyPartnerConversation(conversation) && !isPublicCommentConversation(conversation, inboxes)
+}
+
 function escapeRegExp(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -361,6 +396,24 @@ function messageDisplayContent(message, previewUrl) {
       .trim()
   }
   return content || fallback
+}
+
+function LinkedMessageText({ children }) {
+  const parts = splitMessageLinks(children)
+  return parts.map((part, index) => {
+    if (part.type !== 'link') return <span key={`${part.type}-${index}`}>{part.value}</span>
+    return (
+      <a
+        key={`${part.type}-${index}-${part.value}`}
+        href={part.value}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inbox-message-link"
+      >
+        {part.value}
+      </a>
+    )
+  })
 }
 
 function senderName(message) {
@@ -435,6 +488,25 @@ function commentAuthorDisplayName(comment, platform) {
   return platformName ? `${platformName[0].toUpperCase()}${platformName.slice(1)} commenter` : 'Social commenter'
 }
 
+function commentReplyText(reply) {
+  return String(reply?.text || reply?.message || reply?.content || reply?.body || '').trim()
+}
+
+function commentReplyAuthorDisplayName(reply) {
+  const name = String(
+    reply?.authorName
+    || reply?.author
+    || reply?.from?.name
+    || reply?.sender?.name
+    || '',
+  ).trim()
+  return name || 'MAP reply'
+}
+
+function commentReplyCreatedTime(reply) {
+  return String(reply?.createdTime || reply?.created_at || reply?.timestamp || '').trim()
+}
+
 function ticketStepState(selectedConversation, step) {
   const status = selectedConversation?.status || 'open'
   if (status === 'resolved') return 'done'
@@ -442,6 +514,14 @@ function ticketStepState(selectedConversation, step) {
   if (status === 'pending' && step === 4) return 'next'
   if (status === 'open' && step === 3) return 'next'
   return 'waiting'
+}
+
+function selectedActionLabel(selectedConversation) {
+  const status = selectedConversation?.status || 'open'
+  if (!selectedConversation) return 'Choose a conversation'
+  if (status === 'pending') return 'Waiting on customer'
+  if (status === 'resolved') return 'Conversation is done'
+  return 'Reply or add a private note'
 }
 
 function TicketStage({ state, number, title, detail }) {
@@ -975,13 +1055,33 @@ function ErrorBanner({ message }) {
   )
 }
 
-function InboxSectionNav({ activeSection, onSectionChange }) {
+function InboxSectionNav({
+  activeSection,
+  onSectionChange,
+  onOpenPartner,
+  openingPartner,
+  onOpenSetup,
+}) {
   return (
-    <aside className="hidden min-h-[calc(100vh-150px)] w-[190px] shrink-0 border-r bg-white px-3 py-4 md:block" style={{ borderColor: 'var(--portal-border)' }}>
+    <aside className="inbox-section-nav hidden min-h-[calc(100vh-150px)] w-[210px] shrink-0 border-r bg-white px-3 py-4 md:flex md:flex-col" style={{ borderColor: 'var(--portal-border)' }}>
       <div className="mb-3 flex items-center gap-2 px-2 text-sm font-semibold" style={{ color: 'var(--portal-text-muted)' }}>
         <InboxIcon className="h-4 w-4" />
         <span>Inbox</span>
       </div>
+      <button
+        type="button"
+        onClick={onOpenPartner}
+        disabled={openingPartner}
+        className="inbox-partner-nav mb-3 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-65"
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
+          {openingPartner ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate">My Partner</span>
+          <span className="block truncate text-[11px] font-medium">Ask MAP for help</span>
+        </span>
+      </button>
       <div className="grid gap-1">
         {INBOX_SECTIONS.map((section) => {
           const Icon = section.icon
@@ -990,17 +1090,38 @@ function InboxSectionNav({ activeSection, onSectionChange }) {
             <button
               key={section.value}
               type="button"
-              onClick={() => onSectionChange(section.value)}
-              className="flex h-9 items-center gap-2 rounded-md px-2 text-left text-sm font-medium"
+              onClick={() => {
+                if (!section.disabled) onSectionChange(section.value)
+              }}
+              disabled={section.disabled}
+              className="inbox-section-nav-item flex h-9 items-center gap-2 rounded-md px-2 text-left text-sm font-medium disabled:cursor-not-allowed"
+              aria-disabled={section.disabled ? 'true' : undefined}
+              data-active={active ? 'true' : undefined}
               style={active
                 ? { background: '#eef2f7', color: 'var(--portal-text)' }
                 : { background: 'transparent', color: 'var(--portal-text-muted)' }}
             >
               <Icon className="h-4 w-4" />
-              {section.label}
+              <span className="min-w-0 flex-1 truncate">{section.label}</span>
+              {section.note && (
+                <span className="inbox-section-nav-note rounded-full px-1.5 py-0.5 text-[10px] font-bold">
+                  {section.note}
+                </span>
+              )}
             </button>
           )
         })}
+      </div>
+      <div className="mt-auto border-t pt-3" style={{ borderColor: 'var(--portal-border)' }}>
+        <button
+          type="button"
+          onClick={onOpenSetup}
+          className="inbox-section-nav-item flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm font-medium"
+          style={{ color: 'var(--portal-text-muted)' }}
+        >
+          <Settings className="h-4 w-4" />
+          <span>Setup</span>
+        </button>
       </div>
     </aside>
   )
@@ -1179,85 +1300,115 @@ function CommentsInbox({
                 <EmptyState title="No comments loaded" detail="Zernio shows the post, but no individual comments were returned yet." />
               ) : (
                 <div className="space-y-3">
-                  {comments.map((comment) => (
-                    <article key={comment.id || `${comment.createdTime}-${comment.text}`} className="rounded-md border bg-white px-4 py-3" style={{ borderColor: 'var(--portal-border)' }}>
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold" style={{ color: 'var(--portal-text-muted)' }}>
-                          {comment.authorAvatar ? <img src={comment.authorAvatar} alt="" className="h-full w-full rounded-full object-cover" /> : '?'}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{commentAuthorDisplayName(comment, selectedPost.platform)}</p>
-                            <span
-                              className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-                              style={comment.replyCount > 0
-                                ? { borderColor: 'rgba(47,143,87,0.25)', background: 'rgba(47,143,87,0.1)', color: '#2f8f57' }
-                                : { borderColor: 'rgba(201,168,76,0.3)', background: 'rgba(201,168,76,0.09)', color: '#b8871f' }}
-                            >
-                              {comment.replyCount > 0 ? 'Answered' : 'Needs reply'}
-                            </span>
+                  {comments.map((comment) => {
+                    const visibleReplies = Array.isArray(comment.replies) ? comment.replies : []
+                    return (
+                      <article key={comment.id || `${comment.createdTime}-${comment.text}`} className="rounded-md border bg-white px-4 py-3" style={{ borderColor: 'var(--portal-border)' }}>
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold" style={{ color: 'var(--portal-text-muted)' }}>
+                            {comment.authorAvatar ? <img src={comment.authorAvatar} alt="" className="h-full w-full rounded-full object-cover" /> : '?'}
                           </div>
-                          <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>{comment.text || '[No text]'}</p>
-                          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                            <span>{formatInboxDate(comment.createdTime)}</span>
-                            {comment.likeCount > 0 && <span>{comment.likeCount} likes</span>}
-                            {comment.replyCount > 0 && <span>{comment.replyCount} replies</span>}
-                            <span>{comment.hidden ? 'Hidden' : 'Visible'}</span>
-                            {comment.canReply && (
-                              <button
-                                type="button"
-                                onClick={() => onStartReply(comment.id)}
-                                className="font-semibold"
-                                style={{ color: 'var(--portal-primary)' }}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{commentAuthorDisplayName(comment, selectedPost.platform)}</p>
+                              <span
+                                className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+                                style={comment.replyCount > 0
+                                  ? { borderColor: 'rgba(47,143,87,0.25)', background: 'rgba(47,143,87,0.1)', color: '#2f8f57' }
+                                  : { borderColor: 'rgba(201,168,76,0.3)', background: 'rgba(201,168,76,0.09)', color: '#b8871f' }}
                               >
-                                Reply
-                              </button>
+                                {comment.replyCount > 0 ? 'Answered' : 'Needs reply'}
+                              </span>
+                            </div>
+                            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>{comment.text || '[No text]'}</p>
+                            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                              <span>{formatInboxDate(comment.createdTime)}</span>
+                              {comment.likeCount > 0 && <span>{comment.likeCount} likes</span>}
+                              {comment.replyCount > 0 && <span>{comment.replyCount} replies</span>}
+                              <span>{comment.hidden ? 'Hidden' : 'Visible'}</span>
+                              {comment.canReply && (
+                                <button
+                                  type="button"
+                                  onClick={() => onStartReply(comment.id)}
+                                  className="font-semibold"
+                                  style={{ color: 'var(--portal-primary)' }}
+                                >
+                                  Reply
+                                </button>
+                              )}
+                            </div>
+                            {visibleReplies.length > 0 ? (
+                              <div className="mt-3 space-y-2 border-l pl-4" style={{ borderColor: 'var(--portal-border)' }}>
+                                {visibleReplies.map((reply, index) => {
+                                  const replyDate = commentReplyCreatedTime(reply)
+                                  const replyBody = commentReplyText(reply)
+                                  return (
+                                    <div
+                                      key={reply?.id || reply?.commentId || `${comment.id || comment.createdTime}-reply-${index}`}
+                                      className="rounded-md border px-3 py-2"
+                                      style={{ borderColor: 'var(--portal-border)', background: 'rgba(35,119,255,0.06)' }}
+                                    >
+                                      <div className="flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                                        <span className="font-semibold" style={{ color: 'var(--portal-text)' }}>{commentReplyAuthorDisplayName(reply)}</span>
+                                        {replyDate && <span>{formatInboxDate(replyDate)}</span>}
+                                      </div>
+                                      <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>
+                                        {replyBody || '[Reply text not available]'}
+                                      </p>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            ) : comment.replyCount > 0 ? (
+                              <p className="mt-3 rounded-md border px-3 py-2 text-xs" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)', background: 'rgba(35,119,255,0.06)' }}>
+                                Reply recorded, but the reply text has not loaded yet.
+                              </p>
+                            ) : null}
+                            {replyTargetId === comment.id && (
+                              <form
+                                onSubmit={(event) => {
+                                  event.preventDefault()
+                                  onSubmitReply(comment)
+                                }}
+                                className="mt-3 rounded-md border bg-slate-50 p-3"
+                                style={{ borderColor: 'var(--portal-border)' }}
+                              >
+                                <textarea
+                                  value={replyText}
+                                  onChange={(event) => onReplyTextChange(event.target.value)}
+                                  placeholder={`Reply to ${commentAuthorDisplayName(comment, selectedPost.platform)}...`}
+                                  className="portal-input min-h-20 resize-none p-3 text-sm"
+                                />
+                                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+                                    Sends a public reply from the connected social account.
+                                  </p>
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={onCancelReply}
+                                      className="portal-button-secondary px-3 py-2 text-xs font-semibold"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="submit"
+                                      disabled={!replyText.trim() || replyPending}
+                                      className="portal-button-primary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {replyPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                                      Send reply
+                                    </button>
+                                  </div>
+                                </div>
+                                {replyError && <ErrorBanner message={replyError.message || 'Could not send the reply.'} />}
+                              </form>
                             )}
                           </div>
-                          {replyTargetId === comment.id && (
-                            <form
-                              onSubmit={(event) => {
-                                event.preventDefault()
-                                onSubmitReply(comment)
-                              }}
-                              className="mt-3 rounded-md border bg-slate-50 p-3"
-                              style={{ borderColor: 'var(--portal-border)' }}
-                            >
-                              <textarea
-                                value={replyText}
-                                onChange={(event) => onReplyTextChange(event.target.value)}
-                                placeholder={`Reply to ${commentAuthorDisplayName(comment, selectedPost.platform)}...`}
-                                className="portal-input min-h-20 resize-none p-3 text-sm"
-                              />
-                              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                                <p className="text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                                  Sends a public reply from the connected social account.
-                                </p>
-                                <div className="flex gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={onCancelReply}
-                                    className="portal-button-secondary px-3 py-2 text-xs font-semibold"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    type="submit"
-                                    disabled={!replyText.trim() || replyPending}
-                                    className="portal-button-primary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    {replyPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                                    Send reply
-                                  </button>
-                                </div>
-                              </div>
-                              {replyError && <ErrorBanner message={replyError.message || 'Could not send the reply.'} />}
-                            </form>
-                          )}
                         </div>
-                      </div>
-                    </article>
-                  ))}
+                      </article>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -1273,8 +1424,11 @@ function CommentsInbox({
 export default function Inbox() {
   const queryClient = useQueryClient()
   const [activeSection, setActiveSection] = useState(() => {
-    if (typeof window === 'undefined') return 'comments'
-    return new URLSearchParams(window.location.search).get('section') || 'comments'
+    if (typeof window === 'undefined') return 'messages'
+    const requestedSection = new URLSearchParams(window.location.search).get('section')
+    return INBOX_SECTIONS.some((section) => section.value === requestedSection && !section.disabled)
+      ? requestedSection
+      : 'messages'
   })
   const [status, setStatus] = useState('open')
   const [query, setQuery] = useState('')
@@ -1346,6 +1500,10 @@ export default function Inbox() {
     () => conversationsQuery.data?.conversations || [],
     [conversationsQuery.data],
   )
+  const privateConversations = useMemo(
+    () => conversations.filter((conversation) => isPrivateMessageConversation(conversation, inboxesQuery.data || [])),
+    [conversations, inboxesQuery.data],
+  )
   const commentPosts = useMemo(
     () => commentPostsQuery.data?.posts || [],
     [commentPostsQuery.data],
@@ -1361,8 +1519,8 @@ export default function Inbox() {
   const selectedCommentPostId = selectedCommentPost?.id || ''
   const selectedCommentAccountId = selectedCommentPost?.accountId || ''
   const selectedConversation = useMemo(
-    () => conversations.find((conversation) => conversation.id === selectedId) || conversations[0] || null,
-    [conversations, selectedId],
+    () => conversations.find((conversation) => conversation.id === selectedId) || privateConversations[0] || null,
+    [conversations, privateConversations, selectedId],
   )
   const activeConversationId = selectedConversation?.id || null
 
@@ -1415,6 +1573,7 @@ export default function Inbox() {
   const contentPartnerMutation = useMutation({
     mutationFn: openContentPartnerConversation,
     onSuccess: async (payload) => {
+      setActiveSection('messages')
       setStatus('open')
       setQuery('')
       setInboxId('')
@@ -1429,8 +1588,7 @@ export default function Inbox() {
 
   const messages = messagesQuery.data || selectedConversation?.messages || []
   const postComments = postCommentsQuery.data?.comments || []
-  const meta = conversationsQuery.data?.meta || {}
-  const totalCount = meta.all_count ?? conversations.length
+  const totalCount = privateConversations.length
   const chatwootAccountId = websiteChatQuery.data?.settings?.chatwoot_account_id
   const openChatwootUrl = activeConversationId
     ? `${CHATWOOT_APP_URL}/accounts/${chatwootAccountId || 1}/conversations/${activeConversationId}`
@@ -1451,6 +1609,11 @@ export default function Inbox() {
   function handleSectionChange(section) {
     setActiveSection(section)
     setMobileThreadOpen(false)
+  }
+
+  function handleOpenPartner() {
+    setActiveSection('messages')
+    contentPartnerMutation.mutate()
   }
 
   function handleSelectCommentPost(post) {
@@ -1483,7 +1646,7 @@ export default function Inbox() {
             <div>
               <h1 className="text-xl font-semibold leading-tight tracking-normal" style={{ color: 'var(--portal-text)' }}>Inbox</h1>
               <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--portal-text-muted)' }}>
-                Website chat and social messages in one customer-service queue.
+                Private customer chats, public comments, and your MAP Partner in one place.
               </p>
             </div>
             <StatusPill status={status} />
@@ -1494,7 +1657,7 @@ export default function Inbox() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search messages"
+                placeholder="Search regular DMs"
                 className="portal-input h-9 w-[240px] rounded-full pl-9 pr-3 text-sm lg:w-[340px]"
               />
             </div>
@@ -1508,7 +1671,7 @@ export default function Inbox() {
             </button>
             <button
               type="button"
-              onClick={() => contentPartnerMutation.mutate()}
+              onClick={handleOpenPartner}
               disabled={contentPartnerMutation.isPending}
               className="inbox-content-partner-action inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-black shadow-sm transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
               style={{
@@ -1519,7 +1682,7 @@ export default function Inbox() {
               }}
             >
               {contentPartnerMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              Content Partner
+              My Partner
             </button>
             <button
               type="button"
@@ -1564,7 +1727,13 @@ export default function Inbox() {
         />
 
         <div className="flex min-h-[calc(100vh-150px)]">
-          <InboxSectionNav activeSection={activeSection} onSectionChange={handleSectionChange} />
+          <InboxSectionNav
+            activeSection={activeSection}
+            onSectionChange={handleSectionChange}
+            onOpenPartner={handleOpenPartner}
+            openingPartner={contentPartnerMutation.isPending}
+            onOpenSetup={() => setSetupOpen(true)}
+          />
 
           {activeSection === 'messages' ? (
         <div className="inbox-workspace-grid grid min-h-[calc(100vh-150px)] flex-1 lg:grid-cols-[324px_minmax(0,1fr)_300px]">
@@ -1575,7 +1744,7 @@ export default function Inbox() {
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search messages"
+                  placeholder="Search regular DMs"
                   className="portal-input h-10 rounded-full pl-9 pr-3 text-sm"
                 />
               </div>
@@ -1604,7 +1773,7 @@ export default function Inbox() {
                 }}
                 className="portal-input mt-2 h-9 px-3 text-xs"
               >
-                <option value="">All inboxes</option>
+                <option value="">All DM inboxes</option>
                 {(inboxesQuery.data || []).map((inbox) => (
                   <option key={inbox.id} value={inbox.id}>
                     {inbox.name}
@@ -1614,7 +1783,7 @@ export default function Inbox() {
             </div>
 
             <div className="flex items-center justify-between border-b px-4 py-2 text-xs" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
-              <span>{totalCount} conversations</span>
+              <span>{totalCount} private conversations</span>
               <span>{conversationsQuery.isFetching ? 'Syncing' : 'Live'}</span>
             </div>
 
@@ -1623,10 +1792,10 @@ export default function Inbox() {
                 <div className="flex h-52 items-center justify-center">
                   <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} />
                 </div>
-              ) : conversations.length === 0 ? (
-                <EmptyState title="No conversations here" detail="When customers write in, their conversations will appear in this queue." />
+              ) : privateConversations.length === 0 ? (
+                <EmptyState title="No regular DMs here" detail="Website chats and direct customer DMs will appear here. Public social replies belong in Comments, and MAP help stays under My Partner." />
               ) : (
-                conversations.map((conversation) => {
+                privateConversations.map((conversation) => {
                   const badge = channelBadge(conversation, inboxesQuery.data || [])
                   const isActive = activeConversationId === conversation.id
                   return (
@@ -1751,7 +1920,7 @@ export default function Inbox() {
                                   </span>
                                 )}
                                 <p className="whitespace-pre-wrap break-words">
-                                  {displayContent}
+                                  <LinkedMessageText>{displayContent}</LinkedMessageText>
                                 </p>
                                 {previewUrl && (
                                   <a
@@ -1842,94 +2011,114 @@ export default function Inbox() {
           </main>
 
           <aside className="inbox-detail-panel hidden min-h-[calc(100vh-150px)] border-l bg-white p-4 lg:block" style={{ borderColor: 'var(--portal-border)' }}>
-            <div className="inbox-side-card mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Ticket Flow</h2>
-                <StatusPill status={selectedConversation?.status || status} />
-              </div>
-              <TicketStage
-                state={ticketStepState(selectedConversation, 1)}
-                number="1"
-                title="Message received"
-                detail={`${selectedConversation ? inboxName(selectedConversation, inboxesQuery.data || []) : 'Inbox'} · ${formatRelativeTime(selectedConversation?.last_activity_at || selectedConversation?.updated_at)}`}
-              />
-              <TicketStage
-                state={ticketStepState(selectedConversation, 2)}
-                number="2"
-                title="Customer identified"
-                detail={selectedConversation ? conversationSubtitle(selectedConversation) : 'Waiting for customer'}
-              />
-              <TicketStage
-                state={ticketStepState(selectedConversation, 3)}
-                number="3"
-                title="Needs reply"
-                detail={selectedConversation?.status === 'open' ? 'Reply or add a private note' : 'No active reply needed'}
-              />
-              <TicketStage
-                state={ticketStepState(selectedConversation, 4)}
-                number="4"
-                title="Close or follow up"
-                detail={selectedConversation?.status === 'pending' ? 'Waiting on customer' : 'Resolve when handled'}
-              />
-            </div>
+            {selectedConversation ? (
+              <>
+                <div className="inbox-side-card mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h2 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>What to do next</h2>
+                    <StatusPill status={selectedConversation?.status || status} />
+                  </div>
+                  <TicketStage
+                    state={ticketStepState(selectedConversation, 1)}
+                    number="1"
+                    title="Message came in"
+                    detail={`${selectedConversation ? inboxName(selectedConversation, inboxesQuery.data || []) : 'Inbox'} · ${formatRelativeTime(selectedConversation?.last_activity_at || selectedConversation?.updated_at)}`}
+                  />
+                  <TicketStage
+                    state={ticketStepState(selectedConversation, 2)}
+                    number="2"
+                    title="Know who it is"
+                    detail={selectedConversation ? conversationSubtitle(selectedConversation) : 'Waiting for customer'}
+                  />
+                  <TicketStage
+                    state={ticketStepState(selectedConversation, 3)}
+                    number="3"
+                    title={selectedActionLabel(selectedConversation)}
+                    detail={selectedConversation?.status === 'open' ? 'Use the reply box below the thread.' : 'No active reply needed.'}
+                  />
+                  <TicketStage
+                    state={ticketStepState(selectedConversation, 4)}
+                    number="4"
+                    title="Mark it handled"
+                    detail={selectedConversation?.status === 'pending' ? 'Waiting on customer.' : 'Resolve when the conversation is finished.'}
+                  />
+                </div>
 
-            <div className="inbox-side-card mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
-              <div className="grid gap-2 text-xs">
-                <div className="flex justify-between gap-3 border-b pb-2" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
-                  <span style={{ color: 'var(--portal-text-muted)' }}>Priority</span>
-                  <b style={{ color: 'var(--portal-text)' }}>Normal</b>
+                <div className="inbox-side-card mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
+                  <div className="grid gap-2 text-xs">
+                    <div className="flex justify-between gap-3 border-b pb-2" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
+                      <span style={{ color: 'var(--portal-text-muted)' }}>Source</span>
+                      <b className="text-right" style={{ color: 'var(--portal-text)' }}>{selectedConversation ? inboxName(selectedConversation, inboxesQuery.data || []) : 'Inbox'}</b>
+                    </div>
+                    <div className="flex justify-between gap-3 border-b pb-2" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
+                      <span style={{ color: 'var(--portal-text-muted)' }}>Customer</span>
+                      <b className="text-right" style={{ color: 'var(--portal-text)' }}>{selectedConversation ? conversationSubtitle(selectedConversation) : 'None selected'}</b>
+                    </div>
+                    <div className="flex justify-between gap-3 border-b pb-2" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
+                      <span style={{ color: 'var(--portal-text-muted)' }}>Last activity</span>
+                      <b className="text-right" style={{ color: 'var(--portal-text)' }}>{formatRelativeTime(selectedConversation?.last_activity_at || selectedConversation?.updated_at)}</b>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span style={{ color: 'var(--portal-text-muted)' }}>Next step</span>
+                      <b className="text-right" style={{ color: 'var(--portal-text)' }}>{selectedActionLabel(selectedConversation)}</b>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between gap-3 border-b pb-2" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
-                  <span style={{ color: 'var(--portal-text-muted)' }}>Source</span>
-                  <b className="text-right" style={{ color: 'var(--portal-text)' }}>{selectedConversation ? inboxName(selectedConversation, inboxesQuery.data || []) : 'Inbox'}</b>
-                </div>
-                <div className="flex justify-between gap-3 border-b pb-2" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
-                  <span style={{ color: 'var(--portal-text-muted)' }}>Owner</span>
-                  <b style={{ color: 'var(--portal-text)' }}>Customer team</b>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <span style={{ color: 'var(--portal-text-muted)' }}>SLA</span>
-                  <b style={{ color: 'var(--portal-text)' }}>{selectedConversation?.status === 'open' ? 'Reply soon' : 'On track'}</b>
-                </div>
-              </div>
-            </div>
 
-            <div className="inbox-side-card mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
-              <p className="mb-3 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Status</p>
-              <div className="grid gap-2">
-                {STATUS_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    disabled={!activeConversationId || statusMutation.isPending}
-                    onClick={() => statusMutation.mutate({ conversationId: activeConversationId, status: option.value })}
-                    className="portal-button-secondary inline-flex h-9 items-center justify-between px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <span>{option.label}</span>
-                    {selectedConversation?.status === option.value && <CheckCircle2 className="h-4 w-4" style={{ color: '#22a06b' }} />}
-                  </button>
-                ))}
-              </div>
-              <ErrorBanner message={statusMutation.error?.message} />
-            </div>
+                <div className="inbox-side-card mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
+                  <p className="mb-3 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Status</p>
+                  <div className="grid gap-2">
+                    {STATUS_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        disabled={!activeConversationId || statusMutation.isPending}
+                        onClick={() => statusMutation.mutate({ conversationId: activeConversationId, status: option.value })}
+                        className="portal-button-secondary inline-flex h-9 items-center justify-between px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <span>{option.label}</span>
+                        {selectedConversation?.status === option.value && <CheckCircle2 className="h-4 w-4" style={{ color: '#22a06b' }} />}
+                      </button>
+                    ))}
+                  </div>
+                  <ErrorBanner message={statusMutation.error?.message} />
+                </div>
 
-            <div className="inbox-side-card rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
-              <p className="mb-3 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Quick Actions</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" className="portal-button-secondary h-9 px-2 text-xs font-semibold">Saved Reply</button>
-                <button type="button" className="portal-button-secondary h-9 px-2 text-xs font-semibold">Add Note</button>
-                <button type="button" className="portal-button-secondary h-9 px-2 text-xs font-semibold">Mark Lead</button>
-                <a
-                  href={mobileStoreUrl()}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="portal-button-secondary inline-flex h-9 items-center justify-center gap-1 px-2 text-xs font-semibold"
-                >
-                  Mobile
-                  <ArrowUpRight className="h-3 w-3" />
-                </a>
+                <div className="inbox-side-card rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
+                  <p className="mb-3 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Actions</p>
+                  <div className="grid gap-2">
+                    <a
+                      href={openChatwootUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="portal-button-secondary inline-flex h-9 items-center justify-center gap-1 px-2 text-xs font-semibold"
+                    >
+                      Open in Chatwoot
+                      <ArrowUpRight className="h-3 w-3" />
+                    </a>
+                    <a
+                      href={mobileStoreUrl()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="portal-button-secondary inline-flex h-9 items-center justify-center gap-1 px-2 text-xs font-semibold"
+                    >
+                      Get mobile app
+                      <ArrowUpRight className="h-3 w-3" />
+                    </a>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="inbox-side-card rounded-lg border p-4" style={{ borderColor: 'var(--portal-border)' }}>
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'rgba(35,119,255,0.1)', color: 'var(--portal-primary)' }}>
+                  <MessageCircle className="h-5 w-5" />
+                </div>
+                <h2 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Conversation details</h2>
+                <p className="mt-2 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                  Select a DM to see customer details, reply options, and status controls.
+                </p>
               </div>
-            </div>
+            )}
           </aside>
         </div>
           ) : activeSection === 'comments' ? (
@@ -1974,20 +2163,14 @@ export default function Inbox() {
           ) : activeSection === 'reviews' ? (
             <SectionPlaceholder
               title="Reviews"
-              detail="Zernio separates reviews from DMs and comments. MAP will show this once the connected account returns review data."
+              detail="Review monitoring will appear here after MAP confirms connected review data for the customer account."
               icon={Star}
-            />
-          ) : activeSection === 'campaigns' ? (
-            <SectionPlaceholder
-              title="Campaigns"
-              detail="Campaign inbox automation is not wired into MAP yet. For now, use Comments and Messages for live customer service."
-              icon={Radio}
             />
           ) : (
             <SectionPlaceholder
-              title="Contacts"
-              detail="Contact records still live behind Chatwoot today. This section is reserved for a Zernio-style contact view."
-              icon={UserRound}
+              title="Choose an inbox area"
+              detail="Messages and Comments are ready for customer service. Reviews will appear when review data is available."
+              icon={InboxIcon}
             />
           )}
         </div>

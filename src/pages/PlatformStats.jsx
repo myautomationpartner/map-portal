@@ -81,6 +81,36 @@ function formatSyncCopy(sync, postCount, postPerformance = []) {
   return 'Metrics current'
 }
 
+function normalizeAnalyticsMediaCandidate(candidate = {}) {
+  if (!candidate || typeof candidate !== 'object') return ''
+  return [
+    candidate.url,
+    candidate.thumbnail,
+    candidate.previewUrl,
+    candidate.preview_url,
+    candidate.mediaUrl,
+    candidate.media_url,
+    candidate.link,
+  ].find((value) => typeof value === 'string' && value.trim()) || ''
+}
+
+function getAnalyticsPostMediaUrl(post = {}, platform = '') {
+  const variants = post.platform_variants_json && typeof post.platform_variants_json === 'object'
+    ? post.platform_variants_json
+    : {}
+  const normalizedPlatform = normalizePlatformId(platform)
+  const preferredVariant = variants[normalizedPlatform]
+  const preferredUrl = normalizeAnalyticsMediaCandidate(preferredVariant?.image || preferredVariant?.media || preferredVariant)
+  if (preferredUrl) return preferredUrl
+
+  for (const variant of Object.values(variants)) {
+    const variantUrl = normalizeAnalyticsMediaCandidate(variant?.image || variant?.media || variant)
+    if (variantUrl) return variantUrl
+  }
+
+  return typeof post.media_url === 'string' ? post.media_url : ''
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function MomentumCard({ timeframe, label, value }) {
@@ -96,11 +126,13 @@ function MomentumCard({ timeframe, label, value }) {
   )
 }
 
-function PostPerformanceRow({ item, Icon, accent }) {
+function PostPerformanceRow({ item, Icon, accent, platform }) {
+  const [mediaFailed, setMediaFailed] = useState(false)
   const post = item.post || {}
   const metrics = item.metrics || null
   const primary = getPrimaryPostMetric(metrics)
   const status = getPostMetricStatus(item)
+  const mediaUrl = getAnalyticsPostMediaUrl(post, platform)
   const publishedLabel = post.published_at
     ? new Date(post.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : 'Published'
@@ -114,8 +146,8 @@ function PostPerformanceRow({ item, Icon, accent }) {
   return (
     <article className="social-post-performance-row portal-panel">
       <div className="social-post-performance-media">
-        {post.media_url ? (
-          <img src={post.media_url} alt="" />
+        {mediaUrl && !mediaFailed ? (
+          <img src={mediaUrl} alt="" onError={() => setMediaFailed(true)} />
         ) : (
           <Image className="h-5 w-5" style={{ color: 'var(--portal-text-soft)' }} />
         )}
@@ -305,6 +337,7 @@ export default function PlatformStats() {
                     item={item}
                     Icon={Icon}
                     accent={config.accent}
+                    platform={platform}
                   />
                 ))}
               </div>

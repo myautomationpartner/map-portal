@@ -10,6 +10,7 @@ const RESERVED_ROOT_SEGMENTS = new Set([
   'secure-vault',
   'vault',
   'opportunities',
+  'attention',
   'inbox',
   'post',
   'stats',

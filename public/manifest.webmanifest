@@ -1,0 +1,27 @@
+{
+  "name": "My Automation Partner",
+  "id": "/",
+  "short_name": "MAP",
+  "description": "Mobile portal for customer attention, publishing, and MAP Partner help.",
+  "start_url": "/attention",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/assets/map-option-b-mark.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/map-option-b-mark.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
