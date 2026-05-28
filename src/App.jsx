@@ -260,7 +260,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     queryFn: fetchProfile,
     enabled: !!session,
   })
-  const [billingActionPending, setBillingActionPending] = useState(false)
+  const [billingActionPending, setBillingActionPending] = useState('')
 
   const claims = useMemo(() => getSessionClaims(session), [session])
   const tenant = useMemo(
@@ -306,6 +306,23 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     void supabase.auth.signOut()
   }, [queryClient, tenantHostMismatch, tenantRouteMismatch])
 
+  useEffect(() => {
+    const clearBillingActionPending = () => setBillingActionPending('')
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') clearBillingActionPending()
+    }
+
+    window.addEventListener('pageshow', clearBillingActionPending)
+    window.addEventListener('focus', clearBillingActionPending)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('pageshow', clearBillingActionPending)
+      window.removeEventListener('focus', clearBillingActionPending)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
+
   function requireWriteAccess(actionLabel = 'make changes') {
     if (!billingAccess.readOnly) return true
     window.alert(buildReadOnlyMessage(actionLabel))
@@ -320,9 +337,18 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     return false
   }
 
-  async function handleBillingAction() {
+  async function handleBillingAction(actionOverride) {
     if (billingActionPending) return
-    if (billingAccess.actionType === 'none') return
+    const requestedAction = typeof actionOverride === 'string'
+      ? actionOverride
+      : typeof actionOverride?.actionType === 'string'
+      ? actionOverride.actionType
+      : billingAccess.actionType
+    const pendingActionKey = typeof actionOverride?.actionKey === 'string'
+      ? actionOverride.actionKey
+      : requestedAction
+
+    if (!requestedAction || requestedAction === 'none') return
 
     const currentUrl = new URL(window.location.href)
     currentUrl.searchParams.set('billing', 'updated')
@@ -330,9 +356,9 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     const selectedPlan = tenant.selectedPlan || profile?.clients?.selected_plan || ''
 
     try {
-      setBillingActionPending(true)
+      setBillingActionPending(pendingActionKey)
 
-      if (billingAccess.actionType === 'checkout') {
+      if (requestedAction === 'checkout') {
         const result = await createBillingCheckoutSession({
           ...(selectedPlan ? { selected_plan: selectedPlan } : {}),
           success_url: billingReturnUrl,
@@ -360,7 +386,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
       window.location.assign(result.portalUrl)
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Unable to open billing right now.')
-      setBillingActionPending(false)
+      setBillingActionPending('')
     }
   }
 

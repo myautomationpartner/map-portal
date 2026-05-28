@@ -255,6 +255,59 @@ function resolveSubscriptionStatus(billingAccess) {
   }
 }
 
+function buildSubscriptionActions({ tenant, billingAccess, onBillingAction }) {
+  if (!billingAccess || !onBillingAction) return []
+
+  const canOpenPortal = Boolean(tenant?.billingPortalUrl || tenant?.billingCustomerId || tenant?.billingSubscriptionId)
+  const actions = []
+
+  if (billingAccess.actionType === 'checkout') {
+    actions.push({
+      key: 'checkout',
+      label: billingAccess.ctaLabel || 'Start paid subscription',
+      actionType: 'checkout',
+      icon: CreditCard,
+      variant: 'primary',
+    })
+  } else if (billingAccess.actionType === 'portal' || canOpenPortal) {
+    actions.push({
+      key: 'manage',
+      label: 'Manage subscription',
+      actionType: 'portal',
+      icon: CreditCard,
+      variant: 'primary',
+    })
+  }
+
+  if (canOpenPortal) {
+    actions.push(
+      {
+        key: 'payment-method',
+        label: 'Update payment method',
+        actionType: 'portal',
+        icon: CreditCard,
+        variant: actions.length ? 'secondary' : 'primary',
+      },
+      {
+        key: 'invoices',
+        label: 'View invoices',
+        actionType: 'portal',
+        icon: ExternalLink,
+        variant: 'secondary',
+      },
+      {
+        key: 'cancel',
+        label: 'Cancel plan',
+        actionType: 'portal',
+        icon: Ban,
+        variant: 'secondary',
+      },
+    )
+  }
+
+  return actions
+}
+
 function SettingsCategory({ title, description, icon: Icon, defaultOpen = false, children }) {
   return (
     <details
@@ -286,11 +339,8 @@ function SettingsCategory({ title, description, icon: Icon, defaultOpen = false,
 
 function SubscriptionSection({ tenant, billingAccess, onBillingAction, billingActionPending }) {
   const status = resolveSubscriptionStatus(billingAccess)
-  const primaryLabel = billingAccess?.showBanner
-    ? billingAccess.ctaLabel || 'Buy now'
-    : 'Manage subscription'
-  const canOpenBilling = Boolean(onBillingAction) && billingAccess?.actionType !== 'none'
-  const showBillingActions = billingAccess?.actionType !== 'none'
+  const billingActions = buildSubscriptionActions({ tenant, billingAccess, onBillingAction })
+  const showBillingActions = billingActions.length > 0
 
   return (
     <Section title="Subscription" description="Status, payment, and cancellation options" icon={CreditCard}>
@@ -321,32 +371,32 @@ function SubscriptionSection({ tenant, billingAccess, onBillingAction, billingAc
         {showBillingActions ? (
           <>
             <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={onBillingAction}
-                disabled={!canOpenBilling || billingActionPending}
-                className="portal-button-primary inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
-              >
-                {billingActionPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-                {billingActionPending ? 'Opening billing...' : primaryLabel}
-              </button>
-              <button
-                type="button"
-                onClick={onBillingAction}
-                disabled={!canOpenBilling || billingActionPending}
-                className="portal-button-secondary inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
-              >
-                Cancel or change plan
-              </button>
+              {billingActions.map((action) => {
+                const Icon = action.icon
+                const className = action.variant === 'primary' ? 'portal-button-primary' : 'portal-button-secondary'
+                const isPending = billingActionPending === action.key
+                return (
+                  <button
+                    key={action.key}
+                    type="button"
+                    onClick={() => onBillingAction({ actionType: action.actionType, actionKey: action.key })}
+                    disabled={Boolean(billingActionPending)}
+                    className={`${className} inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-50`}
+                  >
+                    {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
+                    {isPending ? 'Opening billing...' : action.label}
+                  </button>
+                )
+              })}
             </div>
 
             <p className="text-xs leading-relaxed" style={{ color: 'var(--portal-text-soft)' }}>
-              Subscription changes open in Stripe's secure billing flow. Cancellations and payment-method updates are handled there.
+              Checkout opens Stripe's secure payment flow. Subscription management, invoices, payment-method updates, and cancellation open in Stripe Customer Portal when a Stripe customer exists.
             </p>
           </>
         ) : (
           <p className="text-xs leading-relaxed" style={{ color: 'var(--portal-text-soft)' }}>
-            Manual trial access is managed by MAP. Stripe checkout and subscription management stay disabled until the operator approves conversion to paid.
+            Manual trial access is managed by MAP. Stripe subscription management becomes available after a Stripe customer or subscription is attached to this workspace.
           </p>
         )}
       </div>

@@ -34,17 +34,29 @@ test('comped active billing remains fully writable without Stripe revenue status
   assert.equal(access.readOnly, false)
 })
 
-test('manual trial billing stays writable without Stripe checkout action', () => {
+test('manual trial billing stays writable and exposes checkout conversion', () => {
   const access = resolveBillingAccess({
     billingStatus: 'trial_active',
     billingCustomerId: 'cus_live_manual_trial',
   })
 
   assert.equal(access.mode, 'trial')
-  assert.equal(access.actionType, 'none')
+  assert.equal(access.actionType, 'checkout')
   assert.equal(access.readOnly, false)
   assert.equal(access.showBanner, true)
   assert.match(access.title, /Manual trial active/)
   assert.match(access.message, /intentionally holding/)
-  assert.equal(access.ctaLabel, '')
+  assert.equal(access.ctaLabel, 'Start paid subscription')
+})
+
+test('manual trial review exposes checkout without making access read-only', () => {
+  const access = resolveBillingAccess({
+    billingStatus: 'trial_expiring',
+  })
+
+  assert.equal(access.mode, 'warning')
+  assert.equal(access.actionType, 'checkout')
+  assert.equal(access.readOnly, false)
+  assert.match(access.title, /Manual trial under review/)
+  assert.equal(access.ctaLabel, 'Start paid subscription')
 })

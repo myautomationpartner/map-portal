@@ -48,14 +48,14 @@ export function resolveBillingAccess(tenant = {}) {
     return {
       billingStatus,
       mode: 'warning',
-      actionType: 'none',
+      actionType: 'checkout',
       readOnly: false,
       showBanner: true,
       eyebrow: 'Manual trial',
       title: 'Manual trial under review',
-      message: 'MAP is holding this workspace in manual trial access. No payment action is needed unless MAP converts this account to paid.',
-      ctaLabel: '',
-      actionUrl: '',
+      message: 'MAP is holding this workspace in manual trial access. You can keep working during the review period or start the paid MAP Starter subscription when ready.',
+      ctaLabel: 'Start paid subscription',
+      actionUrl,
     }
   }
 
@@ -63,14 +63,14 @@ export function resolveBillingAccess(tenant = {}) {
     return {
       billingStatus,
       mode: 'trial',
-      actionType: 'none',
+      actionType: 'checkout',
       readOnly: false,
       showBanner: true,
       eyebrow: 'Manual trial',
       title: 'Manual trial active',
-      message: 'MAP is intentionally holding this workspace in manual trial access. No Stripe payment action is needed unless MAP converts this account to paid.',
-      ctaLabel: '',
-      actionUrl: '',
+      message: 'MAP is intentionally holding this workspace in manual trial access. You can keep using the portal during the trial or start the paid MAP Starter subscription when ready.',
+      ctaLabel: 'Start paid subscription',
+      actionUrl,
     }
   }
 
@@ -107,12 +107,12 @@ export function resolveBillingAccess(tenant = {}) {
   return {
     billingStatus,
     mode: 'active',
-    actionType: tenant.billingPortalUrl ? 'portal' : '',
+    actionType: tenant.billingPortalUrl || tenant.billingCustomerId || tenant.billingSubscriptionId ? 'portal' : '',
     readOnly: false,
     showBanner: false,
     title: '',
     message: '',
-    ctaLabel: tenant.billingPortalUrl ? 'Manage billing' : '',
+    ctaLabel: tenant.billingPortalUrl || tenant.billingCustomerId || tenant.billingSubscriptionId ? 'Manage billing' : '',
     actionUrl,
   }
 }
