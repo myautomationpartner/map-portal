@@ -1514,11 +1514,23 @@ function extractPlatformAdAccountId(account) {
   return ''
 }
 
+export function normalizeBoostAdAccountId(platform, adAccountId) {
+  const value = String(adAccountId || '').trim()
+  if (!value) return ''
+
+  const normalizedPlatform = String(platform || '').trim().toLowerCase()
+  if (['facebook', 'instagram', 'metaads'].includes(normalizedPlatform) && /^\d+$/.test(value)) {
+    return `act_${value}`
+  }
+
+  return value
+}
+
 function normalizeZernioAdAccount(account) {
-  const adAccountId = extractPlatformAdAccountId(account)
+  const platform = String(account?.platform || account?.provider || '').trim().toLowerCase()
+  const adAccountId = normalizeBoostAdAccountId(platform, extractPlatformAdAccountId(account))
   const zernioAccountId = extractZernioAccountId(account)
   const displayName = firstString(account?.displayName, account?.name, account?.username, account?.handle)
-  const platform = String(account?.platform || account?.provider || '').trim().toLowerCase()
 
   return {
     id: zernioAccountId || adAccountId,
@@ -1788,7 +1800,7 @@ export function validateBoostAdAccountId(platform, adAccountId) {
   const value = String(adAccountId || '').trim()
   if (!value) return 'Add an ad account once to launch the first boost.'
   if (['facebook', 'instagram'].includes(platform) && !/^(act_)?\d+$/.test(value)) {
-    return 'Meta boosts need a numeric ad account ID, with or without the act_ prefix.'
+    return 'Meta boosts need a numeric ad account ID from Ads setup.'
   }
   return ''
 }
@@ -1807,6 +1819,57 @@ export function pickBoostAdAccountId(inputValue, previousBoosts = []) {
   const previous = (Array.isArray(previousBoosts) ? previousBoosts : [])
     .find((boost) => String(boost?.ad_account_id || '').trim())
   return String(previous?.ad_account_id || '').trim()
+}
+
+function normalizeBoostTargetingArray(value) {
+  return Array.isArray(value)
+    ? value
+      .map((entry) => (typeof entry === 'string' ? entry.trim() : entry))
+      .filter((entry) => {
+        if (!entry) return false
+        if (typeof entry === 'string') return Boolean(entry)
+        if (typeof entry !== 'object') return false
+        return Boolean(firstString(entry.id, entry.key, entry.name))
+      })
+    : []
+}
+
+export function normalizeBoostTargeting(targeting = {}) {
+  const source = targeting && typeof targeting === 'object' && !Array.isArray(targeting)
+    ? targeting
+    : {}
+  const normalized = { ...source }
+
+  for (const key of ['countries', 'regions', 'cities', 'zips', 'metros', 'custom_audiences', 'customAudiences']) {
+    if (key in normalized) {
+      const entries = normalizeBoostTargetingArray(normalized[key])
+      if (entries.length) normalized[key] = entries
+      else delete normalized[key]
+    }
+  }
+
+  return Object.fromEntries(Object.entries(normalized).filter(([, value]) => {
+    if (Array.isArray(value)) return value.length > 0
+    if (value && typeof value === 'object') return Object.keys(value).length > 0
+    return value !== '' && value !== null && value !== undefined
+  }))
+}
+
+export function validateBoostTargeting(platform, targeting = {}) {
+  if (!['facebook', 'instagram'].includes(platform)) return ''
+
+  const normalized = normalizeBoostTargeting(targeting)
+  const locationKeys = ['countries', 'regions', 'cities', 'zips', 'metros']
+  const hasLocation = locationKeys.some((key) => Array.isArray(normalized[key]) && normalized[key].length > 0)
+  const hasCustomAudience = ['custom_audiences', 'customAudiences'].some((key) => (
+    Array.isArray(normalized[key]) && normalized[key].length > 0
+  ))
+
+  if (!hasLocation && !hasCustomAudience) {
+    return 'Meta boosts need an audience location or a custom audience before launch.'
+  }
+
+  return ''
 }
 
 async function loadBoostRows(envConfig, { postId } = {}) {
@@ -2803,9 +2866,7 @@ async function handlePostBoosts(request, env) {
   const name = String(body.name || 'MAP Boost').trim().slice(0, 255)
   const startsAt = String(body.startsAt || '').trim() || null
   const endsAt = String(body.endsAt || '').trim() || null
-  const targeting = body.targeting && typeof body.targeting === 'object' && !Array.isArray(body.targeting)
-    ? body.targeting
-    : {}
+  const targeting = normalizeBoostTargeting(body.targeting)
 
   if (!postId) return json({ error: 'Choose a published post to boost.' }, { status: 400 })
   if (!platform) return json({ error: 'Choose a supported platform to boost.' }, { status: 400 })
@@ -2832,12 +2893,14 @@ async function handlePostBoosts(request, env) {
     }
 
     const previousBoosts = await loadBoostRows(auth.envConfig, {})
-    const resolvedAdAccountId = pickBoostAdAccountId(
+    const resolvedAdAccountId = normalizeBoostAdAccountId(platform, pickBoostAdAccountId(
       adAccountId,
       previousBoosts.filter((boost) => normalizePlatform(boost.platform) === platform),
-    )
+    ))
     const adAccountError = validateBoostAdAccountId(platform, resolvedAdAccountId)
     if (adAccountError) return json({ error: adAccountError }, { status: 400 })
+    const targetingError = validateBoostTargeting(platform, targeting)
+    if (targetingError) return json({ error: targetingError }, { status: 400 })
 
     const zernioBody = {
       postId: zernioPostId,

@@ -16,6 +16,8 @@ import {
   isVisibleContentDraft,
   normalizeZernioPostAnalytics,
   normalizeZernioAdAccounts,
+  normalizeBoostAdAccountId,
+  normalizeBoostTargeting,
   normalizeZernioAccountEventDetails,
   normalizeZernioInboxComment,
   normalizeZernioMessage,
@@ -23,6 +25,7 @@ import {
   sanitizePortalCustomerError,
   shouldRemoveLocalCalendarPostAfterRemoteDeleteError,
   validateBoostAdAccountId,
+  validateBoostTargeting,
 } from './worker.js'
 
 test('builds VAPID JWTs scoped to the push endpoint origin', async () => {
@@ -64,14 +67,45 @@ test('preserves explicit portal permissions for non-legacy users', () => {
 })
 
 test('allows Meta ad account IDs with or without the act_ prefix for boosted posts', () => {
-  assert.equal(validateBoostAdAccountId('facebook', 'bad-id'), 'Meta boosts need a numeric ad account ID, with or without the act_ prefix.')
+  assert.equal(validateBoostAdAccountId('facebook', 'bad-id'), 'Meta boosts need a numeric ad account ID from Ads setup.')
   assert.equal(validateBoostAdAccountId('facebook', '123456789'), '')
   assert.equal(validateBoostAdAccountId('instagram', 'act_123456789'), '')
+})
+
+test('canonicalizes Meta ad account IDs for Zernio boost launch', () => {
+  assert.equal(normalizeBoostAdAccountId('facebook', '123456789'), 'act_123456789')
+  assert.equal(normalizeBoostAdAccountId('instagram', 'act_987654321'), 'act_987654321')
+  assert.equal(normalizeBoostAdAccountId('metaads', '10203329703662118'), 'act_10203329703662118')
+  assert.equal(normalizeBoostAdAccountId('tiktok', 'tt-ad-account-123'), 'tt-ad-account-123')
 })
 
 test('allows non-Meta ad account IDs to be provider-specific for boosted posts', () => {
   assert.equal(validateBoostAdAccountId('tiktok', 'tt-ad-account-123'), '')
   assert.equal(validateBoostAdAccountId('twitter', 'x-ad-account-123'), '')
+})
+
+test('requires an audience location or custom audience before Meta boost launch', () => {
+  assert.equal(validateBoostTargeting('facebook', {}), 'Meta boosts need an audience location or a custom audience before launch.')
+  assert.equal(validateBoostTargeting('facebook', { countries: ['US'] }), '')
+  assert.equal(validateBoostTargeting('instagram', { zips: [{ key: 'US:13901' }] }), '')
+  assert.equal(validateBoostTargeting('facebook', { custom_audiences: [{ id: 'audience-123' }] }), '')
+  assert.equal(validateBoostTargeting('tiktok', {}), '')
+})
+
+test('normalizes boost targeting before sending it to Zernio', () => {
+  assert.deepEqual(
+    normalizeBoostTargeting({
+      countries: ['US', '', 'CA'],
+      zips: [{ key: 'US:13901', name: '13901' }, {}, null],
+      custom_audiences: ['audience-123'],
+      empty: '',
+    }),
+    {
+      countries: ['US', 'CA'],
+      zips: [{ key: 'US:13901', name: '13901' }],
+      custom_audiences: ['audience-123'],
+    },
+  )
 })
 
 test('sanitizes duplicate draft storage errors before showing them to customers', () => {
@@ -212,7 +246,7 @@ test('normalizes Zernio ads accounts without exposing raw provider payloads', ()
     [{
       id: 'zernio_ads_1',
       zernioAccountId: 'zernio_ads_1',
-      adAccountId: '123456789',
+      adAccountId: 'act_123456789',
       platform: 'metaads',
       label: 'MAP Ad Account',
       rawStatus: '',

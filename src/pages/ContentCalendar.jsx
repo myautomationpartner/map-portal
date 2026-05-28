@@ -110,6 +110,12 @@ const BOOST_DURATIONS = [
   { value: 7, label: '7 days' },
 ]
 const BOOSTABLE_PLATFORMS = new Set(['facebook', 'instagram', 'tiktok', 'linkedin', 'twitter'])
+const META_BOOST_PLATFORMS = new Set(['facebook', 'instagram'])
+const BOOST_AUDIENCE_MODES = [
+  { value: 'national', label: 'National' },
+  { value: 'zip', label: 'ZIP codes' },
+  { value: 'custom', label: 'Custom audience' },
+]
 const WEEKLY_PARTNER_IDEA_LIMIT = 5
 const DAILY_PARTNER_IDEA_LIMIT = 1
 const RESEARCH_SOURCE_TYPES = [
@@ -868,7 +874,66 @@ function getBoostStatus(boosts = []) {
   }
 }
 
-function BoostPostModal({ item, defaultPlatform, readiness, isReadinessLoading, onClose, onSubmit, isSaving, error }) {
+function splitBoostCsv(value) {
+  return String(value || '')
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+}
+
+function normalizeCountryCodesInput(value) {
+  return splitBoostCsv(value)
+    .map((entry) => entry.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2))
+    .filter((entry) => entry.length === 2)
+}
+
+function normalizeZipCodesInput(value) {
+  return splitBoostCsv(value)
+    .map((entry) => entry.toUpperCase().replace(/[^A-Z0-9 -]/g, '').trim())
+    .filter(Boolean)
+}
+
+function normalizeCustomAudienceInput(value) {
+  return splitBoostCsv(value)
+    .map((entry) => entry.replace(/[^A-Za-z0-9_.:-]/g, '').trim())
+    .filter(Boolean)
+}
+
+function buildBoostTargeting({ mode, countryCodes, zipCodes, customAudienceIds }) {
+  const countries = normalizeCountryCodesInput(countryCodes)
+  const primaryCountry = countries[0] || 'US'
+
+  if (mode === 'custom') {
+    const customAudiences = normalizeCustomAudienceInput(customAudienceIds)
+    return customAudiences.length
+      ? { custom_audiences: customAudiences.map((id) => ({ id })) }
+      : {}
+  }
+
+  if (mode === 'zip') {
+    const zips = normalizeZipCodesInput(zipCodes)
+    return zips.length
+      ? {
+          countries: [primaryCountry],
+          zips: zips.map((zip) => ({
+            key: zip.includes(':') ? zip : `${primaryCountry}:${zip}`,
+            name: zip.replace(/^[A-Z]{2}:/, ''),
+          })),
+        }
+      : {}
+  }
+
+  return countries.length ? { countries } : {}
+}
+
+function hasBoostAudienceTargeting(platform, targeting) {
+  if (!META_BOOST_PLATFORMS.has(platform)) return true
+  if (!targeting || typeof targeting !== 'object') return false
+  return ['countries', 'regions', 'cities', 'zips', 'metros', 'custom_audiences', 'customAudiences']
+    .some((key) => Array.isArray(targeting[key]) && targeting[key].length > 0)
+}
+
+function BoostPostModal({ item, defaultPlatform, readiness, isReadinessLoading, onClose, onSubmit, isSaving, error, client }) {
   const availablePlatforms = [...new Set(item?.platforms || [])].filter((platform) => BOOSTABLE_PLATFORMS.has(platform))
   const boostRecommendation = useMemo(() => recommendBoostSetup({ item, defaultPlatform }), [defaultPlatform, item])
   const [platform, setPlatform] = useState(boostRecommendation.platform || defaultPlatform || availablePlatforms[0] || 'facebook')
@@ -876,6 +941,10 @@ function BoostPostModal({ item, defaultPlatform, readiness, isReadinessLoading, 
   const [budgetAmount, setBudgetAmount] = useState(boostRecommendation.budgetAmount || '10')
   const [budgetType, setBudgetType] = useState(boostRecommendation.budgetType || 'daily')
   const [durationDays, setDurationDays] = useState(boostRecommendation.durationDays || 5)
+  const [audienceMode, setAudienceMode] = useState('national')
+  const [countryCodes, setCountryCodes] = useState(client?.country_code || 'US')
+  const [zipCodes, setZipCodes] = useState(client?.postal_code || '')
+  const [customAudienceIds, setCustomAudienceIds] = useState('')
   const [adAccountId, setAdAccountId] = useState('')
   const [adAccounts, setAdAccounts] = useState([])
   const [isLoadingAdAccounts, setIsLoadingAdAccounts] = useState(false)
@@ -888,10 +957,18 @@ function BoostPostModal({ item, defaultPlatform, readiness, isReadinessLoading, 
   const savedAdAccountId = selectedReadiness?.savedAdAccountId || ''
   const savedAdAccountLabel = selectedReadiness?.savedAdAccountLabel || 'saved ad account'
   const hasLaunchAccount = Boolean(savedAdAccountId || adAccountId.trim())
+  const boostTargeting = useMemo(() => buildBoostTargeting({
+    mode: audienceMode,
+    countryCodes,
+    zipCodes,
+    customAudienceIds,
+  }), [audienceMode, countryCodes, customAudienceIds, zipCodes])
+  const audienceReady = hasBoostAudienceTargeting(platform, boostTargeting)
   const canLaunchBoost = availablePlatforms.length > 0
     && !isReadinessLoading
     && (!selectedReadiness || selectedReadiness.canBoost)
     && hasLaunchAccount
+    && audienceReady
 
   useEffect(() => {
     setAdAccountId('')
@@ -1028,6 +1105,8 @@ function BoostPostModal({ item, defaultPlatform, readiness, isReadinessLoading, 
               setBudgetAmount(boostRecommendation.budgetAmount)
               setBudgetType(boostRecommendation.budgetType)
               setDurationDays(boostRecommendation.durationDays)
+              setAudienceMode('national')
+              setCountryCodes(client?.country_code || 'US')
             }}
           >
             Use recommendation
@@ -1075,6 +1154,38 @@ function BoostPostModal({ item, defaultPlatform, readiness, isReadinessLoading, 
               ))}
             </select>
           </label>
+          <label>
+            <span>Audience</span>
+            <select value={audienceMode} onChange={(event) => setAudienceMode(event.target.value)}>
+              {BOOST_AUDIENCE_MODES.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          {audienceMode === 'national' ? (
+            <label>
+              <span>Countries</span>
+              <input value={countryCodes} onChange={(event) => setCountryCodes(event.target.value.toUpperCase())} placeholder="US" />
+            </label>
+          ) : null}
+          {audienceMode === 'zip' ? (
+            <>
+              <label>
+                <span>Country</span>
+                <input value={countryCodes} onChange={(event) => setCountryCodes(event.target.value.toUpperCase())} placeholder="US" />
+              </label>
+              <label>
+                <span>ZIP codes</span>
+                <input value={zipCodes} onChange={(event) => setZipCodes(event.target.value)} placeholder="13901, 13905" />
+              </label>
+            </>
+          ) : null}
+          {audienceMode === 'custom' ? (
+            <label>
+              <span>Audience IDs</span>
+              <input value={customAudienceIds} onChange={(event) => setCustomAudienceIds(event.target.value)} placeholder="Meta custom audience IDs" />
+            </label>
+          ) : null}
           {savedAdAccountId ? (
             <div className="boost-post-readiness">
               <span>Ad account</span>
@@ -1125,6 +1236,12 @@ function BoostPostModal({ item, defaultPlatform, readiness, isReadinessLoading, 
           </div>
         ) : null}
 
+        {!audienceReady ? (
+          <div className="boost-post-error">
+            Choose a country, ZIP code, or custom audience before launching a Meta boost.
+          </div>
+        ) : null}
+
         {error ? <div className="boost-post-error">{error}</div> : null}
 
         <div className="portal-modal-actions">
@@ -1142,6 +1259,7 @@ function BoostPostModal({ item, defaultPlatform, readiness, isReadinessLoading, 
               budgetType,
               durationDays,
               adAccountId: savedAdAccountId || adAccountId,
+              targeting: boostTargeting,
               name: `MAP Boost - ${item.title || 'Published post'}`,
             })}
             className="portal-button-primary inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
@@ -2776,10 +2894,7 @@ export default function ContentCalendar() {
       startsAt: now.toISOString(),
       endsAt: endsAt.toISOString(),
       currency: 'USD',
-      targeting: {
-        mode: 'local_default',
-        source: 'map_portal',
-      },
+      targeting: input.targeting || {},
     })
   }
 
@@ -3381,6 +3496,7 @@ export default function ContentCalendar() {
           onSubmit={handleLaunchBoost}
           isSaving={launchBoost.isPending}
           error={boostError}
+          client={profile?.clients}
         />
       ) : null}
     </div>
