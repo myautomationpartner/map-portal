@@ -1647,6 +1647,15 @@ export default function Inbox() {
   const messages = messagesQuery.data || selectedConversation?.messages || []
   const postComments = postCommentsQuery.data?.comments || []
   const totalCount = privateConversations.length
+  const showPartnerHub = partnerHubOpen || (
+    activeSection === 'messages'
+    && status === 'open'
+    && !conversationsQuery.isLoading
+    && !conversationsQuery.error
+    && privateConversations.length === 0
+    && !query.trim()
+    && !inboxId
+  )
   const chatwootAccountId = websiteChatQuery.data?.settings?.chatwoot_account_id
   const openChatwootUrl = activeConversationId
     ? `${CHATWOOT_APP_URL}/accounts/${chatwootAccountId || 1}/conversations/${activeConversationId}`
@@ -1910,7 +1919,7 @@ export default function Inbox() {
           </aside>
 
           <main className={`inbox-thread-panel ${mobileThreadOpen ? 'flex' : 'hidden lg:flex'} min-h-[calc(100vh-150px)] min-w-0 flex-col`} style={{ background: 'var(--portal-inbox-thread-bg, #f9fbfe)' }}>
-            {partnerHubOpen ? (
+            {showPartnerHub ? (
               <PartnerTaskHub
                 onBack={() => {
                   setPartnerHubOpen(false)
