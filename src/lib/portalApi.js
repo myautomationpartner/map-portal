@@ -658,6 +658,36 @@ export async function fetchBoostAdAccounts(platform) {
   return payload.accounts ?? []
 }
 
+export async function searchBoostTargeting({ platform, geoType, query, countryCode = 'US' }) {
+  const normalizedPlatform = String(platform || '').trim()
+  const normalizedGeoType = String(geoType || '').trim()
+  const normalizedQuery = String(query || '').trim()
+  if (!normalizedPlatform || !normalizedGeoType || !normalizedQuery) return []
+
+  const accessToken = await getAccessToken()
+  const params = new URLSearchParams({
+    platform: normalizedPlatform,
+    geoType: normalizedGeoType,
+    q: normalizedQuery,
+    countryCode: String(countryCode || 'US').trim().toUpperCase().slice(0, 2) || 'US',
+  })
+  const response = await fetch(portalPath(`/api/boost-targeting-search?${params.toString()}`), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || payload?.success === false) {
+    const error = new Error(payload?.error || payload?.message || `Boost targeting lookup failed (${response.status}).`)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload.results ?? []
+}
+
 export async function startBoostAdsConnection(input) {
   const accessToken = await getAccessToken()
   const response = await fetch(portalPath('/api/boost-ads-connect'), {

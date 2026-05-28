@@ -1748,6 +1748,38 @@ async function listBoostAdAccountsForConnection(env, connection, platform) {
   }
 }
 
+async function searchBoostTargetingForConnection(env, connection, platform, options = {}) {
+  const adsPlatform = zernioAdsPlatformForPortalPlatform(platform)
+  if (!adsPlatform) return []
+
+  const geoType = firstString(options.geoType).toLowerCase()
+  if (!['city', 'region', 'metro', 'zip'].includes(geoType)) {
+    throw new Error('Choose city, region, metro, or zip targeting.')
+  }
+
+  const query = firstString(options.query).trim()
+  if (!query) return []
+
+  const params = new URLSearchParams({
+    accountId: connection.zernio_account_id,
+    dimension: 'geo',
+    geoType,
+    q: query,
+    countryCode: firstString(options.countryCode, 'US').toUpperCase().slice(0, 2) || 'US',
+    limit: '8',
+  })
+  const payload = await zernioFetch(env, `/ads/targeting/search?${params.toString()}`)
+  const results = Array.isArray(payload?.results) ? payload.results : []
+  return results
+    .map((result) => ({
+      id: firstString(result.id, result.key),
+      key: firstString(result.key, result.id),
+      name: firstString(result.name, result.label),
+      type: firstString(result.type, geoType),
+    }))
+    .filter((result) => result.id && result.name)
+}
+
 function normalizeBoostGoal(goal) {
   const value = String(goal || '').trim().toLowerCase()
   const allowed = new Set([
@@ -2614,6 +2646,109 @@ async function insertPostBoost(envConfig, payload) {
   return Array.isArray(rows) ? rows[0] : null
 }
 
+async function loadBoostRowsForStatusSync(envConfig) {
+  const filters = new URLSearchParams({
+    select: 'id,client_id,platform,status,platform_campaign_id,zernio_profile_id,zernio_account_id,zernio_response_json',
+    status: 'in.(pending,active)',
+    platform_campaign_id: 'not.is.null',
+    order: 'created_at.desc',
+    limit: '100',
+  })
+  if (envConfig.clientId) filters.set('client_id', `eq.${envConfig.clientId}`)
+  const response = await supabaseRest(envConfig, `/rest/v1/post_boosts?${filters.toString()}`)
+  const rows = await response.json().catch(() => [])
+  return Array.isArray(rows) ? rows : []
+}
+
+async function patchPostBoostStatus(envConfig, boostId, payload) {
+  if (!boostId) return null
+  const response = await supabaseRest(envConfig, `/rest/v1/post_boosts?id=eq.${encodeURIComponent(boostId)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(payload),
+  })
+  const rows = await response.json().catch(() => [])
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function listZernioBoostCampaigns(env, { profileId, platform }) {
+  const params = new URLSearchParams({
+    profileId,
+    platform,
+    limit: '100',
+    source: 'all',
+  })
+  const payload = await zernioFetch(env, `/ads/campaigns?${params.toString()}`)
+  return Array.isArray(payload?.campaigns) ? payload.campaigns : []
+}
+
+function normalizeBoostCampaignStatus(campaign = {}) {
+  return normalizeBoostStatus(firstString(campaign.status, campaign.reviewStatus))
+}
+
+async function syncPostBoostStatuses(env) {
+  const envConfig = getPortalAuthConfig(env)
+  const boosts = await loadBoostRowsForStatusSync(envConfig)
+  if (!boosts.length) return { checked: 0, updated: 0, activated: 0, notifications: { attempted: 0, sent: 0 } }
+
+  const campaignsByScope = new Map()
+  let updated = 0
+  let activated = 0
+  const notifications = { attempted: 0, sent: 0, failed: 0 }
+
+  for (const boost of boosts) {
+    const profileId = firstString(boost.zernio_profile_id)
+    const platform = normalizePlatform(boost.platform)
+    if (!profileId || !platform || !boost.platform_campaign_id) continue
+
+    const scopeKey = `${profileId}:${platform}`
+    if (!campaignsByScope.has(scopeKey)) {
+      campaignsByScope.set(scopeKey, await listZernioBoostCampaigns(env, { profileId, platform }).catch(() => []))
+    }
+    const campaign = campaignsByScope.get(scopeKey)
+      .find((entry) => firstString(entry.platformCampaignId, entry.id, entry.campaignId) === boost.platform_campaign_id)
+    if (!campaign) continue
+
+    const nextStatus = normalizeBoostCampaignStatus(campaign)
+    const previousStatus = normalizeBoostStatus(boost.status)
+    const existingResponse = boost.zernio_response_json && typeof boost.zernio_response_json === 'object'
+      ? boost.zernio_response_json
+      : {}
+    const alreadyNotifiedActive = Boolean(existingResponse?.map_sync?.active_notified_at)
+    const becameActive = nextStatus === 'active' && previousStatus !== 'active'
+    const shouldNotifyActive = nextStatus === 'active' && !alreadyNotifiedActive
+    const mapSync = {
+      ...(existingResponse.map_sync || {}),
+      last_status_sync_at: new Date().toISOString(),
+      campaign_status: firstString(campaign.status),
+      campaign_review_status: firstString(campaign.reviewStatus),
+      ...(shouldNotifyActive ? { active_notified_at: new Date().toISOString() } : {}),
+    }
+
+    if (nextStatus !== previousStatus || shouldNotifyActive) {
+      await patchPostBoostStatus(envConfig, boost.id, {
+        status: nextStatus,
+        zernio_response_json: {
+          ...existingResponse,
+          campaign,
+          map_sync: mapSync,
+        },
+      })
+      updated += 1
+    }
+
+    if (shouldNotifyActive) {
+      const pushResult = await notifyPortalPushSubscribers(env, { ...envConfig, clientId: boost.client_id })
+      notifications.attempted += pushResult.attempted || 0
+      notifications.sent += pushResult.sent || 0
+      notifications.failed += pushResult.failed || 0
+      activated += becameActive ? 1 : 0
+    }
+  }
+
+  return { checked: boosts.length, updated, activated, notifications }
+}
+
 async function buildPostBoostReadiness(envConfig, postId) {
   const post = await loadPostForBoost(envConfig, postId)
   if (!post) return { postFound: false, platforms: [] }
@@ -2744,6 +2879,41 @@ async function handleBoostAdAccounts(request, env) {
   } catch (error) {
     return json({
       error: error.message || 'Could not load boost ad accounts.',
+      details: error.payload || null,
+    }, { status: error.status || 502 })
+  }
+}
+
+async function handleBoostTargetingSearch(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'GET, OPTIONS' } })
+  }
+
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const platform = normalizePlatform(url.searchParams.get('platform'))
+  const geoType = String(url.searchParams.get('geoType') || '').trim().toLowerCase()
+  const query = String(url.searchParams.get('q') || '').trim()
+  const countryCode = String(url.searchParams.get('countryCode') || 'US').trim().toUpperCase().slice(0, 2) || 'US'
+  if (!platform) return json({ error: 'Choose a supported platform.' }, { status: 400 })
+  if (!query) return json({ success: true, results: [] })
+
+  try {
+    const connection = await loadSocialConnectionForBoost(auth.envConfig, platform)
+    if (!connection?.zernio_account_id) {
+      return json({ error: `Connect ${platform} in Settings before searching boost audiences.` }, { status: 409 })
+    }
+    const results = await searchBoostTargetingForConnection(env, connection, platform, { geoType, query, countryCode })
+    return json({ success: true, platform, geoType, results })
+  } catch (error) {
+    return json({
+      error: error.message || 'Could not search boost targeting.',
       details: error.payload || null,
     }, { status: error.status || 502 })
   }
@@ -7074,6 +7244,7 @@ export {
 export default {
   async scheduled(_controller, env, ctx) {
     ctx.waitUntil(purgeExpiredSecureVaultArchive(env))
+    ctx.waitUntil(syncPostBoostStatuses(env))
   },
 
   async fetch(request, env, ctx) {
@@ -7137,6 +7308,10 @@ export default {
 
     if (url.pathname === '/api/boost-ad-accounts') {
       return handleBoostAdAccounts(request, env)
+    }
+
+    if (url.pathname === '/api/boost-targeting-search') {
+      return handleBoostTargetingSearch(request, env)
     }
 
     if (url.pathname === '/api/boost-ads-connect') {

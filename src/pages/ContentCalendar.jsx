@@ -46,6 +46,7 @@ import {
   getSecureVaultDocumentUrl,
   launchPostBoost,
   recordPlannerFeedbackEvent,
+  searchBoostTargeting,
   startBoostAdsConnection,
   startOpportunityRadar,
   updateClientPartnerProfile,
@@ -114,6 +115,9 @@ const META_BOOST_PLATFORMS = new Set(['facebook', 'instagram'])
 const BOOST_AUDIENCE_MODES = [
   { value: 'national', label: 'National' },
   { value: 'zip', label: 'ZIP codes' },
+  { value: 'city', label: 'City' },
+  { value: 'region', label: 'State / region' },
+  { value: 'metro', label: 'Metro' },
   { value: 'custom', label: 'Custom audience' },
 ]
 const WEEKLY_PARTNER_IDEA_LIMIT = 5
@@ -861,7 +865,7 @@ function getBoostStatus(boosts = []) {
   const status = String(latest.status || 'active')
   const labelMap = {
     pending: 'Boost pending',
-    active: 'Boost active',
+    active: 'Boost live',
     paused: 'Boost paused',
     completed: 'Boost complete',
     cancelled: 'Boost cancelled',
@@ -871,6 +875,7 @@ function getBoostStatus(boosts = []) {
   return {
     label: labelMap[status] || 'Boost saved',
     status,
+    isActive: status === 'active',
   }
 }
 
@@ -899,7 +904,88 @@ function normalizeCustomAudienceInput(value) {
     .filter(Boolean)
 }
 
-function buildBoostTargeting({ mode, countryCodes, zipCodes, customAudienceIds }) {
+function buildGeoTargetEntries(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const key = String(item?.key || item?.id || '').trim()
+      if (!key) return null
+      return {
+        key,
+        name: String(item?.name || key).trim(),
+      }
+    })
+    .filter(Boolean)
+}
+
+function BuildGeoAudiencePicker({ geoType, countryCodes, selected, onSelectedChange, platform }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [searchError, setSearchError] = useState('')
+  const labelMap = {
+    city: 'City',
+    region: 'State / region',
+    metro: 'Metro',
+  }
+  const label = labelMap[geoType] || 'Location'
+
+  async function handleSearch() {
+    setIsSearching(true)
+    setSearchError('')
+    try {
+      const rows = await searchBoostTargeting({
+        platform,
+        geoType,
+        query,
+        countryCode: normalizeCountryCodesInput(countryCodes)[0] || 'US',
+      })
+      setResults(rows)
+      if (!rows.length) setSearchError(`No ${label.toLowerCase()} matches found.`)
+    } catch (error) {
+      setSearchError(error.message || `Could not search ${label.toLowerCase()} targeting.`)
+    } finally {
+      setIsSearching(false)
+    }
+  }
+
+  function handleSelect(result) {
+    const entry = { key: result.key || result.id, name: result.name || result.id, type: result.type || geoType }
+    if (!entry.key) return
+    const next = [...selected.filter((item) => item.key !== entry.key), entry]
+    onSelectedChange(next)
+  }
+
+  return (
+    <div className="boost-post-readiness boost-post-readiness--setup">
+      <span>{label}</span>
+      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${label.toLowerCase()}`} />
+      <div className="boost-ad-account-actions">
+        <button type="button" onClick={handleSearch} disabled={isSearching || !query.trim()}>
+          {isSearching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSearch className="h-3.5 w-3.5" />}
+          Search
+        </button>
+      </div>
+      {selected.length ? (
+        <small>Selected: {selected.map((item) => item.name).join(', ')}</small>
+      ) : (
+        <small>Search and select one or more {label.toLowerCase()} targets.</small>
+      )}
+      {results.length ? (
+        <div className="boost-ad-account-actions">
+          {results.slice(0, 5).map((result) => (
+            <button type="button" key={result.id || result.key} onClick={() => handleSelect(result)}>
+              <MapPin className="h-3.5 w-3.5" />
+              {result.name}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {searchError ? <small>{searchError}</small> : null}
+    </div>
+  )
+}
+
+function buildBoostTargeting({ mode, countryCodes, zipCodes, customAudienceIds, geoTargets }) {
   const countries = normalizeCountryCodesInput(countryCodes)
   const primaryCountry = countries[0] || 'US'
 
@@ -919,6 +1005,17 @@ function buildBoostTargeting({ mode, countryCodes, zipCodes, customAudienceIds }
             key: zip.includes(':') ? zip : `${primaryCountry}:${zip}`,
             name: zip.replace(/^[A-Z]{2}:/, ''),
           })),
+        }
+      : {}
+  }
+
+  if (['city', 'region', 'metro'].includes(mode)) {
+    const entries = buildGeoTargetEntries(geoTargets?.[mode] || [])
+    const key = mode === 'city' ? 'cities' : mode === 'region' ? 'regions' : 'metros'
+    return entries.length
+      ? {
+          countries: [primaryCountry],
+          [key]: entries,
         }
       : {}
   }
@@ -945,6 +1042,7 @@ function BoostPostModal({ item, defaultPlatform, readiness, isReadinessLoading, 
   const [countryCodes, setCountryCodes] = useState(client?.country_code || 'US')
   const [zipCodes, setZipCodes] = useState(client?.postal_code || '')
   const [customAudienceIds, setCustomAudienceIds] = useState('')
+  const [geoTargets, setGeoTargets] = useState({ city: [], region: [], metro: [] })
   const [adAccountId, setAdAccountId] = useState('')
   const [adAccounts, setAdAccounts] = useState([])
   const [isLoadingAdAccounts, setIsLoadingAdAccounts] = useState(false)
@@ -962,7 +1060,8 @@ function BoostPostModal({ item, defaultPlatform, readiness, isReadinessLoading, 
     countryCodes,
     zipCodes,
     customAudienceIds,
-  }), [audienceMode, countryCodes, customAudienceIds, zipCodes])
+    geoTargets,
+  }), [audienceMode, countryCodes, customAudienceIds, geoTargets, zipCodes])
   const audienceReady = hasBoostAudienceTargeting(platform, boostTargeting)
   const canLaunchBoost = availablePlatforms.length > 0
     && !isReadinessLoading
@@ -1179,6 +1278,15 @@ function BoostPostModal({ item, defaultPlatform, readiness, isReadinessLoading, 
                 <input value={zipCodes} onChange={(event) => setZipCodes(event.target.value)} placeholder="13901, 13905" />
               </label>
             </>
+          ) : null}
+          {['city', 'region', 'metro'].includes(audienceMode) ? (
+            <BuildGeoAudiencePicker
+              geoType={audienceMode}
+              countryCodes={countryCodes}
+              selected={geoTargets[audienceMode] || []}
+              onSelectedChange={(items) => setGeoTargets((current) => ({ ...current, [audienceMode]: items }))}
+              platform={platform}
+            />
           ) : null}
           {audienceMode === 'custom' ? (
             <label>
@@ -1435,6 +1543,12 @@ function CalendarHoverPreview({ preview }) {
           <p>{item.caption || item.subtitle}</p>
           <div className="content-plan-hover-preview-meta">
             <PlatformMarkers platforms={item.platforms} />
+            {item.boostStatus ? (
+              <span className={`content-plan-boost-marker${item.boostStatus.isActive ? ' content-plan-boost-marker--active' : ''}`}>
+                <Megaphone className="h-3 w-3" />
+                {item.boostStatus.label}
+              </span>
+            ) : null}
             <span>{item.source === 'post' ? 'Click to open post' : 'Click to edit in Publisher'}</span>
           </div>
         </div>
@@ -1486,7 +1600,8 @@ function PlanItemChip({ item, selected, onSelect, actions, onPreviewOpen, onPrev
       </div>
       <div className="content-plan-row-status">
         {item.boostStatus ? (
-          <span className="content-plan-boost-marker">
+          <span className={`content-plan-boost-marker${item.boostStatus.isActive ? ' content-plan-boost-marker--active' : ''}`}>
+            {item.boostStatus.isActive ? <span className="content-plan-boost-live-dot" aria-hidden="true" /> : null}
             <Megaphone className="h-3 w-3" />
             {item.boostStatus.label.replace(/^Boost /, '')}
           </span>

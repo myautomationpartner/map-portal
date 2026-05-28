@@ -1492,6 +1492,20 @@
   font-weight: 800;
 }
 
+.content-plan-boost-marker--active {
+  border-color: rgba(34, 197, 94, 0.34);
+  background: rgba(34, 197, 94, 0.13);
+  color: #12823f;
+}
+
+.content-plan-boost-live-dot {
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.16);
+}
+
 .portal-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -9246,6 +9260,12 @@ html[data-portal-theme="map-dark"] .content-plan-platform-chip {
   border-color: rgba(231, 233, 234, 0.1) !important;
   background: transparent !important;
   box-shadow: none !important;
+}
+
+html[data-portal-theme="map-dark"] .content-plan-boost-marker--active {
+  border-color: rgba(34, 197, 94, 0.42) !important;
+  background: rgba(34, 197, 94, 0.14) !important;
+  color: #86efac !important;
 }
 
 html[data-portal-theme="map-dark"] .content-plan-side-stack {

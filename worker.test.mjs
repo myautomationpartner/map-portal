@@ -265,6 +265,17 @@ test('looks up Meta ads accounts when boosting Facebook or Instagram posts', asy
   assert.ok(lookupIndex > helperIndex)
 })
 
+test('exposes boost targeting search and scheduled active-status notifications', async () => {
+  const workerSource = await readFile(new URL('./worker.js', import.meta.url), 'utf8')
+
+  assert.match(workerSource, /async function handleBoostTargetingSearch/)
+  assert.match(workerSource, /\/api\/boost-targeting-search/)
+  assert.match(workerSource, /\/ads\/targeting\/search\?/)
+  assert.match(workerSource, /async function syncPostBoostStatuses/)
+  assert.match(workerSource, /notifyPortalPushSubscribers\(env, \{ \.\.\.envConfig, clientId: boost\.client_id \}\)/)
+  assert.match(workerSource, /ctx\.waitUntil\(syncPostBoostStatuses\(env\)\)/)
+})
+
 test('blocks tenant-unsafe Zernio account-list sync from the customer portal', async () => {
   const workerSource = await readFile(new URL('./worker.js', import.meta.url), 'utf8')
   const routeIndex = workerSource.indexOf("url.pathname === '/api/n8n/zernio-sync-accounts'")

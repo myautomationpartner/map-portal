@@ -63,12 +63,23 @@ test('publisher converts gap-fill Radar ideas into drafts on the selected open d
 
 test('Publisher Boost requires audience targeting for Meta launches', () => {
   assert.match(source, /const BOOST_AUDIENCE_MODES = \[/)
-  assert.match(source, /function buildBoostTargeting\(\{ mode, countryCodes, zipCodes, customAudienceIds \}\)/)
+  assert.match(source, /function buildBoostTargeting\(\{ mode, countryCodes, zipCodes, customAudienceIds, geoTargets \}\)/)
+  assert.match(source, /searchBoostTargeting/)
+  assert.match(source, /BuildGeoAudiencePicker/)
   assert.match(source, /const audienceReady = hasBoostAudienceTargeting\(platform, boostTargeting\)/)
   assert.match(source, /targeting: boostTargeting/)
   assert.match(source, /targeting: input\.targeting \|\| \{\}/)
   assert.doesNotMatch(source, /mode: 'local_default'/)
   assert.match(source, /Choose a country, ZIP code, or custom audience before launching a Meta boost\./)
+})
+
+test('Publisher calendar marks live boosts on rows and hover previews', () => {
+  assert.match(source, /active: 'Boost live'/)
+  assert.match(source, /isActive: status === 'active'/)
+  assert.match(source, /content-plan-boost-marker--active/)
+  assert.match(source, /content-plan-boost-live-dot/)
+  assert.match(css, /\.content-plan-boost-marker--active/)
+  assert.match(css, /\.content-plan-boost-live-dot/)
 })
 
 test('Opportunity Radar appends only after current-week gaps are filled', () => {
