@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowUpRight,
   Check,
-  CheckCircle2,
   ChevronLeft,
   Copy,
   Clock3,
@@ -51,7 +50,7 @@ const STATUS_STYLES = {
 }
 
 const INBOX_SECTIONS = [
-  { value: 'messages', label: 'Regular DMs', icon: MessageCircle },
+  { value: 'messages', label: 'Messages', icon: MessageCircle },
   { value: 'comments', label: 'Comments', icon: StickyNote },
   { value: 'reviews', label: 'Reviews', icon: Star, disabled: true, note: 'Soon' },
 ]
@@ -505,43 +504,6 @@ function commentReplyAuthorDisplayName(reply) {
 
 function commentReplyCreatedTime(reply) {
   return String(reply?.createdTime || reply?.created_at || reply?.timestamp || '').trim()
-}
-
-function ticketStepState(selectedConversation, step) {
-  const status = selectedConversation?.status || 'open'
-  if (status === 'resolved') return 'done'
-  if (step <= 2) return 'done'
-  if (status === 'pending' && step === 4) return 'next'
-  if (status === 'open' && step === 3) return 'next'
-  return 'waiting'
-}
-
-function selectedActionLabel(selectedConversation) {
-  const status = selectedConversation?.status || 'open'
-  if (!selectedConversation) return 'Choose a conversation'
-  if (status === 'pending') return 'Waiting on customer'
-  if (status === 'resolved') return 'Conversation is done'
-  return 'Reply or add a private note'
-}
-
-function TicketStage({ state, number, title, detail }) {
-  const styles = {
-    done: { background: '#22a06b', color: '#fff' },
-    next: { background: '#2377ff', color: '#fff' },
-    waiting: { background: '#aeb8c5', color: '#fff' },
-  }
-
-  return (
-    <div className="grid grid-cols-[20px_1fr] gap-2 border-t py-2 first:border-t-0" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
-      <div className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-black" style={styles[state]}>
-        {state === 'done' ? <Check className="h-3 w-3" /> : number}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[13px] font-semibold leading-tight" style={{ color: 'var(--portal-text)' }}>{title}</p>
-        <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--portal-text-muted)' }}>{detail}</p>
-      </div>
-    </div>
-  )
 }
 
 function MobileAppBanner() {
@@ -1079,7 +1041,7 @@ function InboxSectionNav({
         </span>
         <span className="min-w-0">
           <span className="block truncate">My Partner</span>
-          <span className="block truncate text-[11px] font-medium">Ask MAP for help</span>
+          <span className="block truncate text-[11px] font-medium">Task hub</span>
         </span>
       </button>
       <div className="grid gap-1">
@@ -1124,6 +1086,97 @@ function InboxSectionNav({
         </button>
       </div>
     </aside>
+  )
+}
+
+function PartnerTaskHub({ onBack, onOpenThread, openingThread }) {
+  const taskLinks = [
+    {
+      title: 'Create a post',
+      detail: 'Start a new draft with the full publisher tools.',
+      href: portalPath('/post'),
+      icon: FileText,
+    },
+    {
+      title: 'Review drafts',
+      detail: 'Open the publisher calendar and choose drafts that need approval.',
+      href: portalPath('/calendar'),
+      icon: Check,
+    },
+    {
+      title: 'Scheduled posts',
+      detail: 'Check what is already approved and queued.',
+      href: portalPath('/post/scheduled'),
+      icon: Clock3,
+    },
+  ]
+
+  return (
+    <div className="partner-task-hub portal-scroll flex-1 overflow-y-auto px-4 py-5 md:px-6">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+        <div className="partner-task-panel rounded-lg border p-4 md:p-5" style={{ borderColor: 'var(--portal-border)', background: '#fff' }}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full" style={{ background: 'rgba(35,119,255,0.1)', color: 'var(--portal-primary)' }}>
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <h2 className="text-xl font-semibold tracking-normal" style={{ color: 'var(--portal-text)' }}>My Partner</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                Choose the task you need. Draft lists and scheduled work stay in Publisher, so the chat only holds real back-and-forth messages.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onBack}
+              className="portal-button-secondary inline-flex h-9 items-center gap-2 px-3 text-xs font-semibold lg:hidden"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Inbox
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          {taskLinks.map((task) => {
+            const Icon = task.icon
+            return (
+              <a
+                key={task.title}
+                href={task.href}
+                className="partner-task-card rounded-lg border p-4 no-underline transition-transform hover:-translate-y-0.5"
+                style={{ borderColor: 'var(--portal-border)', background: '#fff' }}
+              >
+                <span className="mb-4 flex h-10 w-10 items-center justify-center rounded-md" style={{ background: 'rgba(35,119,255,0.1)', color: 'var(--portal-primary)' }}>
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span className="block text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{task.title}</span>
+                <span className="mt-2 block text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>{task.detail}</span>
+              </a>
+            )
+          })}
+        </div>
+
+        <div className="partner-task-panel rounded-lg border p-4" style={{ borderColor: 'var(--portal-border)', background: '#fff' }}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Need to ask something?</p>
+              <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
+                Open the My Partner chat when you need a custom request or a reply from MAP.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenThread}
+              disabled={openingThread}
+              className="portal-button-primary inline-flex h-9 items-center gap-2 px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {openingThread ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+              Open chat
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1443,6 +1496,7 @@ export default function Inbox() {
   const [composer, setComposer] = useState('')
   const [isPrivate, setIsPrivate] = useState(false)
   const [mobileThreadOpen, setMobileThreadOpen] = useState(false)
+  const [partnerHubOpen, setPartnerHubOpen] = useState(false)
   const [setupOpen, setSetupOpen] = useState(false)
   const [phoneSetupOpen, setPhoneSetupOpen] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -1519,8 +1573,11 @@ export default function Inbox() {
   const selectedCommentPostId = selectedCommentPost?.id || ''
   const selectedCommentAccountId = selectedCommentPost?.accountId || ''
   const selectedConversation = useMemo(
-    () => conversations.find((conversation) => conversation.id === selectedId) || privateConversations[0] || null,
-    [conversations, privateConversations, selectedId],
+    () => {
+      if (partnerHubOpen) return null
+      return conversations.find((conversation) => conversation.id === selectedId) || privateConversations[0] || null
+    },
+    [conversations, privateConversations, selectedId, partnerHubOpen],
   )
   const activeConversationId = selectedConversation?.id || null
 
@@ -1574,6 +1631,7 @@ export default function Inbox() {
     mutationFn: openContentPartnerConversation,
     onSuccess: async (payload) => {
       setActiveSection('messages')
+      setPartnerHubOpen(false)
       setStatus('open')
       setQuery('')
       setInboxId('')
@@ -1602,16 +1660,25 @@ export default function Inbox() {
   }
 
   function handleSelect(conversationId) {
+    setPartnerHubOpen(false)
     setSelectedId(conversationId)
     setMobileThreadOpen(true)
   }
 
   function handleSectionChange(section) {
     setActiveSection(section)
+    setPartnerHubOpen(false)
     setMobileThreadOpen(false)
   }
 
-  function handleOpenPartner() {
+  function handleOpenPartnerHub() {
+    setActiveSection('messages')
+    setPartnerHubOpen(true)
+    setSelectedId(null)
+    setMobileThreadOpen(true)
+  }
+
+  function handleOpenPartnerThread() {
     setActiveSection('messages')
     contentPartnerMutation.mutate()
   }
@@ -1646,7 +1713,7 @@ export default function Inbox() {
             <div>
               <h1 className="text-xl font-semibold leading-tight tracking-normal" style={{ color: 'var(--portal-text)' }}>Inbox</h1>
               <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--portal-text-muted)' }}>
-                Private customer chats, public comments, and your MAP Partner in one place.
+                Customer messages, public comments, and your My Partner task hub in one place.
               </p>
             </div>
             <StatusPill status={status} />
@@ -1657,7 +1724,7 @@ export default function Inbox() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search regular DMs"
+                placeholder="Search messages"
                 className="portal-input h-9 w-[240px] rounded-full pl-9 pr-3 text-sm lg:w-[340px]"
               />
             </div>
@@ -1671,7 +1738,7 @@ export default function Inbox() {
             </button>
             <button
               type="button"
-              onClick={handleOpenPartner}
+              onClick={handleOpenPartnerHub}
               disabled={contentPartnerMutation.isPending}
               className="inbox-content-partner-action inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-black shadow-sm transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
               style={{
@@ -1730,13 +1797,13 @@ export default function Inbox() {
           <InboxSectionNav
             activeSection={activeSection}
             onSectionChange={handleSectionChange}
-            onOpenPartner={handleOpenPartner}
+            onOpenPartner={handleOpenPartnerHub}
             openingPartner={contentPartnerMutation.isPending}
             onOpenSetup={() => setSetupOpen(true)}
           />
 
           {activeSection === 'messages' ? (
-        <div className="inbox-workspace-grid grid min-h-[calc(100vh-150px)] flex-1 lg:grid-cols-[324px_minmax(0,1fr)_300px]">
+        <div className="inbox-workspace-grid grid min-h-[calc(100vh-150px)] flex-1 lg:grid-cols-[324px_minmax(0,1fr)]">
           <aside className={`inbox-conversation-list ${mobileThreadOpen ? 'hidden lg:flex' : 'flex'} min-h-[calc(100vh-150px)] flex-col border-r bg-white`} style={{ borderColor: 'var(--portal-border)' }}>
             <div className="border-b px-3 py-3" style={{ borderColor: 'var(--portal-border)' }}>
               <div className="relative mb-3 sm:hidden">
@@ -1744,7 +1811,7 @@ export default function Inbox() {
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search regular DMs"
+                  placeholder="Search messages"
                   className="portal-input h-10 rounded-full pl-9 pr-3 text-sm"
                 />
               </div>
@@ -1754,6 +1821,7 @@ export default function Inbox() {
                     key={option.value}
                     type="button"
                     onClick={() => {
+                      setPartnerHubOpen(false)
                       setStatus(option.value)
                       setSelectedId(null)
                     }}
@@ -1768,6 +1836,7 @@ export default function Inbox() {
               <select
                 value={inboxId}
                 onChange={(event) => {
+                  setPartnerHubOpen(false)
                   setInboxId(event.target.value)
                   setSelectedId(null)
                 }}
@@ -1793,7 +1862,7 @@ export default function Inbox() {
                   <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} />
                 </div>
               ) : privateConversations.length === 0 ? (
-                <EmptyState title="No regular DMs here" detail="Website chats and direct customer DMs will appear here. Public social replies belong in Comments, and MAP help stays under My Partner." />
+                <EmptyState title="No messages here" detail="Website chats and direct customer messages will appear here. Public social replies belong in Comments, and MAP help stays under My Partner." />
               ) : (
                 privateConversations.map((conversation) => {
                   const badge = channelBadge(conversation, inboxesQuery.data || [])
@@ -1841,7 +1910,16 @@ export default function Inbox() {
           </aside>
 
           <main className={`inbox-thread-panel ${mobileThreadOpen ? 'flex' : 'hidden lg:flex'} min-h-[calc(100vh-150px)] min-w-0 flex-col`} style={{ background: 'var(--portal-inbox-thread-bg, #f9fbfe)' }}>
-            {selectedConversation ? (
+            {partnerHubOpen ? (
+              <PartnerTaskHub
+                onBack={() => {
+                  setPartnerHubOpen(false)
+                  setMobileThreadOpen(false)
+                }}
+                onOpenThread={handleOpenPartnerThread}
+                openingThread={contentPartnerMutation.isPending}
+              />
+            ) : selectedConversation ? (
               <>
                 <div className="inbox-thread-header flex min-h-[72px] items-center justify-between gap-3 border-b bg-white/95 px-4 py-3 md:px-5" style={{ borderColor: 'var(--portal-border)' }}>
                   <div className="flex min-w-0 items-center gap-3">
@@ -1872,6 +1950,17 @@ export default function Inbox() {
                   </div>
                   <div className="flex items-center gap-2">
                     <StatusPill status={selectedConversation.status} />
+                    <select
+                      value={selectedConversation.status || 'open'}
+                      onChange={(event) => statusMutation.mutate({ conversationId: activeConversationId, status: event.target.value })}
+                      disabled={!activeConversationId || statusMutation.isPending}
+                      className="portal-input hidden h-9 w-[112px] rounded-full px-3 text-xs font-semibold sm:block disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label="Conversation status"
+                    >
+                      {STATUS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
                     <a
                       href={openChatwootUrl}
                       target="_blank"
@@ -1883,6 +1972,7 @@ export default function Inbox() {
                     </a>
                   </div>
                 </div>
+                <ErrorBanner message={statusMutation.error?.message} />
 
                 <div className="inbox-message-scroll portal-scroll flex-1 overflow-y-auto px-3 py-4 md:px-6">
                   {messagesQuery.isLoading ? (
@@ -2010,116 +2100,6 @@ export default function Inbox() {
             )}
           </main>
 
-          <aside className="inbox-detail-panel hidden min-h-[calc(100vh-150px)] border-l bg-white p-4 lg:block" style={{ borderColor: 'var(--portal-border)' }}>
-            {selectedConversation ? (
-              <>
-                <div className="inbox-side-card mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <h2 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>What to do next</h2>
-                    <StatusPill status={selectedConversation?.status || status} />
-                  </div>
-                  <TicketStage
-                    state={ticketStepState(selectedConversation, 1)}
-                    number="1"
-                    title="Message came in"
-                    detail={`${selectedConversation ? inboxName(selectedConversation, inboxesQuery.data || []) : 'Inbox'} · ${formatRelativeTime(selectedConversation?.last_activity_at || selectedConversation?.updated_at)}`}
-                  />
-                  <TicketStage
-                    state={ticketStepState(selectedConversation, 2)}
-                    number="2"
-                    title="Know who it is"
-                    detail={selectedConversation ? conversationSubtitle(selectedConversation) : 'Waiting for customer'}
-                  />
-                  <TicketStage
-                    state={ticketStepState(selectedConversation, 3)}
-                    number="3"
-                    title={selectedActionLabel(selectedConversation)}
-                    detail={selectedConversation?.status === 'open' ? 'Use the reply box below the thread.' : 'No active reply needed.'}
-                  />
-                  <TicketStage
-                    state={ticketStepState(selectedConversation, 4)}
-                    number="4"
-                    title="Mark it handled"
-                    detail={selectedConversation?.status === 'pending' ? 'Waiting on customer.' : 'Resolve when the conversation is finished.'}
-                  />
-                </div>
-
-                <div className="inbox-side-card mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
-                  <div className="grid gap-2 text-xs">
-                    <div className="flex justify-between gap-3 border-b pb-2" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
-                      <span style={{ color: 'var(--portal-text-muted)' }}>Source</span>
-                      <b className="text-right" style={{ color: 'var(--portal-text)' }}>{selectedConversation ? inboxName(selectedConversation, inboxesQuery.data || []) : 'Inbox'}</b>
-                    </div>
-                    <div className="flex justify-between gap-3 border-b pb-2" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
-                      <span style={{ color: 'var(--portal-text-muted)' }}>Customer</span>
-                      <b className="text-right" style={{ color: 'var(--portal-text)' }}>{selectedConversation ? conversationSubtitle(selectedConversation) : 'None selected'}</b>
-                    </div>
-                    <div className="flex justify-between gap-3 border-b pb-2" style={{ borderColor: 'rgba(220,227,236,0.9)' }}>
-                      <span style={{ color: 'var(--portal-text-muted)' }}>Last activity</span>
-                      <b className="text-right" style={{ color: 'var(--portal-text)' }}>{formatRelativeTime(selectedConversation?.last_activity_at || selectedConversation?.updated_at)}</b>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <span style={{ color: 'var(--portal-text-muted)' }}>Next step</span>
-                      <b className="text-right" style={{ color: 'var(--portal-text)' }}>{selectedActionLabel(selectedConversation)}</b>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="inbox-side-card mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
-                  <p className="mb-3 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Status</p>
-                  <div className="grid gap-2">
-                    {STATUS_OPTIONS.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        disabled={!activeConversationId || statusMutation.isPending}
-                        onClick={() => statusMutation.mutate({ conversationId: activeConversationId, status: option.value })}
-                        className="portal-button-secondary inline-flex h-9 items-center justify-between px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <span>{option.label}</span>
-                        {selectedConversation?.status === option.value && <CheckCircle2 className="h-4 w-4" style={{ color: '#22a06b' }} />}
-                      </button>
-                    ))}
-                  </div>
-                  <ErrorBanner message={statusMutation.error?.message} />
-                </div>
-
-                <div className="inbox-side-card rounded-lg border p-3" style={{ borderColor: 'var(--portal-border)' }}>
-                  <p className="mb-3 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Actions</p>
-                  <div className="grid gap-2">
-                    <a
-                      href={openChatwootUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="portal-button-secondary inline-flex h-9 items-center justify-center gap-1 px-2 text-xs font-semibold"
-                    >
-                      Open in Chatwoot
-                      <ArrowUpRight className="h-3 w-3" />
-                    </a>
-                    <a
-                      href={mobileStoreUrl()}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="portal-button-secondary inline-flex h-9 items-center justify-center gap-1 px-2 text-xs font-semibold"
-                    >
-                      Get mobile app
-                      <ArrowUpRight className="h-3 w-3" />
-                    </a>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="inbox-side-card rounded-lg border p-4" style={{ borderColor: 'var(--portal-border)' }}>
-                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'rgba(35,119,255,0.1)', color: 'var(--portal-primary)' }}>
-                  <MessageCircle className="h-5 w-5" />
-                </div>
-                <h2 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Conversation details</h2>
-                <p className="mt-2 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                  Select a DM to see customer details, reply options, and status controls.
-                </p>
-              </div>
-            )}
-          </aside>
         </div>
           ) : activeSection === 'comments' ? (
             <CommentsInbox

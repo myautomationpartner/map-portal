@@ -11288,6 +11288,19 @@ html[data-portal-theme="map-dark"] .inbox-detail-panel {
   background: #050608 !important;
 }
 
+html[data-portal-theme="map-dark"] .partner-task-panel,
+html[data-portal-theme="map-dark"] .partner-task-card {
+  border-color: var(--premium-line) !important;
+  background: rgba(10, 13, 17, 0.94) !important;
+  box-shadow: none !important;
+}
+
+html[data-portal-theme="map-dark"] .partner-task-card:hover,
+html[data-portal-theme="map-dark"] .partner-task-card:focus-visible {
+  border-color: rgba(74, 168, 255, 0.32) !important;
+  background: rgba(16, 21, 29, 0.96) !important;
+}
+
 html[data-portal-theme="map-dark"] .inbox-conversation-list > div:first-child,
 html[data-portal-theme="map-dark"] .inbox-conversation-list > div:nth-child(2),
 html[data-portal-theme="map-dark"] .inbox-thread-header,
@@ -12926,6 +12939,18 @@ html:not([data-portal-theme="map-dark"]) .inbox-partner-nav span span:last-child
 html:not([data-portal-theme="map-dark"]) .inbox-partner-nav > span:first-child {
   background: #ffffff !important;
   color: var(--light-blue) !important;
+}
+
+html:not([data-portal-theme="map-dark"]) .partner-task-panel,
+html:not([data-portal-theme="map-dark"]) .partner-task-card {
+  border-color: var(--light-line) !important;
+  background: #ffffff !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+html:not([data-portal-theme="map-dark"]) .partner-task-card:hover,
+html:not([data-portal-theme="map-dark"]) .partner-task-card:focus-visible {
+  border-color: rgba(36, 120, 213, 0.28) !important;
 }
 
 html:not([data-portal-theme="map-dark"]) .inbox-section-nav-item {
