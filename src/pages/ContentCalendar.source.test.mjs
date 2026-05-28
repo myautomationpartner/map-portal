@@ -78,6 +78,7 @@ test('Publisher calendar marks live boosts on rows and hover previews', () => {
   assert.match(source, /isActive: status === 'active'/)
   assert.match(source, /content-plan-boost-marker--active/)
   assert.match(source, /content-plan-boost-live-dot/)
+  assert.doesNotMatch(source, /Click to open post/)
   assert.match(css, /\.content-plan-boost-marker--active/)
   assert.match(css, /\.content-plan-boost-live-dot/)
 })

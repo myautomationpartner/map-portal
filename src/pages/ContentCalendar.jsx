@@ -1549,7 +1549,6 @@ function CalendarHoverPreview({ preview }) {
                 {item.boostStatus.label}
               </span>
             ) : null}
-            <span>{item.source === 'post' ? 'Click to open post' : 'Click to edit in Publisher'}</span>
           </div>
         </div>
       </div>
