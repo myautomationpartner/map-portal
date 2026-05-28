@@ -2885,7 +2885,8 @@ export default function ContentCalendar() {
       return
     }
     if (item.post?.id) {
-      navigate(`/post?editPost=${item.post.id}`)
+      const postParam = item.badgeType === 'scheduled' ? 'editPost' : 'viewPost'
+      navigate(`/post?${postParam}=${item.post.id}`)
       return
     }
     navigate('/post')

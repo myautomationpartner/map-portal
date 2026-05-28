@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const source = await readFile(new URL('./ContentCalendar.jsx', import.meta.url), 'utf8')
+const createPostSource = await readFile(new URL('./CreatePost.jsx', import.meta.url), 'utf8')
+const campaignPartnerSource = await readFile(new URL('./CampaignPartner.jsx', import.meta.url), 'utf8')
 const css = await readFile(new URL('../App.css', import.meta.url), 'utf8')
 const radarFunctionSource = await readFile(new URL('../../../../supabase/functions/opportunity-radar-run/index.ts', import.meta.url), 'utf8')
 const contentPartnerFunctionSource = await readFile(new URL('../../../../supabase/functions/portal-content-partner/index.ts', import.meta.url), 'utf8')
@@ -81,6 +83,30 @@ test('Publisher calendar marks live boosts on rows and hover previews', () => {
   assert.doesNotMatch(source, /Click to open post/)
   assert.match(css, /\.content-plan-boost-marker--active/)
   assert.match(css, /\.content-plan-boost-live-dot/)
+})
+
+test('published calendar rows open as posted views instead of empty composers', () => {
+  assert.match(source, /const postParam = item\.badgeType === 'scheduled' \? 'editPost' : 'viewPost'/)
+  assert.match(createPostSource, /const viewTargetPostId = searchParams\.get\('viewPost'\) \|\| ''/)
+  assert.match(createPostSource, /function openReview\(\) \{\s*if \(isViewingPublishedPost\)/)
+  assert.match(createPostSource, /loadPublishedPostForViewing\(post\)/)
+  assert.match(createPostSource, /setContent\(post\.content \|\| ''\)/)
+  assert.match(createPostSource, /Already posted/)
+})
+
+test('Publisher creative images open in a larger preview', () => {
+  assert.match(createPostSource, /function MediaLightbox/)
+  assert.match(createPostSource, /create-post-media-open-button/)
+  assert.match(createPostSource, /setMediaLightbox\(\{/)
+  assert.match(css, /\.create-post-media-lightbox/)
+})
+
+test('Campaign Partner image assets open in a larger preview', () => {
+  assert.match(campaignPartnerSource, /function isCampaignPreviewableImage/)
+  assert.match(campaignPartnerSource, /function handleOpenCampaignAsset/)
+  assert.match(campaignPartnerSource, /campaign-asset-preview-item/)
+  assert.match(campaignPartnerSource, /getSecureVaultDocumentUrl\(documentId, 'view'\)/)
+  assert.match(css, /\.campaign-asset-list > button/)
 })
 
 test('Opportunity Radar appends only after current-week gaps are filled', () => {

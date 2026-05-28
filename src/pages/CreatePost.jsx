@@ -402,6 +402,30 @@ function MediaPreviewAsset({ item, src, alt = '', className = '', controls = fal
   return <img src={previewSrc} alt={alt} className={className} />
 }
 
+function MediaLightbox({ media, onClose }) {
+  if (!media?.src) return null
+  const mediaType = inferMediaType(media.item || { previewUrl: media.src })
+  const isVideo = mediaType === 'video'
+
+  return (
+    <div className="create-post-media-lightbox" role="dialog" aria-modal="true" aria-label="Post media preview" onClick={onClose}>
+      <div className="create-post-media-lightbox-frame" onClick={(event) => event.stopPropagation()}>
+        <button type="button" className="create-post-media-lightbox-close" onClick={onClose} aria-label="Close media preview">
+          <X className="h-5 w-5" />
+        </button>
+        <div className="create-post-media-lightbox-stage">
+          {isVideo ? (
+            <video src={media.src} controls playsInline />
+          ) : (
+            <img src={media.src} alt={media.alt || 'Post media preview'} />
+          )}
+        </div>
+        {media.name ? <p>{media.name}</p> : null}
+      </div>
+    </div>
+  )
+}
+
 function clampIndex(index, count) {
   if (!count) return 0
   return Math.min(Math.max(index, 0), count - 1)
@@ -1324,6 +1348,8 @@ export default function CreatePost() {
   const [generatedCaption, setGeneratedCaption] = useState('')
   const [editingScheduledPostId, setEditingScheduledPostId] = useState('')
   const [editingScheduledPostRef, setEditingScheduledPostRef] = useState('')
+  const [viewingPublishedPostId, setViewingPublishedPostId] = useState('')
+  const [viewingPublishedPost, setViewingPublishedPost] = useState(null)
   const [existingMediaUrl, setExistingMediaUrl] = useState('')
   const [deleteBusyKey, setDeleteBusyKey] = useState('')
   const [assistState, setAssistState] = useState('idle')
@@ -1334,6 +1360,7 @@ export default function CreatePost() {
   const [platformFormatStatus, setPlatformFormatStatus] = useState('')
   const [imageFormatState, setImageFormatState] = useState('idle')
   const [imageFormatStatus, setImageFormatStatus] = useState('')
+  const [mediaLightbox, setMediaLightbox] = useState(null)
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile'],
@@ -1345,6 +1372,8 @@ export default function CreatePost() {
   const draftTargetSlot = searchParams.get('slot') || ''
   const draftTargetId = searchParams.get('draftId') || ''
   const editTargetPostId = searchParams.get('editPost') || ''
+  const viewTargetPostId = searchParams.get('viewPost') || ''
+  const targetPostId = viewTargetPostId || editTargetPostId
 
   const { data: scheduledPosts = [], isLoading: postsLoading } = useQuery({
     queryKey: ['calendar-posts', clientId],
@@ -1495,7 +1524,11 @@ export default function CreatePost() {
     [scheduledPostsDetailed],
   )
 
-  const timingSummary = timingMode === 'now'
+  const isViewingPublishedPost = Boolean(viewingPublishedPostId)
+  const viewedPublishedAt = viewingPublishedPost?.published_at || viewingPublishedPost?.scheduled_for || viewingPublishedPost?.created_at || ''
+  const timingSummary = isViewingPublishedPost
+    ? `Posted ${formatDetailedLocalDateTime(isoToLocalInputValue(viewedPublishedAt, calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'))}`
+    : timingMode === 'now'
     ? 'Publishing as soon as you approve'
     : scheduledFor
       ? formatDetailedLocalDateTime(scheduledFor)
@@ -1523,6 +1556,17 @@ export default function CreatePost() {
       setMediaSlideIndex(creativeItems.length - 1)
     }
   }, [creativeItems.length, mediaSlideIndex])
+
+  useEffect(() => {
+    if (!mediaLightbox) return undefined
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setMediaLightbox(null)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [mediaLightbox])
 
   useEffect(() => {
     if (!activePlatforms.includes(previewPlatform)) {
@@ -1559,6 +1603,8 @@ export default function CreatePost() {
         .filter((asset) => asset.link)
       : []
     hydratingDraftRef.current = true
+    setViewingPublishedPostId('')
+    setViewingPublishedPost(null)
     setActiveDraftId(draft.id || '')
     setActiveSlotKey(getSlotKey(slot))
     setSelectedAngleId(getDraftAngleId(draft))
@@ -1635,6 +1681,8 @@ export default function CreatePost() {
 
   const applyGeneratedDraftToComposer = useCallback((generated, slot, draftId = '') => {
     hydratingDraftRef.current = true
+    setViewingPublishedPostId('')
+    setViewingPublishedPost(null)
     setActiveDraftId(draftId)
     setActiveSlotKey(getSlotKey(slot))
     setSelectedAngleId(generated.angle.id)
@@ -1839,6 +1887,8 @@ export default function CreatePost() {
     if (!post) return
 
     const timezone = calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'
+    setViewingPublishedPostId('')
+    setViewingPublishedPost(null)
     setEditingScheduledPostId(post.id)
     setEditingScheduledPostRef(post.n8n_execution_id || '')
     setContent(post.content || '')
@@ -1882,6 +1932,62 @@ export default function CreatePost() {
     composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [calendar?.policy?.timezone, profile?.clients?.timezone, selectedDay, setSearchParams])
 
+  const loadPublishedPostForViewing = useCallback((post) => {
+    if (!post) return
+
+    const timezone = calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'
+    const publishedAt = post.published_at || post.scheduled_for || post.created_at || ''
+    const localPublishedAt = isoToLocalInputValue(publishedAt, timezone)
+    const localDate = localPublishedAt ? localPublishedAt.slice(0, 10) : selectedDay
+
+    hydratingDraftRef.current = true
+    setViewingPublishedPostId(post.id)
+    setViewingPublishedPost(post)
+    setEditingScheduledPostId('')
+    setEditingScheduledPostRef('')
+    setActiveDraftId('')
+    setActiveSlotKey('')
+    setSelectedAngleId('')
+    setAngleChoices([])
+    setMediaSuggestion('')
+    setGeneratedCaption('')
+    setContent(post.content || '')
+    setPlatformVariants(post.platform_variants_json || {})
+    setPlatformFormatStatus(post.platform_variants_json ? 'Saved platform captions loaded.' : '')
+    setSelectedPlatforms({
+      facebook: Boolean(post.platforms?.includes('facebook')),
+      instagram: Boolean(post.platforms?.includes('instagram')),
+      tiktok: Boolean(post.platforms?.includes('tiktok')),
+      twitter: Boolean(post.platforms?.includes('twitter')),
+    })
+    setPreviewPlatform(post.platforms?.find((platformId) => PLATFORMS.some((platform) => platform.id === platformId)) || 'facebook')
+    setTimingMode('now')
+    setScheduledFor('')
+    setSelectedDay(localDate || selectedDay)
+    setExistingMediaUrl(post.media_url || '')
+    setImageFile(null)
+    setLocalImageItems([])
+    setImagePreview(post.media_url || null)
+    setMediaSlideIndex(0)
+    setImageGenerateState('idle')
+    setImageGenerateError('')
+    setImageImproveState('idle')
+    setImageImproveMode('')
+    setImageImproveError('')
+    setDropboxAttachments([])
+    setDraftStatus('Posted item loaded for viewing.')
+    setDraftError('')
+    setDraftDirty(false)
+    setErrorMsg('')
+    setReviewOpen(false)
+    setSearchParams({ viewPost: post.id })
+    composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+
+    window.setTimeout(() => {
+      hydratingDraftRef.current = false
+    }, 0)
+  }, [calendar?.policy?.timezone, profile?.clients?.timezone, selectedDay, setSearchParams])
+
   useEffect(() => {
     if (!calendar?.slots || !draftTargetDate || !draftTargetSlot || draftLoading) return
 
@@ -1904,14 +2010,48 @@ export default function CreatePost() {
   }, [draftTargetId, drafts, draftLoading, activeDraftId, applyDraftToComposer, getDraftLoadedMessage])
 
   useEffect(() => {
-    if (!editTargetPostId || scheduledPostsDetailed.length === 0) return
-    if (editingScheduledPostId === editTargetPostId) return
+    if (!targetPostId) return undefined
+    if (editingScheduledPostId === targetPostId || viewingPublishedPostId === targetPostId) return undefined
 
-    const target = scheduledPostsDetailed.find((post) => post.id === editTargetPostId)
-    if (target) {
-      loadScheduledPostForEditing(target)
+    const scheduledTarget = scheduledPostsDetailed.find((post) => post.id === targetPostId)
+    if (scheduledTarget) {
+      loadScheduledPostForEditing(scheduledTarget)
+      return undefined
     }
-  }, [editTargetPostId, scheduledPostsDetailed, editingScheduledPostId, loadScheduledPostForEditing])
+
+    let cancelled = false
+    setDraftStatus('Loading posted item...')
+
+    fetchPostById(targetPostId)
+      .then((post) => {
+        if (cancelled || !post) return
+        if (String(post.status || '').toLowerCase() === 'scheduled') {
+          const timezone = calendar?.policy?.timezone || profile?.clients?.timezone || 'America/New_York'
+          const parts = post.scheduled_for ? getDatePartsForZone(new Date(post.scheduled_for), timezone) : null
+          loadScheduledPostForEditing(parts ? { ...post, localDate: parts.date, localTime: parts.time } : post)
+          return
+        }
+        loadPublishedPostForViewing(post)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setDraftStatus('')
+        setErrorMsg(error.message || 'Could not load this post.')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    targetPostId,
+    scheduledPostsDetailed,
+    editingScheduledPostId,
+    viewingPublishedPostId,
+    loadScheduledPostForEditing,
+    loadPublishedPostForViewing,
+    calendar?.policy?.timezone,
+    profile?.clients?.timezone,
+  ])
 
   useEffect(() => {
     if (!draftDirty || !activeDraftId || hydratingDraftRef.current) return undefined
@@ -2463,6 +2603,8 @@ export default function CreatePost() {
     setScheduledFor('')
     setErrorMsg('')
     setDraftError('')
+    setViewingPublishedPostId('')
+    setViewingPublishedPost(null)
     setEditingScheduledPostId('')
     setEditingScheduledPostRef('')
   }
@@ -2690,6 +2832,10 @@ export default function CreatePost() {
   }
 
   function openReview() {
+    if (isViewingPublishedPost) {
+      setErrorMsg('This post has already been published. Use the Publisher calendar menu for history, boost, or delete actions.')
+      return
+    }
     const validationError = validatePost()
     if (validationError) {
       setErrorMsg(validationError)
@@ -3107,8 +3253,8 @@ export default function CreatePost() {
                 Cancel
               </button>
               <div className="create-post-phone-title">Create post</div>
-              <button type="button" onClick={openReview} disabled={isSubmitting || charOver} className="create-post-phone-button">
-                Next
+              <button type="button" onClick={openReview} disabled={isSubmitting || charOver || isViewingPublishedPost} className="create-post-phone-button">
+                {isViewingPublishedPost ? 'Posted' : 'Next'}
               </button>
             </div>
             <div className="create-post-phone-body">
@@ -3124,7 +3270,7 @@ export default function CreatePost() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h1 className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-                    {editingScheduledPostId ? 'Editing scheduled post' : activeDraftId ? 'Draft loaded' : 'Publisher'}
+                    {isViewingPublishedPost ? 'Viewing posted item' : editingScheduledPostId ? 'Editing scheduled post' : activeDraftId ? 'Draft loaded' : 'Publisher'}
                   </h1>
                   <p className="mt-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
                     {timingSummary}
@@ -3189,7 +3335,7 @@ export default function CreatePost() {
                   Calendar slot
                 </button>
                 <div className="rounded-full px-3 py-2 text-[11px] font-semibold" style={{ background: 'rgba(245,240,235,0.9)', color: draftLoading ? 'var(--portal-primary)' : 'var(--portal-text-soft)' }}>
-                  {draftLoading ? 'Generating draft…' : editingScheduledPostId ? 'Scheduled-post editor' : activeDraftId ? 'Draft-backed editor' : 'Pick a slot'}
+                  {draftLoading ? 'Generating draft…' : isViewingPublishedPost ? 'Posted item' : editingScheduledPostId ? 'Scheduled-post editor' : activeDraftId ? 'Draft-backed editor' : 'Pick a slot'}
                 </div>
               </div>
 
@@ -3266,7 +3412,7 @@ export default function CreatePost() {
                   }}
                   placeholder="Select a draft-backed slot to prefill the caption…"
                   rows={7}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isViewingPublishedPost}
                   className="w-full resize-none rounded-[24px] bg-[rgba(255,255,255,0.7)] px-4 py-4 text-sm leading-relaxed focus:outline-none"
                   style={{ color: 'var(--portal-text)', border: '1px solid var(--portal-border)' }}
                 />
@@ -3335,7 +3481,7 @@ export default function CreatePost() {
 
                 <button
                   onClick={openReview}
-                  disabled={isSubmitting || charOver}
+                  disabled={isSubmitting || charOver || isViewingPublishedPost}
                   className="mt-5 inline-flex w-full items-center justify-center gap-3 rounded-2xl py-4 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40"
                   style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}
                 >
@@ -3347,7 +3493,7 @@ export default function CreatePost() {
                   ) : (
                     <>
                       <Send className="h-4 w-4" />
-                      {timingMode === 'now' ? 'Preview & Publish' : 'Preview & Approve'}
+                      {isViewingPublishedPost ? 'Already posted' : timingMode === 'now' ? 'Preview & Publish' : 'Preview & Approve'}
                     </>
                   )}
                 </button>
@@ -3461,13 +3607,34 @@ export default function CreatePost() {
               <div className="mt-3 overflow-hidden rounded-[24px]" style={{ border: '1px solid var(--portal-border)', background: 'rgba(255,255,255,0.78)' }}>
                 {mediaPreviewSource ? (
                   <div className="create-post-media-stage">
-                    <MediaPreviewAsset
-                      item={activeCreativeItem || { previewUrl: mediaPreviewSource }}
-                      src={mediaPreviewSource}
-                      alt={activeCreativeItem?.name || 'Upload preview'}
-                      className="w-full object-contain"
-                      controls={activeCreativeIsVideo}
-                    />
+                    {activeCreativeIsVideo ? (
+                      <MediaPreviewAsset
+                        item={activeCreativeItem || { previewUrl: mediaPreviewSource }}
+                        src={mediaPreviewSource}
+                        alt={activeCreativeItem?.name || 'Upload preview'}
+                        className="w-full object-contain"
+                        controls
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="create-post-media-open-button"
+                        onClick={() => setMediaLightbox({
+                          src: mediaPreviewSource,
+                          item: activeCreativeItem || { previewUrl: mediaPreviewSource },
+                          alt: activeCreativeItem?.name || 'Post creative',
+                          name: activeCreativeItem?.name || 'Post creative',
+                        })}
+                        aria-label="Open larger image preview"
+                      >
+                        <MediaPreviewAsset
+                          item={activeCreativeItem || { previewUrl: mediaPreviewSource }}
+                          src={mediaPreviewSource}
+                          alt={activeCreativeItem?.name || 'Upload preview'}
+                          className="w-full object-contain"
+                        />
+                      </button>
+                    )}
                     {creativeItems.length > 1 && (
                       <>
                         <button
@@ -4161,6 +4328,8 @@ export default function CreatePost() {
           </section>
         </div>
       </div>
+
+      <MediaLightbox media={mediaLightbox} onClose={() => setMediaLightbox(null)} />
 
       <ReviewModal
         open={reviewOpen}

@@ -19,6 +19,7 @@ import {
   Target,
   Trash2,
   Upload,
+  X,
 } from 'lucide-react'
 import {
   archiveCampaignProject,
@@ -30,6 +31,7 @@ import {
   fetchSecureVaultDocuments,
   fetchSecureVaultFolders,
   generateCampaignPlan,
+  getSecureVaultDocumentUrl,
   getSecureVaultUploadUrl,
   updateSocialDraft,
   upsertSocialDraft,
@@ -241,6 +243,13 @@ function assetKindFromMime(mimeType = '') {
   if (mimeType === 'application/pdf') return 'flyer/pdf'
   if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) return 'presentation'
   return 'file'
+}
+
+function isCampaignPreviewableImage(asset = {}) {
+  const kind = String(asset.kind || '').toLowerCase()
+  const type = String(asset.type || asset.mime_type || '').toLowerCase()
+  const name = String(asset.name || asset.file_name || asset.relativePath || asset.relative_path || '').toLowerCase()
+  return kind === 'image' || type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|avif|heic|heif)$/i.test(name)
 }
 
 function summarizeCampaignAsset(asset) {
@@ -810,6 +819,7 @@ export default function CampaignPartner() {
   const [error, setError] = useState('')
   const [openMenuId, setOpenMenuId] = useState('')
   const [assetFiles, setAssetFiles] = useState([])
+  const [assetLightbox, setAssetLightbox] = useState(null)
   const [form, setForm] = useState(DEFAULT_FORM)
 
   const { data: projects = [], isLoading } = useQuery({
@@ -857,6 +867,21 @@ export default function CampaignPartner() {
       }))
   }, [form.selectedAssetFolderId, secureDocuments, secureFolders])
   const selectedFolder = useMemo(() => secureFolders.find((folder) => folder.id === form.selectedAssetFolderId) || null, [form.selectedAssetFolderId, secureFolders])
+
+  useEffect(() => {
+    if (!assetLightbox) return undefined
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setAssetLightbox(null)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [assetLightbox])
+
+  useEffect(() => () => {
+    if (assetLightbox?.objectUrl) URL.revokeObjectURL(assetLightbox.objectUrl)
+  }, [assetLightbox])
 
   const saveProject = useMutation({
     mutationFn: async ({ reusableFrom } = {}) => {
@@ -1195,6 +1220,38 @@ export default function CampaignPartner() {
     setNotice('Loaded campaign as a reusable starting point.')
   }
 
+  async function handleOpenCampaignAsset(asset) {
+    if (!isCampaignPreviewableImage(asset)) return
+
+    try {
+      if (asset.file instanceof File) {
+        const objectUrl = URL.createObjectURL(asset.file)
+        setAssetLightbox((current) => {
+          if (current?.objectUrl) URL.revokeObjectURL(current.objectUrl)
+          return {
+            src: objectUrl,
+            objectUrl,
+            name: asset.name || asset.file.name || 'Campaign asset',
+          }
+        })
+        return
+      }
+
+      const documentId = asset.id || asset.document_id
+      if (!documentId) return
+      const payload = await getSecureVaultDocumentUrl(documentId, 'view')
+      setAssetLightbox((current) => {
+        if (current?.objectUrl) URL.revokeObjectURL(current.objectUrl)
+        return {
+          src: payload.signed_url || '',
+          name: payload.file_name || asset.name || asset.file_name || 'Campaign asset',
+        }
+      })
+    } catch (err) {
+      setError(err.message || 'Could not open this campaign asset.')
+    }
+  }
+
   function renderCreateView() {
     const selectedMode = CAMPAIGN_MODES.find((item) => item.value === form.campaignMode) || CAMPAIGN_MODES[0]
     const isLocalAwareness = isLocalAwarenessCampaign(form.campaignType)
@@ -1364,13 +1421,23 @@ export default function CampaignPartner() {
                 </div>
                 {assetFiles.length || selectedFolderAssets.length ? (
                   <div className="campaign-asset-list">
-                    {[...assetFiles, ...selectedFolderAssets.map(summarizeCampaignAsset)].slice(0, 8).map((asset) => (
-                      <span key={asset.id || asset.name}>
-                        <strong>{asset.name || asset.file_name}</strong>
-                        <small>{asset.relativePath || asset.relative_path || asset.folderPath || asset.folder_path || 'Campaign asset'}</small>
-                        <small>{asset.kind || assetKindFromMime(asset.type || asset.mime_type || '')} {asset.size || asset.size_bytes ? `· ${formatVaultBytes(asset.size || asset.size_bytes)}` : ''}</small>
-                      </span>
-                    ))}
+                    {[...assetFiles, ...selectedFolderAssets.map(summarizeCampaignAsset)].slice(0, 8).map((asset) => {
+                      const previewable = isCampaignPreviewableImage(asset)
+                      const Tag = previewable ? 'button' : 'span'
+                      return (
+                        <Tag
+                          key={asset.id || asset.name}
+                          type={previewable ? 'button' : undefined}
+                          className={previewable ? 'campaign-asset-preview-item' : undefined}
+                          onClick={previewable ? () => handleOpenCampaignAsset(asset) : undefined}
+                          title={previewable ? 'Open larger image preview' : undefined}
+                        >
+                          <strong>{asset.name || asset.file_name}</strong>
+                          <small>{asset.relativePath || asset.relative_path || asset.folderPath || asset.folder_path || 'Campaign asset'}</small>
+                          <small>{asset.kind || assetKindFromMime(asset.type || asset.mime_type || '')} {asset.size || asset.size_bytes ? `· ${formatVaultBytes(asset.size || asset.size_bytes)}` : ''}</small>
+                        </Tag>
+                      )
+                    })}
                     {assetFiles.length + selectedFolderAssets.length > 8 ? (
                       <span>
                         <strong>{assetFiles.length + selectedFolderAssets.length - 8} more assets</strong>
@@ -1522,6 +1589,20 @@ export default function CampaignPartner() {
 
   return (
     <div className="portal-page campaign-partner-page w-full max-w-none space-y-3 px-2 py-3 md:px-3 xl:px-4">
+      {assetLightbox?.src ? createPortal(
+        <div className="create-post-media-lightbox" role="dialog" aria-modal="true" aria-label="Campaign asset preview" onClick={() => setAssetLightbox(null)}>
+          <div className="create-post-media-lightbox-frame" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="create-post-media-lightbox-close" onClick={() => setAssetLightbox(null)} aria-label="Close campaign asset preview">
+              <X className="h-5 w-5" />
+            </button>
+            <div className="create-post-media-lightbox-stage">
+              <img src={assetLightbox.src} alt={assetLightbox.name || 'Campaign asset preview'} />
+            </div>
+            {assetLightbox.name ? <p>{assetLightbox.name}</p> : null}
+          </div>
+        </div>,
+        window.document.body,
+      ) : null}
       {mode === 'create' ? (
         <section className="campaign-partner-create-strip">
           <button type="button" onClick={() => setMode('library')}>Campaign library</button>

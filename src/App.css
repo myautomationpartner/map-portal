@@ -3896,6 +3896,92 @@ html[data-portal-theme="map-dark"] .assistant-live-notes textarea:focus {
   background: rgba(4, 8, 16, 0.72);
 }
 
+.create-post-media-open-button {
+  display: grid;
+  width: 100%;
+  min-height: clamp(360px, 38vh, 560px);
+  place-items: center;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.create-post-media-open-button img {
+  display: block;
+  width: 100%;
+  height: clamp(360px, 38vh, 560px);
+  object-fit: contain;
+  object-position: center;
+  background: rgba(4, 8, 16, 0.72);
+}
+
+.create-post-media-open-button:focus-visible {
+  outline: 3px solid rgba(72, 193, 255, 0.75);
+  outline-offset: -3px;
+}
+
+.create-post-media-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1rem, 3vw, 2rem);
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(12px);
+}
+
+.create-post-media-lightbox-frame {
+  position: relative;
+  width: min(94vw, 1180px);
+  max-height: 92vh;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 1rem;
+  background: #05070b;
+  box-shadow: 0 32px 90px rgba(0, 0, 0, 0.42);
+  overflow: hidden;
+}
+
+.create-post-media-lightbox-stage {
+  display: grid;
+  min-height: min(78vh, 760px);
+  place-items: center;
+  background: #020408;
+}
+
+.create-post-media-lightbox-stage img,
+.create-post-media-lightbox-stage video {
+  display: block;
+  max-width: 100%;
+  max-height: min(78vh, 760px);
+  object-fit: contain;
+}
+
+.create-post-media-lightbox-frame > p {
+  margin: 0;
+  padding: 0.8rem 1rem;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.create-post-media-lightbox-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 2;
+  display: flex;
+  width: 2.6rem;
+  height: 2.6rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(5, 7, 11, 0.82);
+  color: #fff;
+}
+
 .create-post-ai-mode-panel {
   margin-top: 0.75rem;
   border: 1px solid rgba(132, 72, 255, 0.18);
@@ -14192,6 +14278,25 @@ html:not([data-portal-theme="map-dark"]) .campaign-partner-page {
   border-radius: 999px;
   background: var(--campaign-create-surface);
   padding: 0.45rem 0.7rem;
+}
+
+.campaign-asset-list > button {
+  display: grid;
+  gap: 0.08rem;
+  max-width: min(100%, 18rem);
+  border: 1px solid rgba(72, 193, 255, 0.26);
+  border-radius: 999px;
+  background: rgba(72, 193, 255, 0.08);
+  padding: 0.45rem 0.7rem;
+  text-align: left;
+  cursor: zoom-in;
+}
+
+.campaign-asset-list > button:hover,
+.campaign-asset-list > button:focus-visible {
+  border-color: rgba(72, 193, 255, 0.58);
+  box-shadow: 0 14px 28px rgba(72, 193, 255, 0.14);
+  outline: none;
 }
 
 .campaign-asset-list strong {
