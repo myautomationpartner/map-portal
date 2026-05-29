@@ -135,7 +135,8 @@ function useMobileInboxRoute() {
 }
 
 function ResponsiveInboxRoute() {
-  return useMobileInboxRoute() ? <Attention /> : <Inbox />
+  const location = useLocation()
+  return useMobileInboxRoute() ? <Attention key={location.search} /> : <Inbox />
 }
 
 function normalizeHost(value) {

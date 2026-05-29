@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const inboxSource = await readFile(new URL('./Inbox.jsx', import.meta.url), 'utf8')
 const attentionSource = await readFile(new URL('./Attention.jsx', import.meta.url), 'utf8')
+const appSource = await readFile(new URL('../App.jsx', import.meta.url), 'utf8')
 
 test('desktop My Partner hub is scoped to Messages only', () => {
   assert.match(
@@ -31,4 +32,14 @@ test('mobile Inbox filter changes clear previously selected Partner threads', ()
     attentionSource,
     /const selectedThread = filteredThreads\.find\(\(thread\) => thread\.id === selectedThreadId\) \|\| filteredThreads\[0\] \|\| null/,
   )
+})
+
+test('mobile Inbox honors Today deep links for comments and DMs', () => {
+  assert.match(attentionSource, /useLocation/)
+  assert.match(attentionSource, /mobileInboxRouteState/)
+  assert.match(attentionSource, /const routeState = useMemo\(\(\) => mobileInboxRouteState\(location\.search\), \[location\.search\]\)/)
+  assert.match(attentionSource, /useState\(routeState\.activeFilter\)/)
+  assert.match(attentionSource, /useState\(routeState\.selectedThreadId\)/)
+  assert.match(attentionSource, /useState\(routeState\.mobileThreadOpen\)/)
+  assert.match(appSource, /<Attention key=\{location\.search\} \/>/)
 })

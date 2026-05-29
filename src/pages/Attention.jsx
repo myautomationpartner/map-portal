@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useOutletContext } from 'react-router-dom'
+import { Link, useLocation, useOutletContext } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowUpRight,
@@ -29,6 +29,7 @@ import {
   commentNeedsReply,
   selectPrivateMessageConversations,
 } from '../lib/inboxClassification'
+import { mobileInboxRouteState } from '../lib/mobileInboxRouting'
 
 const FILTERS = [
   { value: 'open', label: 'Open' },
@@ -625,10 +626,12 @@ function ThreadHeader({ thread, onBack, onMarkHandled, markPending, onHideThread
 export default function Attention() {
   const queryClient = useQueryClient()
   const outlet = useOutletContext() || {}
+  const location = useLocation()
+  const routeState = useMemo(() => mobileInboxRouteState(location.search), [location.search])
   const clientId = outlet.profile?.client_id
-  const [activeFilter, setActiveFilter] = useState('open')
-  const [selectedThreadId, setSelectedThreadId] = useState('')
-  const [mobileThreadOpen, setMobileThreadOpen] = useState(false)
+  const [activeFilter, setActiveFilter] = useState(routeState.activeFilter)
+  const [selectedThreadId, setSelectedThreadId] = useState(routeState.selectedThreadId)
+  const [mobileThreadOpen, setMobileThreadOpen] = useState(routeState.mobileThreadOpen)
   const [composer, setComposer] = useState('')
   const [selectedCommentId, setSelectedCommentId] = useState('')
   const [partnerMenuOpen, setPartnerMenuOpen] = useState(false)
