@@ -1116,11 +1116,11 @@ function PartnerTaskHub({ onBack, onOpenThread, openingThread }) {
 
   return (
     <div className="partner-task-hub portal-scroll flex-1 overflow-y-auto px-4 py-5 md:px-6">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
         <div className="partner-task-panel rounded-lg border p-4 md:p-5" style={{ borderColor: 'var(--portal-border)', background: '#fff' }}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full" style={{ background: 'rgba(35,119,255,0.1)', color: 'var(--portal-primary)' }}>
+              <div className="partner-task-icon mb-3 flex h-11 w-11 items-center justify-center rounded-full" style={{ background: 'rgba(35,119,255,0.1)', color: 'var(--portal-primary)' }}>
                 <Sparkles className="h-5 w-5" />
               </div>
               <h2 className="text-xl font-semibold tracking-normal" style={{ color: 'var(--portal-text)' }}>My Partner</h2>
@@ -1149,7 +1149,7 @@ function PartnerTaskHub({ onBack, onOpenThread, openingThread }) {
                 className="partner-task-card rounded-lg border p-4 no-underline transition-transform hover:-translate-y-0.5"
                 style={{ borderColor: 'var(--portal-border)', background: '#fff' }}
               >
-                <span className="mb-4 flex h-10 w-10 items-center justify-center rounded-md" style={{ background: 'rgba(35,119,255,0.1)', color: 'var(--portal-primary)' }}>
+                <span className="partner-task-card-icon mb-4 flex h-10 w-10 items-center justify-center rounded-md" style={{ background: 'rgba(35,119,255,0.1)', color: 'var(--portal-primary)' }}>
                   <Icon className="h-5 w-5" />
                 </span>
                 <span className="block text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{task.title}</span>
