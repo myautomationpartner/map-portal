@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './lib/supabase'
-import { createBillingCheckoutSession, createBillingPortalSession, fetchProfile, getSessionClaims } from './lib/portalApi'
+import { createBillingCheckoutSession, createBillingPortalSession, fetchInboxNotificationCounts, fetchProfile, getSessionClaims } from './lib/portalApi'
 import { buildTenantConfig } from './lib/tenantConfig'
 import { buildReadOnlyMessage, resolveBillingAccess } from './lib/portalBilling'
 import { inferPathTenant } from './lib/portalPath'
@@ -276,6 +276,15 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     queryFn: fetchProfile,
     enabled: !!session && !demoCaptureRoute,
   })
+  const { data: inboxNotificationCounts } = useQuery({
+    queryKey: ['inbox-notification-counts'],
+    queryFn: fetchInboxNotificationCounts,
+    enabled: !!session && !demoCaptureRoute,
+    staleTime: 0,
+    refetchInterval: 25_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  })
   const [billingActionPending, setBillingActionPending] = useState('')
 
   const claims = useMemo(() => getSessionClaims(session), [session])
@@ -442,6 +451,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
         billingActionPending={billingActionPending}
         portalTheme={portalTheme}
         onPortalThemeChange={onPortalThemeChange}
+        inboxNotificationCount={inboxNotificationCounts?.total || 0}
       />
 
       {/* Main content area */}
@@ -485,6 +495,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
           billingActionPending={billingActionPending}
           portalTheme={portalTheme}
           onPortalThemeChange={onPortalThemeChange}
+          inboxNotificationCount={inboxNotificationCounts?.total || 0}
         />
       </div>
     </div>

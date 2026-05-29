@@ -1,3 +1,5 @@
+import { selectPrivateMessageConversations } from './inboxClassification.js'
+
 const BASE_SUMMARY = {
   needsHuman: 6,
   readyToApprove: 11,
@@ -307,16 +309,6 @@ function conversationPreview(conversation) {
   return truncate(message?.content || conversation?.additional_attributes?.browser?.device_name || 'Open customer conversation.')
 }
 
-function isMyPartnerConversation(conversation) {
-  const sender = conversation?.meta?.sender || {}
-  const text = [
-    conversationTitle(conversation),
-    sender.identifier,
-    sender.additional_attributes?.identifier,
-  ].filter(Boolean).join(' ').toLowerCase()
-  return text.includes('my partner') || text.includes('map-content-partner')
-}
-
 function isVisibleDraft(draft, options = {}) {
   const state = String(draft?.review_state || '').trim().toLowerCase()
   if (['published', 'published_manually', 'archived', 'superseded'].includes(state)) return false
@@ -334,8 +326,8 @@ function isVisibleSuggestion(suggestion) {
 }
 
 function buildInboxItems(conversations = []) {
-  return conversations
-    .filter((conversation) => conversation?.status !== 'resolved' && !isMyPartnerConversation(conversation))
+  return selectPrivateMessageConversations(conversations)
+    .filter((conversation) => conversation?.status !== 'resolved')
     .slice(0, 3)
     .map((conversation) => {
       const title = conversationTitle(conversation)

@@ -24,6 +24,10 @@ import { fetchScheduledPosts, fetchSocialDrafts } from '../lib/portalApi'
 import { splitMessageLinks } from '../lib/messageLinks'
 import { canHideInboxThread } from '../lib/inboxThreadActions'
 import { getOpenReviewDrafts, getPartnerHelpOptions, resolvePartnerHelpHref, selectNextReviewDraft } from '../lib/partnerHelpMenu'
+import {
+  commentNeedsReply,
+  selectPrivateMessageConversations,
+} from '../lib/inboxClassification'
 
 const FILTERS = [
   { value: 'open', label: 'Open' },
@@ -232,18 +236,6 @@ function inboxName(conversation, inboxes) {
   return firstString(match?.name, conversation?.inbox?.name, 'Direct message')
 }
 
-function conversationSearchText(conversation, inboxes = []) {
-  return [
-    conversationTitle(conversation),
-    conversationPreview(conversation),
-    inboxName(conversation, inboxes),
-    conversation?.channel,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-}
-
 function isMyPartnerConversation(conversation) {
   const title = conversationTitle(conversation).trim().toLowerCase()
   const sender = conversation?.meta?.sender || {}
@@ -258,10 +250,6 @@ function isMyPartnerConversation(conversation) {
     .toLowerCase()
 
   return title === 'my partner' || senderText.includes('map-content-partner')
-}
-
-function isPublicCommentConversation(conversation, inboxes = []) {
-  return /\b(comment|comments|commenter|commented)\b/.test(conversationSearchText(conversation, inboxes))
 }
 
 function platformLabel(platform) {
@@ -316,7 +304,7 @@ function LinkedMessageText({ children }) {
 
 function buildCommentThread(bundle) {
   const comments = Array.isArray(bundle.comments) ? bundle.comments : []
-  const needs = comments.filter((comment) => comment?.canReply !== false && Number(comment.replyCount || 0) === 0)
+  const needs = comments.filter(commentNeedsReply)
   const latestComment = [...comments].sort((left, right) => {
     const leftTime = toDate(left.createdTime)?.getTime() || 0
     const rightTime = toDate(right.createdTime)?.getTime() || 0
@@ -695,13 +683,15 @@ export default function Attention() {
   const commentBundles = useMemo(() => commentBundlesQuery.data || [], [commentBundlesQuery.data])
 
   const threads = useMemo(() => {
-    const dmThreads = conversations
-      .filter((conversation) => !isPublicCommentConversation(conversation, inboxes))
+    const partnerThreads = conversations
+      .filter(isMyPartnerConversation)
+      .map((conversation) => buildConversationThread(conversation, inboxes))
+    const dmThreads = selectPrivateMessageConversations(conversations, inboxes)
       .map((conversation) => buildConversationThread(conversation, inboxes))
 
     const commentThreads = commentBundles.map(buildCommentThread)
 
-    return [...commentThreads, ...dmThreads]
+    return [...commentThreads, ...partnerThreads, ...dmThreads]
       .sort((left, right) => right.sortTime - left.sortTime)
   }, [commentBundles, conversations, inboxes])
 
@@ -724,6 +714,7 @@ export default function Attention() {
         await queryClient.invalidateQueries({ queryKey: ['attention-messages', conversationId] })
       }
       await queryClient.invalidateQueries({ queryKey: ['attention-conversations'] })
+      await queryClient.invalidateQueries({ queryKey: ['inbox-notification-counts'] })
     },
   })
 
@@ -733,6 +724,7 @@ export default function Attention() {
       setComposer('')
       await queryClient.invalidateQueries({ queryKey: ['attention-comment-posts'] })
       await queryClient.invalidateQueries({ queryKey: ['attention-comment-bundles'] })
+      await queryClient.invalidateQueries({ queryKey: ['inbox-notification-counts'] })
     },
   })
 
@@ -740,6 +732,7 @@ export default function Attention() {
     mutationFn: markConversationHandled,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['attention-conversations'] })
+      await queryClient.invalidateQueries({ queryKey: ['inbox-notification-counts'] })
     },
   })
 
@@ -747,6 +740,7 @@ export default function Attention() {
     mutationFn: markConversationHandled,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['attention-conversations'] })
+      await queryClient.invalidateQueries({ queryKey: ['inbox-notification-counts'] })
       setSelectedThreadId('')
       setMobileThreadOpen(false)
       setComposer('')

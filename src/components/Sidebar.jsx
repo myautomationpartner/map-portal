@@ -61,6 +61,7 @@ export default function Sidebar({
   billingAccess,
   portalTheme = 'dark',
   onPortalThemeChange,
+  inboxNotificationCount = 0,
 }) {
   const claims = getSessionClaims(session)
   const tenant = providedTenant || buildTenantConfig({ claims })
@@ -120,7 +121,9 @@ export default function Sidebar({
       </div>
 
       <nav className="flex-1 space-y-1.5 px-2.5 py-4">
-        {navItems.map(({ to, icon: Icon, label }) => (
+        {navItems.map(({ to, icon: Icon, label }) => {
+          const notificationCount = label === 'Inbox' ? Number(inboxNotificationCount || 0) : 0
+          return (
           <NavLink
             key={to}
             to={to}
@@ -145,13 +148,26 @@ export default function Sidebar({
                   />
                 </div>
                 {label}
-                {isActive && (
+                {notificationCount > 0 ? (
+                  <span
+                    className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums"
+                    aria-label={`${notificationCount} inbox items need a reply`}
+                    style={{
+                      background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))',
+                      color: '#001018',
+                      boxShadow: '0 0 14px color-mix(in srgb, var(--portal-cyan) 34%, transparent)',
+                    }}
+                  >
+                    {notificationCount > 99 ? '99+' : notificationCount}
+                  </span>
+                ) : isActive && (
                   <div className="ml-auto h-2.5 w-1 rounded-full" style={{ background: 'linear-gradient(180deg, var(--portal-primary), var(--portal-cyan))', boxShadow: '0 0 12px color-mix(in srgb, var(--portal-cyan) 35%, transparent)' }} />
                 )}
               </>
             )}
           </NavLink>
-        ))}
+          )
+        })}
       </nav>
 
       <div className="px-2.5 py-4" style={{ borderTop: '1px solid var(--portal-border)' }}>

@@ -7,6 +7,10 @@ import {
   normalizeRoomExpiry,
   sha256Hex,
 } from './secureVault'
+import {
+  selectPrivateMessageConversations,
+  summarizeInboxNotifications,
+} from './inboxClassification'
 
 const FUNCTION_BASE = `${supabaseUrl}/functions/v1`
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
@@ -576,6 +580,57 @@ export async function fetchInboxConversations(options = {}) {
 
   const payload = await callPortalWorker(`/api/chatwoot/conversations?${params.toString()}`)
   return normalizeConversationResponse(payload).conversations.slice(0, options.limit || 12)
+}
+
+export async function fetchChatwootInboxes() {
+  const payload = await callPortalWorker('/api/chatwoot/inboxes')
+  return Array.isArray(payload?.payload) ? payload.payload : []
+}
+
+export async function fetchInboxCommentPosts(options = {}) {
+  const params = new URLSearchParams({
+    limit: String(options.limit || 30),
+    minComments: '1',
+  })
+  if (options.platform) params.set('platform', options.platform)
+  if (options.accountId) params.set('accountId', options.accountId)
+  return callPortalWorker(`/api/zernio/comments?${params.toString()}`)
+}
+
+export function fetchInboxPostComments(post) {
+  if (!post?.id || !post?.accountId) return Promise.resolve({ comments: [] })
+  const params = new URLSearchParams({ accountId: post.accountId })
+  return callPortalWorker(`/api/zernio/comments/${encodeURIComponent(post.id)}?${params.toString()}`)
+}
+
+export async function fetchInboxCommentBundles(posts = [], options = {}) {
+  const targets = posts.slice(0, options.limit || 12)
+  const results = await Promise.allSettled(targets.map((post) => fetchInboxPostComments(post)))
+  return targets.map((post, index) => ({
+    post,
+    comments: results[index]?.status === 'fulfilled' && Array.isArray(results[index].value?.comments)
+      ? results[index].value.comments
+      : [],
+    error: results[index]?.status === 'rejected' ? results[index].reason?.message : '',
+  }))
+}
+
+export async function fetchInboxNotificationCounts() {
+  const [inboxResult, conversationResult, postResult] = await Promise.allSettled([
+    fetchChatwootInboxes(),
+    fetchInboxConversations({ status: 'open', limit: 50 }),
+    fetchInboxCommentPosts({ limit: 30 }),
+  ])
+
+  const inboxes = inboxResult.status === 'fulfilled' ? inboxResult.value : []
+  const conversations = conversationResult.status === 'fulfilled' ? conversationResult.value : []
+  const commentPosts = postResult.status === 'fulfilled' && Array.isArray(postResult.value?.posts)
+    ? postResult.value.posts
+    : []
+  const commentBundles = commentPosts.length ? await fetchInboxCommentBundles(commentPosts, { limit: 12 }) : []
+  const privateConversations = selectPrivateMessageConversations(conversations, inboxes)
+
+  return summarizeInboxNotifications({ privateConversations, commentBundles })
 }
 
 export async function fetchMetrics(clientId) {

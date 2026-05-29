@@ -29,6 +29,11 @@ import { supabase } from '../lib/supabase'
 import { portalPath } from '../lib/portalPath'
 import { splitMessageLinks } from '../lib/messageLinks'
 import { buildInboxDemoCaptureState, isInboxDemoCaptureEnabled } from '../lib/inboxDemoCapture'
+import {
+  countCommentBundlesNeedingReply,
+  countPrivateMessagesNeedingReply,
+  selectPrivateMessageConversations,
+} from '../lib/inboxClassification'
 
 const DEFAULT_CHATWOOT_APP_URL = 'https://chatwoot.myautomationpartner.com/app'
 const CHATWOOT_APP_URL = stripTrailingSlash(import.meta.env.VITE_CHATWOOT_APP_URL || DEFAULT_CHATWOOT_APP_URL)
@@ -137,6 +142,22 @@ async function fetchPostComments({ queryKey }) {
   if (!postId || !accountId) return { comments: [] }
   const params = new URLSearchParams({ accountId })
   return zernioPortalFetch(`/comments/${encodeURIComponent(postId)}?${params.toString()}`)
+}
+
+async function fetchCommentBundles({ queryKey }) {
+  const [, posts] = queryKey
+  const targets = Array.isArray(posts) ? posts.slice(0, 12) : []
+  const results = await Promise.allSettled(targets.map((post) => {
+    if (!post?.id || !post?.accountId) return Promise.resolve({ comments: [] })
+    return fetchPostComments({ queryKey: ['zernio-post-comments', post.id, post.accountId] })
+  }))
+  return targets.map((post, index) => ({
+    post,
+    comments: results[index]?.status === 'fulfilled' && Array.isArray(results[index].value?.comments)
+      ? results[index].value.comments
+      : [],
+    error: results[index]?.status === 'rejected' ? results[index].reason?.message : '',
+  }))
 }
 
 function sendCommentReply({ postId, accountId, commentId, message }) {
@@ -287,44 +308,6 @@ function conversationSubtitle(conversation) {
 function conversationPreview(conversation) {
   const lastMessage = [...(conversation?.messages || [])].reverse().find((message) => message.content)
   return lastMessage?.content || conversation?.additional_attributes?.browser?.device_name || 'No message preview yet.'
-}
-
-function conversationSearchText(conversation, inboxes = []) {
-  return [
-    conversationTitle(conversation),
-    conversationPreview(conversation),
-    conversationSubtitle(conversation),
-    inboxName(conversation, inboxes),
-    conversation?.channel,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-}
-
-function isMyPartnerConversation(conversation) {
-  const title = conversationTitle(conversation).trim().toLowerCase()
-  const sender = conversation?.meta?.sender || {}
-  const senderText = [
-    sender.name,
-    sender.email,
-    sender.identifier,
-    sender.additional_attributes?.identifier,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-
-  return title === 'my partner' || senderText.includes('map-content-partner')
-}
-
-function isPublicCommentConversation(conversation, inboxes = []) {
-  const text = conversationSearchText(conversation, inboxes)
-  return /\b(comment|comments|commenter|commented)\b/.test(text)
-}
-
-function isPrivateMessageConversation(conversation, inboxes = []) {
-  return !isMyPartnerConversation(conversation) && !isPublicCommentConversation(conversation, inboxes)
 }
 
 function escapeRegExp(value) {
@@ -1021,6 +1004,7 @@ function ErrorBanner({ message }) {
 function InboxSectionNav({
   activeSection,
   partnerActive,
+  sectionCounts = {},
   onSectionChange,
   onOpenPartner,
   openingPartner,
@@ -1051,6 +1035,7 @@ function InboxSectionNav({
         {INBOX_SECTIONS.map((section) => {
           const Icon = section.icon
           const active = activeSection === section.value && !partnerActive
+          const notificationCount = Number(sectionCounts[section.value] || 0)
           return (
             <button
               key={section.value}
@@ -1073,6 +1058,19 @@ function InboxSectionNav({
                   {section.note}
                 </span>
               )}
+              {notificationCount > 0 ? (
+                <span
+                  className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums"
+                  aria-label={`${notificationCount} ${section.label.toLowerCase()} items need a reply`}
+                  style={{
+                    background: 'color-mix(in srgb, var(--portal-primary) 22%, transparent)',
+                    color: 'var(--portal-primary)',
+                    border: '1px solid color-mix(in srgb, var(--portal-primary) 36%, transparent)',
+                  }}
+                >
+                  {notificationCount > 99 ? '99+' : notificationCount}
+                </span>
+              ) : null}
             </button>
           )
         })}
@@ -1565,8 +1563,8 @@ export default function Inbox() {
   const commentPostsQuery = useQuery({
     queryKey: ['zernio-comment-posts', { platform: commentPlatform, accountId: commentAccountId }],
     queryFn: fetchCommentPosts,
-    refetchInterval: activeSection === 'comments' ? 30_000 : false,
-    enabled: activeSection === 'comments',
+    refetchInterval: 30_000,
+    enabled: !demoCapture,
   })
 
   const inboxes = useMemo(
@@ -1578,12 +1576,25 @@ export default function Inbox() {
     [demoCapture, conversationsQuery.data],
   )
   const privateConversations = useMemo(
-    () => conversations.filter((conversation) => isPrivateMessageConversation(conversation, inboxes)),
+    () => selectPrivateMessageConversations(conversations, inboxes),
     [conversations, inboxes],
   )
   const commentPosts = useMemo(
     () => commentPostsQuery.data?.posts || [],
     [commentPostsQuery.data],
+  )
+  const commentBundleKey = useMemo(() => (
+    commentPosts.map((post) => `${post.accountId}:${post.id}:${post.commentCount}`).join('|')
+  ), [commentPosts])
+  const commentBundlesQuery = useQuery({
+    queryKey: ['zernio-comment-bundles', commentBundleKey],
+    queryFn: () => fetchCommentBundles({ queryKey: ['zernio-comment-bundles', commentPosts] }),
+    enabled: !demoCapture && commentPosts.length > 0,
+    refetchInterval: 30_000,
+  })
+  const commentBundles = useMemo(
+    () => commentBundlesQuery.data || [],
+    [commentBundlesQuery.data],
   )
   const commentAccounts = useMemo(
     () => commentPostsQuery.data?.accounts || [],
@@ -1625,7 +1636,9 @@ export default function Inbox() {
       setCommentReplyText('')
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['zernio-comment-posts'] }),
+        queryClient.invalidateQueries({ queryKey: ['zernio-comment-bundles'] }),
         queryClient.invalidateQueries({ queryKey: ['zernio-post-comments', selectedCommentPostId, selectedCommentAccountId] }),
+        queryClient.invalidateQueries({ queryKey: ['inbox-notification-counts'] }),
       ])
     },
   })
@@ -1638,6 +1651,7 @@ export default function Inbox() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['chatwoot-conversations'] }),
         queryClient.invalidateQueries({ queryKey: ['chatwoot-messages', activeConversationId] }),
+        queryClient.invalidateQueries({ queryKey: ['inbox-notification-counts'] }),
       ])
     },
   })
@@ -1669,6 +1683,10 @@ export default function Inbox() {
 
   const messages = demoCapture?.messagesByConversationId?.[activeConversationId] || messagesQuery.data || selectedConversation?.messages || []
   const postComments = postCommentsQuery.data?.comments || []
+  const sectionCounts = useMemo(() => ({
+    messages: countPrivateMessagesNeedingReply(privateConversations),
+    comments: countCommentBundlesNeedingReply(commentBundles),
+  }), [commentBundles, privateConversations])
   const totalCount = privateConversations.length
   const showPartnerHub = activeSection === 'messages' && partnerHubOpen
   const websiteChat = demoCapture?.websiteChat || websiteChatQuery.data
@@ -1828,6 +1846,7 @@ export default function Inbox() {
             partnerActive={showPartnerHub}
             onSectionChange={handleSectionChange}
             onOpenPartner={handleOpenPartnerHub}
+            sectionCounts={sectionCounts}
             openingPartner={contentPartnerMutation.isPending}
             onOpenSetup={() => setSetupOpen(true)}
           />
@@ -2158,6 +2177,7 @@ export default function Inbox() {
               }}
               onRefresh={() => {
                 commentPostsQuery.refetch()
+                commentBundlesQuery.refetch()
                 postCommentsQuery.refetch()
               }}
               replyTargetId={commentReplyTargetId}

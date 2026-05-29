@@ -232,6 +232,38 @@ test('today priority queue focuses on work due today instead of future backlog',
   ])
 })
 
+test('today priority queue excludes public comments mirrored into Chatwoot', () => {
+  const queue = buildTodayPriorityQueueFromPortalData({
+    now: '2026-05-29T13:00:00.000Z',
+    conversations: [
+      {
+        id: 41,
+        status: 'open',
+        last_activity_at: Math.floor(Date.parse('2026-05-29T12:40:00.000Z') / 1000),
+        meta: { sender: { name: 'Kenny Monico' } },
+        messages: [
+          {
+            content: 'Inbox test',
+            content_attributes: {
+              zernio_event: 'comment.received',
+              zernio_comment_id: 'fb-comment-1',
+            },
+          },
+        ],
+      },
+      {
+        id: 42,
+        status: 'open',
+        last_activity_at: Math.floor(Date.parse('2026-05-29T12:45:00.000Z') / 1000),
+        meta: { sender: { name: 'Jordan Lee' } },
+        messages: [{ content: 'Can I book a trial class today?' }],
+      },
+    ],
+  })
+
+  assert.deepEqual(queue.map((item) => item.id), ['inbox:42'])
+})
+
 test('today queue state persists done and snoozed items onto live queue rows', () => {
   const queue = buildTodayPriorityQueue().slice(0, 2)
   const state = updateTodayQueueState(
