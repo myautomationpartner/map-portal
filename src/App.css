@@ -11237,6 +11237,12 @@ html[data-portal-theme="map-dark"] .inbox-partner-nav:focus-visible {
   background: rgba(45, 153, 255, 0.09) !important;
 }
 
+html[data-portal-theme="map-dark"] .inbox-partner-nav[data-active="true"] {
+  border-color: rgba(74, 168, 255, 0.36) !important;
+  background: rgba(45, 153, 255, 0.1) !important;
+  box-shadow: inset 4px 0 0 #4aa8ff !important;
+}
+
 html[data-portal-theme="map-dark"] .inbox-partner-nav span span:last-child {
   color: #8f98a3 !important;
 }
@@ -12930,6 +12936,12 @@ html:not([data-portal-theme="map-dark"]) .inbox-partner-nav:hover:not(:disabled)
 html:not([data-portal-theme="map-dark"]) .inbox-partner-nav:focus-visible {
   border-color: rgba(36, 120, 213, 0.32) !important;
   background: rgba(36, 120, 213, 0.1) !important;
+}
+
+html:not([data-portal-theme="map-dark"]) .inbox-partner-nav[data-active="true"] {
+  border-color: rgba(36, 120, 213, 0.34) !important;
+  background: rgba(36, 120, 213, 0.11) !important;
+  box-shadow: inset 4px 0 0 var(--light-blue) !important;
 }
 
 html:not([data-portal-theme="map-dark"]) .inbox-partner-nav span span:last-child {

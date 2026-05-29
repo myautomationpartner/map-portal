@@ -1019,6 +1019,7 @@ function ErrorBanner({ message }) {
 
 function InboxSectionNav({
   activeSection,
+  partnerActive,
   onSectionChange,
   onOpenPartner,
   openingPartner,
@@ -1035,6 +1036,7 @@ function InboxSectionNav({
         onClick={onOpenPartner}
         disabled={openingPartner}
         className="inbox-partner-nav mb-3 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-65"
+        data-active={partnerActive ? 'true' : undefined}
       >
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
           {openingPartner ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
@@ -1047,7 +1049,7 @@ function InboxSectionNav({
       <div className="grid gap-1">
         {INBOX_SECTIONS.map((section) => {
           const Icon = section.icon
-          const active = activeSection === section.value
+          const active = activeSection === section.value && !partnerActive
           return (
             <button
               key={section.value}
@@ -1805,6 +1807,7 @@ export default function Inbox() {
         <div className="flex min-h-[calc(100vh-150px)]">
           <InboxSectionNav
             activeSection={activeSection}
+            partnerActive={showPartnerHub}
             onSectionChange={handleSectionChange}
             onOpenPartner={handleOpenPartnerHub}
             openingPartner={contentPartnerMutation.isPending}
@@ -1812,7 +1815,8 @@ export default function Inbox() {
           />
 
           {activeSection === 'messages' ? (
-        <div className="inbox-workspace-grid grid min-h-[calc(100vh-150px)] flex-1 lg:grid-cols-[324px_minmax(0,1fr)]">
+        <div className={`inbox-workspace-grid grid min-h-[calc(100vh-150px)] flex-1 ${showPartnerHub ? 'lg:grid-cols-[minmax(0,1fr)]' : 'lg:grid-cols-[324px_minmax(0,1fr)]'}`}>
+          {!showPartnerHub && (
           <aside className={`inbox-conversation-list ${mobileThreadOpen ? 'hidden lg:flex' : 'flex'} min-h-[calc(100vh-150px)] flex-col border-r bg-white`} style={{ borderColor: 'var(--portal-border)' }}>
             <div className="border-b px-3 py-3" style={{ borderColor: 'var(--portal-border)' }}>
               <div className="relative mb-3 sm:hidden">
@@ -1917,8 +1921,9 @@ export default function Inbox() {
               )}
             </div>
           </aside>
+          )}
 
-          <main className={`inbox-thread-panel ${mobileThreadOpen ? 'flex' : 'hidden lg:flex'} min-h-[calc(100vh-150px)] min-w-0 flex-col`} style={{ background: 'var(--portal-inbox-thread-bg, #f9fbfe)' }}>
+          <main className={`inbox-thread-panel ${showPartnerHub || mobileThreadOpen ? 'flex' : 'hidden lg:flex'} min-h-[calc(100vh-150px)] min-w-0 flex-col`} style={{ background: 'var(--portal-inbox-thread-bg, #f9fbfe)' }}>
             {showPartnerHub ? (
               <PartnerTaskHub
                 onBack={() => {
