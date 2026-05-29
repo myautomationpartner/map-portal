@@ -706,7 +706,7 @@ export default function Attention() {
   }, [commentBundles, conversations, inboxes])
 
   const filteredThreads = useMemo(() => filterThreads(threads, activeFilter), [threads, activeFilter])
-  const selectedThread = threads.find((thread) => thread.id === selectedThreadId) || filteredThreads[0] || threads[0] || null
+  const selectedThread = filteredThreads.find((thread) => thread.id === selectedThreadId) || filteredThreads[0] || null
 
   const messagesQuery = useQuery({
     queryKey: ['attention-messages', selectedThread?.conversation?.id],
@@ -801,6 +801,14 @@ export default function Attention() {
     setComposer('')
   }
 
+  function handleFilterChange(filter) {
+    setActiveFilter(filter)
+    setSelectedThreadId('')
+    setMobileThreadOpen(false)
+    setComposer('')
+    setPartnerMenuOpen(false)
+  }
+
   function handleHideThread() {
     if (!canHideSelectedThread || !selectedThread?.conversation?.id) return
     const confirmed = window.confirm(
@@ -868,7 +876,7 @@ export default function Attention() {
                 role="tab"
                 aria-selected={activeFilter === filter.value}
                 data-active={activeFilter === filter.value ? 'true' : undefined}
-                onClick={() => setActiveFilter(filter.value)}
+                onClick={() => handleFilterChange(filter.value)}
               >
                 {filter.label}
               </button>

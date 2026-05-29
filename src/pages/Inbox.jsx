@@ -1649,14 +1649,14 @@ export default function Inbox() {
   const messages = messagesQuery.data || selectedConversation?.messages || []
   const postComments = postCommentsQuery.data?.comments || []
   const totalCount = privateConversations.length
-  const showPartnerHub = partnerHubOpen || (
-    activeSection === 'messages'
-    && status === 'open'
+  const showPartnerHub = activeSection === 'messages' && (
+    partnerHubOpen
+    || (status === 'open'
     && !conversationsQuery.isLoading
     && !conversationsQuery.error
     && privateConversations.length === 0
     && !query.trim()
-    && !inboxId
+    && !inboxId)
   )
   const chatwootAccountId = websiteChatQuery.data?.settings?.chatwoot_account_id
   const openChatwootUrl = activeConversationId
