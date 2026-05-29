@@ -28,6 +28,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { portalPath } from '../lib/portalPath'
 import { splitMessageLinks } from '../lib/messageLinks'
+import { buildInboxDemoCaptureState, isInboxDemoCaptureEnabled } from '../lib/inboxDemoCapture'
 
 const DEFAULT_CHATWOOT_APP_URL = 'https://chatwoot.myautomationpartner.com/app'
 const CHATWOOT_APP_URL = stripTrailingSlash(import.meta.env.VITE_CHATWOOT_APP_URL || DEFAULT_CHATWOOT_APP_URL)
@@ -1478,6 +1479,10 @@ function CommentsInbox({
 
 export default function Inbox() {
   const queryClient = useQueryClient()
+  const demoCapture = useMemo(() => {
+    if (typeof window === 'undefined') return null
+    return isInboxDemoCaptureEnabled(window.location.search) ? buildInboxDemoCaptureState() : null
+  }, [])
   const [activeSection, setActiveSection] = useState(() => {
     if (typeof window === 'undefined') return 'messages'
     const requestedSection = new URLSearchParams(window.location.search).get('section')
@@ -1489,7 +1494,11 @@ export default function Inbox() {
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [inboxId, setInboxId] = useState('')
-  const [selectedId, setSelectedId] = useState(null)
+  const [selectedId, setSelectedId] = useState(() => {
+    if (demoCapture?.selectedConversationId) return demoCapture.selectedConversationId
+    if (typeof window === 'undefined') return null
+    return new URLSearchParams(window.location.search).get('conversation') || null
+  })
   const [commentPlatform, setCommentPlatform] = useState('')
   const [commentAccountId, setCommentAccountId] = useState('')
   const [selectedCommentPostKey, setSelectedCommentPostKey] = useState('')
@@ -1498,7 +1507,12 @@ export default function Inbox() {
   const [composer, setComposer] = useState('')
   const [isPrivate, setIsPrivate] = useState(false)
   const [mobileThreadOpen, setMobileThreadOpen] = useState(false)
-  const [partnerHubOpen, setPartnerHubOpen] = useState(false)
+  const [partnerHubOpen, setPartnerHubOpen] = useState(() => {
+    if (typeof window === 'undefined') return false
+    const params = new URLSearchParams(window.location.search)
+    return params.get('partner') === '1'
+      || (!params.has('section') && !params.has('conversation') && !params.has('inbox_id'))
+  })
   const [setupOpen, setSetupOpen] = useState(false)
   const [phoneSetupOpen, setPhoneSetupOpen] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -1520,12 +1534,14 @@ export default function Inbox() {
     queryKey: ['chatwoot-inboxes'],
     queryFn: fetchInboxes,
     staleTime: 60_000,
+    enabled: !demoCapture,
   })
 
   const websiteChatQuery = useQuery({
     queryKey: ['website-chat-settings', 'inbox'],
     queryFn: fetchWebsiteChatSettings,
     staleTime: 60_000,
+    enabled: !demoCapture,
   })
 
   const userQuery = useQuery({
@@ -1536,13 +1552,14 @@ export default function Inbox() {
       return data?.user || null
     },
     staleTime: 300_000,
+    enabled: !demoCapture,
   })
 
   const conversationsQuery = useQuery({
     queryKey: ['chatwoot-conversations', filters],
     queryFn: fetchConversations,
     refetchInterval: 30_000,
-    enabled: activeSection === 'messages',
+    enabled: activeSection === 'messages' && !demoCapture,
   })
 
   const commentPostsQuery = useQuery({
@@ -1552,13 +1569,17 @@ export default function Inbox() {
     enabled: activeSection === 'comments',
   })
 
+  const inboxes = useMemo(
+    () => demoCapture?.inboxes || inboxesQuery.data || [],
+    [demoCapture, inboxesQuery.data],
+  )
   const conversations = useMemo(
-    () => conversationsQuery.data?.conversations || [],
-    [conversationsQuery.data],
+    () => demoCapture?.conversations || conversationsQuery.data?.conversations || [],
+    [demoCapture, conversationsQuery.data],
   )
   const privateConversations = useMemo(
-    () => conversations.filter((conversation) => isPrivateMessageConversation(conversation, inboxesQuery.data || [])),
-    [conversations, inboxesQuery.data],
+    () => conversations.filter((conversation) => isPrivateMessageConversation(conversation, inboxes)),
+    [conversations, inboxes],
   )
   const commentPosts = useMemo(
     () => commentPostsQuery.data?.posts || [],
@@ -1577,7 +1598,7 @@ export default function Inbox() {
   const selectedConversation = useMemo(
     () => {
       if (partnerHubOpen) return null
-      return conversations.find((conversation) => conversation.id === selectedId) || privateConversations[0] || null
+      return conversations.find((conversation) => String(conversation.id) === String(selectedId)) || privateConversations[0] || null
     },
     [conversations, privateConversations, selectedId, partnerHubOpen],
   )
@@ -1586,8 +1607,8 @@ export default function Inbox() {
   const messagesQuery = useQuery({
     queryKey: ['chatwoot-messages', activeConversationId],
     queryFn: fetchMessages,
-    enabled: activeSection === 'messages' && Boolean(activeConversationId),
-    refetchInterval: activeConversationId ? 20_000 : false,
+    enabled: activeSection === 'messages' && Boolean(activeConversationId) && !demoCapture,
+    refetchInterval: activeConversationId && !demoCapture ? 20_000 : false,
   })
 
   const postCommentsQuery = useQuery({
@@ -1646,19 +1667,13 @@ export default function Inbox() {
     },
   })
 
-  const messages = messagesQuery.data || selectedConversation?.messages || []
+  const messages = demoCapture?.messagesByConversationId?.[activeConversationId] || messagesQuery.data || selectedConversation?.messages || []
   const postComments = postCommentsQuery.data?.comments || []
   const totalCount = privateConversations.length
-  const showPartnerHub = activeSection === 'messages' && (
-    partnerHubOpen
-    || (status === 'open'
-    && !conversationsQuery.isLoading
-    && !conversationsQuery.error
-    && privateConversations.length === 0
-    && !query.trim()
-    && !inboxId)
-  )
-  const chatwootAccountId = websiteChatQuery.data?.settings?.chatwoot_account_id
+  const showPartnerHub = activeSection === 'messages' && partnerHubOpen
+  const websiteChat = demoCapture?.websiteChat || websiteChatQuery.data
+  const currentUser = demoCapture?.user || userQuery.data
+  const chatwootAccountId = websiteChat?.settings?.chatwoot_account_id
   const openChatwootUrl = activeConversationId
     ? `${CHATWOOT_APP_URL}/accounts/${chatwootAccountId || 1}/conversations/${activeConversationId}`
     : CHATWOOT_APP_URL
@@ -1666,7 +1681,7 @@ export default function Inbox() {
   function handleSubmit(event) {
     event.preventDefault()
     const content = composer.trim()
-    if (!activeConversationId || !content || replyMutation.isPending) return
+    if (demoCapture || !activeConversationId || !content || replyMutation.isPending) return
     replyMutation.mutate({ conversationId: activeConversationId, content, isPrivate })
   }
 
@@ -1691,6 +1706,7 @@ export default function Inbox() {
 
   function handleOpenPartnerThread() {
     setActiveSection('messages')
+    if (demoCapture) return
     contentPartnerMutation.mutate()
   }
 
@@ -1772,11 +1788,13 @@ export default function Inbox() {
             </button>
             <button
               type="button"
-              onClick={() => conversationsQuery.refetch()}
+              onClick={() => {
+                if (!demoCapture) conversationsQuery.refetch()
+              }}
               className="portal-button-secondary inline-flex h-9 w-9 items-center justify-center"
               aria-label="Refresh inbox"
             >
-              <RefreshCw className={`h-4 w-4 ${conversationsQuery.isFetching ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${!demoCapture && conversationsQuery.isFetching ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
@@ -1784,22 +1802,22 @@ export default function Inbox() {
         <SetupInboxModal
           open={setupOpen}
           onClose={() => setSetupOpen(false)}
-          websiteChat={websiteChatQuery.data}
-          websiteChatLoading={websiteChatQuery.isLoading || websiteChatQuery.isFetching}
-          userEmail={userQuery.data?.email || ''}
+          websiteChat={websiteChat}
+          websiteChatLoading={!demoCapture && (websiteChatQuery.isLoading || websiteChatQuery.isFetching)}
+          userEmail={currentUser?.email || ''}
         />
 
         <PhoneSetupModal
           open={phoneSetupOpen}
           onClose={() => setPhoneSetupOpen(false)}
-          userEmail={userQuery.data?.email || ''}
+          userEmail={currentUser?.email || ''}
         />
 
         <MobileAppBanner />
         <ErrorBanner
           message={
             contentPartnerMutation.error?.message
-            || (activeSection === 'messages' ? (conversationsQuery.error?.message || inboxesQuery.error?.message || messagesQuery.error?.message) : '')
+            || (activeSection === 'messages' && !demoCapture ? (conversationsQuery.error?.message || inboxesQuery.error?.message || messagesQuery.error?.message) : '')
             || (activeSection === 'comments' ? (commentPostsQuery.error?.message || postCommentsQuery.error?.message) : '')
           }
         />
@@ -1856,7 +1874,7 @@ export default function Inbox() {
                 className="portal-input mt-2 h-9 px-3 text-xs"
               >
                 <option value="">All DM inboxes</option>
-                {(inboxesQuery.data || []).map((inbox) => (
+                {inboxes.map((inbox) => (
                   <option key={inbox.id} value={inbox.id}>
                     {inbox.name}
                   </option>
@@ -1866,11 +1884,11 @@ export default function Inbox() {
 
             <div className="flex items-center justify-between border-b px-4 py-2 text-xs" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
               <span>{totalCount} private conversations</span>
-              <span>{conversationsQuery.isFetching ? 'Syncing' : 'Live'}</span>
+              <span>{demoCapture ? 'Demo' : conversationsQuery.isFetching ? 'Syncing' : 'Live'}</span>
             </div>
 
             <div className="portal-scroll flex-1 overflow-y-auto">
-              {conversationsQuery.isLoading ? (
+              {!demoCapture && conversationsQuery.isLoading ? (
                 <div className="flex h-52 items-center justify-center">
                   <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} />
                 </div>
@@ -1878,7 +1896,7 @@ export default function Inbox() {
                 <EmptyState title="No messages here" detail="Website chats and direct customer messages will appear here. Public social replies belong in Comments, and MAP help stays under My Partner." />
               ) : (
                 privateConversations.map((conversation) => {
-                  const badge = channelBadge(conversation, inboxesQuery.data || [])
+                  const badge = channelBadge(conversation, inboxes)
                   const isActive = activeConversationId === conversation.id
                   return (
                     <button
@@ -1953,12 +1971,12 @@ export default function Inbox() {
                         <p className="truncate text-base font-semibold" style={{ color: 'var(--portal-text)' }}>
                           {conversationTitle(selectedConversation)}
                         </p>
-                        <span className="rounded px-1.5 py-0.5 text-[10px] font-black" style={channelBadge(selectedConversation, inboxesQuery.data || []).style}>
-                          {channelBadge(selectedConversation, inboxesQuery.data || []).label}
+                        <span className="rounded px-1.5 py-0.5 text-[10px] font-black" style={channelBadge(selectedConversation, inboxes).style}>
+                          {channelBadge(selectedConversation, inboxes).label}
                         </span>
                       </div>
                       <p className="truncate text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                        {inboxName(selectedConversation, inboxesQuery.data || [])} · {conversationSubtitle(selectedConversation)}
+                        {inboxName(selectedConversation, inboxes)} · {conversationSubtitle(selectedConversation)}
                       </p>
                     </div>
                   </div>
@@ -1967,7 +1985,7 @@ export default function Inbox() {
                     <select
                       value={selectedConversation.status || 'open'}
                       onChange={(event) => statusMutation.mutate({ conversationId: activeConversationId, status: event.target.value })}
-                      disabled={!activeConversationId || statusMutation.isPending}
+                      disabled={demoCapture || !activeConversationId || statusMutation.isPending}
                       className="portal-input hidden h-9 w-[112px] rounded-full px-3 text-xs font-semibold sm:block disabled:cursor-not-allowed disabled:opacity-60"
                       aria-label="Conversation status"
                     >
@@ -1989,7 +2007,7 @@ export default function Inbox() {
                 <ErrorBanner message={statusMutation.error?.message} />
 
                 <div className="inbox-message-scroll portal-scroll flex-1 overflow-y-auto px-3 py-4 md:px-6">
-                  {messagesQuery.isLoading ? (
+                  {!demoCapture && messagesQuery.isLoading ? (
                     <div className="flex h-full items-center justify-center">
                       <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} />
                     </div>
@@ -2098,7 +2116,7 @@ export default function Inbox() {
                     </button>
                     <button
                       type="submit"
-                      disabled={!composer.trim() || replyMutation.isPending}
+                      disabled={demoCapture || !composer.trim() || replyMutation.isPending}
                       className="flex h-9 w-9 items-center justify-center rounded-full text-white disabled:cursor-not-allowed disabled:opacity-60"
                       style={{ background: '#2377ff' }}
                       aria-label="Send reply"

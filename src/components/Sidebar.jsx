@@ -1,12 +1,13 @@
 import { NavLink } from 'react-router-dom'
-import { CalendarDays, LayoutDashboard, Megaphone, MessageSquare, Settings, LogOut, FolderOpen } from 'lucide-react'
+import { CalendarDays, LayoutDashboard, ListChecks, Megaphone, MessageSquare, Settings, LogOut, FolderOpen } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { getSessionClaims } from '../lib/portalApi'
 import { buildTenantConfig } from '../lib/tenantConfig'
 import ThemeToggle from './ThemeToggle'
 
 const navItems = [
-  { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/',         icon: ListChecks,      label: 'Today'     },
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/documents', icon: FolderOpen,      label: 'Documents'  },
   { to: '/calendar', icon: CalendarDays,     label: 'Publisher'  },
   { to: '/campaigns', icon: Megaphone,       label: 'Campaign Partner' },

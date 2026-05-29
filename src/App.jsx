@@ -6,7 +6,9 @@ import { createBillingCheckoutSession, createBillingPortalSession, fetchProfile,
 import { buildTenantConfig } from './lib/tenantConfig'
 import { buildReadOnlyMessage, resolveBillingAccess } from './lib/portalBilling'
 import { inferPathTenant } from './lib/portalPath'
+import { isInboxDemoCaptureEnabled } from './lib/inboxDemoCapture'
 import Login from './pages/Login'
+import Today from './pages/Today'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import Inbox from './pages/Inbox'
@@ -91,6 +93,12 @@ function resolveInitialPortalTheme() {
 
   const savedTheme = window.localStorage.getItem(PORTAL_THEME_STORAGE_KEY)
   return savedTheme === 'light' ? 'light' : 'dark'
+}
+
+function isInboxDemoCaptureRoute() {
+  if (typeof window === 'undefined') return false
+  const path = window.location.pathname.replace(/\/+$/, '')
+  return path.endsWith('/inbox') && isInboxDemoCaptureEnabled(window.location.search)
 }
 
 function PortalTheme({ theme }) {
@@ -178,9 +186,16 @@ function withAuthTimeout(promise, label) {
 }
 
 function AuthProvider({ children }) {
-  const [session, setSession] = useState(undefined) // undefined = loading
+  const demoCaptureRoute = isInboxDemoCaptureRoute()
+  const [session, setSession] = useState(() => (
+    demoCaptureRoute
+      ? { access_token: '', user: { id: 'launch-assets-demo', email: 'owner@myautomationpartner.com' } }
+      : undefined
+  )) // undefined = loading
 
   useEffect(() => {
+    if (demoCaptureRoute) return undefined
+
     let active = true
 
     async function bootstrapSession() {
@@ -237,7 +252,7 @@ function AuthProvider({ children }) {
       active = false
       subscription.unsubscribe()
     }
-  }, [])
+  }, [demoCaptureRoute])
 
   if (session === undefined) {
     return (
@@ -255,10 +270,11 @@ function AuthProvider({ children }) {
 function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
   const queryClient = useQueryClient()
   const location = useLocation()
+  const demoCaptureRoute = isInboxDemoCaptureRoute()
   const { data: profile } = useQuery({
     queryKey: ['profile'],
     queryFn: fetchProfile,
-    enabled: !!session,
+    enabled: !!session && !demoCaptureRoute,
   })
   const [billingActionPending, setBillingActionPending] = useState('')
 
@@ -509,7 +525,8 @@ export default function App() {
                   />
                 )}
               >
-                <Route path="/" element={<Dashboard />} />
+                <Route path="/" element={<Today />} />
+                <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/calendar" element={<ContentCalendar />} />
                 <Route path="/campaigns" element={<CampaignPartner />} />
                 <Route path="/documents" element={<Documents />} />

@@ -140,7 +140,7 @@ export async function fetchWorkspacePreferences(clientId, userId) {
 
   const { data, error } = await supabase
     .from('portal_workspace_preferences')
-    .select('id, client_id, user_id, workspace_tools_json, updated_at')
+    .select('id, client_id, user_id, workspace_tools_json, today_queue_state_json, updated_at')
     .eq('client_id', clientId)
     .eq('user_id', userId)
     .maybeSingle()
@@ -148,6 +148,8 @@ export async function fetchWorkspacePreferences(clientId, userId) {
   if (error) throw error
   return data ?? null
 }
+
+const WORKSPACE_PREFERENCE_SELECT = 'id, client_id, user_id, workspace_tools_json, today_queue_state_json, updated_at'
 
 export async function fetchSocialConnections(clientId) {
   if (!clientId) return []
@@ -513,11 +515,67 @@ export async function upsertWorkspacePreferences({ clientId, userId, workspaceTo
     }, {
       onConflict: 'client_id,user_id',
     })
-    .select('id, client_id, user_id, workspace_tools_json, updated_at')
+    .select(WORKSPACE_PREFERENCE_SELECT)
     .single()
 
   if (error) throw error
   return data
+}
+
+export async function saveTodayQueueState({ clientId, userId, todayQueueState }) {
+  if (!clientId || !userId) {
+    throw new Error('Client and user are required to save Today state.')
+  }
+
+  const payload = todayQueueState && typeof todayQueueState === 'object' && !Array.isArray(todayQueueState)
+    ? todayQueueState
+    : {}
+
+  const { data: updated, error: updateError } = await supabase
+    .from('portal_workspace_preferences')
+    .update({ today_queue_state_json: payload })
+    .eq('client_id', clientId)
+    .eq('user_id', userId)
+    .select(WORKSPACE_PREFERENCE_SELECT)
+    .maybeSingle()
+
+  if (updateError) throw updateError
+  if (updated) return updated
+
+  const { data, error } = await supabase
+    .from('portal_workspace_preferences')
+    .insert({
+      client_id: clientId,
+      user_id: userId,
+      workspace_tools_json: [],
+      today_queue_state_json: payload,
+    })
+    .select(WORKSPACE_PREFERENCE_SELECT)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+function normalizeConversationResponse(payload) {
+  const data = payload?.data || payload || {}
+  return {
+    meta: data.meta || payload?.meta || {},
+    conversations: Array.isArray(data.payload) ? data.payload : Array.isArray(payload?.payload) ? payload.payload : [],
+  }
+}
+
+export async function fetchInboxConversations(options = {}) {
+  const params = new URLSearchParams({
+    status: options.status || 'open',
+    assignee_type: 'all',
+    page: '1',
+  })
+  if (options.inboxId) params.set('inbox_id', String(options.inboxId))
+  if (options.query) params.set('q', String(options.query))
+
+  const payload = await callPortalWorker(`/api/chatwoot/conversations?${params.toString()}`)
+  return normalizeConversationResponse(payload).conversations.slice(0, options.limit || 12)
 }
 
 export async function fetchMetrics(clientId) {

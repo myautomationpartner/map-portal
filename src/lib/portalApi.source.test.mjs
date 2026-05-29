@@ -15,3 +15,11 @@ test('Campaign Partner delete removes future scheduled posts but preserves publi
   assert.doesNotMatch(source, /for \(const postId of linkedPostIds\)/)
   assert.match(campaignSource, /Already-posted social posts will stay in Publisher history\./)
 })
+
+test('workspace preferences persist today queue state without replacing workspace tools', () => {
+  assert.match(source, /today_queue_state_json/)
+  assert.match(source, /export async function saveTodayQueueState/)
+  assert.match(source, /workspace_tools_json:\s*\[\]/)
+  assert.match(source, /WORKSPACE_PREFERENCE_SELECT = 'id, client_id, user_id, workspace_tools_json, today_queue_state_json, updated_at'/)
+  assert.match(source, /select\(WORKSPACE_PREFERENCE_SELECT\)/)
+})

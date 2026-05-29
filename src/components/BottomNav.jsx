@@ -1,9 +1,9 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { CalendarDays, FolderOpen, LayoutDashboard, MessageSquare, Settings, CreditCard } from 'lucide-react'
+import { CalendarDays, FolderOpen, ListChecks, MessageSquare, Settings, CreditCard } from 'lucide-react'
 import ThemeToggle from './ThemeToggle'
 
 const navItems = [
-  { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/',         icon: ListChecks,      label: 'Today'     },
   { to: '/documents', icon: FolderOpen,     label: 'Files'     },
   { to: '/calendar', icon: CalendarDays,     label: 'Publisher' },
   { to: '/inbox',    icon: MessageSquare,   label: 'Inbox'      },

@@ -8,9 +8,19 @@ const attentionSource = await readFile(new URL('./Attention.jsx', import.meta.ur
 test('desktop My Partner hub is scoped to Messages only', () => {
   assert.match(
     inboxSource,
-    /const showPartnerHub = activeSection === 'messages' && \(\s*partnerHubOpen/s,
+    /const showPartnerHub = activeSection === 'messages' && partnerHubOpen/,
   )
+  assert.doesNotMatch(inboxSource, /privateConversations\.length === 0[\s\S]{0,300}showPartnerHub/)
   assert.match(inboxSource, /activeSection === 'comments' \? \(\s*<CommentsInbox/s)
+})
+
+test('desktop Messages click can leave the My Partner hub', () => {
+  assert.match(inboxSource, /function handleSectionChange\(section\) \{/)
+  assert.match(inboxSource, /setPartnerHubOpen\(false\)/)
+  assert.match(
+    inboxSource,
+    /return params\.get\('partner'\) === '1'\s*\|\| \(!params\.has\('section'\) && !params\.has\('conversation'\) && !params\.has\('inbox_id'\)\)/,
+  )
 })
 
 test('mobile Inbox filter changes clear previously selected Partner threads', () => {
