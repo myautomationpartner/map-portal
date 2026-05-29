@@ -45,6 +45,25 @@ test('keeps ordinary social direct messages in the private message list', () => 
   assert.equal(isPrivateMessageConversation(conversation, inboxes), true)
 })
 
+test('classifies business-page social inbox mirrors as public comments when metadata is missing', () => {
+  const conversation = {
+    id: 93,
+    inbox_id: 4,
+    status: 'open',
+    meta: { sender: { name: 'My Automation Partner' } },
+    messages: [
+      { content: 'Conversation was marked resolved by Admin' },
+      { content: 'Landed in both the portal inbox and the daily work queue. Works great!' },
+      { content: 'System reopened the conversation due to a new incoming message.' },
+    ],
+  }
+  const options = { businessNames: ['My Automation Partner'] }
+
+  assert.equal(isPublicCommentConversation(conversation, inboxes, options), true)
+  assert.equal(isPrivateMessageConversation(conversation, inboxes, options), false)
+  assert.deepEqual(selectPrivateMessageConversations([conversation], inboxes, options), [])
+})
+
 test('dedupes repeated private message mirrors without removing distinct messages', () => {
   const duplicateBase = {
     status: 'open',

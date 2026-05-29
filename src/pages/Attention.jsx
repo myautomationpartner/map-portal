@@ -25,6 +25,7 @@ import { splitMessageLinks } from '../lib/messageLinks'
 import { canHideInboxThread } from '../lib/inboxThreadActions'
 import { getOpenReviewDrafts, getPartnerHelpOptions, resolvePartnerHelpHref, selectNextReviewDraft } from '../lib/partnerHelpMenu'
 import {
+  businessNameCandidates,
   commentNeedsReply,
   selectPrivateMessageConversations,
 } from '../lib/inboxClassification'
@@ -681,19 +682,23 @@ export default function Attention() {
   const inboxes = useMemo(() => inboxesQuery.data || [], [inboxesQuery.data])
   const conversations = useMemo(() => conversationsQuery.data || [], [conversationsQuery.data])
   const commentBundles = useMemo(() => commentBundlesQuery.data || [], [commentBundlesQuery.data])
+  const inboxBusinessNames = useMemo(
+    () => businessNameCandidates(outlet.profile),
+    [outlet.profile],
+  )
 
   const threads = useMemo(() => {
     const partnerThreads = conversations
       .filter(isMyPartnerConversation)
       .map((conversation) => buildConversationThread(conversation, inboxes))
-    const dmThreads = selectPrivateMessageConversations(conversations, inboxes)
+    const dmThreads = selectPrivateMessageConversations(conversations, inboxes, { businessNames: inboxBusinessNames })
       .map((conversation) => buildConversationThread(conversation, inboxes))
 
     const commentThreads = commentBundles.map(buildCommentThread)
 
     return [...commentThreads, ...partnerThreads, ...dmThreads]
       .sort((left, right) => right.sortTime - left.sortTime)
-  }, [commentBundles, conversations, inboxes])
+  }, [commentBundles, conversations, inboxBusinessNames, inboxes])
 
   const filteredThreads = useMemo(() => filterThreads(threads, activeFilter), [threads, activeFilter])
   const selectedThread = filteredThreads.find((thread) => thread.id === selectedThreadId) || filteredThreads[0] || null

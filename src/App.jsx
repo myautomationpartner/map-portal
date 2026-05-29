@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'rea
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './lib/supabase'
 import { createBillingCheckoutSession, createBillingPortalSession, fetchInboxNotificationCounts, fetchProfile, getSessionClaims } from './lib/portalApi'
+import { businessNameCandidates } from './lib/inboxClassification'
 import { buildTenantConfig } from './lib/tenantConfig'
 import { buildReadOnlyMessage, resolveBillingAccess } from './lib/portalBilling'
 import { inferPathTenant } from './lib/portalPath'
@@ -276,15 +277,6 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     queryFn: fetchProfile,
     enabled: !!session && !demoCaptureRoute,
   })
-  const { data: inboxNotificationCounts } = useQuery({
-    queryKey: ['inbox-notification-counts'],
-    queryFn: fetchInboxNotificationCounts,
-    enabled: !!session && !demoCaptureRoute,
-    staleTime: 0,
-    refetchInterval: 25_000,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
-  })
   const [billingActionPending, setBillingActionPending] = useState('')
 
   const claims = useMemo(() => getSessionClaims(session), [session])
@@ -292,6 +284,19 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     () => buildTenantConfig({ client: profile?.clients || null, claims }),
     [profile, claims],
   )
+  const inboxBusinessNames = useMemo(
+    () => businessNameCandidates({ clients: profile?.clients, displayName: tenant.displayName }),
+    [profile?.clients, tenant.displayName],
+  )
+  const { data: inboxNotificationCounts } = useQuery({
+    queryKey: ['inbox-notification-counts', inboxBusinessNames.join('|')],
+    queryFn: () => fetchInboxNotificationCounts({ businessNames: inboxBusinessNames }),
+    enabled: !!session && !demoCaptureRoute && Boolean(profile?.clients),
+    staleTime: 0,
+    refetchInterval: 25_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  })
   const billingAccess = useMemo(() => resolveBillingAccess(tenant), [tenant])
   const currentHost = typeof window === 'undefined' ? '' : normalizeHost(window.location.hostname)
   const expectedHost = useMemo(() => resolveExpectedHost(profile), [profile])

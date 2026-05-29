@@ -318,6 +318,48 @@ test('today priority queue includes unreplied public comments from comment bundl
   assert.equal(queue[0].targetHref, '/inbox?section=comments&post=account-1%3Apost-1')
 })
 
+test('today priority queue does not duplicate business-page comment mirrors as messages', () => {
+  const queue = buildTodayPriorityQueueFromPortalData({
+    now: '2026-05-29T13:00:00.000Z',
+    businessNames: ['My Automation Partner'],
+    inboxes: [{ id: 4, name: 'Social Inbox' }],
+    conversations: [
+      {
+        id: 41,
+        inbox_id: 4,
+        status: 'open',
+        last_activity_at: Math.floor(Date.parse('2026-05-29T14:59:00.000Z') / 1000),
+        meta: { sender: { name: 'My Automation Partner' } },
+        messages: [
+          { content: 'Landed in both the portal inbox and the daily work queue. Works great!' },
+          { content: 'System reopened the conversation due to a new incoming message.' },
+        ],
+      },
+    ],
+    commentBundles: [
+      {
+        post: {
+          id: 'post-1',
+          accountId: 'account-1',
+          platform: 'facebook',
+          content: 'We are refreshing My Automation Partner for small business owners.',
+        },
+        comments: [
+          {
+            id: 'fb-comment-1',
+            authorName: 'Kenny Monico',
+            text: 'Landed in both the portal inbox and the daily work queue. Works great!',
+            createdTime: '2026-05-29T14:59:00.000Z',
+            replyCount: 0,
+          },
+        ],
+      },
+    ],
+  })
+
+  assert.deepEqual(queue.map((item) => item.id), ['comment:fb-comment-1'])
+})
+
 test('today queue state persists done and snoozed items onto live queue rows', () => {
   const queue = buildTodayPriorityQueue().slice(0, 2)
   const state = updateTodayQueueState(

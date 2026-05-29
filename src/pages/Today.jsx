@@ -24,6 +24,7 @@ import {
 } from '../lib/todayPriorityQueue'
 import {
   fetchCalendarPosts,
+  fetchChatwootInboxes,
   fetchInboxCommentBundles,
   fetchInboxCommentPosts,
   fetchInboxConversations,
@@ -34,6 +35,7 @@ import {
   fetchWorkspacePreferences,
   saveTodayQueueState,
 } from '../lib/portalApi'
+import { businessNameCandidates } from '../lib/inboxClassification'
 
 const sourceLinks = {
   Inbox: '/inbox',
@@ -237,6 +239,10 @@ export default function Today() {
   const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: fetchProfile })
   const clientId = profile?.client_id
   const userId = profile?.id
+  const inboxBusinessNames = useMemo(
+    () => businessNameCandidates(profile),
+    [profile],
+  )
   const { data: workspacePreference } = useQuery({
     queryKey: ['workspace-preferences', clientId, userId],
     queryFn: () => fetchWorkspacePreferences(clientId, userId),
@@ -248,6 +254,15 @@ export default function Today() {
     enabled: Boolean(clientId),
     retry: 1,
     refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  })
+  const { data: inboxes = [] } = useQuery({
+    queryKey: ['today-chatwoot-inboxes', clientId],
+    queryFn: fetchChatwootInboxes,
+    enabled: Boolean(clientId),
+    retry: 1,
+    refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
   })
@@ -314,6 +329,8 @@ export default function Today() {
   )
   const liveQueue = useMemo(
     () => buildTodayPriorityQueueFromPortalData({
+      businessNames: inboxBusinessNames,
+      inboxes,
       conversations,
       commentBundles,
       socialDrafts,
@@ -322,7 +339,7 @@ export default function Today() {
       documents,
       fallbackQueue,
     }),
-    [calendarPosts, commentBundles, conversations, documents, fallbackQueue, opportunities, socialDrafts],
+    [calendarPosts, commentBundles, conversations, documents, fallbackQueue, inboxBusinessNames, inboxes, opportunities, socialDrafts],
   )
   const queue = useMemo(
     () => applyTodayQueueState(liveQueue, persistedTodayState),

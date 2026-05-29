@@ -11914,6 +11914,22 @@ html[data-portal-theme="map-dark"] .settings-page .portal-input::placeholder {
     0 0 0 1px rgba(10, 132, 255, 0.22) !important;
 }
 
+html[data-portal-theme="map-dark"] aside nav a.active-nav .portal-notification-badge,
+html[data-portal-theme="map-dark"] aside nav a.inactive-nav .portal-notification-badge,
+html[data-portal-theme="map-dark"] .inbox-section-nav-item .portal-notification-badge,
+html[data-portal-theme="map-dark"] .portal-notification-badge,
+html:not([data-portal-theme="map-dark"]) .portal-notification-badge {
+  border-color: rgba(255, 255, 255, 0.5) !important;
+  background: linear-gradient(180deg, #4bb5ff 0%, #0a84ff 52%, #0065d8 100%) !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  text-shadow: 0 1px 0 rgba(0, 20, 60, 0.35) !important;
+  box-shadow:
+    0 9px 18px rgba(10, 132, 255, 0.42),
+    0 0 0 1px rgba(10, 132, 255, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+}
+
 .portal-bottom-notification-badge {
   min-width: 1.1rem !important;
   height: 1.1rem !important;

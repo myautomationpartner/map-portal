@@ -615,7 +615,7 @@ export async function fetchInboxCommentBundles(posts = [], options = {}) {
   }))
 }
 
-export async function fetchInboxNotificationCounts() {
+export async function fetchInboxNotificationCounts(options = {}) {
   const [inboxResult, conversationResult, postResult] = await Promise.allSettled([
     fetchChatwootInboxes(),
     fetchInboxConversations({ status: 'open', limit: 50 }),
@@ -628,7 +628,9 @@ export async function fetchInboxNotificationCounts() {
     ? postResult.value.posts
     : []
   const commentBundles = commentPosts.length ? await fetchInboxCommentBundles(commentPosts, { limit: 12 }) : []
-  const privateConversations = selectPrivateMessageConversations(conversations, inboxes)
+  const privateConversations = selectPrivateMessageConversations(conversations, inboxes, {
+    businessNames: options.businessNames || [],
+  })
 
   return summarizeInboxNotifications({ privateConversations, commentBundles })
 }

@@ -29,7 +29,9 @@ import { supabase } from '../lib/supabase'
 import { portalPath } from '../lib/portalPath'
 import { splitMessageLinks } from '../lib/messageLinks'
 import { buildInboxDemoCaptureState, isInboxDemoCaptureEnabled } from '../lib/inboxDemoCapture'
+import { fetchProfile } from '../lib/portalApi'
 import {
+  businessNameCandidates,
   countCommentBundlesNeedingReply,
   countPrivateMessagesNeedingReply,
   selectPrivateMessageConversations,
@@ -1555,6 +1557,16 @@ export default function Inbox() {
     staleTime: 300_000,
     enabled: !demoCapture,
   })
+  const profileQuery = useQuery({
+    queryKey: ['profile'],
+    queryFn: fetchProfile,
+    staleTime: 300_000,
+    enabled: !demoCapture,
+  })
+  const inboxBusinessNames = useMemo(
+    () => businessNameCandidates(profileQuery.data),
+    [profileQuery.data],
+  )
 
   const conversationsQuery = useQuery({
     queryKey: ['chatwoot-conversations', filters],
@@ -1579,8 +1591,8 @@ export default function Inbox() {
     [demoCapture, conversationsQuery.data],
   )
   const privateConversations = useMemo(
-    () => selectPrivateMessageConversations(conversations, inboxes),
-    [conversations, inboxes],
+    () => selectPrivateMessageConversations(conversations, inboxes, { businessNames: inboxBusinessNames }),
+    [conversations, inboxBusinessNames, inboxes],
   )
   const commentPosts = useMemo(
     () => commentPostsQuery.data?.posts || [],

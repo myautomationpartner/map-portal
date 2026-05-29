@@ -6,6 +6,16 @@ function firstString(...values) {
   return ''
 }
 
+function normalizeComparableName(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function messageList(conversation) {
   return Array.isArray(conversation?.messages) ? conversation.messages : []
 }
@@ -53,6 +63,20 @@ export function conversationSearchText(conversation, inboxes = []) {
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
+}
+
+export function businessNameCandidates(input = {}) {
+  const client = input?.clients || input?.client || input || {}
+  return [
+    client.business_name,
+    client.display_name,
+    client.name,
+    client.slug,
+    input?.displayName,
+    input?.businessName,
+  ]
+    .map((value) => String(value || '').replace(/[_-]+/g, ' ').trim())
+    .filter(Boolean)
 }
 
 export function isMyPartnerConversation(conversation) {
@@ -112,7 +136,23 @@ function hasCommentMetadata(value) {
   ].some((marker) => haystack.includes(marker))
 }
 
-export function isPublicCommentConversation(conversation, inboxes = []) {
+function isBusinessOwnedSocialConversation(conversation, inboxes = [], options = {}) {
+  const inbox = inboxName(conversation, inboxes)
+  const searchText = conversationSearchText(conversation, inboxes)
+  const looksLikeSystemMirror = /\b(system reopened|conversation was marked resolved|assigned to admin by default policy)\b/.test(searchText)
+  if (!/\bsocial\b/i.test(inbox) && !looksLikeSystemMirror) return false
+
+  const title = normalizeComparableName(conversationTitle(conversation))
+  if (!title) return false
+
+  const businessNames = Array.isArray(options?.businessNames) ? options.businessNames : []
+  return businessNames
+    .map(normalizeComparableName)
+    .filter((name) => name.length >= 4)
+    .some((name) => title === name || title.includes(name) || name.includes(title))
+}
+
+export function isPublicCommentConversation(conversation, inboxes = [], options = {}) {
   if (hasCommentMetadata({
     additional_attributes: conversation?.additional_attributes,
     custom_attributes: conversation?.custom_attributes,
@@ -126,11 +166,13 @@ export function isPublicCommentConversation(conversation, inboxes = []) {
     return true
   }
 
+  if (isBusinessOwnedSocialConversation(conversation, inboxes, options)) return true
+
   return /\b(comment|comments|commenter|commented)\b/.test(conversationSearchText(conversation, inboxes))
 }
 
-export function isPrivateMessageConversation(conversation, inboxes = []) {
-  return !isMyPartnerConversation(conversation) && !isPublicCommentConversation(conversation, inboxes)
+export function isPrivateMessageConversation(conversation, inboxes = [], options = {}) {
+  return !isMyPartnerConversation(conversation) && !isPublicCommentConversation(conversation, inboxes, options)
 }
 
 function toTimestamp(value) {
@@ -149,12 +191,12 @@ function conversationSignature(conversation, inboxes = []) {
   ].join('|')
 }
 
-export function selectPrivateMessageConversations(conversations = [], inboxes = []) {
+export function selectPrivateMessageConversations(conversations = [], inboxes = [], options = {}) {
   const selected = []
   const seen = new Map()
 
   conversations
-    .filter((conversation) => isPrivateMessageConversation(conversation, inboxes))
+    .filter((conversation) => isPrivateMessageConversation(conversation, inboxes, options))
     .forEach((conversation) => {
       const signature = conversationSignature(conversation, inboxes)
       const activity = toTimestamp(conversation?.last_activity_at || conversation?.updated_at)

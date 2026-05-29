@@ -342,8 +342,8 @@ function isVisibleSuggestion(suggestion) {
   return !['archived', 'dismissed', 'converted_to_draft'].includes(state) && !suggestion?.converted_draft_id
 }
 
-function buildInboxItems(conversations = []) {
-  return selectPrivateMessageConversations(conversations)
+function buildInboxItems(conversations = [], options = {}) {
+  return selectPrivateMessageConversations(conversations, options.inboxes || [], { businessNames: options.businessNames || [] })
     .filter((conversation) => conversation?.status !== 'resolved')
     .slice(0, 3)
     .map((conversation) => {
@@ -541,6 +541,8 @@ export function buildTodayPriorityQueue() {
 
 export function buildTodayPriorityQueueFromPortalData({
   now,
+  businessNames = [],
+  inboxes = [],
   conversations = [],
   commentBundles = [],
   socialDrafts = [],
@@ -550,7 +552,7 @@ export function buildTodayPriorityQueueFromPortalData({
   fallbackQueue = buildTodayPriorityQueue(),
 } = {}) {
   const liveItems = [
-    ...buildInboxItems(conversations),
+    ...buildInboxItems(conversations, { businessNames, inboxes }),
     ...buildCommentItems(commentBundles),
     ...buildDraftItems(socialDrafts, { now }),
     ...buildScheduledPostItems(calendarPosts, { now }),
