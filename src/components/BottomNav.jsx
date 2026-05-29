@@ -52,7 +52,7 @@ export default function BottomNav({
                   <Icon className="h-5 w-5" strokeWidth={isActive ? 2.5 : 2} />
                   {notificationCount > 0 ? (
                     <span
-                      className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full px-1 py-0.5 text-[9px] font-black tabular-nums"
+                      className="portal-notification-badge portal-bottom-notification-badge absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full px-1 py-0.5 text-[9px] font-black tabular-nums"
                       aria-label={`${notificationCount} inbox items need a reply`}
                       style={{
                         background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))',

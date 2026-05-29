@@ -1060,7 +1060,7 @@ function InboxSectionNav({
               )}
               {notificationCount > 0 ? (
                 <span
-                  className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums"
+                  className="portal-notification-badge inbox-section-notification-badge ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums"
                   aria-label={`${notificationCount} ${section.label.toLowerCase()} items need a reply`}
                   style={{
                     background: 'color-mix(in srgb, var(--portal-primary) 22%, transparent)',
@@ -1499,7 +1499,10 @@ export default function Inbox() {
   })
   const [commentPlatform, setCommentPlatform] = useState('')
   const [commentAccountId, setCommentAccountId] = useState('')
-  const [selectedCommentPostKey, setSelectedCommentPostKey] = useState('')
+  const [selectedCommentPostKey, setSelectedCommentPostKey] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    return new URLSearchParams(window.location.search).get('post') || ''
+  })
   const [commentReplyTargetId, setCommentReplyTargetId] = useState('')
   const [commentReplyText, setCommentReplyText] = useState('')
   const [composer, setComposer] = useState('')

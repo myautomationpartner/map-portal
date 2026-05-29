@@ -264,6 +264,60 @@ test('today priority queue excludes public comments mirrored into Chatwoot', () 
   assert.deepEqual(queue.map((item) => item.id), ['inbox:42'])
 })
 
+test('today priority queue includes unreplied public comments from comment bundles once', () => {
+  const queue = buildTodayPriorityQueueFromPortalData({
+    now: '2026-05-29T13:00:00.000Z',
+    conversations: [
+      {
+        id: 41,
+        status: 'open',
+        last_activity_at: Math.floor(Date.parse('2026-05-29T13:49:00.000Z') / 1000),
+        meta: { sender: { name: 'Kenny Monico' } },
+        messages: [
+          {
+            content: 'Inbox test',
+            content_attributes: {
+              zernio_event: 'comment.received',
+              zernio_comment_id: 'fb-comment-1',
+            },
+          },
+        ],
+      },
+    ],
+    commentBundles: [
+      {
+        post: {
+          id: 'post-1',
+          accountId: 'account-1',
+          platform: 'facebook',
+          content: 'We are refreshing My Automation Partner for small business owners.',
+        },
+        comments: [
+          {
+            id: 'fb-comment-1',
+            authorName: 'Kenny Monico',
+            text: 'Inbox test',
+            createdTime: '2026-05-29T13:49:00.000Z',
+            replyCount: 0,
+          },
+          {
+            id: 'answered',
+            authorName: 'Facebook commenter',
+            text: 'Love this!',
+            createdTime: '2026-05-14T14:27:00.000Z',
+            replyCount: 1,
+          },
+        ],
+      },
+    ],
+  })
+
+  assert.deepEqual(queue.map((item) => item.id), ['comment:fb-comment-1'])
+  assert.equal(queue[0].source, 'Inbox')
+  assert.equal(queue[0].sourceDetail, 'Comment')
+  assert.equal(queue[0].targetHref, '/inbox?section=comments&post=account-1%3Apost-1')
+})
+
 test('today queue state persists done and snoozed items onto live queue rows', () => {
   const queue = buildTodayPriorityQueue().slice(0, 2)
   const state = updateTodayQueueState(

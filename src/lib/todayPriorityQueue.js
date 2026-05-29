@@ -1,4 +1,4 @@
-import { selectPrivateMessageConversations } from './inboxClassification.js'
+import { commentNeedsReply, selectPrivateMessageConversations } from './inboxClassification.js'
 
 const BASE_SUMMARY = {
   needsHuman: 6,
@@ -247,6 +247,11 @@ function titleCase(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
+function platformLabel(platform) {
+  const label = titleCase(platform)
+  return label || 'Social'
+}
+
 function formatMinutesFromTimestamp(value) {
   const timestamp = Number(value || 0)
   if (!timestamp) return '5m'
@@ -309,6 +314,18 @@ function conversationPreview(conversation) {
   return truncate(message?.content || conversation?.additional_attributes?.browser?.device_name || 'Open customer conversation.')
 }
 
+function commentAuthor(comment, platform) {
+  return plainText(comment?.authorName || comment?.from?.name || comment?.author?.name, `${platformLabel(platform)} commenter`)
+}
+
+function commentText(comment) {
+  return truncate(comment?.text || comment?.message || comment?.content || 'Open public comment.')
+}
+
+function commentTime(comment, post) {
+  return comment?.createdTime || comment?.created_at || comment?.timestamp || post?.createdTime || post?.created_at
+}
+
 function isVisibleDraft(draft, options = {}) {
   const state = String(draft?.review_state || '').trim().toLowerCase()
   if (['published', 'published_manually', 'archived', 'superseded'].includes(state)) return false
@@ -353,6 +370,50 @@ function buildInboxItems(conversations = []) {
         trace: ['Opened from Chatwoot conversation queue'],
       }
     })
+}
+
+function buildCommentItems(commentBundles = []) {
+  const items = []
+
+  for (const bundle of commentBundles) {
+    const post = bundle?.post || {}
+    const comments = Array.isArray(bundle?.comments) ? bundle.comments : []
+    const platform = platformLabel(post.platform)
+    const postKey = `${post.accountId || ''}:${post.id || ''}`
+    const openHref = `/inbox?section=comments&post=${encodeURIComponent(postKey)}`
+
+    comments
+      .filter(commentNeedsReply)
+      .sort((a, b) => parseTime(commentTime(b, post)) - parseTime(commentTime(a, post)))
+      .forEach((comment) => {
+        const author = commentAuthor(comment, post.platform)
+        const fallbackId = `${postKey || 'post'}:${items.length}`
+
+        items.push({
+          id: `comment:${comment.id || fallbackId}`,
+          priority: 'P0',
+          minutes: formatMinutesFromTimestamp(Math.floor(parseTime(commentTime(comment, post)) / 1000)),
+          title: `Reply to ${author}`,
+          description: commentText(comment),
+          source: 'Inbox',
+          sourceDetail: 'Comment',
+          due: 'Now',
+          actionLabel: 'Reply',
+          targetHref: openHref,
+          kind: 'Public comment',
+          tone: 'danger',
+          confidence: 'Live',
+          steps: '2',
+          risk: 'Low',
+          why: `${author} left a public ${platform} comment that still needs a reply.`,
+          suggestedAction: 'Open Comments, review the public thread, and reply from the comment panel.',
+          chips: ['Inbox', 'Comment', platform],
+          trace: ['Loaded from Zernio comments'],
+        })
+      })
+  }
+
+  return items.slice(0, 3)
 }
 
 function buildDraftItems(socialDrafts = [], options = {}) {
@@ -481,6 +542,7 @@ export function buildTodayPriorityQueue() {
 export function buildTodayPriorityQueueFromPortalData({
   now,
   conversations = [],
+  commentBundles = [],
   socialDrafts = [],
   calendarPosts = [],
   opportunities = [],
@@ -489,13 +551,14 @@ export function buildTodayPriorityQueueFromPortalData({
 } = {}) {
   const liveItems = [
     ...buildInboxItems(conversations),
+    ...buildCommentItems(commentBundles),
     ...buildDraftItems(socialDrafts, { now }),
     ...buildScheduledPostItems(calendarPosts, { now }),
     ...buildOpportunityItems(opportunities, { now }),
     ...buildDocumentItems(documents, { now }),
   ]
 
-  const hasSourceData = [conversations, socialDrafts, calendarPosts, opportunities, documents]
+  const hasSourceData = [conversations, commentBundles, socialDrafts, calendarPosts, opportunities, documents]
     .some((source) => Array.isArray(source) && source.length > 0)
   if (!liveItems.length) return hasSourceData ? [] : fallbackQueue
   return liveItems.slice(0, 12)

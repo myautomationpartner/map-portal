@@ -150,7 +150,7 @@ export default function Sidebar({
                 {label}
                 {notificationCount > 0 ? (
                   <span
-                    className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums"
+                    className="portal-notification-badge portal-sidebar-notification-badge ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums"
                     aria-label={`${notificationCount} inbox items need a reply`}
                     style={{
                       background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))',

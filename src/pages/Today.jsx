@@ -24,6 +24,8 @@ import {
 } from '../lib/todayPriorityQueue'
 import {
   fetchCalendarPosts,
+  fetchInboxCommentBundles,
+  fetchInboxCommentPosts,
   fetchInboxConversations,
   fetchOpportunityRadar,
   fetchProfile,
@@ -249,6 +251,31 @@ export default function Today() {
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
   })
+  const { data: commentPostsPayload } = useQuery({
+    queryKey: ['today-comment-posts', clientId],
+    queryFn: () => fetchInboxCommentPosts({ limit: 30 }),
+    enabled: Boolean(clientId),
+    retry: 1,
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  })
+  const commentPosts = useMemo(
+    () => commentPostsPayload?.posts || [],
+    [commentPostsPayload],
+  )
+  const commentBundleKey = useMemo(() => (
+    commentPosts.map((post) => `${post.accountId}:${post.id}:${post.commentCount}`).join('|')
+  ), [commentPosts])
+  const { data: commentBundles = [] } = useQuery({
+    queryKey: ['today-comment-bundles', clientId, commentBundleKey],
+    queryFn: () => fetchInboxCommentBundles(commentPosts, { limit: 12 }),
+    enabled: Boolean(clientId && commentPosts.length),
+    retry: 1,
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  })
   const { data: socialDrafts = [] } = useQuery({
     queryKey: ['social-drafts', clientId],
     queryFn: () => fetchSocialDrafts(clientId),
@@ -288,13 +315,14 @@ export default function Today() {
   const liveQueue = useMemo(
     () => buildTodayPriorityQueueFromPortalData({
       conversations,
+      commentBundles,
       socialDrafts,
       calendarPosts,
       opportunities,
       documents,
       fallbackQueue,
     }),
-    [calendarPosts, conversations, documents, fallbackQueue, opportunities, socialDrafts],
+    [calendarPosts, commentBundles, conversations, documents, fallbackQueue, opportunities, socialDrafts],
   )
   const queue = useMemo(
     () => applyTodayQueueState(liveQueue, persistedTodayState),
