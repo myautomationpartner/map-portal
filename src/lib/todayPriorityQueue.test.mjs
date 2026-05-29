@@ -232,6 +232,54 @@ test('today priority queue focuses on work due today instead of future backlog',
   ])
 })
 
+test('today priority queue keeps posts published today as same-day records', () => {
+  const queue = buildTodayPriorityQueueFromPortalData({
+    now: '2026-05-29T19:00:00.000Z',
+    socialDrafts: [
+      {
+        id: 'published-draft',
+        source_workflow: 'campaign_partner',
+        draft_title: 'Inbox Without the Chaos',
+        draft_caption: 'A cleaner inbox means fewer missed follow-ups.',
+        review_state: 'published_manually',
+        slot_date_local: '2026-05-29',
+        scheduled_for: '2026-05-29T15:30:00.000Z',
+        updated_at: '2026-05-29T18:23:31.000Z',
+        published_reference: 'published-post',
+      },
+    ],
+    calendarPosts: [
+      {
+        id: 'published-post',
+        status: 'published',
+        content: 'A cleaner inbox means fewer missed follow-ups and less time digging for what matters.',
+        platforms: ['facebook'],
+        published_at: '2026-05-29T18:23:31.000Z',
+      },
+      {
+        id: 'yesterday-post',
+        status: 'published',
+        content: 'This should not stay in today.',
+        platforms: ['facebook'],
+        published_at: '2026-05-28T18:23:31.000Z',
+      },
+    ],
+  })
+
+  assert.deepEqual(queue.map((item) => item.id), ['post:published-post'])
+  assert.equal(queue[0].completed, true)
+  assert.equal(queue[0].priority, 'Done')
+  assert.equal(queue[0].actionLabel, 'Posted')
+  assert.equal(queue[0].title, 'Posted Inbox Without the Chaos')
+  assert.match(queue[0].description, /Posted/)
+
+  assert.deepEqual(
+    filterTodayPriorityQueue(queue, 'priority').map((item) => item.id),
+    ['post:published-post'],
+  )
+  assert.deepEqual(filterTodayPriorityQueue(queue, 'ready').map((item) => item.id), [])
+})
+
 test('today priority queue excludes public comments mirrored into Chatwoot', () => {
   const queue = buildTodayPriorityQueueFromPortalData({
     now: '2026-05-29T13:00:00.000Z',

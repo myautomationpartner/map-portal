@@ -337,6 +337,20 @@ function isVisibleDraft(draft, options = {}) {
   return touchedTime >= startOfLocalDay(options.now) && touchedTime < endOfLocalDay(options.now)
 }
 
+function publishedPostTime(post) {
+  return post?.published_at || post?.scheduled_for || post?.created_at
+}
+
+function isPublishedToday(post, options = {}) {
+  return post?.status === 'published' && isTodayTime(publishedPostTime(post), options)
+}
+
+function formatPostedStatus(post) {
+  const time = publishedPostTime(post)
+  const due = formatDue(time, 'today')
+  return due === 'today' ? 'Posted today' : `Posted ${due}`
+}
+
 function isVisibleSuggestion(suggestion) {
   const state = String(suggestion?.review_state || '').trim().toLowerCase()
   return !['archived', 'dismissed', 'converted_to_draft'].includes(state) && !suggestion?.converted_draft_id
@@ -475,6 +489,48 @@ function buildScheduledPostItems(calendarPosts = [], options = {}) {
     }))
 }
 
+function buildPublishedPostItems(calendarPosts = [], socialDrafts = [], options = {}) {
+  const draftByPublishedPostId = new Map(
+    socialDrafts
+      .filter((draft) => draft?.published_reference)
+      .map((draft) => [String(draft.published_reference), draft]),
+  )
+
+  return calendarPosts
+    .filter((post) => isPublishedToday(post, options))
+    .slice(0, 4)
+    .map((post) => {
+      const sourceDraft = draftByPublishedPostId.get(String(post.id))
+      const title = plainText(sourceDraft?.draft_title || sourceDraft?.post_type, 'social post')
+      const postedStatus = formatPostedStatus(post)
+      const description = truncate(`${postedStatus}. ${post.content || 'Published post is live.'}`, 112)
+      return {
+        id: `post:${post.id}`,
+        priority: 'Done',
+        minutes: '0m',
+        title: `Posted ${title}`,
+        description,
+        source: 'Posts',
+        sourceDetail: (post.platforms || []).slice(0, 2).map(titleCase).join(', ') || 'Publisher',
+        due: postedStatus.replace(/^Posted\s+/i, ''),
+        actionLabel: 'Posted',
+        completedLabel: 'Posted',
+        targetHref: `/post?editPost=${encodeURIComponent(post.id)}`,
+        kind: 'Posted post',
+        tone: 'success',
+        confidence: 'Live',
+        steps: '0',
+        risk: 'None',
+        why: `This post published today and stays in Today until tomorrow as a record of completed work.`,
+        suggestedAction: 'No action is needed. Open the source if you want to review the published post.',
+        chips: ['Posted', sourceDraft ? 'From draft' : 'Publisher', ...((post.platforms || []).slice(0, 2).map(platformLabel))],
+        trace: [postedStatus, 'Published post record loaded'],
+        completed: true,
+        retainInToday: true,
+      }
+    })
+}
+
 function buildOpportunityItems(opportunities = [], options = {}) {
   const items = []
   for (const opportunity of opportunities) {
@@ -556,6 +612,7 @@ export function buildTodayPriorityQueueFromPortalData({
     ...buildCommentItems(commentBundles),
     ...buildDraftItems(socialDrafts, { now }),
     ...buildScheduledPostItems(calendarPosts, { now }),
+    ...buildPublishedPostItems(calendarPosts, socialDrafts, { now }),
     ...buildOpportunityItems(opportunities, { now }),
     ...buildDocumentItems(documents, { now }),
   ]
@@ -654,7 +711,7 @@ export function filterTodayPriorityQueue(queue, filter = 'priority') {
   if (filter === 'needs') return queue.filter((item) => !item.completed && !item.snoozed && needsHumanItem(item))
   if (filter === 'ready') return queue.filter((item) => !item.completed && !item.snoozed && isReadyItem(item) && !isRiskItem(item))
   if (filter === 'risks') return queue.filter((item) => !item.completed && !item.snoozed && isRiskItem(item))
-  return queue.filter((item) => !item.completed && !item.snoozed)
+  return queue.filter((item) => (!item.completed && !item.snoozed) || (item.retainInToday && !item.snoozed))
 }
 
 export function summarizeTodayPriorityQueue(queue) {

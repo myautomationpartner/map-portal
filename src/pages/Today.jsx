@@ -124,7 +124,7 @@ function QueueRow({ item, active, snoozed, onSelect }) {
         <small>{item.sourceDetail}</small>
       </span>
       <span className="today-row-due">{snoozed ? 'Later' : item.due}</span>
-      <span className="today-row-action">{item.completed ? 'Done' : item.actionLabel}</span>
+      <span className="today-row-action">{item.completed ? (item.completedLabel || 'Done') : item.actionLabel}</span>
     </button>
   )
 }
