@@ -121,6 +121,18 @@ test('Opportunity Radar appends only after current-week gaps are filled', () => 
   )
 })
 
+test('Opportunity Radar records retrieval before OpenAI synthesis and retries transient OpenAI failures', () => {
+  assert.match(radarFunctionSource, /const retryableStatuses = new Set\(\[408, 409, 429, 500, 502, 503, 504\]\)/)
+  assert.match(radarFunctionSource, /for \(let attempt = 1; attempt <= 3; attempt \+= 1\)/)
+  assert.match(radarFunctionSource, /await recordTavilyUsage\(client\.id, runId, tavilyUsage\)\.then/)
+  assert.match(radarFunctionSource, /failure_stage: telemetry\.stage/)
+  assert.match(radarFunctionSource, /provider_error: telemetry\.detail/)
+  assert.ok(
+    radarFunctionSource.indexOf('await recordTavilyUsage(client.id, runId, tavilyUsage).then') <
+      radarFunctionSource.indexOf('const synthesis = await synthesizeOpportunities'),
+  )
+})
+
 test('Content Partner chooses the next open Publisher day before saving request-driven drafts', () => {
   assert.match(contentPartnerFunctionSource, /async function resolveAvailableContentPartnerSchedule/)
   assert.match(contentPartnerFunctionSource, /fetchOccupiedPublisherDateKeys/)
