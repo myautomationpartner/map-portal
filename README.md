@@ -17,10 +17,12 @@ cp .env.example .env.local
 ```
 
 Required values:
+
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
 Optional:
+
 - `VITE_N8N_BASE_URL`
 - `VITE_PORTAL_DISPLAY_NAME`
 - `VITE_PORTAL_LABEL`
@@ -30,6 +32,7 @@ Optional:
 - `VITE_PORTAL_WORKER_NAME`
 
 Worker/runtime env for domain cutover:
+
 - `PORTAL_CANONICAL_HOST`
 
 3. Start the app:
@@ -64,56 +67,65 @@ npm run build
 npx wrangler deploy
 ```
 
-Current pilot worker:
-- `dancescapes-portal`
-
 Recommended MAP-managed production pattern:
-- `<client-slug>.myautomationpartner.com`
+
+- `https://myautomationpartner.com/portal/<client-slug>`
+
+Legacy/custom-domain pattern when explicitly approved:
+
+- `<client-slug>.portal.myautomationpartner.com`
+- dedicated Worker such as `<client-slug>-portal`
 
 Current cutover behavior:
+
 - tenant workers keep `workers_dev = true` as a technical fallback while the MAP-managed custom domain remains the official customer-facing entry point
 - `PORTAL_CANONICAL_HOST` is used by both the worker and the browser shell to push non-API visits off technical hosts and onto the MAP-owned host
 - document share links now prefer the tenant canonical host when one is configured
 
 ## Provision A New Client Portal
 
-The shared template now includes a real provisioning helper that automates the current per-client worker model.
+The shared template includes a provisioning helper. Fresh launch customers should use the current shared-path onboarding model unless a dedicated domain is explicitly approved.
 
 ```bash
-npm run provision:client -- --client-slug dancescapes-performing-arts --dry-run
+npm run provision:client -- --client-slug <client-slug> --dry-run
 ```
 
 Live deploy:
 
 ```bash
-npm run provision:client -- --client-slug dancescapes-performing-arts
+npm run provision:client -- --client-slug <client-slug>
 ```
 
 What it does:
+
 - loads the client row from Supabase
 - builds the SPA with tenant branding/canonical-host env
-- deploys a dedicated Cloudflare Worker with the MAP-managed custom domain
+- deploys or reuses the correct Cloudflare Worker model for the tenant
 - preserves existing worker vars/secrets while updating the current runtime secret set
 - optionally registers and tests the central Zernio account-events webhook at `/portal/_zernio/api/zernio/account-events`
 - mirrors deployment state back into onboarding tables when a matching signup/run exists
 
 Required runtime inputs:
+
 - `CLOUDFLARE_API_TOKEN`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_URL`
 - `ZERNIO_WEBHOOK_SECRET` (from env / `credential.txt`) or macOS Keychain service `MAP_ZERNIO_WEBHOOK_SECRET`
 
 Optional but recommended:
+
 - `CLOUDFLARE_ACCOUNT_ID`
 - `N8N_BASE_URL`
 - `PORTAL_WEBHOOK_BASE_URL`
 
 Notes:
+
 - `SUPABASE_ANON_KEY` can come from env, Supabase secrets naming, or the repo fallback constant in `src/lib/supabase.js`.
 - `ZERNIO_WEBHOOK_SECRET` now resolves from env / `credential.txt` first, then from the macOS Keychain services `MAP_ZERNIO_WEBHOOK_SECRET` or `ZERNIO_WEBHOOK_SECRET`.
 - Recommended setup for this machine:
   - `security add-generic-password -U -a "$USER" -s MAP_ZERNIO_WEBHOOK_SECRET -w '<secret>'`
-- Use `--skip-webhook-config` if you want to deploy first and wire Zernio later. Fresh provisioning should use the central dispatcher, not per-tenant Zernio account-event webhook URLs.
+- Use `--skip-webhook-config` if you want to deploy first and wire Zernio later.
+- Fresh provisioning should use the central dispatcher and shared-path portal contract unless a legacy/custom-domain exception is documented.
 
 ## Notes
 
@@ -121,3 +133,4 @@ Notes:
 - Document preview/upload/share flows rely on live Edge Functions instead of duplicating signing logic in the frontend.
 - The app is a SPA and depends on Worker asset routing for deep links like `/documents` and `/share/:token`.
 - Customer-facing branding, support contact, and canonical host should come from runtime/provisioning config, not hardcoded client literals.
+- Dancescapes-specific examples are pilot history only. Use `<client-slug>` placeholders for new customer instructions.
