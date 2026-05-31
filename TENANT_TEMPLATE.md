@@ -82,7 +82,7 @@ Recommended MAP-managed default:
 Current exception handling:
 
 - older pilot and QA tenants can keep a legacy `*.portal.myautomationpartner.com` hostname until they are migrated
-- Dancescapes remains the known live exception because the cleaner root subdomain was not available during the first cutover
+- Dancescapes is being reset before launch, so do not use it as the model for new customer onboarding. The default path for fresh customers remains `https://myautomationpartner.com/portal/<client-slug>` unless a dedicated host is explicitly approved.
 
 Custom domains can be layered later as an optional path without changing the shared portal codebase.
 
