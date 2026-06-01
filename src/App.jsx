@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -158,6 +158,20 @@ function countConnectedSocialAccounts(socialConnections = []) {
   return socialConnections.filter((connection) => connection?.zernio_account_id || connection?.zernio_profile_id).length
 }
 
+function normalizeSetupPlatform(platform) {
+  const value = String(platform || '').toLowerCase()
+  if (value === 'x') return 'twitter'
+  return value
+}
+
+function hasConnectedSetupPlatform(socialConnections = [], platform) {
+  const normalizedPlatform = normalizeSetupPlatform(platform)
+  return socialConnections.some((connection) => (
+    normalizeSetupPlatform(connection?.platform) === normalizedPlatform &&
+    (connection?.zernio_account_id || connection?.zernio_profile_id)
+  ))
+}
+
 function setupListToText(value) {
   return Array.isArray(value) ? value.filter(Boolean).join('\n') : ''
 }
@@ -214,11 +228,15 @@ function FirstLoginSetupWalkthrough({
   const [status, setStatus] = useState(null)
   const [connectingPlatform, setConnectingPlatform] = useState('')
   const [showSocialAccountHelp, setShowSocialAccountHelp] = useState(false)
+  const connectionCheckStartedAtRef = useRef(null)
   const connectedSocialCount = countConnectedSocialAccounts(socialConnections)
   const profileReady = Boolean(researchProfile?.partner_training_verified_at)
   const profileBasicsReady = hasGuidedSetupProfileBasics(form)
   const businessName = client?.business_name || client?.name || 'your business'
-  const connectedPlatforms = new Set(socialConnections.map((connection) => String(connection?.platform || '').toLowerCase()))
+  const connectedPlatforms = useMemo(
+    () => new Set(socialConnections.map((connection) => normalizeSetupPlatform(connection?.platform))),
+    [socialConnections],
+  )
   const socialReady = connectedSocialCount > 0
   const setupReady = socialReady && profileReady
 
@@ -237,6 +255,113 @@ function FirstLoginSetupWalkthrough({
     }
     setActiveStepId('ready')
   }, [profileReady, socialReady])
+
+  const reconcileSocialConnections = useCallback(async ({ platform = '', manual = false } = {}) => {
+    if (!profile?.client_id) return { found: false, connectedCount: 0 }
+    const normalizedPlatform = normalizeSetupPlatform(platform)
+    if (manual) {
+      setStatus({ type: 'info', message: 'Checking connected accounts...' })
+    }
+
+    try {
+      await refreshSocialConnections(normalizedPlatform || undefined)
+      const latestConnections = await queryClient.fetchQuery({
+        queryKey: ['social_connections', profile.client_id],
+        queryFn: () => fetchSocialConnections(profile.client_id),
+        staleTime: 0,
+      })
+      await queryClient.invalidateQueries({ queryKey: ['social_connections', profile.client_id] })
+
+      const connectedCount = countConnectedSocialAccounts(latestConnections)
+      const found = normalizedPlatform
+        ? hasConnectedSetupPlatform(latestConnections, normalizedPlatform)
+        : connectedCount > 0
+
+      if (found) {
+        const label = normalizedPlatform ? formatSetupPlatformLabel(normalizedPlatform) : 'Social account'
+        setStatus({
+          type: 'success',
+          message: `${label} is connected. ${profileReady ? 'Continue to First content plan.' : 'Verify the business profile next.'}`,
+        })
+        setConnectingPlatform('')
+        setActiveStepId(profileReady ? 'ready' : 'social')
+        onRefreshSetup?.()
+      } else if (manual) {
+        setStatus({
+          type: 'info',
+          message: normalizedPlatform
+            ? `${formatSetupPlatformLabel(normalizedPlatform)} is not connected yet. Finish the Zernio window, then press Check connections or try Connect again.`
+            : 'No connected accounts were found yet. Finish the provider window, then press Check connections.',
+        })
+      }
+
+      return { found, connectedCount }
+    } catch (error) {
+      if (manual) {
+        setStatus({ type: 'error', message: error?.message || 'Could not refresh social accounts.' })
+      }
+      return { found: false, connectedCount: 0, error }
+    }
+  }, [onRefreshSetup, profile?.client_id, profileReady, queryClient])
+
+  useEffect(() => {
+    if (!connectingPlatform) {
+      connectionCheckStartedAtRef.current = null
+      return undefined
+    }
+
+    if (hasConnectedSetupPlatform(socialConnections, connectingPlatform)) {
+      const label = formatSetupPlatformLabel(connectingPlatform)
+      setStatus({
+        type: 'success',
+        message: `${label} is connected. ${profileReady ? 'Continue to First content plan.' : 'Verify the business profile next.'}`,
+      })
+      setConnectingPlatform('')
+      setActiveStepId(profileReady ? 'ready' : 'social')
+      onRefreshSetup?.()
+      return undefined
+    }
+
+    connectionCheckStartedAtRef.current = Date.now()
+    let cancelled = false
+
+    const checkConnection = async () => {
+      const result = await reconcileSocialConnections({ platform: connectingPlatform, manual: false })
+      if (!cancelled && result?.found) {
+        setConnectingPlatform('')
+      }
+    }
+
+    const handleReturnToPage = () => {
+      if (document.visibilityState === 'hidden') return
+      void checkConnection()
+    }
+
+    const intervalId = window.setInterval(checkConnection, 4000)
+    const timeoutId = window.setTimeout(() => {
+      if (cancelled) return
+      const label = formatSetupPlatformLabel(connectingPlatform)
+      setConnectingPlatform('')
+      setStatus({
+        type: 'info',
+        message: `${label} did not finish connecting yet. If the provider window is complete, press Check connections. Otherwise try Connect again.`,
+      })
+    }, 90000)
+
+    window.addEventListener('focus', handleReturnToPage)
+    window.addEventListener('pageshow', handleReturnToPage)
+    document.addEventListener('visibilitychange', handleReturnToPage)
+    void checkConnection()
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+      window.clearTimeout(timeoutId)
+      window.removeEventListener('focus', handleReturnToPage)
+      window.removeEventListener('pageshow', handleReturnToPage)
+      document.removeEventListener('visibilitychange', handleReturnToPage)
+    }
+  }, [connectingPlatform, onRefreshSetup, profileReady, reconcileSocialConnections, socialConnections])
 
   const setupSteps = [
     {
@@ -353,14 +478,14 @@ function FirstLoginSetupWalkthrough({
 
   async function handleConnectPlatform(platform) {
     if (!profile?.client_id) return
-    const normalizedPlatform = String(platform || '').toLowerCase()
+    const normalizedPlatform = normalizeSetupPlatform(platform)
     const popup = window.open('', '_blank', 'width=600,height=720')
     if (popup && !popup.closed) {
       popup.document.write(`<title>Opening ${formatSetupPlatformLabel(normalizedPlatform)}</title><body style="font-family:system-ui;background:#111827;color:white;display:grid;place-items:center;min-height:100vh;margin:0;"><main style="max-width:360px;padding:24px;"><strong>Opening ${formatSetupPlatformLabel(normalizedPlatform)} setup...</strong><p>Finish the connection, then return to MAP.</p></main></body>`)
     }
 
     setConnectingPlatform(normalizedPlatform)
-    setStatus({ type: 'info', message: `Opening ${formatSetupPlatformLabel(normalizedPlatform)} connection. Return here after Zernio finishes.` })
+    setStatus({ type: 'info', message: `Opening ${formatSetupPlatformLabel(normalizedPlatform)} connection. Finish in the Zernio window, then return here. MAP will check automatically.` })
     try {
       const redirectUrl = new URL(portalPath('/connect-return'), window.location.origin)
       redirectUrl.searchParams.set('connected', normalizedPlatform)
@@ -380,6 +505,9 @@ function FirstLoginSetupWalkthrough({
       } else {
         window.location.assign(result.authUrl)
       }
+      window.setTimeout(() => {
+        void reconcileSocialConnections({ platform: normalizedPlatform, manual: false })
+      }, 3000)
     } catch (error) {
       if (popup && !popup.closed) popup.close()
       setStatus({ type: 'error', message: error?.message || 'Could not start social account connection.' })
@@ -388,18 +516,9 @@ function FirstLoginSetupWalkthrough({
   }
 
   async function handleRefreshConnections() {
-    if (!profile?.client_id) return
-    setStatus({ type: 'info', message: 'Checking connected accounts...' })
-    try {
-      await refreshSocialConnections()
-      await queryClient.invalidateQueries({ queryKey: ['social_connections', profile.client_id] })
-      setStatus({ type: 'success', message: 'Connection status refreshed.' })
-      onRefreshSetup?.()
-    } catch (error) {
-      setStatus({ type: 'error', message: error?.message || 'Could not refresh social accounts.' })
-    } finally {
-      setConnectingPlatform('')
-    }
+    const platform = connectingPlatform
+    const result = await reconcileSocialConnections({ platform, manual: true })
+    if (result?.found || result?.connectedCount > 0) setConnectingPlatform('')
   }
 
   return createPortal(
