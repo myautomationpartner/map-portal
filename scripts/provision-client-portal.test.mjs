@@ -185,6 +185,8 @@ test('portal provisioning creates Website Chat with Chatwoot pre-chat contact co
   assert.notEqual(settingsEnd, -1)
   assert.match(script, /DEFAULT_WEBSITE_CHAT_PRE_CHAT_MESSAGE/)
   assert.match(script, /function buildWebsiteChatPreChatFormOptions/)
+  assert.match(createSource, /if \(existing\?\.id\)/)
+  assert.match(createSource, /method: 'PATCH'/)
   assert.match(createSource, /pre_chat_form_enabled: true/)
   assert.match(createSource, /pre_chat_form_options: buildWebsiteChatPreChatFormOptions\(\)/)
   assert.match(settingsSource, /pre_chat_form_enabled: true/)

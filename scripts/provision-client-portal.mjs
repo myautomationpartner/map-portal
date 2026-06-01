@@ -796,7 +796,18 @@ async function findInboxByName(accountId, name) {
 
 async function createOrUpdateWebsiteInbox(accountId, client) {
   const existing = await findInboxByName(accountId, 'Website Chat')
-  if (existing?.id) return existing
+  if (existing?.id) {
+    return chatwootAccountFetch(accountId, `/inboxes/${existing.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        enable_email_collect: true,
+        channel: {
+          pre_chat_form_enabled: true,
+          pre_chat_form_options: buildWebsiteChatPreChatFormOptions(),
+        },
+      }),
+    }).catch(() => existing)
+  }
 
   return chatwootAccountFetch(accountId, '/inboxes', {
     method: 'POST',
