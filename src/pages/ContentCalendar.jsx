@@ -42,6 +42,7 @@ import {
   fetchProfile,
   fetchResearchProfile,
   fetchResearchSources,
+  fetchSocialConnections,
   fetchSocialDrafts,
   getSecureVaultDocumentUrl,
   launchPostBoost,
@@ -1830,6 +1831,7 @@ function TrainPartnerModal({
   client,
   form,
   sources,
+  socialConnections = [],
   trainingStatus,
   label,
   url,
@@ -1841,6 +1843,8 @@ function TrainPartnerModal({
   error,
   notice,
   onClose,
+  onDismissSetup,
+  onConnectAccounts,
   onFormChange,
   onSaveProfile,
   onVerify,
@@ -1856,6 +1860,7 @@ function TrainPartnerModal({
 }) {
   const [activeStepId, setActiveStepId] = useState('audience')
   const sourceCount = sources.filter((source) => source.is_active).length
+  const connectedSocialCount = socialConnections.filter((connection) => connection?.zernio_account_id || connection?.zernio_profile_id).length
   const guidedChoices = buildPartnerGuidedChoices({ client, form, sources })
   const requiredComplete = hasRequiredPartnerTraining(form)
   const trainingProgress = resolveTrainingProgress(form, sources)
@@ -1870,12 +1875,46 @@ function TrainPartnerModal({
   const verifiedLabel = trainingStatus?.isVerified
     ? `Verified ${formatVerifiedDate(trainingStatus.verifiedAt)}`
     : 'Not verified yet'
+  const setupSteps = [
+    {
+      id: 'accounts',
+      label: 'Connect social accounts',
+      detail: connectedSocialCount
+        ? `${connectedSocialCount} account${connectedSocialCount === 1 ? '' : 's'} connected`
+        : 'Needed before posting and social inbox replies',
+      complete: connectedSocialCount > 0,
+      actionLabel: 'Connect',
+      onAction: onConnectAccounts,
+    },
+    {
+      id: 'profile',
+      label: 'Confirm business profile',
+      detail: requiredComplete ? 'Ready to verify' : 'Audience and offer focus are required',
+      complete: requiredComplete,
+    },
+    {
+      id: 'sources',
+      label: 'Add trusted sources',
+      detail: sourceCount ? `${sourceCount} active source${sourceCount === 1 ? '' : 's'}` : 'Optional website, schedule, or event page',
+      complete: sourceCount > 0,
+      optional: true,
+      onAction: () => setActiveStepId('sources'),
+      actionLabel: 'Add',
+    },
+    {
+      id: 'first-post',
+      label: 'Create first post',
+      detail: trainingStatus?.isVerified ? 'Publisher is ready' : 'Available after the profile is verified',
+      complete: Boolean(trainingStatus?.isVerified),
+      optional: true,
+    },
+  ]
   const stepTitles = {
-    audience: 'Who should MAP write for first?',
-    area: 'Where should posts feel local?',
-    promote: 'What should come up more?',
-    avoid: 'What should MAP avoid?',
-    sources: 'What should MAP trust?',
+    audience: 'Who are you trying to reach?',
+    area: 'Where do you serve customers?',
+    promote: 'What should posts mention more often?',
+    avoid: 'What should posts avoid?',
+    sources: 'Add trusted sources',
   }
 
   function goToRelativeStep(offset) {
@@ -1969,24 +2008,53 @@ function TrainPartnerModal({
       >
         <div className="assistant-train-header">
           <div className="assistant-train-icon portal-ai-icon">
-            <Sparkles className="h-5 w-5" />
+            <ShieldCheck className="h-5 w-5" />
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
-              Partner setup
+              Workspace setup
             </p>
             <h2 id="assistant-train-title" className="font-display text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-              Train your Partner
+              Set up your portal
             </h2>
+            <p className="assistant-setup-subtitle">
+              Connect your channels and confirm what MAP should know before it builds posts.
+            </p>
           </div>
-          {isRequired ? null : (
-            <button type="button" className="assistant-train-close" onClick={onClose} aria-label="Close">
+          <button type="button" className="assistant-train-close" onClick={isRequired ? onDismissSetup : onClose} aria-label="Close">
               <X className="h-4 w-4" />
-            </button>
-          )}
+          </button>
         </div>
 
         <div className="assistant-train-body">
+          <section className="assistant-setup-overview" aria-label="Setup checklist">
+            <div className="assistant-setup-overview-copy">
+              <p className="assistant-training-kicker">Start here</p>
+              <h3>Finish the basics first.</h3>
+              <p>
+                Social connections make publishing and inbox replies work. The business profile tells MAP what to write about and what to avoid.
+              </p>
+            </div>
+            <div className="assistant-setup-checklist">
+              {setupSteps.map((step) => (
+                <div key={step.id} className="assistant-setup-check" data-complete={step.complete}>
+                  <span className="assistant-setup-check-icon" aria-hidden="true">
+                    {step.complete ? <CheckCircle2 className="h-4 w-4" /> : step.id === 'accounts' ? <Link2 className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+                  </span>
+                  <span>
+                    <strong>{step.label}</strong>
+                    <small>{step.detail}</small>
+                  </span>
+                  {step.onAction ? (
+                    <button type="button" onClick={step.onAction}>{step.actionLabel}</button>
+                  ) : step.optional && !step.complete ? (
+                    <em>Optional</em>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </section>
+
           <section className="assistant-live-setup" aria-label="Partner setup">
             <div className="assistant-live-status">
               <span>{trainingProgress.label}</span>
@@ -2021,6 +2089,11 @@ function TrainPartnerModal({
                 <div className="assistant-live-question-head">
                   <p className="assistant-training-kicker">{activeStep.label}</p>
                   <h3>{stepTitles[activeStep.id]}</h3>
+                  {activeStep.id === 'sources' ? (
+                    <p className="assistant-live-question-help">
+                      Optional: add a website, schedule, menu, event calendar, or offer page so MAP has the right facts.
+                    </p>
+                  ) : null}
                 </div>
 
                 {renderStepContent()}
@@ -2032,6 +2105,15 @@ function TrainPartnerModal({
                 )}
 
                 <div className="assistant-live-actions">
+                  {isRequired ? (
+                    <button
+                      type="button"
+                      className="portal-button-secondary inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold"
+                      onClick={onDismissSetup}
+                    >
+                      Set up later
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold"
@@ -2057,7 +2139,7 @@ function TrainPartnerModal({
                       disabled={isVerifying || isSavingProfile || isStartingRecommendations || (isRequired && !requiredComplete)}
                     >
                       {isVerifying || isStartingRecommendations ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                      {isRequired ? 'Verify and build' : 'Verify'}
+                      {isRequired ? 'Verify profile and build ideas' : 'Verify profile'}
                     </button>
                   )}
                 </div>
@@ -2144,7 +2226,7 @@ function TrainPartnerModal({
 
             <button type="submit" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" disabled={isSavingProfile}>
               {isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save Partner profile
+              Save business profile
             </button>
           </form>
           </details>
@@ -2162,10 +2244,10 @@ function PartnerTrainingPrompt({
   onDismiss,
 }) {
   const isStale = trainingStatus?.isStale
-  const title = isStale ? 'Your Partner may need a quick refresh' : 'Set up Train your Partner'
+  const title = isStale ? 'Review your business profile' : 'Finish workspace setup'
   const body = isStale
     ? `It has been ${trainingStatus.ageDays} days since this profile was verified. A quick review keeps posts, campaigns, and images aligned with what you offer now.`
-    : 'MAP can use your website, brand, services, sources, and guardrails to create better posts and images. Review what your Partner found, then verify it once it looks right.'
+    : 'Connect your social accounts and confirm what MAP should know before building useful posts and inbox workflows.'
 
   return createPortal(
     <div className="assistant-training-prompt-overlay" role="presentation" onMouseDown={onDismiss}>
@@ -2180,14 +2262,14 @@ function PartnerTrainingPrompt({
           <Sparkles className="h-5 w-5" />
         </div>
         <div>
-          <p className="assistant-training-kicker">Train your Partner</p>
+          <p className="assistant-training-kicker">Workspace setup</p>
           <h2 id="assistant-training-prompt-title">{title}</h2>
           <p>{body}</p>
         </div>
         <div className="assistant-training-prompt-actions">
           <button type="button" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onReview}>
-            <Sparkles className="h-4 w-4" />
-            Review training
+            <ShieldCheck className="h-4 w-4" />
+            Resume setup
           </button>
           <button type="button" className="portal-button-secondary inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold" onClick={onDismiss}>
             Remind me later
@@ -2196,6 +2278,54 @@ function PartnerTrainingPrompt({
       </section>
     </div>,
     document.body,
+  )
+}
+
+function WorkspaceSetupBanner({
+  trainingStatus,
+  socialConnections = [],
+  onResume,
+  onConnectAccounts,
+}) {
+  const connectedSocialCount = socialConnections.filter((connection) => connection?.zernio_account_id || connection?.zernio_profile_id).length
+  const profileReady = Boolean(trainingStatus?.isVerified)
+  const setupComplete = profileReady && connectedSocialCount > 0
+
+  if (setupComplete) return null
+
+  return (
+    <section className="publisher-setup-banner" aria-label="Workspace setup reminder">
+      <div className="publisher-setup-banner-icon" aria-hidden="true">
+        <ShieldCheck className="h-5 w-5" />
+      </div>
+      <div className="publisher-setup-banner-copy">
+        <p className="assistant-training-kicker">Setup incomplete</p>
+        <h2>Finish setting up this portal.</h2>
+        <p>
+          Connect social accounts and confirm the business profile so Publisher, Inbox, and MAP Partner work cleanly for this customer.
+        </p>
+      </div>
+      <div className="publisher-setup-banner-status">
+        <span data-complete={connectedSocialCount > 0}>
+          <CheckCircle2 className="h-4 w-4" />
+          {connectedSocialCount > 0 ? `${connectedSocialCount} connected` : 'Social accounts needed'}
+        </span>
+        <span data-complete={profileReady}>
+          <CheckCircle2 className="h-4 w-4" />
+          {profileReady ? 'Profile verified' : 'Business profile needed'}
+        </span>
+      </div>
+      <div className="publisher-setup-banner-actions">
+        <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onConnectAccounts}>
+          <Link2 className="h-4 w-4" />
+          Connect accounts
+        </button>
+        <button type="button" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onResume}>
+          <ShieldCheck className="h-4 w-4" />
+          Resume setup
+        </button>
+      </div>
+    </section>
   )
 }
 
@@ -2229,6 +2359,8 @@ export default function ContentCalendar() {
   })
   const [queueMode, setQueueMode] = useState(() => initialParams.get('view') === 'month' ? 'month' : 'week')
   const [activeStatusView, setActiveStatusView] = useState('')
+  const [setupDismissed, setSetupDismissed] = useState(false)
+  const [setupDismissReady, setSetupDismissReady] = useState(false)
   const selectedWeekStart = useMemo(() => startOfWeek(addDays(new Date(), weekOffset * 7)), [weekOffset])
   const selectedWeekStartString = toDateString(selectedWeekStart)
   const selectedWeekLabel = weekOffset === 0 ? 'This week' : getWeekRangeLabel(selectedWeekStart)
@@ -2247,6 +2379,16 @@ export default function ContentCalendar() {
 
   const clientId = profile?.client_id
   const client = profile?.clients || {}
+  const setupDismissKey = clientId ? `map:publisher-setup-dismissed:${clientId}` : ''
+
+  useEffect(() => {
+    if (!setupDismissKey || typeof window === 'undefined') {
+      setSetupDismissReady(Boolean(!setupDismissKey))
+      return
+    }
+    setSetupDismissed(window.localStorage.getItem(setupDismissKey) === '1')
+    setSetupDismissReady(true)
+  }, [setupDismissKey])
 
   const { data: calendarPosts = [], isLoading: postsLoading, refetch: refetchPosts, isRefetching: isRefetchingPosts } = useQuery({
     queryKey: ['calendar-posts', clientId],
@@ -2269,6 +2411,12 @@ export default function ContentCalendar() {
   const { data: drafts = [], isLoading: draftsLoading, refetch: refetchDrafts, isRefetching: isRefetchingDrafts } = useQuery({
     queryKey: ['social-drafts', clientId],
     queryFn: () => fetchSocialDrafts(clientId),
+    enabled: !!clientId,
+  })
+
+  const { data: socialConnections = [] } = useQuery({
+    queryKey: ['social_connections', clientId],
+    queryFn: () => fetchSocialConnections(clientId),
     enabled: !!clientId,
   })
 
@@ -2839,6 +2987,33 @@ export default function ContentCalendar() {
     verifyPartnerTraining.mutate()
   }
 
+  function openWorkspaceSetup() {
+    if (setupDismissKey && typeof window !== 'undefined') {
+      window.localStorage.removeItem(setupDismissKey)
+    }
+    setSetupDismissed(false)
+    setSetupDismissReady(true)
+    setTrainingPromptOpen(false)
+    setSourceError('')
+    setSourceNotice('')
+    setTrainAssistantOpen(true)
+  }
+
+  function dismissWorkspaceSetup() {
+    if (setupDismissKey && typeof window !== 'undefined') {
+      window.localStorage.setItem(setupDismissKey, '1')
+    }
+    setSetupDismissed(true)
+    setSetupDismissReady(true)
+    setTrainAssistantOpen(false)
+    setTrainingPromptOpen(false)
+  }
+
+  function openSocialSettings() {
+    dismissWorkspaceSetup()
+    navigate('/settings')
+  }
+
   async function handleToggleSource(source) {
     if (!requireWriteAccess('update Partner training sources')) return
     try {
@@ -3116,15 +3291,16 @@ export default function ContentCalendar() {
   const isCreating = createRadarDraft.isPending
 
   useEffect(() => {
-    if (isLoading || !clientId || !trainingStatus.shouldPrompt || trainingPromptShownRef.current) return
+    if (isLoading || !clientId || !setupDismissReady || !trainingStatus.shouldPrompt || trainingPromptShownRef.current) return
     trainingPromptShownRef.current = true
     if (!trainingStatus.isVerified) {
+      if (setupDismissed) return
       setTrainingPromptOpen(false)
       setTrainAssistantOpen(true)
       return
     }
     setTrainingPromptOpen(true)
-  }, [clientId, isLoading, trainingStatus.isVerified, trainingStatus.shouldPrompt])
+  }, [clientId, isLoading, setupDismissReady, setupDismissed, trainingStatus.isVerified, trainingStatus.shouldPrompt])
 
   useEffect(() => {
     if (!hoverPreview) return undefined
@@ -3229,15 +3405,12 @@ export default function ContentCalendar() {
           <button
             type="button"
             onClick={() => {
-              setSourceError('')
-              setSourceNotice('')
-              setTrainingPromptOpen(false)
-              setTrainAssistantOpen(true)
+              openWorkspaceSetup()
             }}
             className="portal-ai-action portal-ai-action-compact content-plan-train-action inline-flex items-center gap-2 rounded-full px-3.5 py-2.5 text-sm font-semibold"
           >
-            <Sparkles className="h-4 w-4" />
-            Train your Partner
+            <ShieldCheck className="h-4 w-4" />
+            Setup
             {trainingStatus.shouldPrompt ? <span className="content-plan-train-badge">{trainingStatus.isStale ? 'Refresh' : 'Setup'}</span> : null}
           </button>
           <button
@@ -3265,6 +3438,15 @@ export default function ContentCalendar() {
         >
           {actionError || actionNotice}
         </div>
+      )}
+
+      {trainAssistantOpen ? null : (
+        <WorkspaceSetupBanner
+          trainingStatus={trainingStatus}
+          socialConnections={socialConnections}
+          onResume={openWorkspaceSetup}
+          onConnectAccounts={openSocialSettings}
+        />
       )}
 
       {activeStatusView ? (
@@ -3558,6 +3740,7 @@ export default function ContentCalendar() {
           client={profile?.clients}
           form={partnerProfileForm}
           sources={researchSources}
+          socialConnections={socialConnections}
           trainingStatus={trainingStatus}
           label={sourceLabel}
           url={sourceUrl}
@@ -3572,9 +3755,10 @@ export default function ContentCalendar() {
           error={sourceError}
           notice={sourceNotice}
           onClose={() => {
-            if (trainingIsRequired) return
             setTrainAssistantOpen(false)
           }}
+          onDismissSetup={dismissWorkspaceSetup}
+          onConnectAccounts={openSocialSettings}
           onFormChange={(field, value) => setPartnerProfileForm((current) => ({ ...current, [field]: value }))}
           onSaveProfile={handleSavePartnerProfile}
           onVerify={handleVerifyPartnerTraining}
@@ -3590,10 +3774,7 @@ export default function ContentCalendar() {
         <PartnerTrainingPrompt
           trainingStatus={trainingStatus}
           onReview={() => {
-            setTrainingPromptOpen(false)
-            setSourceError('')
-            setSourceNotice('')
-            setTrainAssistantOpen(true)
+            openWorkspaceSetup()
           }}
           onDismiss={() => setTrainingPromptOpen(false)}
         />

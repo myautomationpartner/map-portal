@@ -63,6 +63,17 @@ test('publisher converts gap-fill Radar ideas into drafts on the selected open d
   assert.match(source, /dateString: item\.dateString/)
 })
 
+test('first-run Publisher setup can be deferred and resumed', () => {
+  assert.match(source, /function WorkspaceSetupBanner/)
+  assert.match(source, /Finish setting up this portal\./)
+  assert.match(source, /Connect social accounts/)
+  assert.match(source, /Set up later/)
+  assert.match(source, /map:publisher-setup-dismissed:/)
+  assert.match(source, /fetchSocialConnections\(clientId\)/)
+  assert.match(source, /Verify profile and build ideas/)
+  assert.doesNotMatch(source, /Set up Train your Partner/)
+})
+
 test('Publisher Boost requires audience targeting for Meta launches', () => {
   assert.match(source, /const BOOST_AUDIENCE_MODES = \[/)
   assert.match(source, /function buildBoostTargeting\(\{ mode, countryCodes, zipCodes, customAudienceIds, geoTargets \}\)/)
@@ -124,11 +135,11 @@ test('Opportunity Radar appends only after current-week gaps are filled', () => 
 test('Opportunity Radar records retrieval before OpenAI synthesis and retries transient OpenAI failures', () => {
   assert.match(radarFunctionSource, /const retryableStatuses = new Set\(\[408, 409, 429, 500, 502, 503, 504\]\)/)
   assert.match(radarFunctionSource, /for \(let attempt = 1; attempt <= 3; attempt \+= 1\)/)
-  assert.match(radarFunctionSource, /await recordTavilyUsage\(client\.id, runId, tavilyUsage\)\.then/)
+  assert.match(radarFunctionSource, /await recordTavilyUsage\(client\.id, runId, tavilySearchUsage\)\.then/)
   assert.match(radarFunctionSource, /failure_stage: telemetry\.stage/)
   assert.match(radarFunctionSource, /provider_error: telemetry\.detail/)
   assert.ok(
-    radarFunctionSource.indexOf('await recordTavilyUsage(client.id, runId, tavilyUsage).then') <
+    radarFunctionSource.indexOf('await recordTavilyUsage(client.id, runId, tavilySearchUsage).then') <
       radarFunctionSource.indexOf('const synthesis = await synthesizeOpportunities'),
   )
 })

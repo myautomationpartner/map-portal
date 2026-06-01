@@ -2545,6 +2545,168 @@ html[data-portal-theme="map-dark"] .today-move-stats div {
   padding: 1.15rem;
 }
 
+.assistant-setup-subtitle {
+  margin: 0.25rem 0 0;
+  max-width: 46rem;
+  color: var(--portal-text-muted);
+  font-size: 0.92rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.assistant-setup-overview,
+.publisher-setup-banner {
+  display: grid;
+  gap: 1rem;
+  border: 1px solid var(--portal-border);
+  border-radius: var(--portal-radius-lg);
+  background: rgba(255, 255, 255, 0.72);
+  padding: 1rem;
+}
+
+.assistant-setup-overview {
+  grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.2fr);
+  align-items: start;
+}
+
+.assistant-setup-overview-copy h3,
+.publisher-setup-banner-copy h2 {
+  margin: 0;
+  color: var(--portal-text);
+  font-size: 1.2rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.15;
+}
+
+.assistant-setup-overview-copy p:not(.assistant-training-kicker),
+.publisher-setup-banner-copy p:not(.assistant-training-kicker) {
+  margin: 0.4rem 0 0;
+  color: var(--portal-text-muted);
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.assistant-setup-checklist {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.assistant-setup-check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7rem;
+  border: 1px solid var(--portal-border);
+  border-radius: var(--portal-radius-md);
+  background: rgba(255, 255, 255, 0.68);
+  padding: 0.68rem;
+}
+
+.assistant-setup-check-icon {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(53, 104, 166, 0.18);
+  border-radius: 999px;
+  background: rgba(53, 104, 166, 0.08);
+  color: var(--portal-blue);
+}
+
+.assistant-setup-check[data-complete="true"] .assistant-setup-check-icon {
+  border-color: rgba(31, 169, 113, 0.26);
+  background: rgba(31, 169, 113, 0.12);
+  color: var(--portal-success);
+}
+
+.assistant-setup-check strong {
+  display: block;
+  color: var(--portal-text);
+  font-size: 0.9rem;
+  font-weight: 850;
+  line-height: 1.18;
+}
+
+.assistant-setup-check small {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--portal-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.assistant-setup-check button,
+.assistant-setup-check em {
+  border: 1px solid var(--portal-border);
+  border-radius: 999px;
+  background: rgba(53, 104, 166, 0.08);
+  color: var(--portal-blue);
+  padding: 0.38rem 0.65rem;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.assistant-live-question-help {
+  margin: 0.35rem 0 0;
+  color: var(--portal-text-muted);
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.publisher-setup-banner {
+  grid-template-columns: auto minmax(220px, 1fr) minmax(220px, 0.7fr) auto;
+  align-items: center;
+}
+
+.publisher-setup-banner-icon {
+  display: inline-flex;
+  width: 2.75rem;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(53, 104, 166, 0.18);
+  border-radius: 999px;
+  background: rgba(53, 104, 166, 0.08);
+  color: var(--portal-blue);
+}
+
+.publisher-setup-banner-status,
+.publisher-setup-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.publisher-setup-banner-status span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid rgba(255, 122, 184, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 122, 184, 0.08);
+  color: var(--map-brand-magenta);
+  padding: 0.5rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.publisher-setup-banner-status span[data-complete="true"] {
+  border-color: rgba(31, 169, 113, 0.24);
+  background: rgba(31, 169, 113, 0.1);
+  color: var(--portal-success);
+}
+
+.publisher-setup-banner-actions {
+  justify-content: flex-end;
+}
+
 .assistant-train-grid {
   display: grid;
   grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr);
@@ -5753,6 +5915,15 @@ html[data-portal-theme="map-dark"] .assistant-live-notes textarea:focus {
     grid-template-columns: 1fr;
   }
 
+  .assistant-setup-overview,
+  .publisher-setup-banner {
+    grid-template-columns: 1fr;
+  }
+
+  .publisher-setup-banner-actions {
+    justify-content: flex-start;
+  }
+
   .assistant-live-steps {
     grid-template-columns: repeat(5, minmax(118px, 1fr));
     overflow-x: auto;
@@ -5863,6 +6034,20 @@ html[data-portal-theme="map-dark"] .assistant-live-notes textarea:focus {
   }
 
   .assistant-live-actions button {
+    width: 100%;
+  }
+
+  .assistant-setup-check {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .assistant-setup-check button,
+  .assistant-setup-check em {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .publisher-setup-banner-actions button {
     width: 100%;
   }
 
@@ -7046,6 +7231,9 @@ html[data-portal-theme="map-dark"] .assistant-train-close:focus-visible {
 html[data-portal-theme="map-dark"] .assistant-profile-form,
 html[data-portal-theme="map-dark"] .assistant-train-form,
 html[data-portal-theme="map-dark"] .assistant-train-sources,
+html[data-portal-theme="map-dark"] .assistant-setup-overview,
+html[data-portal-theme="map-dark"] .assistant-setup-check,
+html[data-portal-theme="map-dark"] .publisher-setup-banner,
 html[data-portal-theme="map-dark"] .assistant-guided-training,
 html[data-portal-theme="map-dark"] .assistant-guided-card,
 html[data-portal-theme="map-dark"] .assistant-profile-advanced,
@@ -7069,6 +7257,9 @@ html[data-portal-theme="map-dark"] .assistant-training-status[data-state="due"] 
 
 html[data-portal-theme="map-dark"] .assistant-training-status h3,
 html[data-portal-theme="map-dark"] .assistant-training-card h4,
+html[data-portal-theme="map-dark"] .assistant-setup-overview-copy h3,
+html[data-portal-theme="map-dark"] .assistant-setup-check strong,
+html[data-portal-theme="map-dark"] .publisher-setup-banner-copy h2,
 html[data-portal-theme="map-dark"] .assistant-guided-intro h3,
 html[data-portal-theme="map-dark"] .assistant-guided-card h4,
 html[data-portal-theme="map-dark"] .assistant-training-prompt h2 {
@@ -7077,6 +7268,11 @@ html[data-portal-theme="map-dark"] .assistant-training-prompt h2 {
 
 html[data-portal-theme="map-dark"] .assistant-training-status p,
 html[data-portal-theme="map-dark"] .assistant-training-card p,
+html[data-portal-theme="map-dark"] .assistant-setup-subtitle,
+html[data-portal-theme="map-dark"] .assistant-setup-overview-copy p:not(.assistant-training-kicker),
+html[data-portal-theme="map-dark"] .assistant-setup-check small,
+html[data-portal-theme="map-dark"] .assistant-live-question-help,
+html[data-portal-theme="map-dark"] .publisher-setup-banner-copy p:not(.assistant-training-kicker),
 html[data-portal-theme="map-dark"] .assistant-guided-intro p,
 html[data-portal-theme="map-dark"] .assistant-guided-card p,
 html[data-portal-theme="map-dark"] .assistant-training-prompt p,
@@ -7114,6 +7310,8 @@ html[data-portal-theme="map-dark"] .assistant-choice-button[data-active="true"] 
 }
 
 html[data-portal-theme="map-dark"] .assistant-choice-check,
+html[data-portal-theme="map-dark"] .assistant-setup-check-icon,
+html[data-portal-theme="map-dark"] .publisher-setup-banner-icon,
 html[data-portal-theme="map-dark"] .assistant-guided-intro > span,
 html[data-portal-theme="map-dark"] .assistant-profile-advanced summary small,
 html[data-portal-theme="map-dark"] .assistant-guided-card-meta > span,
@@ -7460,6 +7658,9 @@ html[data-portal-theme="map-dark"] .assistant-training-card,
 html[data-portal-theme="map-dark"] .assistant-training-prompt,
 html[data-portal-theme="map-dark"] .assistant-source-row,
 html[data-portal-theme="map-dark"] .assistant-source-empty,
+html[data-portal-theme="map-dark"] .assistant-setup-overview,
+html[data-portal-theme="map-dark"] .assistant-setup-check,
+html[data-portal-theme="map-dark"] .publisher-setup-banner,
 html[data-portal-theme="map-dark"] .portal-partner-panel,
 html[data-portal-theme="map-dark"] .portal-partner-controls button,
 html[data-portal-theme="map-dark"] .portal-partner-flow-grid button,
@@ -7502,6 +7703,9 @@ html[data-portal-theme="map-dark"] .portal-page-title,
 html[data-portal-theme="map-dark"] .content-plan-title,
 html[data-portal-theme="map-dark"] .platform-preview-title-row p,
 html[data-portal-theme="map-dark"] .assistant-source-row p,
+html[data-portal-theme="map-dark"] .assistant-setup-overview-copy h3,
+html[data-portal-theme="map-dark"] .assistant-setup-check strong,
+html[data-portal-theme="map-dark"] .publisher-setup-banner-copy h2,
 html[data-portal-theme="map-dark"] .partner-assist-suggestions strong {
   color: var(--portal-text) !important;
 }
@@ -7516,6 +7720,11 @@ html[data-portal-theme="map-dark"] .platform-preview-footer,
 html[data-portal-theme="map-dark"] .platform-preview-subtitle,
 html[data-portal-theme="map-dark"] .assistant-training-status p,
 html[data-portal-theme="map-dark"] .assistant-training-card p,
+html[data-portal-theme="map-dark"] .assistant-setup-subtitle,
+html[data-portal-theme="map-dark"] .assistant-setup-overview-copy p:not(.assistant-training-kicker),
+html[data-portal-theme="map-dark"] .assistant-setup-check small,
+html[data-portal-theme="map-dark"] .assistant-live-question-help,
+html[data-portal-theme="map-dark"] .publisher-setup-banner-copy p:not(.assistant-training-kicker),
 html[data-portal-theme="map-dark"] .assistant-guided-intro p,
 html[data-portal-theme="map-dark"] .assistant-guided-card p,
 html[data-portal-theme="map-dark"] .assistant-training-prompt p,
