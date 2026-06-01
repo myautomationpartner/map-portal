@@ -9,6 +9,7 @@ import {
   buildVapidJwt,
   buildContentPartnerCommandReply,
   buildRemoteCalendarPostDeletePayload,
+  buildWebsiteChatPreChatFormOptions,
   classifyContentPartnerCommand,
   canDeleteCalendarPost,
   selectContentPartnerReviewDraft,
@@ -59,6 +60,29 @@ test('builds VAPID JWTs scoped to the push endpoint origin', async () => {
 test('treats legacy admin users without explicit portal permissions as full admins', () => {
   assert.deepEqual(getUserPermissions({ role: 'admin', portal_permissions: null }), ['full_admin'])
   assert.deepEqual(getUserPermissions({ role: 'admin', portal_permissions: [] }), ['full_admin'])
+})
+
+test('maps MAP website chat contact fields to Chatwoot pre-chat fields', () => {
+  assert.deepEqual(
+    buildWebsiteChatPreChatFormOptions(
+      { pre_chat_message: 'Tell us how to reach you.', pre_chat_fields: [] },
+      {
+        pre_chat_fields: [
+          { key: 'name', label: 'Your name', required: true },
+          { key: 'email', label: 'Email address', required: true },
+          { key: 'phone', label: 'Phone', required: false },
+        ],
+      },
+    ),
+    {
+      pre_chat_message: 'Tell us how to reach you.',
+      pre_chat_fields: [
+        { name: 'fullName', type: 'text', label: 'Your name', enabled: true, required: true, field_type: 'standard' },
+        { name: 'emailAddress', type: 'email', label: 'Email address', enabled: true, required: true, field_type: 'standard' },
+        { name: 'phoneNumber', type: 'text', label: 'Phone', enabled: true, required: false, field_type: 'standard' },
+      ],
+    },
+  )
 })
 
 test('preserves explicit portal permissions for non-legacy users', () => {

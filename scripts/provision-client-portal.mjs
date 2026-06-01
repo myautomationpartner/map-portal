@@ -23,6 +23,18 @@ const DEFAULT_CHATWOOT_ANDROID_URL = 'https://play.google.com/store/apps/details
 const DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME = 'Social Inbox'
 const CHATWOOT_CONTENT_PARTNER_CONTACT_NAME = 'My Partner'
 const CHATWOOT_CONTENT_PARTNER_GREETING = 'Send me a rough note, photos, or both. I will turn it into a Publisher draft for you to review before anything posts.'
+const DEFAULT_WEBSITE_CHAT_PRE_CHAT_MESSAGE = 'Before we get started, please share your name and email so we can reply.'
+
+function buildWebsiteChatPreChatFormOptions(message = DEFAULT_WEBSITE_CHAT_PRE_CHAT_MESSAGE) {
+  return {
+    pre_chat_message: message,
+    pre_chat_fields: [
+      { name: 'fullName', type: 'text', label: 'Name', enabled: true, required: true, field_type: 'standard' },
+      { name: 'emailAddress', type: 'email', label: 'Email', enabled: true, required: true, field_type: 'standard' },
+      { name: 'phoneNumber', type: 'text', label: 'Phone', enabled: true, required: false, field_type: 'standard' },
+    ],
+  }
+}
 const DEFAULT_ZERNIO_API_BASE_URL = 'https://zernio.com/api/v1'
 const DEFAULT_ZERNIO_PROFILE_PREFIX = 'MAP'
 const DEFAULT_PORTAL_LABEL = 'Client Portal'
@@ -798,6 +810,8 @@ async function createOrUpdateWebsiteInbox(accountId, client) {
         type: 'web_widget',
         website_url: client.website_url || buildPortalUrl(client),
         widget_color: '#C9A84C',
+        pre_chat_form_enabled: true,
+        pre_chat_form_options: buildWebsiteChatPreChatFormOptions(),
       },
     }),
   })
@@ -1089,6 +1103,13 @@ async function upsertWebsiteChatSettings({ client, account, websiteInbox }) {
       widget_color: websiteInbox.widget_color || '#C9A84C',
       greeting_enabled: websiteInbox.greeting_enabled ?? true,
       greeting_message: websiteInbox.greeting_message || `Hi! Send ${client.business_name || 'us'} a message and we will get back to you soon.`,
+      pre_chat_form_enabled: true,
+      pre_chat_message: DEFAULT_WEBSITE_CHAT_PRE_CHAT_MESSAGE,
+      pre_chat_fields: [
+        { key: 'name', label: 'Name', required: true },
+        { key: 'email', label: 'Email', required: true },
+        { key: 'phone', label: 'Phone', required: false },
+      ],
       install_status: 'not_checked',
       last_check_error: null,
       saved_replies: [

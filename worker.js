@@ -3296,6 +3296,53 @@ function normalizeJsonArray(value, fallback = []) {
   return Array.isArray(value) ? value : fallback
 }
 
+function normalizeWebsiteChatPreChatFields(fields) {
+  const requested = normalizeJsonArray(fields, [])
+  const findRequested = (key) => requested.find((field) => String(field?.key || field?.name || '').toLowerCase() === key)
+  const nameField = findRequested('name') || findRequested('fullname')
+  const emailField = findRequested('email') || findRequested('emailaddress')
+  const phoneField = findRequested('phone') || findRequested('phonenumber')
+
+  return [
+    {
+      name: 'fullName',
+      type: 'text',
+      label: trimText(nameField?.label, 60) || 'Name',
+      enabled: nameField?.enabled !== false,
+      required: nameField?.required !== false,
+      field_type: 'standard',
+    },
+    {
+      name: 'emailAddress',
+      type: 'email',
+      label: trimText(emailField?.label, 60) || 'Email',
+      enabled: emailField?.enabled !== false,
+      required: emailField?.required !== false,
+      field_type: 'standard',
+    },
+    {
+      name: 'phoneNumber',
+      type: 'text',
+      label: trimText(phoneField?.label, 60) || 'Phone',
+      enabled: phoneField ? phoneField.enabled !== false : true,
+      required: Boolean(phoneField?.required),
+      field_type: 'standard',
+    },
+  ]
+}
+
+function buildWebsiteChatPreChatFormOptions(settings = {}, patch = {}) {
+  return {
+    pre_chat_message: trimText(
+      patch.pre_chat_message ?? settings.pre_chat_message,
+      300,
+    ) || 'Tell us how to reach you before we start.',
+    pre_chat_fields: normalizeWebsiteChatPreChatFields(
+      patch.pre_chat_fields ?? settings.pre_chat_fields,
+    ),
+  }
+}
+
 function buildWebsiteChatSnippet(settings) {
   const baseUrl = String(settings?.chatwoot_base_url || DEFAULT_CHATWOOT_BASE_URL).replace(/\/$/, '')
   const websiteToken = String(settings?.chatwoot_website_token || '').trim()
@@ -3439,6 +3486,15 @@ async function syncWebsiteChatToChatwoot(env, settings, patch) {
   if ('widget_color' in patch) chatwootPatch.widget_color = patch.widget_color
   if ('greeting_enabled' in patch) chatwootPatch.greeting_enabled = patch.greeting_enabled
   if ('greeting_message' in patch) chatwootPatch.greeting_message = patch.greeting_message
+  if ('pre_chat_form_enabled' in patch || 'pre_chat_message' in patch || 'pre_chat_fields' in patch) {
+    chatwootPatch.enable_email_collect = true
+    chatwootPatch.channel = {
+      pre_chat_form_enabled: 'pre_chat_form_enabled' in patch
+        ? patch.pre_chat_form_enabled
+        : Boolean(settings?.pre_chat_form_enabled),
+      pre_chat_form_options: buildWebsiteChatPreChatFormOptions(settings, patch),
+    }
+  }
 
   if (!Object.keys(chatwootPatch).length) {
     return { synced: false, reason: 'No Chatwoot widget fields changed.' }
@@ -7232,6 +7288,7 @@ export {
   buildVapidJwt,
   buildContentPartnerCommandReply,
   buildRemoteCalendarPostDeletePayload,
+  buildWebsiteChatPreChatFormOptions,
   classifyContentPartnerCommand,
   canDeleteCalendarPost,
   getIsoWeekFolder,
