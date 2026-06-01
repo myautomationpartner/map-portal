@@ -7,7 +7,7 @@ const css = await readFile(new URL('./App.css', import.meta.url), 'utf8')
 
 test('portal shell shows first-login setup walkthrough before customers find Publisher', () => {
   assert.match(appSource, /function FirstLoginSetupWalkthrough/)
-  assert.match(appSource, /FIRST_LOGIN_SETUP_DISMISS_PREFIX = 'map:first-login-setup-dismissed:'/)
+  assert.match(appSource, /FIRST_LOGIN_SETUP_DISMISS_PREFIX = 'map:first-login-setup-v2-dismissed:'/)
   assert.match(appSource, /fetchSocialConnections\(clientId\)/)
   assert.match(appSource, /fetchResearchProfile\(clientId\)/)
   assert.match(appSource, /Set up .* in a few steps\./)

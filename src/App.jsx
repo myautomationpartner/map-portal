@@ -51,7 +51,7 @@ const queryClient = new QueryClient({
 })
 
 const PORTAL_THEME_STORAGE_KEY = 'map.portal.theme'
-const FIRST_LOGIN_SETUP_DISMISS_PREFIX = 'map:first-login-setup-dismissed:'
+const FIRST_LOGIN_SETUP_DISMISS_PREFIX = 'map:first-login-setup-v2-dismissed:'
 const PORTAL_PARTNER_ENABLED =
   import.meta.env.VITE_PORTAL_PARTNER_ENABLED !== 'false' &&
   import.meta.env.VITE_PORTAL_COPILOT_ENABLED !== 'false'
