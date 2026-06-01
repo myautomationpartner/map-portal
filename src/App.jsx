@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './lib/supabase'
 import {
   createBillingCheckoutSession,
@@ -11,11 +11,16 @@ import {
   fetchResearchProfile,
   fetchSocialConnections,
   getSessionClaims,
+  refreshSocialConnections,
+  startOpportunityRadar,
+  startSocialConnection,
+  updateClientPartnerProfile,
+  upsertResearchProfile,
 } from './lib/portalApi'
 import { businessNameCandidates } from './lib/inboxClassification'
 import { buildTenantConfig } from './lib/tenantConfig'
 import { buildReadOnlyMessage, resolveBillingAccess } from './lib/portalBilling'
-import { inferPathTenant } from './lib/portalPath'
+import { inferPathTenant, portalPath } from './lib/portalPath'
 import { isInboxDemoCaptureEnabled } from './lib/inboxDemoCapture'
 import Login from './pages/Login'
 import Today from './pages/Today'
@@ -38,7 +43,7 @@ import Sidebar from './components/Sidebar'
 import BottomNav from './components/BottomNav'
 import PortalBillingBanner from './components/PortalBillingBanner'
 import PortalPartner from './components/PortalPartner'
-import { ArrowRight, CalendarDays, CheckCircle2, Link2, MessageSquare, ShieldCheck, Sparkles, X, Loader2 } from 'lucide-react'
+import { ArrowRight, CalendarDays, CheckCircle2, Link2, MessageSquare, RefreshCw, ShieldCheck, Sparkles, Loader2 } from 'lucide-react'
 import './App.css'
 
 const queryClient = new QueryClient({
@@ -153,72 +158,252 @@ function countConnectedSocialAccounts(socialConnections = []) {
   return socialConnections.filter((connection) => connection?.zernio_account_id || connection?.zernio_profile_id).length
 }
 
+function setupListToText(value) {
+  return Array.isArray(value) ? value.filter(Boolean).join('\n') : ''
+}
+
+function setupTextToList(value) {
+  return String(value || '')
+    .split(/\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function buildGuidedSetupForm(client, researchProfile) {
+  return {
+    websiteUrl: client?.website_url || '',
+    serviceArea: researchProfile?.service_area || '',
+    audienceSummary: researchProfile?.audience_summary || '',
+    offerFocusText: setupListToText(researchProfile?.offer_focus_json),
+    blockedTopicsText: setupListToText(researchProfile?.blocked_topics_json),
+    researchNotes: researchProfile?.research_notes || '',
+  }
+}
+
+function hasGuidedSetupProfileBasics(form) {
+  return Boolean(
+    String(form?.audienceSummary || '').trim() &&
+    setupTextToList(form?.offerFocusText).length > 0 &&
+    setupTextToList(form?.blockedTopicsText).length > 0,
+  )
+}
+
+function formatSetupPlatformLabel(platform) {
+  const value = String(platform || '').toLowerCase()
+  if (value === 'instagram') return 'Instagram'
+  if (value === 'facebook') return 'Facebook'
+  if (value === 'linkedin') return 'LinkedIn'
+  if (value === 'twitter' || value === 'x') return 'X / Twitter'
+  if (value === 'tiktok') return 'TikTok'
+  return value ? value.replace(/\b\w/g, (character) => character.toUpperCase()) : 'Social account'
+}
+
 function FirstLoginSetupWalkthrough({
   client,
+  profile,
   socialConnections = [],
   researchProfile,
-  onDismiss,
-  onConnectAccounts,
+  onDefer,
+  onRefreshSetup,
   onOpenPublisher,
   onOpenInbox,
 }) {
+  const queryClient = useQueryClient()
+  const [activeStepId, setActiveStepId] = useState('profile')
+  const [form, setForm] = useState(() => buildGuidedSetupForm(client, researchProfile))
+  const [status, setStatus] = useState(null)
+  const [connectingPlatform, setConnectingPlatform] = useState('')
+  const [showSocialAccountHelp, setShowSocialAccountHelp] = useState(false)
   const connectedSocialCount = countConnectedSocialAccounts(socialConnections)
   const profileReady = Boolean(researchProfile?.partner_training_verified_at)
+  const profileBasicsReady = hasGuidedSetupProfileBasics(form)
   const businessName = client?.business_name || client?.name || 'your business'
-  const nextSetupStep = connectedSocialCount === 0
-    ? {
-        label: 'Start with social accounts',
-        body: 'Connect existing accounts or get help creating them first.',
-        action: onConnectAccounts,
-      }
-    : !profileReady
-    ? {
-        label: 'Next: confirm the business profile',
-        body: 'Give MAP the basics it needs before building the first content plan.',
-        action: onOpenPublisher,
-      }
-    : {
-        label: 'Review the first content plan',
-        body: 'Open Publisher and decide what should become a draft or scheduled post.',
-        action: onOpenPublisher,
-      }
+  const connectedPlatforms = new Set(socialConnections.map((connection) => String(connection?.platform || '').toLowerCase()))
+  const socialReady = connectedSocialCount > 0
+  const setupReady = socialReady && profileReady
+
+  useEffect(() => {
+    setForm(buildGuidedSetupForm(client, researchProfile))
+  }, [client, researchProfile])
+
+  useEffect(() => {
+    if (!profileReady) {
+      setActiveStepId('profile')
+      return
+    }
+    if (!socialReady) {
+      setActiveStepId('social')
+      return
+    }
+    setActiveStepId('ready')
+  }, [profileReady, socialReady])
+
   const setupSteps = [
     {
-      id: 'accounts',
-      label: 'Connect social accounts',
-      body: connectedSocialCount > 0
-        ? `${connectedSocialCount} channel${connectedSocialCount === 1 ? '' : 's'} connected.`
-        : 'Use existing Facebook, Instagram, or other business channels. If you do not have them yet, MAP can help you start there.',
-      complete: connectedSocialCount > 0,
-      Icon: Link2,
-    },
-    {
       id: 'profile',
-      label: 'Confirm the business profile',
+      label: 'Business profile',
       body: profileReady
-        ? 'MAP has a verified business profile for posts and suggestions.'
-        : 'Tell MAP what to promote, who you serve, and what to avoid.',
-      complete: profileReady,
+        ? 'Verified. MAP can use this to write and recommend posts.'
+        : 'Fill this in here. No separate page hunting.',
+      complete: profileReady || profileBasicsReady,
       Icon: ShieldCheck,
     },
     {
-      id: 'publisher',
-      label: 'Review the content plan',
-      body: 'Use Publisher to turn Partner ideas into drafts, scheduled posts, and approvals.',
-      complete: false,
+      id: 'social',
+      label: 'Social accounts',
+      body: connectedSocialCount > 0
+        ? `${connectedSocialCount} channel${connectedSocialCount === 1 ? '' : 's'} connected.`
+        : 'Connect existing accounts or choose help if the business still needs them created.',
+      complete: socialReady,
+      Icon: Link2,
+    },
+    {
+      id: 'ready',
+      label: 'First content plan',
+      body: setupReady ? 'Ready to review Publisher.' : 'Build first ideas after the profile is verified.',
+      complete: setupReady,
       Icon: CalendarDays,
     },
     {
       id: 'inbox',
-      label: 'Watch customer replies',
-      body: 'Inbox is where social comments, DMs, and My Partner help show up for daily follow-up.',
-      complete: false,
+      label: 'Inbox and My Partner',
+      body: 'Use this if you want help from MAP while setup is in progress.',
+      complete: setupReady,
       Icon: MessageSquare,
     },
   ]
+  const activeStep = setupSteps.find((step) => step.id === activeStepId) || setupSteps[0]
+
+  function updateForm(field, value) {
+    setForm((current) => ({ ...current, [field]: value }))
+  }
+
+  const saveProfile = useMutation({
+    mutationFn: async ({ verify = false } = {}) => {
+      if (!profile?.client_id) throw new Error('Client profile is still loading.')
+      if (verify && !hasGuidedSetupProfileBasics(form)) {
+        throw new Error('Add the audience, what to promote, and what to avoid before verifying the profile.')
+      }
+
+      await updateClientPartnerProfile(profile.client_id, {
+        website_url: form.websiteUrl,
+      })
+
+      return upsertResearchProfile({
+        clientId: profile.client_id,
+        serviceArea: form.serviceArea,
+        audienceSummary: form.audienceSummary,
+        offerFocus: setupTextToList(form.offerFocusText),
+        blockedTopics: setupTextToList(form.blockedTopicsText),
+        researchNotes: form.researchNotes,
+        cadence: researchProfile?.cadence || 'weekly',
+        partnerTrainingVerifiedAt: verify ? new Date().toISOString() : undefined,
+        partnerTrainingVerifiedBy: verify ? profile?.id : undefined,
+      })
+    },
+    onSuccess: async (_saved, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['profile'] }),
+        queryClient.invalidateQueries({ queryKey: ['research-profile', profile?.client_id] }),
+      ])
+      setStatus({
+        type: 'success',
+        message: variables?.verify
+          ? 'Business profile verified. MAP can now build recommendations from this setup.'
+          : 'Business profile saved. You can keep editing or verify it when ready.',
+      })
+      if (variables?.verify) setActiveStepId(socialReady ? 'ready' : 'social')
+      onRefreshSetup?.()
+    },
+    onError: (error) => {
+      setStatus({ type: 'error', message: error?.message || 'Could not save the business profile.' })
+    },
+  })
+
+  const buildRecommendations = useMutation({
+    mutationFn: async () => {
+      if (!profile?.client_id) throw new Error('Client profile is still loading.')
+      if (!profileReady) {
+        await saveProfile.mutateAsync({ verify: true })
+      }
+      return startOpportunityRadar({
+        client_id: profile.client_id,
+        mode: 'monthly_foundation',
+        max_results: 5,
+        firecrawl_limit: 2,
+        trigger: 'first_login_setup_helper',
+      })
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['opportunity-radar', profile?.client_id] })
+      setStatus({ type: 'success', message: 'MAP is building first recommendations. Open Publisher in a moment to review them.' })
+      setActiveStepId('ready')
+      onRefreshSetup?.()
+    },
+    onError: (error) => {
+      const alreadyRunning = error?.status === 409 || /already in progress/i.test(error?.message || '')
+      setStatus({
+        type: alreadyRunning ? 'info' : 'error',
+        message: alreadyRunning
+          ? 'MAP is already building recommendations. Open Publisher in a moment.'
+          : error?.message || 'Could not start recommendations yet.',
+      })
+    },
+  })
+
+  async function handleConnectPlatform(platform) {
+    if (!profile?.client_id) return
+    const normalizedPlatform = String(platform || '').toLowerCase()
+    const popup = window.open('', '_blank', 'width=600,height=720')
+    if (popup && !popup.closed) {
+      popup.document.write(`<title>Opening ${formatSetupPlatformLabel(normalizedPlatform)}</title><body style="font-family:system-ui;background:#111827;color:white;display:grid;place-items:center;min-height:100vh;margin:0;"><main style="max-width:360px;padding:24px;"><strong>Opening ${formatSetupPlatformLabel(normalizedPlatform)} setup...</strong><p>Finish the connection, then return to MAP.</p></main></body>`)
+    }
+
+    setConnectingPlatform(normalizedPlatform)
+    setStatus({ type: 'info', message: `Opening ${formatSetupPlatformLabel(normalizedPlatform)} connection. Return here after Zernio finishes.` })
+    try {
+      const redirectUrl = new URL(portalPath('/connect-return'), window.location.origin)
+      redirectUrl.searchParams.set('connected', normalizedPlatform)
+      redirectUrl.searchParams.set('cid', profile.client_id)
+      redirectUrl.searchParams.set('source', 'first-login-setup')
+      redirectUrl.searchParams.set('returnTo', portalPath('/'))
+      const result = await startSocialConnection({
+        clientId: profile.client_id,
+        platform: normalizedPlatform,
+        redirectUrl: redirectUrl.toString(),
+      })
+      if (!result?.authUrl) throw new Error('MAP did not receive a connection link.')
+      if (popup && !popup.closed) {
+        popup.opener = null
+        popup.location.href = result.authUrl
+        popup.focus()
+      } else {
+        window.location.assign(result.authUrl)
+      }
+    } catch (error) {
+      if (popup && !popup.closed) popup.close()
+      setStatus({ type: 'error', message: error?.message || 'Could not start social account connection.' })
+      setConnectingPlatform('')
+    }
+  }
+
+  async function handleRefreshConnections() {
+    if (!profile?.client_id) return
+    setStatus({ type: 'info', message: 'Checking connected accounts...' })
+    try {
+      await refreshSocialConnections()
+      await queryClient.invalidateQueries({ queryKey: ['social_connections', profile.client_id] })
+      setStatus({ type: 'success', message: 'Connection status refreshed.' })
+      onRefreshSetup?.()
+    } catch (error) {
+      setStatus({ type: 'error', message: error?.message || 'Could not refresh social accounts.' })
+    } finally {
+      setConnectingPlatform('')
+    }
+  }
 
   return createPortal(
-    <div className="portal-first-login-overlay" role="presentation" onMouseDown={onDismiss}>
+    <div className="portal-first-login-overlay" role="presentation">
       <section
         className="portal-first-login-dialog"
         role="dialog"
@@ -226,35 +411,35 @@ function FirstLoginSetupWalkthrough({
         aria-labelledby="portal-first-login-title"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <button type="button" className="portal-first-login-close" onClick={onDismiss} aria-label="Close setup walkthrough">
-          <X className="h-4 w-4" />
-        </button>
         <div className="portal-first-login-hero">
           <div className="portal-first-login-icon" aria-hidden="true">
             <Sparkles className="h-5 w-5" />
           </div>
           <p className="assistant-training-kicker">Welcome to MAP</p>
-          <h2 id="portal-first-login-title">Set up {businessName} in a few steps.</h2>
+          <h2 id="portal-first-login-title">Let MAP set up {businessName} with you.</h2>
           <p>
-            You can start even if every account is not ready. MAP will guide you one step at a time, then Publisher, Inbox, and My Partner will work from the same setup.
+            This window stays with you until the portal is ready. Fill in the profile here, connect social accounts, then MAP will build the first recommendations.
           </p>
         </div>
 
         <div className="portal-first-login-next">
-          <span>Recommended next step</span>
-          <strong>{nextSetupStep.label}</strong>
-          <small>{nextSetupStep.body}</small>
-          <button type="button" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={nextSetupStep.action}>
-            Continue setup
-            <ArrowRight className="h-4 w-4" />
-          </button>
+          <span>Current step</span>
+          <strong>{activeStep.label}</strong>
+          <small>{activeStep.body}</small>
         </div>
 
         <div className="portal-first-login-steps" aria-label="Portal setup steps">
           {setupSteps.map((step) => {
             const Icon = step.Icon
             return (
-              <div key={step.id} className="portal-first-login-step" data-complete={step.complete}>
+              <button
+                type="button"
+                key={step.id}
+                className="portal-first-login-step"
+                data-active={step.id === activeStepId}
+                data-complete={step.complete}
+                onClick={() => setActiveStepId(step.id)}
+              >
                 <span className="portal-first-login-step-icon" aria-hidden="true">
                   {step.complete ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
                 </span>
@@ -262,43 +447,171 @@ function FirstLoginSetupWalkthrough({
                   <strong>{step.label}</strong>
                   <small>{step.body}</small>
                 </span>
-              </div>
+              </button>
             )
           })}
         </div>
 
-        <div className="portal-first-login-social-help">
-          <div>
-            <p className="assistant-training-kicker">Social account help</p>
-            <h3>Need help creating social accounts?</h3>
-            <p>
-              If the business does not already have a Facebook Page, Instagram professional account, or other channel, start with help instead of guessing.
-            </p>
-          </div>
-          <ul>
-            <li>Use the business owner's personal login only to grant access. Customers will not see that personal login.</li>
-            <li>Create or claim the Facebook Page before connecting Facebook publishing.</li>
-            <li>Switch Instagram to a professional account before connecting Instagram publishing.</li>
-          </ul>
-          <div className="portal-first-login-social-actions">
-            <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onConnectAccounts}>
-              I have accounts to connect
-            </button>
-            <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onOpenInbox}>
-              Help me set them up
-            </button>
-          </div>
+        <div className="portal-first-login-workspace">
+          {activeStepId === 'profile' ? (
+            <form
+              className="portal-first-login-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                saveProfile.mutate({ verify: true })
+              }}
+            >
+              <div className="portal-first-login-form-grid">
+                <label>
+                  <span>Who should MAP write for?</span>
+                  <textarea value={form.audienceSummary} onChange={(event) => updateForm('audienceSummary', event.target.value)} placeholder="Current students, parents, adults looking for classes..." />
+                </label>
+                <label>
+                  <span>What area do you serve?</span>
+                  <input value={form.serviceArea} onChange={(event) => updateForm('serviceArea', event.target.value)} placeholder="Town, county, region, or online" />
+                </label>
+                <label>
+                  <span>What should MAP promote?</span>
+                  <textarea value={form.offerFocusText} onChange={(event) => updateForm('offerFocusText', event.target.value)} placeholder="Summer classes&#10;Private lessons&#10;Birthday parties" />
+                </label>
+                <label>
+                  <span>What should MAP avoid?</span>
+                  <textarea value={form.blockedTopicsText} onChange={(event) => updateForm('blockedTopicsText', event.target.value)} placeholder="Unsupported guarantees&#10;Sold-out classes&#10;Discounts unless approved" />
+                </label>
+                <label>
+                  <span>Website or schedule link</span>
+                  <input value={form.websiteUrl} onChange={(event) => updateForm('websiteUrl', event.target.value)} placeholder="https://example.com/schedule" />
+                </label>
+                <label>
+                  <span>Extra notes for MAP</span>
+                  <textarea value={form.researchNotes} onChange={(event) => updateForm('researchNotes', event.target.value)} placeholder="Tone, seasonal focus, source links, or anything MAP should know." />
+                </label>
+              </div>
+              <div className="portal-first-login-form-actions">
+                <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={() => saveProfile.mutate({ verify: false })} disabled={saveProfile.isPending}>
+                  Save progress
+                </button>
+                <button type="submit" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" disabled={saveProfile.isPending || !profileBasicsReady}>
+                  {saveProfile.isPending ? 'Saving...' : 'Verify profile'}
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            </form>
+          ) : null}
+
+          {activeStepId === 'social' ? (
+            <div className="portal-first-login-social-help">
+              <div>
+                <p className="assistant-training-kicker">Social accounts</p>
+                <h3>Connect the channels customers will use.</h3>
+                <p>
+                  Connect existing accounts here. If the business does not have a Facebook Page or Instagram professional account yet, ask My Partner for setup help instead of guessing.
+                </p>
+              </div>
+              <div className="portal-first-login-platforms">
+                {['facebook', 'instagram'].map((platform) => {
+                  const connected = connectedPlatforms.has(platform)
+                  return (
+                    <div key={platform} className="portal-first-login-platform" data-connected={connected}>
+                      <span>
+                        <strong>{formatSetupPlatformLabel(platform)}</strong>
+                        <small>{connected ? 'Connected and ready' : 'Needed for publishing and Inbox visibility'}</small>
+                      </span>
+                      <button
+                        type="button"
+                        className={connected ? 'portal-button-secondary' : 'portal-button-primary'}
+                        onClick={() => handleConnectPlatform(platform)}
+                        disabled={connectingPlatform === platform}
+                      >
+                        {connected ? 'Reconnect' : connectingPlatform === platform ? 'Opening...' : 'Connect'}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+              <ul>
+                <li>Use the business owner's personal login only to grant access. Customers will not see that personal login.</li>
+                <li>Create or claim the Facebook Page before connecting Facebook publishing.</li>
+                <li>Switch Instagram to a professional account before connecting Instagram publishing.</li>
+              </ul>
+              {showSocialAccountHelp ? (
+                <div className="portal-first-login-guidance">
+                  <strong>If you do not have social accounts ready yet</strong>
+                  <ol>
+                    <li>Create or claim the Facebook Page for the business.</li>
+                    <li>Make sure Instagram is a professional account and is connected to that Facebook Page.</li>
+                    <li>Come back here and press Connect for each channel MAP should manage.</li>
+                  </ol>
+                  <p>
+                    If you want MAP to help with the account setup, open My Partner and ask for social account setup help. This setup window will still be here when you come back.
+                  </p>
+                </div>
+              ) : null}
+              <div className="portal-first-login-social-actions">
+                <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={handleRefreshConnections}>
+                  <RefreshCw className="h-4 w-4" />
+                  Check connections
+                </button>
+                <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onOpenInbox}>
+                  Help me set them up
+                </button>
+                <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={() => setShowSocialAccountHelp((current) => !current)}>
+                  {showSocialAccountHelp ? 'Hide account checklist' : 'I do not have accounts yet'}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeStepId === 'ready' ? (
+            <div className="portal-first-login-social-help">
+              <div>
+                <p className="assistant-training-kicker">First content plan</p>
+                <h3>{setupReady ? 'Your portal is ready to use.' : 'Build the first recommendations.'}</h3>
+                <p>
+                  MAP uses the verified profile to create Partner Ideas. Nothing publishes automatically; the customer reviews everything in Publisher first.
+                </p>
+              </div>
+              <div className="portal-first-login-social-actions">
+                <button type="button" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={() => buildRecommendations.mutate()} disabled={buildRecommendations.isPending || !profileBasicsReady}>
+                  {buildRecommendations.isPending ? 'Building...' : 'Build first recommendations'}
+                </button>
+                <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onOpenPublisher}>
+                  Open Publisher
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeStepId === 'inbox' ? (
+            <div className="portal-first-login-social-help">
+              <div>
+                <p className="assistant-training-kicker">Inbox and help</p>
+                <h3>Use My Partner while setup is underway.</h3>
+                <p>
+                  Inbox is where social comments, regular DMs, and MAP help show up. If account creation or setup is confusing, ask My Partner and keep the setup window available for the next step.
+                </p>
+              </div>
+              <div className="portal-first-login-social-actions">
+                <button type="button" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onOpenInbox}>
+                  Open My Partner
+                </button>
+                <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={() => setActiveStepId('profile')}>
+                  Back to setup
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
 
+        {status?.message ? (
+          <div className="portal-first-login-status" data-type={status.type}>
+            {status.message}
+          </div>
+        ) : null}
+
         <div className="portal-first-login-actions">
-          <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onOpenPublisher}>
-            Business profile setup
-          </button>
-          <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onOpenInbox}>
-            Ask My Partner
-          </button>
-          <button type="button" className="portal-first-login-later" onClick={onDismiss}>
-            Set up later
+          <button type="button" className="portal-first-login-later" onClick={onDefer}>
+            Set up later for this session
           </button>
         </div>
       </section>
@@ -512,7 +825,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
       return
     }
 
-    setFirstLoginSetupDismissed(window.localStorage.getItem(firstLoginSetupDismissKey) === '1')
+    setFirstLoginSetupDismissed(false)
     setFirstLoginSetupReady(true)
   }, [firstLoginSetupDismissKey])
 
@@ -564,14 +877,10 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
   }
 
   function dismissFirstLoginSetup() {
-    if (firstLoginSetupDismissKey && typeof window !== 'undefined') {
-      window.localStorage.setItem(firstLoginSetupDismissKey, '1')
-    }
     setFirstLoginSetupDismissed(true)
   }
 
   function handleSetupNavigate(path) {
-    dismissFirstLoginSetup()
     navigate(path)
   }
 
@@ -709,10 +1018,15 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
           !researchProfileLoading ? (
             <FirstLoginSetupWalkthrough
               client={profile.clients}
+              profile={profile}
               socialConnections={socialConnections}
               researchProfile={researchProfile}
-              onDismiss={dismissFirstLoginSetup}
-              onConnectAccounts={() => handleSetupNavigate('/settings#social-accounts')}
+              onDefer={dismissFirstLoginSetup}
+              onRefreshSetup={() => {
+                queryClient.invalidateQueries({ queryKey: ['profile'] })
+                queryClient.invalidateQueries({ queryKey: ['social_connections', clientId] })
+                queryClient.invalidateQueries({ queryKey: ['research-profile', clientId] })
+              }}
               onOpenPublisher={() => handleSetupNavigate('/calendar?setup=partner')}
               onOpenInbox={() => handleSetupNavigate('/inbox')}
             />
