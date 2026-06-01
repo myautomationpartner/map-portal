@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { createPortal } from 'react-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './lib/supabase'
-import { createBillingCheckoutSession, createBillingPortalSession, fetchInboxNotificationCounts, fetchProfile, getSessionClaims } from './lib/portalApi'
+import {
+  createBillingCheckoutSession,
+  createBillingPortalSession,
+  fetchInboxNotificationCounts,
+  fetchProfile,
+  fetchResearchProfile,
+  fetchSocialConnections,
+  getSessionClaims,
+} from './lib/portalApi'
 import { businessNameCandidates } from './lib/inboxClassification'
 import { buildTenantConfig } from './lib/tenantConfig'
 import { buildReadOnlyMessage, resolveBillingAccess } from './lib/portalBilling'
@@ -29,7 +38,7 @@ import Sidebar from './components/Sidebar'
 import BottomNav from './components/BottomNav'
 import PortalBillingBanner from './components/PortalBillingBanner'
 import PortalPartner from './components/PortalPartner'
-import { Loader2 } from 'lucide-react'
+import { ArrowRight, CalendarDays, CheckCircle2, Link2, MessageSquare, ShieldCheck, Sparkles, X, Loader2 } from 'lucide-react'
 import './App.css'
 
 const queryClient = new QueryClient({
@@ -42,6 +51,7 @@ const queryClient = new QueryClient({
 })
 
 const PORTAL_THEME_STORAGE_KEY = 'map.portal.theme'
+const FIRST_LOGIN_SETUP_DISMISS_PREFIX = 'map:first-login-setup-dismissed:'
 const PORTAL_PARTNER_ENABLED =
   import.meta.env.VITE_PORTAL_PARTNER_ENABLED !== 'false' &&
   import.meta.env.VITE_PORTAL_COPILOT_ENABLED !== 'false'
@@ -137,6 +147,118 @@ function useMobileInboxRoute() {
 function ResponsiveInboxRoute() {
   const location = useLocation()
   return useMobileInboxRoute() ? <Attention key={location.search} /> : <Inbox />
+}
+
+function countConnectedSocialAccounts(socialConnections = []) {
+  return socialConnections.filter((connection) => connection?.zernio_account_id || connection?.zernio_profile_id).length
+}
+
+function FirstLoginSetupWalkthrough({
+  client,
+  socialConnections = [],
+  researchProfile,
+  onDismiss,
+  onConnectAccounts,
+  onOpenPublisher,
+  onOpenInbox,
+}) {
+  const connectedSocialCount = countConnectedSocialAccounts(socialConnections)
+  const profileReady = Boolean(researchProfile?.partner_training_verified_at)
+  const businessName = client?.business_name || client?.name || 'your business'
+  const setupSteps = [
+    {
+      id: 'accounts',
+      label: 'Connect social accounts',
+      body: connectedSocialCount > 0
+        ? `${connectedSocialCount} channel${connectedSocialCount === 1 ? '' : 's'} connected.`
+        : 'Connect Facebook, Instagram, and any other channel before publishing or replying.',
+      complete: connectedSocialCount > 0,
+      Icon: Link2,
+    },
+    {
+      id: 'profile',
+      label: 'Confirm the business profile',
+      body: profileReady
+        ? 'MAP has a verified business profile for posts and suggestions.'
+        : 'Tell MAP what to promote, who you serve, and what to avoid.',
+      complete: profileReady,
+      Icon: ShieldCheck,
+    },
+    {
+      id: 'publisher',
+      label: 'Review the content plan',
+      body: 'Use Publisher to turn Partner ideas into drafts, scheduled posts, and approvals.',
+      complete: false,
+      Icon: CalendarDays,
+    },
+    {
+      id: 'inbox',
+      label: 'Watch customer replies',
+      body: 'Inbox is where social comments, DMs, and My Partner help show up for daily follow-up.',
+      complete: false,
+      Icon: MessageSquare,
+    },
+  ]
+
+  return createPortal(
+    <div className="portal-first-login-overlay" role="presentation" onMouseDown={onDismiss}>
+      <section
+        className="portal-first-login-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="portal-first-login-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <button type="button" className="portal-first-login-close" onClick={onDismiss} aria-label="Close setup walkthrough">
+          <X className="h-4 w-4" />
+        </button>
+        <div className="portal-first-login-hero">
+          <div className="portal-first-login-icon" aria-hidden="true">
+            <Sparkles className="h-5 w-5" />
+          </div>
+          <p className="assistant-training-kicker">Welcome to MAP</p>
+          <h2 id="portal-first-login-title">Set up {businessName} in a few steps.</h2>
+          <p>
+            Start with social accounts and the business profile. After that, Publisher, Inbox, and My Partner have the context they need to work cleanly.
+          </p>
+        </div>
+
+        <div className="portal-first-login-steps" aria-label="Portal setup steps">
+          {setupSteps.map((step) => {
+            const Icon = step.Icon
+            return (
+              <div key={step.id} className="portal-first-login-step" data-complete={step.complete}>
+                <span className="portal-first-login-step-icon" aria-hidden="true">
+                  {step.complete ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                </span>
+                <span>
+                  <strong>{step.label}</strong>
+                  <small>{step.body}</small>
+                </span>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="portal-first-login-actions">
+          <button type="button" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onConnectAccounts}>
+            Connect accounts
+            <ArrowRight className="h-4 w-4" />
+          </button>
+          <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onOpenPublisher}>
+            Open Publisher setup
+          </button>
+          <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onOpenInbox}>
+            View Inbox
+          </button>
+          <button type="button" className="portal-first-login-later" onClick={onDismiss}>
+            Set up later
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  )
 }
 
 function normalizeHost(value) {
@@ -272,13 +394,16 @@ function AuthProvider({ children }) {
 function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
   const queryClient = useQueryClient()
   const location = useLocation()
+  const navigate = useNavigate()
   const demoCaptureRoute = isInboxDemoCaptureRoute()
-  const { data: profile } = useQuery({
+  const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile'],
     queryFn: fetchProfile,
     enabled: !!session && !demoCaptureRoute,
   })
   const [billingActionPending, setBillingActionPending] = useState('')
+  const [firstLoginSetupDismissed, setFirstLoginSetupDismissed] = useState(false)
+  const [firstLoginSetupReady, setFirstLoginSetupReady] = useState(false)
 
   const claims = useMemo(() => getSessionClaims(session), [session])
   const tenant = useMemo(
@@ -299,6 +424,20 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     refetchOnReconnect: true,
   })
   const billingAccess = useMemo(() => resolveBillingAccess(tenant), [tenant])
+  const clientId = profile?.client_id
+  const firstLoginSetupDismissKey = clientId ? `${FIRST_LOGIN_SETUP_DISMISS_PREFIX}${clientId}` : ''
+  const { data: socialConnections = [], isLoading: socialConnectionsLoading } = useQuery({
+    queryKey: ['social_connections', clientId],
+    queryFn: () => fetchSocialConnections(clientId),
+    enabled: !!session && !demoCaptureRoute && !!clientId,
+  })
+  const { data: researchProfile = null, isLoading: researchProfileLoading } = useQuery({
+    queryKey: ['research-profile', clientId],
+    queryFn: () => fetchResearchProfile(clientId),
+    enabled: !!session && !demoCaptureRoute && !!clientId,
+  })
+  const connectedSocialCount = countConnectedSocialAccounts(socialConnections)
+  const portalSetupComplete = connectedSocialCount > 0 && Boolean(researchProfile?.partner_training_verified_at)
   const currentHost = typeof window === 'undefined' ? '' : normalizeHost(window.location.hostname)
   const expectedHost = useMemo(() => resolveExpectedHost(profile), [profile])
   const pathTenantMismatch = useMemo(() => resolvePathTenantMismatch(profile), [profile])
@@ -320,6 +459,16 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     location.pathname !== '/inbox' &&
     location.pathname !== '/attention'
   const suppressPartnerLauncher = ['/inbox', '/attention', '/post'].some((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
+
+  useEffect(() => {
+    if (!firstLoginSetupDismissKey || typeof window === 'undefined') {
+      setFirstLoginSetupReady(Boolean(!firstLoginSetupDismissKey))
+      return
+    }
+
+    setFirstLoginSetupDismissed(window.localStorage.getItem(firstLoginSetupDismissKey) === '1')
+    setFirstLoginSetupReady(true)
+  }, [firstLoginSetupDismissKey])
 
   useEffect(() => {
     const url = new URL(window.location.href)
@@ -366,6 +515,18 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     if (hasPortalPermission(profile, requiredPermission)) return true
     window.alert(buildPermissionMessage(actionLabel, requiredPermission))
     return false
+  }
+
+  function dismissFirstLoginSetup() {
+    if (firstLoginSetupDismissKey && typeof window !== 'undefined') {
+      window.localStorage.setItem(firstLoginSetupDismissKey, '1')
+    }
+    setFirstLoginSetupDismissed(true)
+  }
+
+  function handleSetupNavigate(path) {
+    dismissFirstLoginSetup()
+    navigate(path)
   }
 
   async function handleBillingAction(actionOverride) {
@@ -490,6 +651,24 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
               billingAccess={billingAccess}
               requireWriteAccess={requirePortalAccess}
               suppressMobileLauncher={suppressPartnerLauncher}
+            />
+          ) : null}
+          {session &&
+          profile?.clients &&
+          firstLoginSetupReady &&
+          !firstLoginSetupDismissed &&
+          !portalSetupComplete &&
+          !profileLoading &&
+          !socialConnectionsLoading &&
+          !researchProfileLoading ? (
+            <FirstLoginSetupWalkthrough
+              client={profile.clients}
+              socialConnections={socialConnections}
+              researchProfile={researchProfile}
+              onDismiss={dismissFirstLoginSetup}
+              onConnectAccounts={() => handleSetupNavigate('/settings')}
+              onOpenPublisher={() => handleSetupNavigate('/calendar')}
+              onOpenInbox={() => handleSetupNavigate('/inbox')}
             />
           ) : null}
         </main>
