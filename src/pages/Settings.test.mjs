@@ -41,3 +41,14 @@ test('social connection timeout copy explains X authorization failures', async (
   assert.match(settings, /MAP did not receive a completed X \/ Twitter connection/)
   assert.match(settings, /If X showed "Something went wrong"/)
 })
+
+test('first-login social setup deep link opens the social account section', async () => {
+  const settings = await source('src/pages/Settings.jsx')
+
+  assert.match(settings, /function Section\(\{ title, description, icon: Icon, children, id \}\)/)
+  assert.match(settings, /const setupTarget = typeof window !== 'undefined' \? window\.location\.hash\.replace\('#', ''\) : ''/)
+  assert.match(settings, /const focusSocialAccounts = setupTarget === 'social-accounts'/)
+  assert.match(settings, /document\.getElementById\('social-accounts'\)\?\.scrollIntoView/)
+  assert.match(settings, /defaultOpen=\{focusSocialAccounts\}/)
+  assert.match(settings, /id="social-accounts"/)
+})

@@ -164,9 +164,9 @@ async function portalAuthHeaders() {
 
 // ── Shared components ─────────────────────────────────────────────────────────
 
-function Section({ title, description, icon: Icon, children }) {
+function Section({ title, description, icon: Icon, children, id }) {
   return (
-    <div className="settings-section-panel portal-panel rounded-[32px] overflow-hidden">
+    <div id={id} className="settings-section-panel portal-panel rounded-[32px] overflow-hidden">
       <div className="flex items-center gap-3 border-b px-6 py-5" style={{ borderColor: 'var(--portal-border)' }}>
         <div className="flex h-8 w-8 items-center justify-center rounded-lg"
           style={{ background: 'rgba(112,228,255,0.12)', border: '1px solid rgba(112,228,255,0.28)' }}>
@@ -1013,6 +1013,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
 
   return (
     <Section
+      id="social-accounts"
       title="Social Media Accounts"
       description="Connect your social accounts to enable publishing and metrics"
       icon={Link2}
@@ -1621,6 +1622,16 @@ export default function Settings() {
 
   const client = profile?.clients
   const tenant = buildTenantConfig({ client })
+  const setupTarget = typeof window !== 'undefined' ? window.location.hash.replace('#', '') : ''
+  const focusSocialAccounts = setupTarget === 'social-accounts'
+
+  useEffect(() => {
+    if (!focusSocialAccounts || typeof window === 'undefined') return undefined
+    const timer = window.setTimeout(() => {
+      document.getElementById('social-accounts')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [focusSocialAccounts, isLoading])
 
   return (
     <div className="portal-page settings-page w-full max-w-none space-y-6 md:p-5 xl:p-6">
@@ -1680,6 +1691,7 @@ export default function Settings() {
           title="Business & channels"
           description="Business profile, social accounts, and website chat"
           icon={Building2}
+          defaultOpen={focusSocialAccounts}
         >
           {client && (
             <Section title="Business Profile" description="Details on file for your account" icon={Building2}>

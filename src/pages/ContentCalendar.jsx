@@ -2341,6 +2341,7 @@ export default function ContentCalendar() {
   const [trainAssistantOpen, setTrainAssistantOpen] = useState(false)
   const [trainingPromptOpen, setTrainingPromptOpen] = useState(false)
   const trainingPromptShownRef = useRef(false)
+  const setupDeepLinkHandledRef = useRef(false)
   const [sourceLabel, setSourceLabel] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
   const [sourceType, setSourceType] = useState('local_event_calendar')
@@ -2367,7 +2368,7 @@ export default function ContentCalendar() {
   const monthGridDate = startOfMonth(selectedWeekStart)
 
   useEffect(() => {
-    if (initialParams.get('view') || initialParams.get('date') || initialParams.get('scheduled')) {
+    if (initialParams.get('view') || initialParams.get('date') || initialParams.get('scheduled') || initialParams.get('setup')) {
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [initialParams])
@@ -3011,8 +3012,19 @@ export default function ContentCalendar() {
 
   function openSocialSettings() {
     dismissWorkspaceSetup()
-    navigate('/settings')
+    navigate('/settings#social-accounts')
   }
+
+  useEffect(() => {
+    if (setupDeepLinkHandledRef.current) return
+    if (initialParams.get('setup') !== 'partner') return
+    if (!clientId || !setupDismissReady) return
+
+    setupDeepLinkHandledRef.current = true
+    openWorkspaceSetup()
+    // The deep link only needs to run once after client/setup state is ready.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, setupDismissReady, initialParams])
 
   async function handleToggleSource(source) {
     if (!requireWriteAccess('update Partner training sources')) return

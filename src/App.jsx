@@ -165,13 +165,30 @@ function FirstLoginSetupWalkthrough({
   const connectedSocialCount = countConnectedSocialAccounts(socialConnections)
   const profileReady = Boolean(researchProfile?.partner_training_verified_at)
   const businessName = client?.business_name || client?.name || 'your business'
+  const nextSetupStep = connectedSocialCount === 0
+    ? {
+        label: 'Start with social accounts',
+        body: 'Connect existing accounts or get help creating them first.',
+        action: onConnectAccounts,
+      }
+    : !profileReady
+    ? {
+        label: 'Next: confirm the business profile',
+        body: 'Give MAP the basics it needs before building the first content plan.',
+        action: onOpenPublisher,
+      }
+    : {
+        label: 'Review the first content plan',
+        body: 'Open Publisher and decide what should become a draft or scheduled post.',
+        action: onOpenPublisher,
+      }
   const setupSteps = [
     {
       id: 'accounts',
       label: 'Connect social accounts',
       body: connectedSocialCount > 0
         ? `${connectedSocialCount} channel${connectedSocialCount === 1 ? '' : 's'} connected.`
-        : 'Connect Facebook, Instagram, and any other channel before publishing or replying.',
+        : 'Use existing Facebook, Instagram, or other business channels. If you do not have them yet, MAP can help you start there.',
       complete: connectedSocialCount > 0,
       Icon: Link2,
     },
@@ -219,8 +236,18 @@ function FirstLoginSetupWalkthrough({
           <p className="assistant-training-kicker">Welcome to MAP</p>
           <h2 id="portal-first-login-title">Set up {businessName} in a few steps.</h2>
           <p>
-            Start with social accounts and the business profile. After that, Publisher, Inbox, and My Partner have the context they need to work cleanly.
+            You can start even if every account is not ready. MAP will guide you one step at a time, then Publisher, Inbox, and My Partner will work from the same setup.
           </p>
+        </div>
+
+        <div className="portal-first-login-next">
+          <span>Recommended next step</span>
+          <strong>{nextSetupStep.label}</strong>
+          <small>{nextSetupStep.body}</small>
+          <button type="button" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={nextSetupStep.action}>
+            Continue setup
+            <ArrowRight className="h-4 w-4" />
+          </button>
         </div>
 
         <div className="portal-first-login-steps" aria-label="Portal setup steps">
@@ -240,16 +267,35 @@ function FirstLoginSetupWalkthrough({
           })}
         </div>
 
+        <div className="portal-first-login-social-help">
+          <div>
+            <p className="assistant-training-kicker">Social account help</p>
+            <h3>Need help creating social accounts?</h3>
+            <p>
+              If the business does not already have a Facebook Page, Instagram professional account, or other channel, start with help instead of guessing.
+            </p>
+          </div>
+          <ul>
+            <li>Use the business owner's personal login only to grant access. Customers will not see that personal login.</li>
+            <li>Create or claim the Facebook Page before connecting Facebook publishing.</li>
+            <li>Switch Instagram to a professional account before connecting Instagram publishing.</li>
+          </ul>
+          <div className="portal-first-login-social-actions">
+            <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onConnectAccounts}>
+              I have accounts to connect
+            </button>
+            <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onOpenInbox}>
+              Help me set them up
+            </button>
+          </div>
+        </div>
+
         <div className="portal-first-login-actions">
-          <button type="button" className="portal-button-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onConnectAccounts}>
-            Connect accounts
-            <ArrowRight className="h-4 w-4" />
-          </button>
           <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onOpenPublisher}>
-            Open Publisher setup
+            Business profile setup
           </button>
           <button type="button" className="portal-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold" onClick={onOpenInbox}>
-            View Inbox
+            Ask My Partner
           </button>
           <button type="button" className="portal-first-login-later" onClick={onDismiss}>
             Set up later
@@ -666,8 +712,8 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
               socialConnections={socialConnections}
               researchProfile={researchProfile}
               onDismiss={dismissFirstLoginSetup}
-              onConnectAccounts={() => handleSetupNavigate('/settings')}
-              onOpenPublisher={() => handleSetupNavigate('/calendar')}
+              onConnectAccounts={() => handleSetupNavigate('/settings#social-accounts')}
+              onOpenPublisher={() => handleSetupNavigate('/calendar?setup=partner')}
               onOpenInbox={() => handleSetupNavigate('/inbox')}
             />
           ) : null}

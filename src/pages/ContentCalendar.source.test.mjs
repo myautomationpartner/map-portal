@@ -71,6 +71,9 @@ test('first-run Publisher setup can be deferred and resumed', () => {
   assert.match(source, /map:publisher-setup-dismissed:/)
   assert.match(source, /fetchSocialConnections\(clientId\)/)
   assert.match(source, /Verify profile and build ideas/)
+  assert.match(source, /initialParams\.get\('setup'\) !== 'partner'/)
+  assert.match(source, /openWorkspaceSetup\(\)/)
+  assert.match(source, /navigate\('\/settings#social-accounts'\)/)
   assert.doesNotMatch(source, /Set up Train your Partner/)
 })
 
