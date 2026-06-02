@@ -728,6 +728,30 @@ export async function fetchPostBoosts(clientId, options = {}) {
   return postId ? (data ?? []).filter((boost) => boost.post_id === postId) : (data ?? [])
 }
 
+export async function fetchBoostCampaigns(options = {}) {
+  const params = new URLSearchParams()
+  if (options.platform) params.set('platform', options.platform)
+  if (options.range) params.set('range', options.range)
+
+  const accessToken = await getAccessToken()
+  const query = params.toString()
+  const response = await fetch(portalPath(`/api/boost-campaigns${query ? `?${query}` : ''}`), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || payload?.success === false) {
+    const error = new Error(payload?.error || payload?.message || `Boost campaign lookup failed (${response.status}).`)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}
+
 export async function fetchPostMetrics(platform, options = {}) {
   if (!platform) return { posts: [], sync: null }
 

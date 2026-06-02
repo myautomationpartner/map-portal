@@ -2739,6 +2739,123 @@ async function listZernioBoostCampaigns(env, { profileId, platform }) {
   return Array.isArray(payload?.campaigns) ? payload.campaigns : []
 }
 
+function normalizeBoostCampaignId(campaign = {}) {
+  return firstString(
+    campaign.platformCampaignId,
+    campaign.platform_campaign_id,
+    campaign.campaignId,
+    campaign.campaign_id,
+    campaign.id,
+    campaign._id,
+  )
+}
+
+function normalizeBoostAdId(campaign = {}) {
+  return firstString(
+    campaign.platformAdId,
+    campaign.platform_ad_id,
+    campaign.adId,
+    campaign.ad_id,
+    campaign.zernioAdId,
+    campaign.zernio_ad_id,
+  )
+}
+
+async function handleBoostCampaigns(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'GET, OPTIONS' } })
+  }
+
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const requestedPlatform = normalizePlatform(url.searchParams.get('platform') || '')
+  const boosts = await loadBoostRows(auth.envConfig, {})
+  const connections = await loadSocialConnectionsForBoost(auth.envConfig)
+  const campaigns = []
+  const errors = []
+  const seen = new Set()
+  const localBoostByCampaignId = new Map()
+
+  for (const boost of boosts) {
+    const campaignId = firstString(boost.platform_campaign_id)
+    if (campaignId) localBoostByCampaignId.set(campaignId, boost)
+  }
+
+  for (const connection of connections) {
+    const platform = normalizePlatform(connection.platform)
+    if (requestedPlatform && platform !== requestedPlatform) continue
+    const profileId = getConnectionZernioProfileId(connection, auth.envConfig)
+    if (!profileId || !zernioAdsPlatformForPortalPlatform(platform)) continue
+
+    try {
+      const rows = await listZernioBoostCampaigns(env, { profileId, platform })
+      for (const campaign of rows) {
+        const campaignId = normalizeBoostCampaignId(campaign)
+        const adId = normalizeBoostAdId(campaign)
+        const key = `${platform}:${campaignId || adId || campaigns.length}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        campaigns.push({
+          ...campaign,
+          platform,
+          profileId,
+          zernioProfileId: profileId,
+          connectionId: connection.id || null,
+          username: connection.username || '',
+          localBoost: campaignId ? (localBoostByCampaignId.get(campaignId) || null) : null,
+          source: 'zernio',
+        })
+      }
+    } catch (error) {
+      errors.push({
+        platform,
+        profileId,
+        message: error.message || 'Could not load boost campaigns.',
+      })
+    }
+  }
+
+  for (const boost of boosts) {
+    const platform = normalizePlatform(boost.platform)
+    if (requestedPlatform && platform !== requestedPlatform) continue
+    const campaignId = firstString(boost.platform_campaign_id)
+    const key = `${platform}:${campaignId || boost.id}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    campaigns.push({
+      id: boost.zernio_ad_id || boost.id,
+      platform,
+      name: boost.name || 'Boosted post',
+      status: boost.status || 'saved',
+      goal: boost.goal || '',
+      budget: {
+        amount: boost.budget_amount,
+        type: boost.budget_type,
+        currency: boost.currency,
+      },
+      platformCampaignId: boost.platform_campaign_id,
+      platformAdSetId: boost.platform_ad_set_id,
+      platformAdId: boost.platform_ad_id,
+      zernioResponse: boost.zernio_response_json,
+      localBoost: boost,
+      source: 'post_boosts',
+    })
+  }
+
+  return json({
+    success: true,
+    campaigns,
+    errors,
+    source: 'zernio_ads',
+  })
+}
+
 function normalizeBoostCampaignStatus(campaign = {}) {
   return normalizeBoostStatus(firstString(campaign.status, campaign.reviewStatus))
 }
@@ -7415,6 +7532,10 @@ export default {
 
     if (url.pathname === '/api/post-boosts') {
       return handlePostBoosts(request, env)
+    }
+
+    if (url.pathname === '/api/boost-campaigns') {
+      return handleBoostCampaigns(request, env)
     }
 
     if (url.pathname === '/api/post-boost-readiness') {

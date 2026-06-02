@@ -39,6 +39,7 @@ import ConnectReturn from './pages/ConnectReturn'
 import OpportunityRadar from './pages/OpportunityRadar'
 import ContentCalendar from './pages/ContentCalendar'
 import CampaignPartner from './pages/CampaignPartner'
+import BoostAds from './pages/BoostAds'
 import Sidebar from './components/Sidebar'
 import BottomNav from './components/BottomNav'
 import PortalBillingBanner from './components/PortalBillingBanner'
@@ -1245,6 +1246,7 @@ export default function App() {
                 <Route path="/" element={<Today />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/calendar" element={<ContentCalendar />} />
+                <Route path="/ads" element={<BoostAds />} />
                 <Route path="/campaigns" element={<CampaignPartner />} />
                 <Route path="/documents" element={<Documents />} />
                 <Route path="/secure-vault" element={<Navigate to="/documents" replace />} />
