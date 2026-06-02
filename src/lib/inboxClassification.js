@@ -211,7 +211,7 @@ export function selectPrivateMessageConversations(conversations = [], inboxes = 
 }
 
 export function commentNeedsReply(comment) {
-  return comment?.canReply !== false && Number(comment?.replyCount || 0) === 0
+  return comment?.noReplyNeeded !== true && comment?.canReply !== false && Number(comment?.replyCount || 0) === 0
 }
 
 export function countCommentsNeedingReply(comments = []) {

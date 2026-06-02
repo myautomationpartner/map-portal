@@ -116,3 +116,12 @@ test('counts comment replies from reply state and combines notification totals',
     total: 3,
   })
 })
+
+test('does not count comments marked as no reply needed', () => {
+  const comments = [
+    { id: 'dismissed-1', text: 'Love this!', replyCount: 0, noReplyNeeded: true },
+    { id: 'needs-1', text: 'Question here', replyCount: 0 },
+  ]
+
+  assert.equal(countCommentsNeedingReply(comments), 1)
+})

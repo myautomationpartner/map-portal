@@ -32,6 +32,7 @@ import { buildInboxDemoCaptureState, isInboxDemoCaptureEnabled } from '../lib/in
 import { fetchProfile } from '../lib/portalApi'
 import {
   businessNameCandidates,
+  commentNeedsReply,
   countCommentBundlesNeedingReply,
   countPrivateMessagesNeedingReply,
   selectPrivateMessageConversations,
@@ -62,6 +63,8 @@ const INBOX_SECTIONS = [
   { value: 'comments', label: 'Comments', icon: StickyNote },
   { value: 'reviews', label: 'Reviews', icon: Star, disabled: true, note: 'Soon' },
 ]
+
+const NO_REPLY_NEEDED_STORAGE_KEY = 'map:inbox:no-reply-needed-comments:v1'
 
 // Data fetching
 
@@ -251,6 +254,42 @@ function normalizeMessages(payload) {
   if (Array.isArray(payload?.payload)) return payload.payload
   if (Array.isArray(payload)) return payload
   return []
+}
+
+function readNoReplyNeededCommentKeys() {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(NO_REPLY_NEEDED_STORAGE_KEY) || '[]')
+    return new Set(Array.isArray(stored) ? stored.filter(Boolean) : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function writeNoReplyNeededCommentKeys(keys) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(NO_REPLY_NEEDED_STORAGE_KEY, JSON.stringify([...keys]))
+}
+
+function commentDismissalKey(post, comment) {
+  const accountId = post?.accountId || 'account'
+  const postId = post?.id || 'post'
+  const commentId = comment?.id || comment?.commentId || comment?.createdTime || comment?.text || 'comment'
+  return `${accountId}:${postId}:${commentId}`
+}
+
+function withCommentDismissals(bundle, dismissedCommentKeys) {
+  return {
+    ...bundle,
+    comments: (Array.isArray(bundle?.comments) ? bundle.comments : []).map((comment) => ({
+      ...comment,
+      noReplyNeeded: dismissedCommentKeys.has(commentDismissalKey(bundle.post, comment)),
+    })),
+  }
+}
+
+function postKey(post) {
+  return `${post?.accountId || ''}:${post?.id || ''}`
 }
 
 function unixToDate(value) {
@@ -1222,6 +1261,7 @@ function CommentsInbox({
   onCancelReply,
   onReplyTextChange,
   onSubmitReply,
+  onMarkNoReplyNeeded,
 }) {
   const selectedAccountId = selectedPost?.accountId || ''
 
@@ -1392,6 +1432,16 @@ function CommentsInbox({
                                   Reply
                                 </button>
                               )}
+                              {!comment.noReplyNeeded && commentNeedsReply(comment) && (
+                                <button
+                                  type="button"
+                                  onClick={() => onMarkNoReplyNeeded(comment)}
+                                  className="font-semibold"
+                                  style={{ color: 'var(--portal-text-muted)' }}
+                                >
+                                  No reply needed
+                                </button>
+                              )}
                             </div>
                             {visibleReplies.length > 0 ? (
                               <div className="mt-3 space-y-2 border-l pl-4" style={{ borderColor: 'var(--portal-border)' }}>
@@ -1507,6 +1557,7 @@ export default function Inbox() {
   })
   const [commentReplyTargetId, setCommentReplyTargetId] = useState('')
   const [commentReplyText, setCommentReplyText] = useState('')
+  const [dismissedCommentKeys, setDismissedCommentKeys] = useState(() => readNoReplyNeededCommentKeys())
   const [composer, setComposer] = useState('')
   const [isPrivate, setIsPrivate] = useState(false)
   const [mobileThreadOpen, setMobileThreadOpen] = useState(false)
@@ -1611,14 +1662,27 @@ export default function Inbox() {
     () => commentBundlesQuery.data || [],
     [commentBundlesQuery.data],
   )
+  const commentBundlesWithDismissals = useMemo(
+    () => commentBundles.map((bundle) => withCommentDismissals(bundle, dismissedCommentKeys)),
+    [commentBundles, dismissedCommentKeys],
+  )
+  const activeCommentPosts = useMemo(() => {
+    if (!commentPosts.length || !commentBundlesWithDismissals.length) return commentPosts
+    const activePostKeys = new Set(
+      commentBundlesWithDismissals
+        .filter((bundle) => countCommentBundlesNeedingReply([bundle]) > 0)
+        .map((bundle) => postKey(bundle.post)),
+    )
+    return commentPosts.filter((post) => activePostKeys.has(postKey(post)))
+  }, [commentBundlesWithDismissals, commentPosts])
   const commentAccounts = useMemo(
     () => commentPostsQuery.data?.accounts || [],
     [commentPostsQuery.data],
   )
   const selectedCommentPost = useMemo(() => {
-    if (!commentPosts.length) return null
-    return commentPosts.find((post) => `${post.accountId}:${post.id}` === selectedCommentPostKey) || commentPosts[0]
-  }, [commentPosts, selectedCommentPostKey])
+    if (!activeCommentPosts.length) return null
+    return activeCommentPosts.find((post) => `${post.accountId}:${post.id}` === selectedCommentPostKey) || activeCommentPosts[0]
+  }, [activeCommentPosts, selectedCommentPostKey])
   const selectedCommentPostId = selectedCommentPost?.id || ''
   const selectedCommentAccountId = selectedCommentPost?.accountId || ''
   const selectedConversation = useMemo(
@@ -1697,11 +1761,18 @@ export default function Inbox() {
   })
 
   const messages = demoCapture?.messagesByConversationId?.[activeConversationId] || messagesQuery.data || selectedConversation?.messages || []
-  const postComments = postCommentsQuery.data?.comments || []
+  const postComments = useMemo(() => (
+    (postCommentsQuery.data?.comments || [])
+      .map((comment) => ({
+        ...comment,
+        noReplyNeeded: dismissedCommentKeys.has(commentDismissalKey(selectedCommentPost, comment)),
+      }))
+      .filter((comment) => !comment.noReplyNeeded)
+  ), [dismissedCommentKeys, postCommentsQuery.data, selectedCommentPost])
   const sectionCounts = useMemo(() => ({
     messages: countPrivateMessagesNeedingReply(privateConversations),
-    comments: countCommentBundlesNeedingReply(commentBundles),
-  }), [commentBundles, privateConversations])
+    comments: countCommentBundlesNeedingReply(commentBundlesWithDismissals),
+  }), [commentBundlesWithDismissals, privateConversations])
   const totalCount = privateConversations.length
   const showPartnerHub = activeSection === 'messages' && partnerHubOpen
   const websiteChat = demoCapture?.websiteChat || websiteChatQuery.data
@@ -1763,6 +1834,18 @@ export default function Inbox() {
       commentId: comment.id,
       message,
     })
+  }
+
+  function handleMarkCommentNoReplyNeeded(comment) {
+    if (!selectedCommentPost || !comment) return
+    const nextKeys = new Set(dismissedCommentKeys)
+    nextKeys.add(commentDismissalKey(selectedCommentPost, comment))
+    setDismissedCommentKeys(nextKeys)
+    writeNoReplyNeededCommentKeys(nextKeys)
+    if (commentReplyTargetId === comment.id) {
+      setCommentReplyTargetId('')
+      setCommentReplyText('')
+    }
   }
 
   return (
@@ -2169,7 +2252,7 @@ export default function Inbox() {
         </div>
           ) : activeSection === 'comments' ? (
             <CommentsInbox
-              posts={commentPosts}
+              posts={activeCommentPosts}
               postsLoading={commentPostsQuery.isLoading}
               postsFetching={commentPostsQuery.isFetching}
               postsError={commentPostsQuery.error}
@@ -2206,6 +2289,7 @@ export default function Inbox() {
               }}
               onReplyTextChange={setCommentReplyText}
               onSubmitReply={handleSubmitCommentReply}
+              onMarkNoReplyNeeded={handleMarkCommentNoReplyNeeded}
             />
           ) : activeSection === 'reviews' ? (
             <SectionPlaceholder
