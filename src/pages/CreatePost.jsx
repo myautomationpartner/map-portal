@@ -4326,6 +4326,24 @@ export default function CreatePost() {
               className="portal-input rounded-2xl px-4 py-3 text-sm focus:outline-none"
               style={{ colorScheme: 'light' }}
             />
+            <button
+              type="button"
+              onClick={openReview}
+              disabled={isSubmitting || charOver || isViewingPublishedPost}
+              className="create-post-bottom-next"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {submitState === 'uploading' ? 'Uploading...' : timingMode === 'now' ? 'Publishing...' : 'Scheduling...'}
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4" />
+                  {isViewingPublishedPost ? 'Posted' : timingMode === 'now' ? 'Next: Preview & Publish' : 'Next: Preview & Approve'}
+                </>
+              )}
+            </button>
           </section>
         </div>
       </div>

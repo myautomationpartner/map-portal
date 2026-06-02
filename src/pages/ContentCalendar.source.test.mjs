@@ -117,6 +117,14 @@ test('Publisher creative images open in a larger preview', () => {
   assert.match(css, /\.create-post-media-lightbox/)
 })
 
+test('Publisher create flow keeps a bottom Next action after long scroll sections', () => {
+  assert.match(createPostSource, /className="create-post-bottom-next"/)
+  assert.match(createPostSource, /Next: Preview & Approve/)
+  assert.match(createPostSource, /Next: Preview & Publish/)
+  assert.match(css, /\.create-post-bottom-next/)
+  assert.match(css, /@media \(max-width: 1180px\)[\s\S]*\.create-post-bottom-next \{\s*width: 100%;/)
+})
+
 test('Campaign Partner image assets open in a larger preview', () => {
   assert.match(campaignPartnerSource, /function isCampaignPreviewableImage/)
   assert.match(campaignPartnerSource, /function handleOpenCampaignAsset/)
