@@ -15,6 +15,8 @@ test('portal shell shows first-login setup walkthrough before customers find Pub
   assert.match(appSource, /fetchSocialConnections\(clientId\)/)
   assert.match(appSource, /queryClient\.fetchQuery\({\s*queryKey: \['social_connections', profile\.client_id\]/)
   assert.match(appSource, /reconcileSocialConnections/)
+  assert.match(appSource, /countConnectedSocialAccounts\(socialConnections = \[]\) {\s*return socialConnections\.filter\(\(connection\) => connection\?\.zernio_account_id\)\.length\s*}/)
+  assert.match(appSource, /normalizeSetupPlatform\(connection\?\.platform\) === normalizedPlatform &&\s*connection\?\.zernio_account_id/)
   assert.match(appSource, /window\.addEventListener\('focus', handleReturnToPage\)/)
   assert.match(appSource, /window\.addEventListener\('pageshow', handleReturnToPage\)/)
   assert.match(appSource, /document\.addEventListener\('visibilitychange', handleReturnToPage\)/)

@@ -1860,7 +1860,7 @@ function TrainPartnerModal({
 }) {
   const [activeStepId, setActiveStepId] = useState('audience')
   const sourceCount = sources.filter((source) => source.is_active).length
-  const connectedSocialCount = socialConnections.filter((connection) => connection?.zernio_account_id || connection?.zernio_profile_id).length
+  const connectedSocialCount = socialConnections.filter((connection) => connection?.zernio_account_id).length
   const guidedChoices = buildPartnerGuidedChoices({ client, form, sources })
   const requiredComplete = hasRequiredPartnerTraining(form)
   const trainingProgress = resolveTrainingProgress(form, sources)
@@ -2287,7 +2287,7 @@ function WorkspaceSetupBanner({
   onResume,
   onConnectAccounts,
 }) {
-  const connectedSocialCount = socialConnections.filter((connection) => connection?.zernio_account_id || connection?.zernio_profile_id).length
+  const connectedSocialCount = socialConnections.filter((connection) => connection?.zernio_account_id).length
   const profileReady = Boolean(trainingStatus?.isVerified)
   const setupComplete = profileReady && connectedSocialCount > 0
 

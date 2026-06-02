@@ -155,7 +155,7 @@ function ResponsiveInboxRoute() {
 }
 
 function countConnectedSocialAccounts(socialConnections = []) {
-  return socialConnections.filter((connection) => connection?.zernio_account_id || connection?.zernio_profile_id).length
+  return socialConnections.filter((connection) => connection?.zernio_account_id).length
 }
 
 function normalizeSetupPlatform(platform) {
@@ -168,7 +168,7 @@ function hasConnectedSetupPlatform(socialConnections = [], platform) {
   const normalizedPlatform = normalizeSetupPlatform(platform)
   return socialConnections.some((connection) => (
     normalizeSetupPlatform(connection?.platform) === normalizedPlatform &&
-    (connection?.zernio_account_id || connection?.zernio_profile_id)
+    connection?.zernio_account_id
   ))
 }
 

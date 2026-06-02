@@ -67,6 +67,8 @@ test('first-run Publisher setup can be deferred and resumed', () => {
   assert.match(source, /function WorkspaceSetupBanner/)
   assert.match(source, /Finish setting up this portal\./)
   assert.match(source, /Connect social accounts/)
+  assert.match(source, /const connectedSocialCount = socialConnections\.filter\(\(connection\) => connection\?\.zernio_account_id\)\.length/)
+  assert.doesNotMatch(source, /connection\?\.zernio_account_id \|\| connection\?\.zernio_profile_id/)
   assert.match(source, /Set up later/)
   assert.match(source, /map:publisher-setup-dismissed:/)
   assert.match(source, /fetchSocialConnections\(clientId\)/)
