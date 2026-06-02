@@ -17,6 +17,7 @@ import {
   isVisibleContentDraft,
   normalizeZernioPostAnalytics,
   normalizeZernioAdAccounts,
+  normalizeZernioCommentPost,
   normalizeBoostAdAccountId,
   normalizeBoostTargeting,
   normalizeZernioAccountEventDetails,
@@ -588,6 +589,52 @@ test('normalizes Zernio inbox comments with platform context', () => {
   )
 })
 
+test('normalizes Zernio ad comment rows without misclassifying organic posts', () => {
+  assert.deepEqual(
+    {
+      organicIsAd: normalizeZernioCommentPost({
+        id: 'organic-post-123',
+        platform: 'facebook',
+        commentCount: 2,
+      }, { zernio_account_id: 'acct_fb', platform: 'facebook' }).isAd,
+      adRow: normalizeZernioCommentPost({
+        id: 'ad_123:instagram',
+        platform: 'metaads',
+        isAd: true,
+        adId: 'ad_123',
+        placement: 'instagram',
+        commentCount: 3,
+      }, { zernio_account_id: 'acct_fb', platform: 'facebook' }),
+    },
+    {
+      organicIsAd: false,
+      adRow: {
+        id: 'ad_123:instagram',
+        platform: 'instagram',
+        accountId: 'acct_fb',
+        accountUsername: '',
+        content: '',
+        picture: '',
+        permalink: '',
+        createdTime: '',
+        commentCount: 3,
+        likeCount: 0,
+        isAd: true,
+        adId: 'ad_123',
+        placement: 'instagram',
+        raw: {
+          id: 'ad_123:instagram',
+          platform: 'metaads',
+          isAd: true,
+          adId: 'ad_123',
+          placement: 'instagram',
+          commentCount: 3,
+        },
+      },
+    },
+  )
+})
+
 test('comments inbox requests only posts with comments', async () => {
   const inboxSource = await readFile(new URL('./src/pages/Inbox.jsx', import.meta.url), 'utf8')
   assert.match(inboxSource, /minComments:\s*'1'/)
@@ -603,6 +650,30 @@ test('worker exposes a tenant-scoped Zernio comment reply route', async () => {
   assert.match(workerSource, /handleZernioCommentReply/)
   assert.match(workerSource, /\/inbox\/comments\/\$\{encodeURIComponent\(postId\)\}/)
   assert.match(workerSource, /commentId/)
+})
+
+test('worker routes Zernio ad comment rows to the ads comments endpoint', async () => {
+  const workerSource = await readFile(new URL('./worker.js', import.meta.url), 'utf8')
+  assert.match(workerSource, /normalizeCommentPlatformFilter/)
+  assert.match(workerSource, /requestedPlatform === 'metaads'/)
+  assert.match(workerSource, /post\.isAd && post\.adId/)
+  assert.match(workerSource, /\/ads\/\$\{encodeURIComponent\(resolvedAdId\)\}\/comments/)
+})
+
+test('Publisher sends Zernio post idempotency request ids into the n8n workflow', async () => {
+  const createPostSource = await readFile(new URL('./src/pages/CreatePost.jsx', import.meta.url), 'utf8')
+  const workerSource = await readFile(new URL('./worker.js', import.meta.url), 'utf8')
+  const workflow = JSON.parse(await readFile(new URL('../../n8n-agent/live-exports/3Ax4pRJhxZ4ezbHj.json', import.meta.url), 'utf8'))
+  const postToZernio = workflow.nodes.find((node) => node.name === 'Post to Zernio')
+  const parseRequest = workflow.nodes.find((node) => node.name === 'Parse Request')
+
+  assert.match(createPostSource, /zernioRequestId:\s*post\.id/)
+  assert.match(workerSource, /zernioRequestId:\s*post\.id/)
+  assert.match(parseRequest.parameters.jsCode, /const zernioRequestId = firstString\(body\.zernioRequestId/)
+  assert.deepEqual(
+    postToZernio.parameters.headerParameters.parameters.find((header) => header.name === 'x-request-id'),
+    { name: 'x-request-id', value: '={{ $json.zernioRequestId || undefined }}' },
+  )
 })
 
 test('worker syncs Zernio comments into assigned Chatwoot conversations for mobile visibility', async () => {

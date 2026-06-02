@@ -385,6 +385,12 @@ function normalizePlatform(platform) {
   return platformMap[value] || null
 }
 
+function normalizeCommentPlatformFilter(platform) {
+  const value = String(platform || '').trim().toLowerCase()
+  if (value === 'metaads' || value === 'meta_ads' || value === 'meta-ads') return 'metaads'
+  return normalizePlatform(value)
+}
+
 function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase()
 }
@@ -1970,11 +1976,34 @@ function zernioCommentPostTimestamp(post) {
   return firstString(post?.createdTime, post?.createdAt, post?.timestamp, post?.date)
 }
 
-function normalizeZernioCommentPost(post, connection = {}) {
+function normalizeZernioAdCommentPlacement(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized.includes('instagram')) return 'instagram'
+  if (normalized.includes('facebook')) return 'facebook'
+  return ''
+}
+
+export function normalizeZernioCommentPost(post, connection = {}) {
   const accountId = firstString(post?.accountId, post?.account_id, connection.zernio_account_id)
+  const adId = firstString(
+    post?.adId,
+    post?.ad_id,
+    post?.ad?._id,
+    post?.ad?.id,
+    post?.platformAdId,
+    post?.creative?.effectiveObjectStoryId,
+    post?.creative?.effectiveInstagramMediaId,
+  )
+  const explicitPlacement = normalizeZernioAdCommentPlacement(firstString(
+    post?.placement,
+    post?.adPlacement,
+    post?.meta?.placement,
+  ))
+  const isAd = Boolean(post?.isAd || adId || explicitPlacement)
+  const placement = explicitPlacement || (isAd ? normalizeZernioAdCommentPlacement(post?.platform) : '')
   return {
-    id: firstString(post?.id, post?.postId, post?.platformPostId),
-    platform: normalizePlatform(firstString(post?.platform, connection.platform)),
+    id: firstString(post?.id, post?.postId, post?.platformPostId, isAd && adId ? `${adId}${placement ? `:${placement}` : ''}` : ''),
+    platform: normalizePlatform(firstString(post?.platform, placement, connection.platform)) || (isAd ? placement : null),
     accountId,
     accountUsername: firstString(post?.accountUsername, post?.account_username, connection.username),
     content: firstString(post?.content, post?.text, post?.caption, post?.message),
@@ -1983,6 +2012,9 @@ function normalizeZernioCommentPost(post, connection = {}) {
     createdTime: zernioCommentPostTimestamp(post),
     commentCount: Number(post?.commentCount ?? post?.comments ?? 0) || 0,
     likeCount: Number(post?.likeCount ?? post?.likes ?? 0) || 0,
+    isAd,
+    adId,
+    placement,
     raw: post,
   }
 }
@@ -2024,14 +2056,15 @@ async function handleZernioCommentPosts(request, env) {
   if (auth.error) return auth.error
 
   const url = new URL(request.url)
-  const requestedPlatform = normalizePlatform(url.searchParams.get('platform') || '')
+  const requestedPlatform = normalizeCommentPlatformFilter(url.searchParams.get('platform') || '')
   const requestedAccountId = firstString(url.searchParams.get('accountId'))
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 50) || 50, 1), 100)
 
   const allConnections = await loadTenantSocialConnections(auth.envConfig)
   const connections = allConnections.filter((connection) => {
     if (!connection.zernio_account_id) return false
-    if (requestedPlatform && normalizePlatform(connection.platform) !== requestedPlatform) return false
+    if (requestedPlatform === 'metaads' && !['facebook', 'instagram'].includes(normalizePlatform(connection.platform))) return false
+    if (requestedPlatform && requestedPlatform !== 'metaads' && normalizePlatform(connection.platform) !== requestedPlatform) return false
     if (requestedAccountId && String(connection.zernio_account_id) !== requestedAccountId) return false
     return true
   })
@@ -2046,12 +2079,12 @@ async function handleZernioCommentPosts(request, env) {
   await Promise.all(connections.map(async (connection) => {
     const params = new URLSearchParams({
       accountId: connection.zernio_account_id,
-      platform: normalizePlatform(connection.platform),
       minComments: '1',
       sortBy: 'date',
       sortOrder: 'desc',
       limit: String(limit),
     })
+    if (requestedPlatform) params.set('platform', requestedPlatform)
     const profileId = getConnectionZernioProfileId(connection, auth.envConfig)
     if (profileId) params.set('profileId', profileId)
 
@@ -2075,8 +2108,18 @@ async function handleZernioCommentPosts(request, env) {
     return rightTime - leftTime
   })
 
+  const seenPostKeys = new Set()
+  const dedupedResults = results.filter((post) => {
+    const key = post.isAd && post.adId
+      ? `ad:${post.adId}:${post.placement || ''}`
+      : `${post.accountId || ''}:${post.id || ''}`
+    if (!key || seenPostKeys.has(key)) return false
+    seenPostKeys.add(key)
+    return true
+  })
+
   return json({
-    posts: results.slice(0, limit),
+    posts: dedupedResults.slice(0, limit),
     accounts: allConnections
       .filter((connection) => connection.zernio_account_id)
       .map((connection) => ({
@@ -2112,7 +2155,21 @@ async function handleZernioPostComments(request, env, postId) {
   if (cursor) params.set('cursor', cursor)
 
   try {
-    const payload = await zernioFetch(env, `/inbox/comments/${encodeURIComponent(postId)}?${params.toString()}`)
+    const adId = firstString(url.searchParams.get('adId'))
+    const placement = normalizeZernioAdCommentPlacement(url.searchParams.get('placement'))
+    const requestedAdThread = ['1', 'true', 'yes'].includes(String(url.searchParams.get('isAd') || '').toLowerCase()) || Boolean(adId)
+    let payload
+    if (requestedAdThread) {
+      const resolvedAdId = adId || firstString(postId.split(':')[0])
+      if (!resolvedAdId) return json({ error: 'Missing adId for ad comments.' }, { status: 400 })
+      const adParams = new URLSearchParams()
+      if (placement) adParams.set('placement', placement)
+      if (cursor) adParams.set('cursor', cursor)
+      const adQuery = adParams.toString()
+      payload = await zernioFetch(env, `/ads/${encodeURIComponent(resolvedAdId)}/comments${adQuery ? `?${adQuery}` : ''}`)
+    } else {
+      payload = await zernioFetch(env, `/inbox/comments/${encodeURIComponent(postId)}?${params.toString()}`)
+    }
     const comments = normalizeZernioCommentListPayload(payload, postId, { platform: connection.platform })
     const chatwootSync = await getChatwootConfigForClient(env, auth.envConfig)
       .then((chatwootConfig) => syncZernioCommentsToChatwoot(chatwootConfig, connection, comments, postId))
@@ -5191,6 +5248,7 @@ async function scheduleApprovedContentPartnerDraft(env, envConfig, context) {
     body: JSON.stringify({
       postId: post.id,
       clientId: envConfig.clientId,
+      zernioRequestId: post.id,
       content,
       platformVariants,
       mediaVariants: {},

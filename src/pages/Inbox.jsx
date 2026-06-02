@@ -144,9 +144,17 @@ async function fetchCommentPosts({ queryKey }) {
 }
 
 async function fetchPostComments({ queryKey }) {
-  const [, postId, accountId] = queryKey
+  const [, postOrId, fallbackAccountId] = queryKey
+  const post = postOrId && typeof postOrId === 'object'
+    ? postOrId
+    : { id: postOrId, accountId: fallbackAccountId }
+  const postId = post?.id || ''
+  const accountId = post?.accountId || fallbackAccountId || ''
   if (!postId || !accountId) return { comments: [] }
   const params = new URLSearchParams({ accountId })
+  if (post?.isAd) params.set('isAd', '1')
+  if (post?.adId) params.set('adId', post.adId)
+  if (post?.placement) params.set('placement', post.placement)
   return zernioPortalFetch(`/comments/${encodeURIComponent(postId)}?${params.toString()}`)
 }
 
@@ -155,7 +163,7 @@ async function fetchCommentBundles({ queryKey }) {
   const targets = Array.isArray(posts) ? posts.slice(0, 12) : []
   const results = await Promise.allSettled(targets.map((post) => {
     if (!post?.id || !post?.accountId) return Promise.resolve({ comments: [] })
-    return fetchPostComments({ queryKey: ['zernio-post-comments', post.id, post.accountId] })
+    return fetchPostComments({ queryKey: ['zernio-post-comments', post] })
   }))
   return targets.map((post, index) => ({
     post,
@@ -1682,7 +1690,9 @@ export default function Inbox() {
     [commentPostsQuery.data],
   )
   const commentBundleKey = useMemo(() => (
-    commentPosts.map((post) => `${post.accountId}:${post.id}:${post.commentCount}`).join('|')
+    commentPosts
+      .map((post) => `${post.accountId}:${post.id}:${post.commentCount}:${post.isAd ? 'ad' : 'organic'}:${post.adId || ''}:${post.placement || ''}`)
+      .join('|')
   ), [commentPosts])
   const commentBundlesQuery = useQuery({
     queryKey: ['zernio-comment-bundles', commentBundleKey],
@@ -1718,7 +1728,7 @@ export default function Inbox() {
   )
   const selectedCommentPost = useMemo(() => {
     if (!activeCommentPosts.length) return null
-    return activeCommentPosts.find((post) => `${post.accountId}:${post.id}` === selectedCommentPostKey) || activeCommentPosts[0]
+    return activeCommentPosts.find((post) => postKey(post) === selectedCommentPostKey) || activeCommentPosts[0]
   }, [activeCommentPosts, selectedCommentPostKey])
   const selectedCommentPostId = selectedCommentPost?.id || ''
   const selectedCommentAccountId = selectedCommentPost?.accountId || ''
@@ -1739,7 +1749,7 @@ export default function Inbox() {
   })
 
   const postCommentsQuery = useQuery({
-    queryKey: ['zernio-post-comments', selectedCommentPostId, selectedCommentAccountId],
+    queryKey: ['zernio-post-comments', selectedCommentPost],
     queryFn: fetchPostComments,
     enabled: activeSection === 'comments' && Boolean(selectedCommentPostId && selectedCommentAccountId),
     refetchInterval: activeSection === 'comments' && selectedCommentPostId ? 30_000 : false,
@@ -1852,7 +1862,7 @@ export default function Inbox() {
   }
 
   function handleSelectCommentPost(post) {
-    setSelectedCommentPostKey(`${post.accountId}:${post.id}`)
+    setSelectedCommentPostKey(postKey(post))
     setCommentReplyTargetId('')
     setCommentReplyText('')
   }
@@ -1866,7 +1876,7 @@ export default function Inbox() {
     const message = commentReplyText.trim()
     if (!selectedCommentPostId || !selectedCommentAccountId || !comment?.id || !message || commentReplyMutation.isPending) return
     commentReplyMutation.mutate({
-      postId: selectedCommentPostId,
+      postId: comment.postId || selectedCommentPostId,
       accountId: selectedCommentAccountId,
       commentId: comment.id,
       message,

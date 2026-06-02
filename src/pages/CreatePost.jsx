@@ -3030,6 +3030,7 @@ export default function CreatePost() {
         body: JSON.stringify({
           postId: post.id,
           clientId,
+          zernioRequestId: post.id,
           zernioPostId: resolvedEditingRef || null,
           content: content.trim(),
           platformVariants: targetPlatformVariants,

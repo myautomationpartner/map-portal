@@ -600,6 +600,9 @@ export async function fetchInboxCommentPosts(options = {}) {
 export function fetchInboxPostComments(post) {
   if (!post?.id || !post?.accountId) return Promise.resolve({ comments: [] })
   const params = new URLSearchParams({ accountId: post.accountId })
+  if (post.isAd) params.set('isAd', '1')
+  if (post.adId) params.set('adId', post.adId)
+  if (post.placement) params.set('placement', post.placement)
   return callPortalWorker(`/api/zernio/comments/${encodeURIComponent(post.id)}?${params.toString()}`)
 }
 
