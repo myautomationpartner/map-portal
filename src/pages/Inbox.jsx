@@ -65,6 +65,7 @@ const INBOX_SECTIONS = [
 ]
 
 const NO_REPLY_NEEDED_STORAGE_KEY = 'map:inbox:no-reply-needed-comments:v1'
+const NO_REPLY_NEEDED_POST_STORAGE_KEY = 'map:inbox:no-reply-needed-comment-posts:v1'
 
 // Data fetching
 
@@ -271,6 +272,21 @@ function writeNoReplyNeededCommentKeys(keys) {
   window.localStorage.setItem(NO_REPLY_NEEDED_STORAGE_KEY, JSON.stringify([...keys]))
 }
 
+function readNoReplyNeededPostKeys() {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(NO_REPLY_NEEDED_POST_STORAGE_KEY) || '[]')
+    return new Set(Array.isArray(stored) ? stored.filter(Boolean) : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function writeNoReplyNeededPostKeys(keys) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(NO_REPLY_NEEDED_POST_STORAGE_KEY, JSON.stringify([...keys]))
+}
+
 function commentDismissalKey(post, comment) {
   const accountId = post?.accountId || 'account'
   const postId = post?.id || 'post'
@@ -290,6 +306,10 @@ function withCommentDismissals(bundle, dismissedCommentKeys) {
 
 function postKey(post) {
   return `${post?.accountId || ''}:${post?.id || ''}`
+}
+
+function postDismissalKey(post) {
+  return postKey(post)
 }
 
 function unixToDate(value) {
@@ -1262,6 +1282,7 @@ function CommentsInbox({
   onReplyTextChange,
   onSubmitReply,
   onMarkNoReplyNeeded,
+  onMarkPostNoReplyNeeded,
 }) {
   const selectedAccountId = selectedPost?.accountId || ''
 
@@ -1371,17 +1392,27 @@ function CommentsInbox({
                     {commentPostTitle(selectedPost)}
                   </p>
                 </div>
-                {selectedPost.permalink && (
-                  <a
-                    href={selectedPost.permalink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="portal-button-secondary inline-flex shrink-0 items-center gap-2 px-3 py-2 text-xs font-semibold"
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onMarkPostNoReplyNeeded(selectedPost, comments)}
+                    className="portal-button-secondary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold"
                   >
-                    Open post
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                )}
+                    <Check className="h-3.5 w-3.5" />
+                    Clear thread
+                  </button>
+                  {selectedPost.permalink && (
+                    <a
+                      href={selectedPost.permalink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="portal-button-secondary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold"
+                    >
+                      Open post
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1558,6 +1589,7 @@ export default function Inbox() {
   const [commentReplyTargetId, setCommentReplyTargetId] = useState('')
   const [commentReplyText, setCommentReplyText] = useState('')
   const [dismissedCommentKeys, setDismissedCommentKeys] = useState(() => readNoReplyNeededCommentKeys())
+  const [dismissedPostKeys, setDismissedPostKeys] = useState(() => readNoReplyNeededPostKeys())
   const [composer, setComposer] = useState('')
   const [isPrivate, setIsPrivate] = useState(false)
   const [mobileThreadOpen, setMobileThreadOpen] = useState(false)
@@ -1666,15 +1698,20 @@ export default function Inbox() {
     () => commentBundles.map((bundle) => withCommentDismissals(bundle, dismissedCommentKeys)),
     [commentBundles, dismissedCommentKeys],
   )
+  const activeCommentBundles = useMemo(
+    () => commentBundlesWithDismissals.filter((bundle) => !dismissedPostKeys.has(postDismissalKey(bundle.post))),
+    [commentBundlesWithDismissals, dismissedPostKeys],
+  )
   const activeCommentPosts = useMemo(() => {
-    if (!commentPosts.length || !commentBundlesWithDismissals.length) return commentPosts
+    const visiblePosts = commentPosts.filter((post) => !dismissedPostKeys.has(postDismissalKey(post)))
+    if (!visiblePosts.length || !activeCommentBundles.length) return visiblePosts
     const activePostKeys = new Set(
-      commentBundlesWithDismissals
+      activeCommentBundles
         .filter((bundle) => countCommentBundlesNeedingReply([bundle]) > 0)
         .map((bundle) => postKey(bundle.post)),
     )
-    return commentPosts.filter((post) => activePostKeys.has(postKey(post)))
-  }, [commentBundlesWithDismissals, commentPosts])
+    return visiblePosts.filter((post) => activePostKeys.has(postKey(post)))
+  }, [activeCommentBundles, commentPosts, dismissedPostKeys])
   const commentAccounts = useMemo(
     () => commentPostsQuery.data?.accounts || [],
     [commentPostsQuery.data],
@@ -1771,8 +1808,8 @@ export default function Inbox() {
   ), [dismissedCommentKeys, postCommentsQuery.data, selectedCommentPost])
   const sectionCounts = useMemo(() => ({
     messages: countPrivateMessagesNeedingReply(privateConversations),
-    comments: countCommentBundlesNeedingReply(commentBundlesWithDismissals),
-  }), [commentBundlesWithDismissals, privateConversations])
+    comments: countCommentBundlesNeedingReply(activeCommentBundles),
+  }), [activeCommentBundles, privateConversations])
   const totalCount = privateConversations.length
   const showPartnerHub = activeSection === 'messages' && partnerHubOpen
   const websiteChat = demoCapture?.websiteChat || websiteChatQuery.data
@@ -1846,6 +1883,24 @@ export default function Inbox() {
       setCommentReplyTargetId('')
       setCommentReplyText('')
     }
+  }
+
+  function handleMarkPostNoReplyNeeded(post, commentsToDismiss = []) {
+    if (!post) return
+    const nextPostKeys = new Set(dismissedPostKeys)
+    nextPostKeys.add(postDismissalKey(post))
+    setDismissedPostKeys(nextPostKeys)
+    writeNoReplyNeededPostKeys(nextPostKeys)
+
+    const nextCommentKeys = new Set(dismissedCommentKeys)
+    commentsToDismiss.forEach((comment) => {
+      nextCommentKeys.add(commentDismissalKey(post, comment))
+    })
+    setDismissedCommentKeys(nextCommentKeys)
+    writeNoReplyNeededCommentKeys(nextCommentKeys)
+
+    setCommentReplyTargetId('')
+    setCommentReplyText('')
   }
 
   return (
@@ -2290,6 +2345,7 @@ export default function Inbox() {
               onReplyTextChange={setCommentReplyText}
               onSubmitReply={handleSubmitCommentReply}
               onMarkNoReplyNeeded={handleMarkCommentNoReplyNeeded}
+              onMarkPostNoReplyNeeded={handleMarkPostNoReplyNeeded}
             />
           ) : activeSection === 'reviews' ? (
             <SectionPlaceholder

@@ -56,9 +56,14 @@ test('desktop dark Inbox uses the same restrained surface system as Documents', 
 
 test('desktop comments can be marked no reply needed and hidden from active inbox', () => {
   assert.match(inboxSource, /NO_REPLY_NEEDED_STORAGE_KEY/)
+  assert.match(inboxSource, /NO_REPLY_NEEDED_POST_STORAGE_KEY/)
   assert.match(inboxSource, /function commentDismissalKey\(post,\s*comment\)/)
+  assert.match(inboxSource, /function postDismissalKey\(post\)/)
   assert.match(inboxSource, /noReplyNeeded:\s*dismissedCommentKeys\.has\(commentDismissalKey\(bundle\.post,\s*comment\)\)/)
+  assert.match(inboxSource, /const activeCommentBundles = useMemo/)
   assert.match(inboxSource, /const activeCommentPosts = useMemo/)
   assert.match(inboxSource, /onMarkNoReplyNeeded=\{handleMarkCommentNoReplyNeeded\}/)
+  assert.match(inboxSource, /onMarkPostNoReplyNeeded=\{handleMarkPostNoReplyNeeded\}/)
   assert.match(inboxSource, />\s*No reply needed\s*</)
+  assert.match(inboxSource, />\s*Clear thread\s*</)
 })
