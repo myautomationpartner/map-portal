@@ -31,11 +31,19 @@ import { splitMessageLinks } from '../lib/messageLinks'
 import { buildInboxDemoCaptureState, isInboxDemoCaptureEnabled } from '../lib/inboxDemoCapture'
 import { fetchProfile } from '../lib/portalApi'
 import {
+  applyCommentBundleDismissals,
   businessNameCandidates,
+  commentDismissalKey,
   commentNeedsReply,
   countCommentBundlesNeedingReply,
   countPrivateMessagesNeedingReply,
+  postDismissalKey,
+  postKey,
+  readNoReplyNeededCommentKeys,
+  readNoReplyNeededPostKeys,
   selectPrivateMessageConversations,
+  writeNoReplyNeededCommentKeys,
+  writeNoReplyNeededPostKeys,
 } from '../lib/inboxClassification'
 
 const DEFAULT_CHATWOOT_APP_URL = 'https://chatwoot.myautomationpartner.com/app'
@@ -63,9 +71,6 @@ const INBOX_SECTIONS = [
   { value: 'comments', label: 'Comments', icon: StickyNote },
   { value: 'reviews', label: 'Reviews', icon: Star, disabled: true, note: 'Soon' },
 ]
-
-const NO_REPLY_NEEDED_STORAGE_KEY = 'map:inbox:no-reply-needed-comments:v1'
-const NO_REPLY_NEEDED_POST_STORAGE_KEY = 'map:inbox:no-reply-needed-comment-posts:v1'
 
 // Data fetching
 
@@ -263,61 +268,6 @@ function normalizeMessages(payload) {
   if (Array.isArray(payload?.payload)) return payload.payload
   if (Array.isArray(payload)) return payload
   return []
-}
-
-function readNoReplyNeededCommentKeys() {
-  if (typeof window === 'undefined') return new Set()
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(NO_REPLY_NEEDED_STORAGE_KEY) || '[]')
-    return new Set(Array.isArray(stored) ? stored.filter(Boolean) : [])
-  } catch {
-    return new Set()
-  }
-}
-
-function writeNoReplyNeededCommentKeys(keys) {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(NO_REPLY_NEEDED_STORAGE_KEY, JSON.stringify([...keys]))
-}
-
-function readNoReplyNeededPostKeys() {
-  if (typeof window === 'undefined') return new Set()
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(NO_REPLY_NEEDED_POST_STORAGE_KEY) || '[]')
-    return new Set(Array.isArray(stored) ? stored.filter(Boolean) : [])
-  } catch {
-    return new Set()
-  }
-}
-
-function writeNoReplyNeededPostKeys(keys) {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(NO_REPLY_NEEDED_POST_STORAGE_KEY, JSON.stringify([...keys]))
-}
-
-function commentDismissalKey(post, comment) {
-  const accountId = post?.accountId || 'account'
-  const postId = post?.id || 'post'
-  const commentId = comment?.id || comment?.commentId || comment?.createdTime || comment?.text || 'comment'
-  return `${accountId}:${postId}:${commentId}`
-}
-
-function withCommentDismissals(bundle, dismissedCommentKeys) {
-  return {
-    ...bundle,
-    comments: (Array.isArray(bundle?.comments) ? bundle.comments : []).map((comment) => ({
-      ...comment,
-      noReplyNeeded: dismissedCommentKeys.has(commentDismissalKey(bundle.post, comment)),
-    })),
-  }
-}
-
-function postKey(post) {
-  return `${post?.accountId || ''}:${post?.id || ''}`
-}
-
-function postDismissalKey(post) {
-  return postKey(post)
 }
 
 function unixToDate(value) {
@@ -1704,13 +1654,9 @@ export default function Inbox() {
     () => commentBundlesQuery.data || [],
     [commentBundlesQuery.data],
   )
-  const commentBundlesWithDismissals = useMemo(
-    () => commentBundles.map((bundle) => withCommentDismissals(bundle, dismissedCommentKeys)),
-    [commentBundles, dismissedCommentKeys],
-  )
   const activeCommentBundles = useMemo(
-    () => commentBundlesWithDismissals.filter((bundle) => !dismissedPostKeys.has(postDismissalKey(bundle.post))),
-    [commentBundlesWithDismissals, dismissedPostKeys],
+    () => applyCommentBundleDismissals(commentBundles, dismissedCommentKeys, dismissedPostKeys),
+    [commentBundles, dismissedCommentKeys, dismissedPostKeys],
   )
   const activeCommentPosts = useMemo(() => {
     const visiblePosts = commentPosts.filter((post) => !dismissedPostKeys.has(postDismissalKey(post)))
@@ -1820,6 +1766,32 @@ export default function Inbox() {
     messages: countPrivateMessagesNeedingReply(privateConversations),
     comments: countCommentBundlesNeedingReply(activeCommentBundles),
   }), [activeCommentBundles, privateConversations])
+  useEffect(() => {
+    if (demoCapture) return
+
+    const commentsReady = commentPostsQuery.isFetched || commentBundlesQuery.isFetched
+    const messagesReady = conversationsQuery.isFetched
+    if (!commentsReady && !messagesReady) return
+
+    queryClient.setQueryData(['inbox-notification-counts', inboxBusinessNames.join('|')], (previous) => {
+      const previousCounts = previous && typeof previous === 'object' ? previous : {}
+      const messages = messagesReady ? sectionCounts.messages : Number(previousCounts.messages || 0)
+      const comments = commentsReady ? sectionCounts.comments : Number(previousCounts.comments || 0)
+      return {
+        messages,
+        comments,
+        total: messages + comments,
+      }
+    })
+  }, [
+    commentBundlesQuery.isFetched,
+    commentPostsQuery.isFetched,
+    conversationsQuery.isFetched,
+    demoCapture,
+    inboxBusinessNames,
+    queryClient,
+    sectionCounts,
+  ])
   const totalCount = privateConversations.length
   const showPartnerHub = activeSection === 'messages' && partnerHubOpen
   const websiteChat = demoCapture?.websiteChat || websiteChatQuery.data

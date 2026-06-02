@@ -1,9 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  applyCommentBundleDismissals,
+  commentDismissalKey,
   countCommentsNeedingReply,
   isPrivateMessageConversation,
   isPublicCommentConversation,
+  postDismissalKey,
   selectPrivateMessageConversations,
   summarizeInboxNotifications,
 } from './inboxClassification.js'
@@ -124,4 +127,23 @@ test('does not count comments marked as no reply needed', () => {
   ]
 
   assert.equal(countCommentsNeedingReply(comments), 1)
+})
+
+test('applies comment and post dismissals before notification counts', () => {
+  const post = { accountId: 'act_123', id: 'post-1' }
+  const dismissedComment = { id: 'comment-1', text: 'Thanks!', replyCount: 0 }
+  const activeComment = { id: 'comment-2', text: 'Can you help?', replyCount: 0 }
+  const otherPost = { accountId: 'act_123', id: 'post-2' }
+
+  const activeBundles = applyCommentBundleDismissals([
+    { post, comments: [dismissedComment, activeComment] },
+    { post: otherPost, comments: [{ id: 'comment-3', text: 'Clear this thread', replyCount: 0 }] },
+  ], new Set([commentDismissalKey(post, dismissedComment)]), new Set([postDismissalKey(otherPost)]))
+
+  assert.equal(activeBundles.length, 1)
+  assert.deepEqual(summarizeInboxNotifications({ commentBundles: activeBundles }), {
+    messages: 0,
+    comments: 1,
+    total: 1,
+  })
 })

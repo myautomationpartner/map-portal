@@ -23,3 +23,13 @@ test('workspace preferences persist today queue state without replacing workspac
   assert.match(source, /WORKSPACE_PREFERENCE_SELECT = 'id, client_id, user_id, workspace_tools_json, today_queue_state_json, updated_at'/)
   assert.match(source, /select\(WORKSPACE_PREFERENCE_SELECT\)/)
 })
+
+test('Inbox notification counts honor locally dismissed comments and cleared threads', () => {
+  assert.match(source, /export async function fetchInboxNotificationCounts\(options = \{\}\)/)
+  assert.match(source, /readNoReplyNeededCommentKeys\(\)/)
+  assert.match(source, /readNoReplyNeededPostKeys\(\)/)
+  assert.match(source, /normalizeDismissalKeySet/)
+  assert.match(source, /visibleCommentPosts = commentPosts\.filter\(\(post\) => !dismissedPostKeys\.has\(postDismissalKey\(post\)\)\)/)
+  assert.match(source, /applyCommentBundleDismissals\(commentBundles,\s*dismissedCommentKeys,\s*dismissedPostKeys\)/)
+  assert.match(source, /summarizeInboxNotifications\(\{ privateConversations,\s*commentBundles: activeCommentBundles \}\)/)
+})

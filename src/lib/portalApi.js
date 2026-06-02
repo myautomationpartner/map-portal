@@ -8,6 +8,11 @@ import {
   sha256Hex,
 } from './secureVault'
 import {
+  applyCommentBundleDismissals,
+  normalizeDismissalKeySet,
+  postDismissalKey,
+  readNoReplyNeededCommentKeys,
+  readNoReplyNeededPostKeys,
   selectPrivateMessageConversations,
   summarizeInboxNotifications,
 } from './inboxClassification'
@@ -619,6 +624,8 @@ export async function fetchInboxCommentBundles(posts = [], options = {}) {
 }
 
 export async function fetchInboxNotificationCounts(options = {}) {
+  const dismissedCommentKeys = normalizeDismissalKeySet(options.dismissedCommentKeys || readNoReplyNeededCommentKeys())
+  const dismissedPostKeys = normalizeDismissalKeySet(options.dismissedPostKeys || readNoReplyNeededPostKeys())
   const [inboxResult, conversationResult, postResult] = await Promise.allSettled([
     fetchChatwootInboxes(),
     fetchInboxConversations({ status: 'open', limit: 50 }),
@@ -630,12 +637,14 @@ export async function fetchInboxNotificationCounts(options = {}) {
   const commentPosts = postResult.status === 'fulfilled' && Array.isArray(postResult.value?.posts)
     ? postResult.value.posts
     : []
-  const commentBundles = commentPosts.length ? await fetchInboxCommentBundles(commentPosts, { limit: 12 }) : []
+  const visibleCommentPosts = commentPosts.filter((post) => !dismissedPostKeys.has(postDismissalKey(post)))
+  const commentBundles = visibleCommentPosts.length ? await fetchInboxCommentBundles(visibleCommentPosts, { limit: 12 }) : []
+  const activeCommentBundles = applyCommentBundleDismissals(commentBundles, dismissedCommentKeys, dismissedPostKeys)
   const privateConversations = selectPrivateMessageConversations(conversations, inboxes, {
     businessNames: options.businessNames || [],
   })
 
-  return summarizeInboxNotifications({ privateConversations, commentBundles })
+  return summarizeInboxNotifications({ privateConversations, commentBundles: activeCommentBundles })
 }
 
 export async function fetchMetrics(clientId) {

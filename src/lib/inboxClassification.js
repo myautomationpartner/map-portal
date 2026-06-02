@@ -6,6 +6,9 @@ function firstString(...values) {
   return ''
 }
 
+export const NO_REPLY_NEEDED_STORAGE_KEY = 'map:inbox:no-reply-needed-comments:v1'
+export const NO_REPLY_NEEDED_POST_STORAGE_KEY = 'map:inbox:no-reply-needed-comment-posts:v1'
+
 function normalizeComparableName(value) {
   return String(value || '')
     .trim()
@@ -212,6 +215,76 @@ export function selectPrivateMessageConversations(conversations = [], inboxes = 
 
 export function commentNeedsReply(comment) {
   return comment?.noReplyNeeded !== true && comment?.canReply !== false && Number(comment?.replyCount || 0) === 0
+}
+
+export function normalizeDismissalKeySet(keys) {
+  if (keys instanceof Set) return new Set([...keys].filter(Boolean))
+  if (Array.isArray(keys)) return new Set(keys.filter(Boolean))
+  return new Set()
+}
+
+function readDismissalKeySet(storageKey) {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(storageKey) || '[]')
+    return normalizeDismissalKeySet(stored)
+  } catch {
+    return new Set()
+  }
+}
+
+function writeDismissalKeySet(storageKey, keys) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(storageKey, JSON.stringify([...normalizeDismissalKeySet(keys)]))
+}
+
+export function readNoReplyNeededCommentKeys() {
+  return readDismissalKeySet(NO_REPLY_NEEDED_STORAGE_KEY)
+}
+
+export function writeNoReplyNeededCommentKeys(keys) {
+  writeDismissalKeySet(NO_REPLY_NEEDED_STORAGE_KEY, keys)
+}
+
+export function readNoReplyNeededPostKeys() {
+  return readDismissalKeySet(NO_REPLY_NEEDED_POST_STORAGE_KEY)
+}
+
+export function writeNoReplyNeededPostKeys(keys) {
+  writeDismissalKeySet(NO_REPLY_NEEDED_POST_STORAGE_KEY, keys)
+}
+
+export function postKey(post) {
+  return `${post?.accountId || ''}:${post?.id || ''}`
+}
+
+export function postDismissalKey(post) {
+  return postKey(post)
+}
+
+export function commentDismissalKey(post, comment) {
+  const accountId = post?.accountId || 'account'
+  const postId = post?.id || 'post'
+  const commentId = comment?.id || comment?.commentId || comment?.createdTime || comment?.text || 'comment'
+  return `${accountId}:${postId}:${commentId}`
+}
+
+export function withCommentDismissals(bundle, dismissedCommentKeys) {
+  const dismissalKeys = normalizeDismissalKeySet(dismissedCommentKeys)
+  return {
+    ...bundle,
+    comments: (Array.isArray(bundle?.comments) ? bundle.comments : []).map((comment) => ({
+      ...comment,
+      noReplyNeeded: dismissalKeys.has(commentDismissalKey(bundle.post, comment)),
+    })),
+  }
+}
+
+export function applyCommentBundleDismissals(commentBundles = [], dismissedCommentKeys, dismissedPostKeys) {
+  const postDismissals = normalizeDismissalKeySet(dismissedPostKeys)
+  return commentBundles
+    .map((bundle) => withCommentDismissals(bundle, dismissedCommentKeys))
+    .filter((bundle) => !postDismissals.has(postDismissalKey(bundle.post)))
 }
 
 export function countCommentsNeedingReply(comments = []) {

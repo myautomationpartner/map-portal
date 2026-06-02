@@ -51,3 +51,13 @@ test('portal shell shows first-login setup walkthrough before customers find Pub
   assert.match(css, /\.portal-first-login-social-help/)
   assert.match(css, /html\[data-portal-theme="map-dark"\] \.portal-first-login-dialog/)
 })
+
+test('portal shell caches Inbox notifications and avoids duplicate Inbox-route fanout', () => {
+  assert.match(appSource, /INBOX_NOTIFICATION_CACHE_PREFIX = 'map:inbox-notification-counts:'/)
+  assert.match(appSource, /function readInboxNotificationCountCache\(cacheKey\)/)
+  assert.match(appSource, /function writeInboxNotificationCountCache\(cacheKey,\s*counts\)/)
+  assert.match(appSource, /const inboxRouteActive = location\.pathname === '\/inbox'/)
+  assert.match(appSource, /enabled: !!session && !demoCaptureRoute && Boolean\(profile\?\.clients\) && !inboxRouteActive/)
+  assert.match(appSource, /initialData: \(\) => readInboxNotificationCountCache\(inboxNotificationCacheKey\)/)
+  assert.match(appSource, /writeInboxNotificationCountCache\(inboxNotificationCacheKey,\s*inboxNotificationCounts\)/)
+})

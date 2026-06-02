@@ -57,9 +57,43 @@ const queryClient = new QueryClient({
 
 const PORTAL_THEME_STORAGE_KEY = 'map.portal.theme'
 const FIRST_LOGIN_SETUP_DISMISS_PREFIX = 'map:first-login-setup-v2-dismissed:'
+const INBOX_NOTIFICATION_CACHE_PREFIX = 'map:inbox-notification-counts:'
+const INBOX_NOTIFICATION_CACHE_TTL_MS = 5 * 60 * 1000
 const PORTAL_PARTNER_ENABLED =
   import.meta.env.VITE_PORTAL_PARTNER_ENABLED !== 'false' &&
   import.meta.env.VITE_PORTAL_COPILOT_ENABLED !== 'false'
+
+function normalizeInboxNotificationCounts(counts) {
+  const messages = Number(counts?.messages || 0)
+  const comments = Number(counts?.comments || 0)
+  const total = Number.isFinite(Number(counts?.total)) ? Number(counts.total) : messages + comments
+  return {
+    messages: Number.isFinite(messages) ? messages : 0,
+    comments: Number.isFinite(comments) ? comments : 0,
+    total: Number.isFinite(total) ? total : 0,
+  }
+}
+
+function readInboxNotificationCountCache(cacheKey) {
+  if (!cacheKey || typeof window === 'undefined') return undefined
+  try {
+    const cached = JSON.parse(window.localStorage.getItem(cacheKey) || 'null')
+    if (!cached?.counts || Date.now() - Number(cached.savedAt || 0) > INBOX_NOTIFICATION_CACHE_TTL_MS) {
+      return undefined
+    }
+    return normalizeInboxNotificationCounts(cached.counts)
+  } catch {
+    return undefined
+  }
+}
+
+function writeInboxNotificationCountCache(cacheKey, counts) {
+  if (!cacheKey || typeof window === 'undefined' || !counts) return
+  window.localStorage.setItem(cacheKey, JSON.stringify({
+    counts: normalizeInboxNotificationCounts(counts),
+    savedAt: Date.now(),
+  }))
+}
 
 function normalizePermissions(profile) {
   const permissions = Array.isArray(profile?.portal_permissions) ? profile.portal_permissions : []
@@ -892,17 +926,25 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     () => businessNameCandidates({ clients: profile?.clients, displayName: tenant.displayName }),
     [profile?.clients, tenant.displayName],
   )
+  const clientId = profile?.client_id
+  const inboxNotificationCacheKey = clientId
+    ? `${INBOX_NOTIFICATION_CACHE_PREFIX}${clientId}`
+    : `${INBOX_NOTIFICATION_CACHE_PREFIX}${inboxBusinessNames.join('|')}`
+  const inboxRouteActive = location.pathname === '/inbox'
   const { data: inboxNotificationCounts } = useQuery({
     queryKey: ['inbox-notification-counts', inboxBusinessNames.join('|')],
     queryFn: () => fetchInboxNotificationCounts({ businessNames: inboxBusinessNames }),
-    enabled: !!session && !demoCaptureRoute && Boolean(profile?.clients),
+    enabled: !!session && !demoCaptureRoute && Boolean(profile?.clients) && !inboxRouteActive,
+    initialData: () => readInboxNotificationCountCache(inboxNotificationCacheKey),
     staleTime: 0,
     refetchInterval: 25_000,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
   })
+  useEffect(() => {
+    writeInboxNotificationCountCache(inboxNotificationCacheKey, inboxNotificationCounts)
+  }, [inboxNotificationCacheKey, inboxNotificationCounts])
   const billingAccess = useMemo(() => resolveBillingAccess(tenant), [tenant])
-  const clientId = profile?.client_id
   const firstLoginSetupDismissKey = clientId ? `${FIRST_LOGIN_SETUP_DISMISS_PREFIX}${clientId}` : ''
   const { data: socialConnections = [], isLoading: socialConnectionsLoading } = useQuery({
     queryKey: ['social_connections', clientId],
