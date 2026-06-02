@@ -931,11 +931,10 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
   const inboxNotificationCacheKey = clientId
     ? `${INBOX_NOTIFICATION_CACHE_PREFIX}${clientId}`
     : `${INBOX_NOTIFICATION_CACHE_PREFIX}${inboxBusinessNames.join('|')}`
-  const inboxRouteActive = location.pathname === '/inbox'
   const { data: inboxNotificationCounts } = useQuery({
     queryKey: ['inbox-notification-counts', inboxBusinessNames.join('|')],
     queryFn: () => fetchInboxNotificationCounts({ businessNames: inboxBusinessNames }),
-    enabled: !!session && !demoCaptureRoute && Boolean(profile?.clients) && !inboxRouteActive,
+    enabled: !!session && !demoCaptureRoute && Boolean(profile?.clients),
     initialData: () => readInboxNotificationCountCache(inboxNotificationCacheKey),
     staleTime: 0,
     refetchInterval: 25_000,
