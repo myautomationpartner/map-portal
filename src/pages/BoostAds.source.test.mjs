@@ -35,6 +35,9 @@ test('portal exposes read-only boosted ads reporting from Zernio', () => {
   assert.match(pageSource, /read-only/)
   assert.match(pageSource, /Open in Zernio/)
   assert.match(pageSource, /View comments/)
+  assert.match(pageSource, /if \(getCampaignStatus\(campaign\)\.key === 'active'\) totals\.active \+= 1/)
+  assert.match(pageSource, /if \(!selectedId\) return campaigns\[0\]/)
+  assert.match(pageSource, /return campaigns\.find\(\(campaign\) => firstText\(campaign\.id, campaign\._id, campaign\.platformCampaignId, campaign\.platform_campaign_id\) === selectedId\) \|\| null/)
 
   assert.match(css, /\.boost-ads-page/)
   assert.match(css, /\.boost-ads-metric-grid/)

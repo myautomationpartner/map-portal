@@ -132,6 +132,7 @@ function getCampaignPreview(campaign = {}) {
 function getCampaignStatus(campaign = {}) {
   const status = firstText(campaign.status, campaign.reviewStatus, campaign.localBoost?.status, 'saved').toLowerCase()
   return {
+    key: status,
     label: status.replace(/_/g, ' '),
     tone: statusTone[status] || 'muted',
   }
@@ -176,7 +177,7 @@ function summarizeCampaigns(campaigns = []) {
     totals.spend += asNumber(metrics.find((metric) => metric.key === 'spend')?.value) || 0
     totals.impressions += asNumber(metrics.find((metric) => metric.key === 'impressions')?.value) || 0
     totals.clicks += asNumber(metrics.find((metric) => metric.key === 'clicks')?.value) || 0
-    if (getCampaignStatus(campaign).tone === 'success') totals.active += 1
+    if (getCampaignStatus(campaign).key === 'active') totals.active += 1
   }
   const ctr = totals.impressions ? (totals.clicks / totals.impressions) * 100 : null
   return { ...totals, ctr }
@@ -302,7 +303,8 @@ export default function BoostAds() {
   const [selectedId, setSelectedId] = useState('')
   const selectedCampaign = useMemo(() => {
     if (!campaigns.length) return null
-    return campaigns.find((campaign) => firstText(campaign.id, campaign._id, campaign.platformCampaignId, campaign.platform_campaign_id) === selectedId) || campaigns[0]
+    if (!selectedId) return campaigns[0]
+    return campaigns.find((campaign) => firstText(campaign.id, campaign._id, campaign.platformCampaignId, campaign.platform_campaign_id) === selectedId) || null
   }, [campaigns, selectedId])
   const summary = useMemo(() => summarizeCampaigns(campaigns), [campaigns])
 
