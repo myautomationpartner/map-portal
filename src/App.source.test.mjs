@@ -61,3 +61,9 @@ test('portal shell caches Inbox notifications and keeps counts fresh on Inbox ro
   assert.match(appSource, /initialData: \(\) => readInboxNotificationCountCache\(inboxNotificationCacheKey\)/)
   assert.match(appSource, /writeInboxNotificationCountCache\(inboxNotificationCacheKey,\s*inboxNotificationCounts\)/)
 })
+
+test('portal shell suppresses floating Partner launcher on post workflows', () => {
+  assert.match(appSource, /const suppressPartnerLauncher = \['\/inbox', '\/attention', '\/post'\]/)
+  assert.match(appSource, /suppressMobileLauncher=\{suppressPartnerLauncher\}/)
+  assert.match(css, /\.portal-partner\[data-suppress-mobile-launcher="true"\] \.portal-partner-launcher \{\s*display: none;\s*\}/)
+})

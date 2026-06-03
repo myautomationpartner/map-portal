@@ -122,6 +122,7 @@ test('Publisher create flow keeps a bottom Next action after long scroll section
   assert.match(createPostSource, /Next: Preview & Approve/)
   assert.match(createPostSource, /Next: Preview & Publish/)
   assert.match(css, /\.create-post-bottom-next/)
+  assert.match(css, /\.create-post-bottom-next \{[\s\S]*min-width: 220px;[\s\S]*white-space: nowrap;/)
   assert.match(css, /@media \(max-width: 1180px\)[\s\S]*\.create-post-bottom-next \{\s*width: 100%;/)
 })
 
