@@ -146,6 +146,43 @@ test('Opportunity Radar appends only after current-week gaps are filled', () => 
   )
 })
 
+test('Opportunity Radar uses business-type query packs for restaurant customers', () => {
+  assert.match(radarFunctionSource, /function getRadarBusinessVertical\(/)
+  assert.match(radarFunctionSource, /const businessVertical = getRadarBusinessVertical\(client\)/)
+  assert.match(radarFunctionSource, /businessVertical === 'restaurant_cafe'/)
+  assert.match(radarFunctionSource, /catering delivery takeout late night downtown events/)
+  assert.match(radarFunctionSource, /restaurant catering delivery takeout social posts/)
+  assert.match(radarFunctionSource, /businessVertical === 'dance_studio'/)
+  assert.match(radarFunctionSource, /businessVertical === 'gym_fitness'/)
+  assert.match(radarFunctionSource, /businessVertical === 'salon_spa'/)
+  assert.match(radarFunctionSource, /businessVertical === 'medical_wellness'/)
+  assert.match(radarFunctionSource, /businessVertical === 'home_services'/)
+  assert.match(radarFunctionSource, /businessVertical === 'real_estate'/)
+  assert.match(radarFunctionSource, /businessVertical === 'professional_services'/)
+  assert.ok(
+    radarFunctionSource.indexOf("businessVertical === 'dance_studio'") <
+      radarFunctionSource.indexOf('${localPlace} ${businessType} open house trial class summer camp recital'),
+  )
+  assert.ok(
+    radarFunctionSource.indexOf("businessVertical === 'restaurant_cafe'") <
+      radarFunctionSource.indexOf('${localPlace} ${businessType} catering delivery takeout late night downtown events'),
+  )
+})
+
+test('Opportunity Radar seeds first research profiles from signup market data', () => {
+  assert.match(radarFunctionSource, /function buildDefaultServiceArea\(client: ClientRow\)/)
+  assert.match(radarFunctionSource, /function buildDefaultResearchNotes\(client: ClientRow\)/)
+  assert.match(radarFunctionSource, /const serviceArea = trimText\(body\.service_area, 160\) \|\| buildDefaultServiceArea\(client\)/)
+  assert.match(radarFunctionSource, /const researchNotes = trimText\(body\.research_notes, 2000\) \|\| buildDefaultResearchNotes\(client\)/)
+  assert.match(radarFunctionSource, /client\.business_reach === 'local'/)
+  assert.match(radarFunctionSource, /\[client\.county, client\.state_code, client\.postal_code\]/)
+  assert.match(radarFunctionSource, /Signup market profile:/)
+  assert.match(radarFunctionSource, /reach=\$\{client\.business_reach \|\| 'unknown'\}/)
+  assert.match(radarFunctionSource, /state=\$\{client\.state_code \|\| 'unknown'\}/)
+  assert.match(radarFunctionSource, /zip=\$\{client\.postal_code \|\| 'unknown'\}/)
+  assert.match(radarFunctionSource, /county=\$\{client\.county \|\| 'unknown'\}/)
+})
+
 test('Opportunity Radar records retrieval before OpenAI synthesis and retries transient OpenAI failures', () => {
   assert.match(radarFunctionSource, /const retryableStatuses = new Set\(\[408, 409, 429, 500, 502, 503, 504\]\)/)
   assert.match(radarFunctionSource, /for \(let attempt = 1; attempt <= 3; attempt \+= 1\)/)

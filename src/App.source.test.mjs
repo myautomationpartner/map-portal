@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises'
 
 const appSource = await readFile(new URL('./App.jsx', import.meta.url), 'utf8')
 const css = await readFile(new URL('./App.css', import.meta.url), 'utf8')
+const tenantBootstrapSource = await readFile(new URL('../../../supabase/functions/_shared/tenant_bootstrap.ts', import.meta.url), 'utf8')
+const deriveTenantBootstrapSource = await readFile(new URL('../../../supabase/functions/derive-tenant-bootstrap/index.ts', import.meta.url), 'utf8')
 
 test('portal shell shows first-login setup walkthrough before customers find Publisher', () => {
   assert.match(appSource, /function FirstLoginSetupWalkthrough/)
@@ -66,4 +68,22 @@ test('portal shell suppresses floating Partner launcher on post workflows', () =
   assert.match(appSource, /const suppressPartnerLauncher = \['\/inbox', '\/attention', '\/post'\]/)
   assert.match(appSource, /suppressMobileLauncher=\{suppressPartnerLauncher\}/)
   assert.match(css, /\.portal-partner\[data-suppress-mobile-launcher="true"\] \.portal-partner-launcher \{\s*display: none;\s*\}/)
+})
+
+test('tenant bootstrap persists a signup-seeded research profile immediately', () => {
+  assert.match(tenantBootstrapSource, /function buildResearchProfile\(/)
+  assert.match(tenantBootstrapSource, /researchProfile: buildResearchProfile\(\{/)
+  assert.match(tenantBootstrapSource, /social_platforms_requested/)
+  assert.match(tenantBootstrapSource, /primary_goal/)
+  assert.match(tenantBootstrapSource, /preferred_contact_method/)
+  assert.match(tenantBootstrapSource, /signup\.notes/)
+  assert.match(tenantBootstrapSource, /business_reach/)
+  assert.match(tenantBootstrapSource, /country_code/)
+  assert.match(tenantBootstrapSource, /state_code/)
+  assert.match(tenantBootstrapSource, /postal_code/)
+  assert.match(tenantBootstrapSource, /county/)
+  assert.match(deriveTenantBootstrapSource, /async function persistResearchProfile/)
+  assert.match(deriveTenantBootstrapSource, /client_research_profiles\?on_conflict=client_id/)
+  assert.match(deriveTenantBootstrapSource, /persistedResearchProfile = await persistResearchProfile\(clientId, bootstrap\.researchProfile\)/)
+  assert.match(deriveTenantBootstrapSource, /persistedResearchProfile/)
 })
