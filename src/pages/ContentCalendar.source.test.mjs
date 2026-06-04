@@ -209,15 +209,48 @@ test('Opportunity Radar turns vertical findings into owner-ready post suggestion
   assert.match(radarFunctionSource, /professional_services:/)
 })
 
+test('Opportunity Radar supports internal prospect dry runs without customer persistence', () => {
+  assert.match(radarFunctionSource, /type ProspectRadarProfile = /)
+  assert.match(radarFunctionSource, /function buildProspectClient\(body: Record<string, unknown>\): ClientRow/)
+  assert.match(radarFunctionSource, /function buildProspectResearchProfile\(client: ClientRow, body: Record<string, unknown>\): ResearchProfile/)
+  assert.match(radarFunctionSource, /async function runProspectDryRun\(request: Request, body: Record<string, unknown>\)/)
+  assert.match(radarFunctionSource, /if \(body\.prospect_dry_run === true\) \{\s*return runProspectDryRun\(request, body\)\s*\}/)
+  assert.match(radarFunctionSource, /requireInternalAccess\(request\)/)
+  assert.match(radarFunctionSource, /anchorSource: 'prospect_dry_run'/)
+  assert.match(radarFunctionSource, /dryRun: true/)
+  assert.match(radarFunctionSource, /opportunities: buildProspectPreviewOpportunities\(client, curatedOpportunities, evidence\)/)
+  assert.match(radarFunctionSource, /function clampNumber\(value: unknown, fallback: number, min: number, max: number\)/)
+  assert.match(radarFunctionSource, /const maxResults = clampNumber\(body\.max_results, config\.defaultMaxResults, 2, 10\)/)
+  const dryRunSource = radarFunctionSource.slice(
+    radarFunctionSource.indexOf('async function runProspectDryRun'),
+    radarFunctionSource.indexOf('Deno.serve'),
+  )
+  assert.doesNotMatch(dryRunSource, /createResearchRun/)
+  assert.doesNotMatch(dryRunSource, /persistOpportunities/)
+})
+
+test('Opportunity Radar carries tuned playbook defaults for fitness, salon, and home services', () => {
+  assert.match(radarFunctionSource, /New member challenge/)
+  assert.match(radarFunctionSource, /Class fill/)
+  assert.match(radarFunctionSource, /Seasonal appointment/)
+  assert.match(radarFunctionSource, /Appointment opening/)
+  assert.match(radarFunctionSource, /Maintenance lead/)
+  assert.match(radarFunctionSource, /Weather-triggered urgency/)
+  assert.match(radarFunctionSource, /new member intro offer challenge/)
+  assert.match(radarFunctionSource, /last-minute appointment openings seasonal transformations/)
+  assert.match(radarFunctionSource, /storm prep tune-up before after review request/)
+})
+
 test('Opportunity Radar records retrieval before OpenAI synthesis and retries transient OpenAI failures', () => {
   assert.match(radarFunctionSource, /const retryableStatuses = new Set\(\[408, 409, 429, 500, 502, 503, 504\]\)/)
   assert.match(radarFunctionSource, /for \(let attempt = 1; attempt <= 3; attempt \+= 1\)/)
   assert.match(radarFunctionSource, /await recordTavilyUsage\(client\.id, runId, tavilySearchUsage\)\.then/)
   assert.match(radarFunctionSource, /failure_stage: telemetry\.stage/)
   assert.match(radarFunctionSource, /provider_error: telemetry\.detail/)
+  const customerTelemetryIndex = radarFunctionSource.indexOf('await recordTavilyUsage(client.id, runId, tavilySearchUsage).then')
+  const customerSynthesisIndex = radarFunctionSource.indexOf('const synthesis = await synthesizeOpportunities(client, profile', customerTelemetryIndex)
   assert.ok(
-    radarFunctionSource.indexOf('await recordTavilyUsage(client.id, runId, tavilySearchUsage).then') <
-      radarFunctionSource.indexOf('const synthesis = await synthesizeOpportunities'),
+    customerTelemetryIndex !== -1 && customerSynthesisIndex > customerTelemetryIndex,
   )
 })
 

@@ -102,6 +102,27 @@ function getAdBriefValue(suggestion, key) {
   return brief[key] || ''
 }
 
+function getOwnerReadyBrief(suggestion) {
+  const brief = {
+    businessGoal: String(getAdBriefValue(suggestion, 'business_goal') || '').trim(),
+    valueLabel: String(getAdBriefValue(suggestion, 'value_label') || '').trim(),
+    boostRecommendation: String(getAdBriefValue(suggestion, 'boost_recommendation') || '').trim(),
+    suggestedImage: String(getAdBriefValue(suggestion, 'suggested_image') || '').trim(),
+    approvalReadySummary: String(getAdBriefValue(suggestion, 'approval_ready_summary') || '').trim(),
+  }
+
+  return {
+    ...brief,
+    hasDetails: Boolean(
+      brief.businessGoal ||
+      brief.valueLabel ||
+      brief.boostRecommendation ||
+      brief.suggestedImage ||
+      brief.approvalReadySummary,
+    ),
+  }
+}
+
 function normalizeSentence(value, fallback = '') {
   const text = String(value || '').trim()
   if (!text) return fallback
@@ -109,6 +130,7 @@ function normalizeSentence(value, fallback = '') {
 }
 
 function buildActionPlan(opportunity, suggestion) {
+  const brief = getOwnerReadyBrief(suggestion)
   const captionStarter = normalizeSentence(
     suggestion?.caption_starter || opportunity?.summary,
     'Share why this matters right now and give people one simple next step.',
@@ -118,11 +140,11 @@ function buildActionPlan(opportunity, suggestion) {
     'Invite people to message you, book, or learn more this week.',
   )
   const visualPrompt = normalizeSentence(
-    suggestion?.creative_direction || opportunity?.local_context || opportunity?.why_it_matters,
+    brief.suggestedImage || suggestion?.creative_direction || opportunity?.local_context || opportunity?.why_it_matters,
     'Use a current, real image that clearly connects this post to what is happening now.',
   )
   const quickReason = normalizeSentence(
-    opportunity?.why_it_matters || opportunity?.summary,
+    brief.approvalReadySummary || opportunity?.why_it_matters || opportunity?.summary,
     'This is timely, specific, and worth posting while it is still current.',
   )
 
@@ -442,6 +464,7 @@ function ActionWorkspace({
 
   const suggestions = getActiveSuggestions(opportunity)
   const actionPlan = buildActionPlan(opportunity, suggestion)
+  const brief = getOwnerReadyBrief(suggestion)
   const isSuggestionBusy = suggestion && busyAction === suggestion.id
   const isOpportunityBusy = busyAction === opportunity.id
   const isConverted = suggestion?.review_state === 'converted_to_draft' || suggestion?.converted_draft_id
@@ -474,6 +497,40 @@ function ActionWorkspace({
           <p className="text-[11px] font-bold uppercase" style={{ color: '#e36522' }}>Visual idea</p>
           <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>{actionPlan.visualPrompt}</p>
         </div>
+        {brief.hasDetails ? (
+          <div className="rounded-lg border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(15,23,42,0.04)' }}>
+            <p className="text-[11px] font-bold uppercase" style={{ color: 'var(--portal-text)' }}>Why approve</p>
+            <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>
+              {brief.approvalReadySummary || actionPlan.quickReason}
+            </p>
+            <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+              {brief.businessGoal ? (
+                <div>
+                  <dt className="text-[11px] font-bold uppercase" style={{ color: 'var(--portal-text-muted)' }}>Business goal</dt>
+                  <dd className="mt-1 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{brief.businessGoal}</dd>
+                </div>
+              ) : null}
+              {brief.valueLabel ? (
+                <div>
+                  <dt className="text-[11px] font-bold uppercase" style={{ color: 'var(--portal-text-muted)' }}>Value label</dt>
+                  <dd className="mt-1 text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{brief.valueLabel}</dd>
+                </div>
+              ) : null}
+              {brief.boostRecommendation ? (
+                <div>
+                  <dt className="text-[11px] font-bold uppercase" style={{ color: 'var(--portal-text-muted)' }}>Boost guidance</dt>
+                  <dd className="mt-1 text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>{brief.boostRecommendation}</dd>
+                </div>
+              ) : null}
+              {brief.suggestedImage ? (
+                <div>
+                  <dt className="text-[11px] font-bold uppercase" style={{ color: 'var(--portal-text-muted)' }}>Suggested image</dt>
+                  <dd className="mt-1 text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>{brief.suggestedImage}</dd>
+                </div>
+              ) : null}
+            </dl>
+          </div>
+        ) : null}
       </div>
 
       <div className="border-t px-6 py-4" style={{ borderColor: 'var(--portal-border)' }}>
