@@ -161,7 +161,7 @@ test('Opportunity Radar uses business-type query packs for restaurant customers'
   assert.match(radarFunctionSource, /businessVertical === 'professional_services'/)
   assert.ok(
     radarFunctionSource.indexOf("businessVertical === 'dance_studio'") <
-      radarFunctionSource.indexOf('${localPlace} ${businessType} open house trial class summer camp recital'),
+      radarFunctionSource.indexOf('${localPlace} ${businessType} summer enrollment recital registration parent questions'),
   )
   assert.ok(
     radarFunctionSource.indexOf("businessVertical === 'restaurant_cafe'") <
@@ -239,6 +239,24 @@ test('Opportunity Radar carries tuned playbook defaults for fitness, salon, and 
   assert.match(radarFunctionSource, /new member intro offer challenge/)
   assert.match(radarFunctionSource, /last-minute appointment openings seasonal transformations/)
   assert.match(radarFunctionSource, /storm prep tune-up before after review request/)
+})
+
+test('Opportunity Radar carries deeper playbook defaults for medical, real estate, professional, and dance verticals', () => {
+  assert.match(radarFunctionSource, /New patient inquiry/)
+  assert.match(radarFunctionSource, /Compliance-safe education/)
+  assert.match(radarFunctionSource, /Insurance or benefit reminder/)
+  assert.match(radarFunctionSource, /Neighborhood proof/)
+  assert.match(radarFunctionSource, /Home valuation lead/)
+  assert.match(radarFunctionSource, /Local market snapshot/)
+  assert.match(radarFunctionSource, /Discovery call lead/)
+  assert.match(radarFunctionSource, /Case study proof/)
+  assert.match(radarFunctionSource, /Decision deadline/)
+  assert.match(radarFunctionSource, /Trial class lead/)
+  assert.match(radarFunctionSource, /Seasonal enrollment/)
+  assert.match(radarFunctionSource, /summer enrollment recital registration parent questions/)
+  assert.match(radarFunctionSource, /new patient appointment insurance benefits awareness/)
+  assert.match(radarFunctionSource, /home valuation neighborhood market snapshot open house seller lead/)
+  assert.match(radarFunctionSource, /consultation lead deadline checklist case study referral/)
 })
 
 test('Opportunity Radar records retrieval before OpenAI synthesis and retries transient OpenAI failures', () => {
