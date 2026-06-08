@@ -1,10 +1,11 @@
-import { AlertTriangle, ArrowUpRight, Loader2, Lock } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Loader2, Lock, X } from 'lucide-react'
 
-export default function PortalBillingBanner({ billingAccess, onAction, actionPending = false }) {
+export default function PortalBillingBanner({ billingAccess, onAction, actionPending = false, onDismiss }) {
   if (!billingAccess?.showBanner) return null
 
   const Icon = billingAccess.mode === 'blocked' || billingAccess.mode === 'warning' ? AlertTriangle : Lock
   const canAct = billingAccess.actionType !== 'none' && Boolean(billingAccess.ctaLabel) && Boolean(billingAccess.actionUrl || onAction)
+  const canDismiss = typeof onDismiss === 'function'
 
   return (
     <section
@@ -36,19 +37,33 @@ export default function PortalBillingBanner({ billingAccess, onAction, actionPen
           </div>
         </div>
 
-        {canAct ? (
-          <button
-            type="button"
-            onClick={onAction}
-            disabled={actionPending}
-            className="portal-billing-banner-action inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
-            style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}
-          >
-            {actionPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {billingAccess.ctaLabel || 'Open billing'}
-            {actionPending ? null : <ArrowUpRight className="h-4 w-4" />}
-          </button>
-        ) : null}
+        <div className="portal-billing-banner-actions flex flex-col gap-2 sm:flex-row sm:items-center">
+          {canAct ? (
+            <button
+              type="button"
+              onClick={onAction}
+              disabled={actionPending}
+              className="portal-billing-banner-action inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+              style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}
+            >
+              {actionPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {billingAccess.ctaLabel || 'Open billing'}
+              {actionPending ? null : <ArrowUpRight className="h-4 w-4" />}
+            </button>
+          ) : null}
+          {canDismiss ? (
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="portal-billing-banner-dismiss inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+              aria-label="Hide billing reminder until tomorrow"
+              title="Hide until tomorrow"
+            >
+              <X className="h-4 w-4" />
+              Dismiss
+            </button>
+          ) : null}
+        </div>
       </div>
     </section>
   )

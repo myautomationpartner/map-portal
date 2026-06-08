@@ -13341,6 +13341,47 @@ html:not([data-portal-theme="map-dark"]) body:has(.settings-page) .portal-billin
   box-shadow: none !important;
 }
 
+.portal-billing-banner-dismiss {
+  border: 1px solid color-mix(in srgb, var(--portal-text-muted) 24%, transparent);
+  background: color-mix(in srgb, var(--portal-text) 4%, transparent);
+  color: var(--portal-text-muted);
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.portal-billing-banner-dismiss:hover,
+.portal-billing-banner-dismiss:focus-visible {
+  border-color: color-mix(in srgb, var(--portal-text-muted) 44%, transparent);
+  background: color-mix(in srgb, var(--portal-text) 8%, transparent);
+  color: var(--portal-text);
+}
+
+html:not([data-portal-theme="map-dark"]) body:has(.dashboard-page) .portal-billing-banner-dismiss,
+html:not([data-portal-theme="map-dark"]) body:has(.documents-page) .portal-billing-banner-dismiss,
+html:not([data-portal-theme="map-dark"]) body:has(.content-plan-page) .portal-billing-banner-dismiss,
+html:not([data-portal-theme="map-dark"]) body:has(.create-post-page) .portal-billing-banner-dismiss,
+html:not([data-portal-theme="map-dark"]) body:has(.campaign-partner-page) .portal-billing-banner-dismiss,
+html:not([data-portal-theme="map-dark"]) body:has(.social-stats-page) .portal-billing-banner-dismiss,
+html:not([data-portal-theme="map-dark"]) body:has(.inbox-page) .portal-billing-banner-dismiss,
+html:not([data-portal-theme="map-dark"]) body:has(.settings-page) .portal-billing-banner-dismiss {
+  border-color: rgba(17, 24, 39, 0.12) !important;
+  background: #f8fafc !important;
+  color: #64707c !important;
+  box-shadow: none !important;
+}
+
+html:not([data-portal-theme="map-dark"]) body:has(.dashboard-page) .portal-billing-banner-dismiss:hover,
+html:not([data-portal-theme="map-dark"]) body:has(.documents-page) .portal-billing-banner-dismiss:hover,
+html:not([data-portal-theme="map-dark"]) body:has(.content-plan-page) .portal-billing-banner-dismiss:hover,
+html:not([data-portal-theme="map-dark"]) body:has(.create-post-page) .portal-billing-banner-dismiss:hover,
+html:not([data-portal-theme="map-dark"]) body:has(.campaign-partner-page) .portal-billing-banner-dismiss:hover,
+html:not([data-portal-theme="map-dark"]) body:has(.social-stats-page) .portal-billing-banner-dismiss:hover,
+html:not([data-portal-theme="map-dark"]) body:has(.inbox-page) .portal-billing-banner-dismiss:hover,
+html:not([data-portal-theme="map-dark"]) body:has(.settings-page) .portal-billing-banner-dismiss:hover {
+  border-color: rgba(17, 24, 39, 0.22) !important;
+  background: #edf2f7 !important;
+  color: #161a22 !important;
+}
+
 html:not([data-portal-theme="map-dark"]) body:has(.dashboard-page) .portal-shell::before,
 html:not([data-portal-theme="map-dark"]) body:has(.documents-page) .portal-shell::before,
 html:not([data-portal-theme="map-dark"]) body:has(.content-plan-page) .portal-shell::before,

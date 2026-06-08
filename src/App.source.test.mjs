@@ -64,6 +64,21 @@ test('portal shell caches Inbox notifications and keeps counts fresh on Inbox ro
   assert.match(appSource, /writeInboxNotificationCountCache\(inboxNotificationCacheKey,\s*inboxNotificationCounts\)/)
 })
 
+test('portal billing banner can be dismissed for the current local day', () => {
+  assert.match(appSource, /BILLING_BANNER_DISMISS_PREFIX = 'map:billing-banner-dismissed:'/)
+  assert.match(appSource, /function todayDismissalStamp\(\)/)
+  assert.match(appSource, /function readDailyDismissal\(key\)/)
+  assert.match(appSource, /function writeDailyDismissal\(key\)/)
+  assert.match(appSource, /const billingBannerDismissKey = clientId && billingAccess\?\.billingStatus/)
+  assert.match(appSource, /const billingBannerDismissible = billingAccess\?\.mode === 'trial' \|\| billingAccess\?\.mode === 'warning'/)
+  assert.match(appSource, /\(!billingBannerDismissible \|\| !billingBannerDismissedToday\)/)
+  assert.match(appSource, /setBillingBannerDismissedToday\(readDailyDismissal\(billingBannerDismissKey\)\)/)
+  assert.match(appSource, /function dismissBillingBannerForToday\(\)/)
+  assert.match(appSource, /writeDailyDismissal\(billingBannerDismissKey\)/)
+  assert.match(appSource, /onDismiss=\{billingBannerDismissible \? dismissBillingBannerForToday : undefined\}/)
+  assert.match(css, /\.portal-billing-banner-dismiss/)
+})
+
 test('portal shell suppresses floating Partner launcher on post workflows', () => {
   assert.match(appSource, /const suppressPartnerLauncher = \['\/inbox', '\/attention', '\/post'\]/)
   assert.match(appSource, /suppressMobileLauncher=\{suppressPartnerLauncher\}/)

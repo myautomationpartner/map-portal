@@ -58,6 +58,7 @@ const queryClient = new QueryClient({
 
 const PORTAL_THEME_STORAGE_KEY = 'map.portal.theme'
 const FIRST_LOGIN_SETUP_DISMISS_PREFIX = 'map:first-login-setup-v2-dismissed:'
+const BILLING_BANNER_DISMISS_PREFIX = 'map:billing-banner-dismissed:'
 const INBOX_NOTIFICATION_CACHE_PREFIX = 'map:inbox-notification-counts:'
 const INBOX_NOTIFICATION_CACHE_TTL_MS = 5 * 60 * 1000
 const PORTAL_PARTNER_ENABLED =
@@ -94,6 +95,23 @@ function writeInboxNotificationCountCache(cacheKey, counts) {
     counts: normalizeInboxNotificationCounts(counts),
     savedAt: Date.now(),
   }))
+}
+
+function todayDismissalStamp() {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
+
+function readDailyDismissal(key) {
+  if (!key || typeof window === 'undefined') return false
+  return window.localStorage.getItem(key) === todayDismissalStamp()
+}
+
+function writeDailyDismissal(key) {
+  if (!key || typeof window === 'undefined') return
+  window.localStorage.setItem(key, todayDismissalStamp())
 }
 
 function normalizePermissions(profile) {
@@ -915,6 +933,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     enabled: !!session && !demoCaptureRoute,
   })
   const [billingActionPending, setBillingActionPending] = useState('')
+  const [billingBannerDismissedToday, setBillingBannerDismissedToday] = useState(false)
   const [firstLoginSetupDismissed, setFirstLoginSetupDismissed] = useState(false)
   const [firstLoginSetupReady, setFirstLoginSetupReady] = useState(false)
 
@@ -945,6 +964,10 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     writeInboxNotificationCountCache(inboxNotificationCacheKey, inboxNotificationCounts)
   }, [inboxNotificationCacheKey, inboxNotificationCounts])
   const billingAccess = useMemo(() => resolveBillingAccess(tenant), [tenant])
+  const billingBannerDismissKey = clientId && billingAccess?.billingStatus
+    ? `${BILLING_BANNER_DISMISS_PREFIX}${clientId}:${billingAccess.billingStatus}`
+    : ''
+  const billingBannerDismissible = billingAccess?.mode === 'trial' || billingAccess?.mode === 'warning'
   const firstLoginSetupDismissKey = clientId ? `${FIRST_LOGIN_SETUP_DISMISS_PREFIX}${clientId}` : ''
   const { data: socialConnections = [], isLoading: socialConnectionsLoading } = useQuery({
     queryKey: ['social_connections', clientId],
@@ -971,6 +994,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
   )
   const tenantRouteMismatch = Boolean(session && profile?.clients && pathTenantMismatch)
   const showBillingBanner =
+    (!billingBannerDismissible || !billingBannerDismissedToday) &&
     location.pathname !== '/' &&
     !location.pathname.startsWith('/stats/') &&
     !location.pathname.startsWith('/documents') &&
@@ -979,6 +1003,10 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     location.pathname !== '/inbox' &&
     location.pathname !== '/attention'
   const suppressPartnerLauncher = ['/inbox', '/attention', '/post'].some((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
+
+  useEffect(() => {
+    setBillingBannerDismissedToday(readDailyDismissal(billingBannerDismissKey))
+  }, [billingBannerDismissKey])
 
   useEffect(() => {
     if (!firstLoginSetupDismissKey || typeof window === 'undefined') {
@@ -1039,6 +1067,11 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
 
   function dismissFirstLoginSetup() {
     setFirstLoginSetupDismissed(true)
+  }
+
+  function dismissBillingBannerForToday() {
+    writeDailyDismissal(billingBannerDismissKey)
+    setBillingBannerDismissedToday(true)
   }
 
   function handleSetupNavigate(path) {
@@ -1145,6 +1178,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
               billingAccess={billingAccess}
               onAction={handleBillingAction}
               actionPending={billingActionPending}
+              onDismiss={billingBannerDismissible ? dismissBillingBannerForToday : undefined}
             />
           ) : null}
           <Outlet
