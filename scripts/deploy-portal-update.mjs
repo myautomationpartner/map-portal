@@ -169,7 +169,7 @@ function buildPublicEnv(client) {
     VITE_PORTAL_DISPLAY_NAME: client.business_name || DEFAULT_PORTAL_LABEL,
     VITE_PORTAL_LABEL: DEFAULT_PORTAL_LABEL,
     VITE_PORTAL_SUPPORT_EMAIL: client.support_email || DEFAULT_SUPPORT_EMAIL,
-    VITE_PORTAL_LOGO_URL: client.logo_url || '',
+    VITE_PORTAL_LOGO_URL: '',
     VITE_PORTAL_CANONICAL_HOST: client.portal_domain || '',
     VITE_PORTAL_ASSET_BASE: sharedMode ? './' : '/',
     VITE_PORTAL_WORKER_NAME: client.worker_name || '',

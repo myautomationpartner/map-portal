@@ -80,17 +80,7 @@ export function buildTenantConfig(input = {}) {
     sharePayload.support_email ||
     DEFAULT_SUPPORT_EMAIL
 
-  const isMapWorkspace = String(clientSlug || businessName || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[_\s]+/g, '-') === 'my-automation-partner'
-
-  const logoUrl =
-    env.VITE_PORTAL_LOGO_URL ||
-    (isMapWorkspace ? DEFAULT_LOGO_URL : '') ||
-    client?.logo_url ||
-    sharePayload.logo_url ||
-    DEFAULT_LOGO_URL
+  const logoUrl = DEFAULT_LOGO_URL
 
   const canonicalHost =
     env.VITE_PORTAL_CANONICAL_HOST ||

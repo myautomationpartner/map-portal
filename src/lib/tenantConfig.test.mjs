@@ -34,3 +34,23 @@ test('deployed billing status remains a fallback when live client data is unavai
   assert.equal(tenant.billingStatus, 'payment_method_needed')
   assert.equal(tenant.billingCheckoutUrl, 'https://checkout.stripe.test/fallback')
 })
+
+test('portal chrome always uses the MAP logo instead of customer logos', () => {
+  const tenant = buildTenantConfig({
+    client: {
+      slug: 'dancescapes-performing-arts-llc',
+      business_name: 'Dancescapes Performing Arts, LLC',
+      logo_url: 'https://www.dancescapes.com/assets/images/logo.jpg',
+    },
+    sharePayload: {
+      portal_path: '/portal/dancescapes-performing-arts-llc',
+      logo_url: 'https://example.com/customer-share-logo.png',
+    },
+    env: {
+      VITE_PORTAL_LOGO_URL: 'https://example.com/deployed-customer-logo.png',
+    },
+  })
+
+  assert.equal(tenant.logoUrl, '/assets/map-option-b-mark.png')
+  assert.equal(tenant.fallbackLogoUrl, '/assets/map-option-b-mark.png')
+})
