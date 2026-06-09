@@ -10,9 +10,7 @@ import {
   FileText,
   Inbox as InboxIcon,
   Loader2,
-  Mail,
   MessageCircle,
-  MonitorSmartphone,
   QrCode,
   RefreshCw,
   Search,
@@ -48,11 +46,6 @@ import {
 
 const DEFAULT_CHATWOOT_APP_URL = 'https://chatwoot.myautomationpartner.com/app'
 const CHATWOOT_APP_URL = stripTrailingSlash(import.meta.env.VITE_CHATWOOT_APP_URL || DEFAULT_CHATWOOT_APP_URL)
-const CHATWOOT_MOBILE_APPS_URL = import.meta.env.VITE_CHATWOOT_MOBILE_APPS_URL || 'https://www.chatwoot.com/mobile-apps'
-const CHATWOOT_IOS_URL = import.meta.env.VITE_CHATWOOT_IOS_URL || 'https://apps.apple.com/us/app/chatwoot/id1495796682'
-const CHATWOOT_ANDROID_URL = import.meta.env.VITE_CHATWOOT_ANDROID_URL || 'https://play.google.com/store/apps/details?id=com.chatwoot.app'
-const CHATWOOT_WORKSPACE_URL = 'https://chatwoot.myautomationpartner.com'
-const CHATWOOT_WORKSPACE_HOST = 'chatwoot.myautomationpartner.com'
 
 const STATUS_OPTIONS = [
   { value: 'open', label: 'Open' },
@@ -127,13 +120,6 @@ async function websiteChatPortalFetch(path, options = {}) {
 
 function fetchWebsiteChatSettings() {
   return websiteChatPortalFetch('/api/website-chat/settings')
-}
-
-function sendMobileSetupEmail() {
-  return websiteChatPortalFetch('/api/inbox/mobile-setup-email', {
-    method: 'POST',
-    body: JSON.stringify({}),
-  })
 }
 
 function zernioPortalFetch(path, options = {}) {
@@ -232,19 +218,6 @@ function updateConversationStatus({ conversationId, status }) {
 
 function stripTrailingSlash(value) {
   return String(value || '').replace(/\/+$/, '')
-}
-
-function isMobile() {
-  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-}
-
-function isIOS() {
-  return /iPhone|iPad|iPod/i.test(navigator.userAgent)
-}
-
-function mobileStoreUrl() {
-  if (!isMobile()) return CHATWOOT_MOBILE_APPS_URL
-  return isIOS() ? CHATWOOT_IOS_URL : CHATWOOT_ANDROID_URL
 }
 
 function mobileSetupUrl() {
@@ -510,7 +483,7 @@ function commentReplyCreatedTime(reply) {
 }
 
 function MobileAppBanner() {
-  if (!isMobile()) return null
+  if (typeof navigator === 'undefined' || !/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) return null
 
   return (
     <div className="portal-status-info flex items-start gap-4 px-4 py-3">
@@ -520,17 +493,15 @@ function MobileAppBanner() {
           Mobile customer service
         </p>
         <p className="text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-          Use the Chatwoot mobile app with installation URL {CHATWOOT_WORKSPACE_HOST}.
+          Use this MAP portal on your phone. Add it to your Home Screen for an app-like Inbox, Publisher, Files, and My Partner experience.
         </p>
       </div>
       <a
-        href={mobileStoreUrl()}
-        target="_blank"
-        rel="noopener noreferrer"
+        href={mobileSetupUrl()}
         className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold"
         style={{ color: 'var(--portal-primary)' }}
       >
-        Get App
+        Setup
         <ArrowUpRight className="h-3.5 w-3.5" />
       </a>
     </div>
@@ -560,14 +531,12 @@ function SetupChecklistItem({ done, title, detail }) {
 
 function SetupInboxModal({ open, onClose, websiteChat, websiteChatLoading, userEmail }) {
   const [copied, setCopied] = useState('')
-  const [mobileEmailStatus, setMobileEmailStatus] = useState(null)
-  const [sendingMobileEmail, setSendingMobileEmail] = useState(false)
   if (!open) return null
 
   const settings = websiteChat?.settings || {}
   const snippet = websiteChat?.installSnippet || settings.install_snippet || ''
   const installed = settings.install_status === 'detected'
-  const workspaceUrl = CHATWOOT_WORKSPACE_URL
+  const portalUrl = mobileSetupUrl().replace(/\?phoneSetup=1$/, '')
   const loginEmail = userEmail || 'your MAP login email'
 
   async function copyText(label, value) {
@@ -575,25 +544,6 @@ function SetupInboxModal({ open, onClose, websiteChat, websiteChatLoading, userE
     await navigator.clipboard?.writeText(value)
     setCopied(label)
     window.setTimeout(() => setCopied(''), 1800)
-  }
-
-  async function handleSendMobileEmail() {
-    setSendingMobileEmail(true)
-    setMobileEmailStatus(null)
-    try {
-      await sendMobileSetupEmail()
-      setMobileEmailStatus({
-        type: 'success',
-        message: `Mobile inbox setup email sent to ${loginEmail}. It should come from inbox@myautomationpartner.com.`,
-      })
-    } catch (error) {
-      setMobileEmailStatus({
-        type: 'error',
-        message: error instanceof Error ? error.message : 'Could not send the mobile inbox setup email.',
-      })
-    } finally {
-      setSendingMobileEmail(false)
-    }
   }
 
   return (
@@ -608,7 +558,7 @@ function SetupInboxModal({ open, onClose, websiteChat, websiteChatLoading, userE
               Set up customer messages
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-              MAP keeps the main inbox here. Chatwoot powers the mobile app and website widget in the background.
+              MAP keeps customer messages in this portal. Chatwoot powers website chat and support routing in the background.
             </p>
           </div>
           <button
@@ -627,7 +577,7 @@ function SetupInboxModal({ open, onClose, websiteChat, websiteChatLoading, userE
               <SetupChecklistItem
                 done
                 title="1. Use this portal for daily customer service"
-                detail="Website chat and social messages land in this Inbox. Reply, add notes, and resolve conversations here on desktop."
+                detail="Website chats, social messages, public comments, and My Partner tasks land in this Inbox."
               />
               <SetupChecklistItem
                 done={Boolean(websiteChat?.settings?.chatwoot_website_token || websiteChat?.installSnippet)}
@@ -636,25 +586,25 @@ function SetupInboxModal({ open, onClose, websiteChat, websiteChatLoading, userE
               />
               <SetupChecklistItem
                 done
-                title="3. Use Chatwoot only for mobile"
-                detail="Install the Chatwoot app when you want phone notifications and quick replies away from your computer."
+                title="3. Use MAP on your phone"
+                detail="Open the MAP portal on your phone and add it to your Home Screen for the customer-facing mobile app experience."
               />
 
               <div className="rounded-2xl border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.76)' }}>
                 <div className="flex items-center gap-2">
                   <Smartphone className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
-                  <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Mobile app setup</p>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>MAP mobile setup</p>
                 </div>
                 <div className="mt-4 grid gap-3 text-sm">
                   <div className="rounded-xl border p-3" style={{ borderColor: 'var(--portal-border)' }}>
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--portal-text-soft)' }}>App</p>
-                    <p className="mt-1 font-semibold" style={{ color: 'var(--portal-text)' }}>Chatwoot</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--portal-text-soft)' }}>Mobile app</p>
+                    <p className="mt-1 font-semibold" style={{ color: 'var(--portal-text)' }}>MAP customer portal</p>
                   </div>
                   <div className="rounded-xl border p-3" style={{ borderColor: 'var(--portal-border)' }}>
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--portal-text-soft)' }}>Workspace URL</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--portal-text-soft)' }}>Portal URL</p>
                     <div className="mt-1 flex items-center justify-between gap-3">
-                      <p className="break-all font-semibold" style={{ color: 'var(--portal-text)' }}>{workspaceUrl}</p>
-                      <button type="button" onClick={() => copyText('workspace', workspaceUrl)} className="portal-button-secondary inline-flex h-8 w-8 items-center justify-center">
+                      <p className="break-all font-semibold" style={{ color: 'var(--portal-text)' }}>{portalUrl}</p>
+                      <button type="button" onClick={() => copyText('portal', portalUrl)} className="portal-button-secondary inline-flex h-8 w-8 items-center justify-center">
                         <Copy className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -665,34 +615,19 @@ function SetupInboxModal({ open, onClose, websiteChat, websiteChatLoading, userE
                   </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
+                  <a href={portalUrl} className="portal-button-primary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold">
+                    Open MAP mobile portal
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                  </a>
                   <button
                     type="button"
-                    onClick={handleSendMobileEmail}
-                    disabled={sendingMobileEmail}
-                    className="portal-button-primary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => copyText('portal', portalUrl)}
+                    className="portal-button-secondary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold"
                   >
-                    {sendingMobileEmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
-                    Send mobile setup email
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy portal link
                   </button>
-                  <a href={CHATWOOT_IOS_URL} target="_blank" rel="noopener noreferrer" className="portal-button-secondary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold">
-                    iPhone app
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                  </a>
-                  <a href={CHATWOOT_ANDROID_URL} target="_blank" rel="noopener noreferrer" className="portal-button-secondary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold">
-                    Android app
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                  </a>
                 </div>
-                {mobileEmailStatus && (
-                  <p
-                    className="mt-3 rounded-xl border px-3 py-2 text-xs font-semibold"
-                    style={mobileEmailStatus.type === 'success'
-                      ? { borderColor: 'rgba(47,143,87,0.28)', background: 'rgba(47,143,87,0.1)', color: '#2f8f57' }
-                      : { borderColor: 'rgba(196,85,110,0.2)', background: 'rgba(196,85,110,0.08)', color: '#a83f58' }}
-                  >
-                    {mobileEmailStatus.message}
-                  </p>
-                )}
               </div>
 
               <div className="rounded-2xl border p-4" style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.76)' }}>
@@ -739,11 +674,11 @@ function SetupInboxModal({ open, onClose, websiteChat, websiteChatLoading, userE
               <div className="mt-4 space-y-4 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
                 <div>
                   <p className="font-semibold" style={{ color: 'var(--portal-text)' }}>What to use</p>
-                  <p>Use MAP Inbox on your computer. Use Chatwoot mobile app only when you need phone notifications or fast replies away from your desk.</p>
+                  <p>Use MAP Inbox on desktop and phone. Chatwoot stays behind the scenes for website chat and support routing.</p>
                 </div>
                 <div>
                   <p className="font-semibold" style={{ color: 'var(--portal-text)' }}>Mobile steps</p>
-                  <p>Download Chatwoot, enter the workspace URL, then click Send mobile setup email if you need a Chatwoot password link. The email is only for mobile inbox access.</p>
+                  <p>Open the MAP portal on your phone, sign in with your MAP email, then use Share and Add to Home Screen for an app-like shortcut.</p>
                 </div>
                 <div>
                   <p className="font-semibold" style={{ color: 'var(--portal-text)' }}>Website steps</p>
@@ -781,23 +716,14 @@ function PhoneSetupStep({ number, title, detail }) {
   )
 }
 
-function PhoneSetupCard({ title, storeLabel, storeUrl, steps }) {
+function PhoneSetupCard({ title, steps }) {
   return (
     <div className="rounded-xl border p-4" style={{ borderColor: 'var(--portal-border)', background: '#fff' }}>
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{title}</h3>
-          <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>Official Chatwoot mobile app</p>
+          <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>MAP portal home-screen setup</p>
         </div>
-        <a
-          href={storeUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="portal-button-primary inline-flex shrink-0 items-center gap-2 px-3 py-2 text-xs font-semibold"
-        >
-          {storeLabel}
-          <ArrowUpRight className="h-3.5 w-3.5" />
-        </a>
       </div>
       <div className="mt-4 space-y-3">
         {steps.map((step, index) => (
@@ -810,12 +736,11 @@ function PhoneSetupCard({ title, storeLabel, storeUrl, steps }) {
 
 function PhoneSetupModal({ open, onClose, userEmail }) {
   const [copied, setCopied] = useState('')
-  const [mobileEmailStatus, setMobileEmailStatus] = useState(null)
-  const [sendingMobileEmail, setSendingMobileEmail] = useState(false)
   if (!open) return null
 
   const loginEmail = userEmail || 'your MAP login email'
   const setupUrl = mobileSetupUrl()
+  const portalUrl = setupUrl.replace(/\?phoneSetup=1$/, '')
 
   async function copyText(label, value) {
     if (!value) return
@@ -824,37 +749,18 @@ function PhoneSetupModal({ open, onClose, userEmail }) {
     window.setTimeout(() => setCopied(''), 1800)
   }
 
-  async function handleSendMobileEmail() {
-    setSendingMobileEmail(true)
-    setMobileEmailStatus(null)
-    try {
-      await sendMobileSetupEmail()
-      setMobileEmailStatus({
-        type: 'success',
-        message: `Mobile inbox setup email sent to ${loginEmail}. It should come from inbox@myautomationpartner.com.`,
-      })
-    } catch (error) {
-      setMobileEmailStatus({
-        type: 'error',
-        message: error instanceof Error ? error.message : 'Could not send the mobile inbox setup email.',
-      })
-    } finally {
-      setSendingMobileEmail(false)
-    }
-  }
-
-  const sharedSteps = [
+  const phoneSteps = [
     {
-      title: 'Enter the workspace URL',
-      detail: `Use ${CHATWOOT_WORKSPACE_HOST}. The official app asks for this before login.`,
+      title: 'Open the MAP portal',
+      detail: `Use ${portalUrl} and sign in with ${loginEmail}.`,
     },
     {
-      title: 'Log in with your MAP email',
-      detail: `Use ${loginEmail}. If you do not know your Chatwoot password, send the mobile setup email below.`,
+      title: 'Add it to your Home Screen',
+      detail: 'Use the phone browser share menu, then choose Add to Home Screen for an app-like shortcut.',
     },
     {
-      title: 'Allow notifications',
-      detail: 'Turn on push notifications so customer messages reach you even when you are not in the portal.',
+      title: 'Use MAP Inbox on the phone',
+      detail: 'Customer messages, public comments, Publisher, Files, and My Partner stay in the MAP portal experience.',
     },
   ]
 
@@ -867,10 +773,10 @@ function PhoneSetupModal({ open, onClose, userEmail }) {
               Phone setup
             </span>
             <h2 className="mt-3 text-2xl font-semibold" style={{ color: 'var(--portal-text)' }}>
-              Set up phone notifications
+              Set up MAP on your phone
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-              Recommended before going live. The portal handles setup and scheduling, but your phone is how you catch and reply to customer inquiries quickly.
+              Recommended before going live. Use the MAP portal on your phone for Inbox, Publisher, Files, and My Partner. Chatwoot stays in the background.
             </p>
           </div>
           <button
@@ -889,37 +795,33 @@ function PhoneSetupModal({ open, onClose, userEmail }) {
               <div className="rounded-xl border p-4" style={{ borderColor: 'rgba(35,119,255,0.2)', background: '#f5f9ff' }}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--portal-text-soft)' }}>Workspace URL</p>
-                    <p className="mt-1 break-all text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>{CHATWOOT_WORKSPACE_HOST}</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--portal-text-soft)' }}>Portal URL</p>
+                    <p className="mt-1 break-all text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>{portalUrl}</p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => copyText('workspace', CHATWOOT_WORKSPACE_HOST)}
+                    onClick={() => copyText('portal', portalUrl)}
                     className="portal-button-secondary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold"
                   >
                     <Copy className="h-3.5 w-3.5" />
-                    Copy URL
+                    Copy portal link
                   </button>
                 </div>
               </div>
 
               <div className="grid gap-4 xl:grid-cols-2">
                 <PhoneSetupCard
-                  title="iPhone setup"
-                  storeLabel="App Store"
-                  storeUrl={CHATWOOT_IOS_URL}
+                  title="iPhone"
                   steps={[
-                    { title: 'Install Chatwoot from the App Store', detail: 'Open the App Store button, install Chatwoot, then return here for the workspace URL.' },
-                    ...sharedSteps,
+                    { title: 'Open the portal in Safari', detail: 'Use the portal link or scan the QR code from your phone.' },
+                    ...phoneSteps.slice(1),
                   ]}
                 />
                 <PhoneSetupCard
-                  title="Android setup"
-                  storeLabel="Play Store"
-                  storeUrl={CHATWOOT_ANDROID_URL}
+                  title="Android"
                   steps={[
-                    { title: 'Install Chatwoot from Google Play', detail: 'Open the Play Store button, install Chatwoot, then return here for the workspace URL.' },
-                    ...sharedSteps,
+                    { title: 'Open the portal in Chrome', detail: 'Use the portal link or scan the QR code from your phone.' },
+                    ...phoneSteps.slice(1),
                   ]}
                 />
               </div>
@@ -927,31 +829,16 @@ function PhoneSetupModal({ open, onClose, userEmail }) {
               <div className="rounded-xl border p-4" style={{ borderColor: 'var(--portal-border)', background: '#fff' }}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Need a password link?</h3>
+                    <h3 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>What works on mobile?</h3>
                     <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                      Send the Chatwoot mobile setup email to {loginEmail}. This is only for mobile inbox access.
+                      Customers can use Inbox, Publisher, Files, Settings, and My Partner from the MAP portal. Website chat and support routing still run through Chatwoot behind the scenes.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleSendMobileEmail}
-                    disabled={sendingMobileEmail}
-                    className="portal-button-primary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {sendingMobileEmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
-                    Send setup email
-                  </button>
+                  <a href={portalUrl} className="portal-button-primary inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold">
+                    Open portal
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                  </a>
                 </div>
-                {mobileEmailStatus && (
-                  <p
-                    className="mt-3 rounded-xl border px-3 py-2 text-xs font-semibold"
-                    style={mobileEmailStatus.type === 'success'
-                      ? { borderColor: 'rgba(47,143,87,0.28)', background: 'rgba(47,143,87,0.1)', color: '#2f8f57' }
-                      : { borderColor: 'rgba(196,85,110,0.2)', background: 'rgba(196,85,110,0.08)', color: '#a83f58' }}
-                  >
-                    {mobileEmailStatus.message}
-                  </p>
-                )}
               </div>
             </div>
 
@@ -961,7 +848,7 @@ function PhoneSetupModal({ open, onClose, userEmail }) {
                 <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Scan with your phone</p>
               </div>
               <p className="mt-2 text-xs leading-relaxed" style={{ color: 'var(--portal-text-muted)' }}>
-                Open this setup guide on your phone, then install the app and copy the workspace URL without typing.
+                Open this portal on your phone, then add it to the Home Screen for the customer-facing mobile app experience.
               </p>
               <div className="mt-4 rounded-xl border bg-white p-3" style={{ borderColor: 'var(--portal-border)' }}>
                 <img

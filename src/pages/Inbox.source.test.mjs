@@ -75,3 +75,16 @@ test('desktop Inbox syncs local active counts into the global sidebar notificati
   assert.match(inboxSource, /const messagesReady = conversationsQuery\.isFetched/)
   assert.match(inboxSource, /total: messages \+ comments/)
 })
+
+test('Inbox setup points customers to MAP mobile portal instead of Chatwoot mobile apps', () => {
+  assert.match(inboxSource, /MAP mobile setup/)
+  assert.match(inboxSource, /Set up MAP on your phone/)
+  assert.match(inboxSource, /Chatwoot powers website chat and support routing in the background/)
+  assert.match(inboxSource, /Open MAP mobile portal/)
+  assert.doesNotMatch(inboxSource, /Official Chatwoot mobile app/)
+  assert.doesNotMatch(inboxSource, /Send mobile setup email/)
+  assert.doesNotMatch(inboxSource, /CHATWOOT_MOBILE_APPS_URL/)
+  assert.doesNotMatch(inboxSource, /CHATWOOT_IOS_URL/)
+  assert.doesNotMatch(inboxSource, /CHATWOOT_ANDROID_URL/)
+  assert.doesNotMatch(inboxSource, /CHATWOOT_WORKSPACE_URL/)
+})

@@ -17,9 +17,6 @@ const FALLBACK_SUPABASE_ANON_KEY = 'sb_publishable_xwASGbwUsZhX5CFNizTAmg_U50hkD
 const DEFAULT_N8N_BASE_URL = 'https://n8n.myautomationpartner.com'
 const DEFAULT_CHATWOOT_APP_URL = 'https://chatwoot.myautomationpartner.com/app'
 const DEFAULT_CHATWOOT_BASE_URL = 'https://chatwoot.myautomationpartner.com'
-const DEFAULT_CHATWOOT_MOBILE_APPS_URL = 'https://www.chatwoot.com/mobile-apps'
-const DEFAULT_CHATWOOT_IOS_URL = 'https://apps.apple.com/us/app/chatwoot/id1495796682'
-const DEFAULT_CHATWOOT_ANDROID_URL = 'https://play.google.com/store/apps/details?id=com.chatwoot.app'
 const DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME = 'Social Inbox'
 const CHATWOOT_CONTENT_PARTNER_CONTACT_NAME = 'My Partner'
 const CHATWOOT_CONTENT_PARTNER_GREETING = 'Send me a rough note, photos, or both. I will turn it into a Publisher draft for you to review before anything posts.'
@@ -1231,7 +1228,7 @@ async function provisionChatwootTenant({ client, dryRun, skipChatwootProvisionin
     assigneeUserId: user.id,
   })
   const passwordReset = skipChatwootPasswordReset
-    ? { skipped: true, reason: 'Chatwoot mobile setup email is sent on demand from Inbox setup.' }
+    ? { skipped: true, reason: 'Customer mobile setup uses the MAP portal; no Chatwoot mobile setup email is sent by provisioning.' }
     : await triggerChatwootPasswordReset(customerEmail)
 
   return {
@@ -1686,9 +1683,6 @@ function buildPublicEnv(client, options = {}) {
     VITE_PORTAL_BILLING_STATUS: sharedMode ? '' : (client.billing_status || ''),
     VITE_N8N_BASE_URL: envValue(['VITE_N8N_BASE_URL', 'N8N_BASE_URL'], DEFAULT_N8N_BASE_URL),
     VITE_CHATWOOT_APP_URL: envValue(['VITE_CHATWOOT_APP_URL', 'CHATWOOT_APP_URL'], DEFAULT_CHATWOOT_APP_URL),
-    VITE_CHATWOOT_MOBILE_APPS_URL: envValue(['VITE_CHATWOOT_MOBILE_APPS_URL'], DEFAULT_CHATWOOT_MOBILE_APPS_URL),
-    VITE_CHATWOOT_IOS_URL: envValue(['VITE_CHATWOOT_IOS_URL'], DEFAULT_CHATWOOT_IOS_URL),
-    VITE_CHATWOOT_ANDROID_URL: envValue(['VITE_CHATWOOT_ANDROID_URL'], DEFAULT_CHATWOOT_ANDROID_URL),
     VITE_GOOGLE_PICKER_API_KEY: envValue(['VITE_GOOGLE_PICKER_API_KEY', 'GOOGLE_PICKER_API_KEY']),
     VITE_GOOGLE_PICKER_CLIENT_ID: envValue(['VITE_GOOGLE_PICKER_CLIENT_ID', 'GOOGLE_PICKER_CLIENT_ID']),
     VITE_GOOGLE_PICKER_APP_ID: envValue(['VITE_GOOGLE_PICKER_APP_ID', 'GOOGLE_PICKER_APP_ID']),
