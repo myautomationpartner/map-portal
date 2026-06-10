@@ -222,7 +222,8 @@ function stripTrailingSlash(value) {
 
 function mobileSetupUrl() {
   if (typeof window === 'undefined') return '/inbox?phoneSetup=1'
-  return `${window.location.origin}/inbox?phoneSetup=1`
+  const setupPath = portalPath('/inbox?phoneSetup=1')
+  return new URL(setupPath, window.location.origin).toString()
 }
 
 function qrImageUrl(value) {

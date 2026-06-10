@@ -81,6 +81,8 @@ test('Inbox setup points customers to MAP mobile portal instead of Chatwoot mobi
   assert.match(inboxSource, /Set up MAP on your phone/)
   assert.match(inboxSource, /Chatwoot powers website chat and support routing in the background/)
   assert.match(inboxSource, /Open MAP mobile portal/)
+  assert.match(inboxSource, /const setupPath = portalPath\('\/inbox\?phoneSetup=1'\)/)
+  assert.match(inboxSource, /return new URL\(setupPath, window\.location\.origin\)\.toString\(\)/)
   assert.doesNotMatch(inboxSource, /Official Chatwoot mobile app/)
   assert.doesNotMatch(inboxSource, /Send mobile setup email/)
   assert.doesNotMatch(inboxSource, /CHATWOOT_MOBILE_APPS_URL/)
