@@ -152,7 +152,7 @@ export default function ScheduledPosts() {
 
   if (profileLoading || postsLoading) {
     if (mobilePartnerRollout) {
-      return <MobileScheduledPartner loading />
+      return <MobileScheduledPartner loading readOnly={Boolean(outlet.billingAccess?.readOnly)} />
     }
     return (
       <div className="portal-page flex min-h-[60vh] items-center justify-center">
@@ -171,6 +171,7 @@ export default function ScheduledPosts() {
           deletingId={deleteBusyId}
           onDelete={handleDeleteScheduledPost}
           error={errorMsg}
+          readOnly={Boolean(outlet.billingAccess?.readOnly)}
         />
       ) : null}
       <div className={`portal-page scheduled-posts-page ${mobilePartnerRollout ? 'scheduled-posts-rollout-desktop' : ''} w-full max-w-none space-y-6 md:p-5 xl:p-6`}>

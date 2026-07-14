@@ -8,7 +8,7 @@ import {
   XLogo,
 } from '@phosphor-icons/react'
 import MobilePartnerTopBar from './MobilePartnerTopBar'
-import MobileVoiceComposer from './MobileVoiceComposer'
+import MobilePartnerChat from './MobilePartnerChat'
 
 const CONTENT_SOURCES = new Set(['Posts', 'Campaign', 'Idea', 'Partner'])
 
@@ -70,9 +70,9 @@ export default function MobilePartnerHome({
   calendarPosts,
   onComplete,
   savePending = false,
+  readOnly = false,
 }) {
   const navigate = useNavigate()
-  const [composer, setComposer] = useState('')
   const [selectedPlatforms, setSelectedPlatforms] = useState(['facebook', 'instagram', 'twitter'])
   const activeItems = useMemo(() => queue.filter((item) => !item.completed && !item.snoozed), [queue])
   const contentItem = activeItems.find((item) => CONTENT_SOURCES.has(item.source)) || null
@@ -84,16 +84,15 @@ export default function MobilePartnerHome({
   }, [calendarPosts, contentItem])
   const businessName = tenant?.displayName || 'your business'
 
-  function openPartner(message = '') {
-    window.dispatchEvent(new CustomEvent('map:open-portal-partner', {
-      detail: { message: String(message || '').trim() },
-    }))
-    setComposer('')
-  }
-
-  function handlePhotos(files) {
+  function handlePhotos(files, options = {}) {
     navigate('/post?source=recent-photos', {
-      state: { recentPhotos: files, preselectedPlatforms: selectedPlatforms },
+      state: {
+        recentPhotos: files,
+        preselectedPlatforms: selectedPlatforms,
+        initialCaption: options.caption || '',
+        partnerPrompt: options.prompt || '',
+        imageCountAnalyzed: Number(options.imageCountAnalyzed || 0),
+      },
     })
   }
 
@@ -115,7 +114,14 @@ export default function MobilePartnerHome({
     <div className="mobile-partner-home">
       <MobilePartnerTopBar activeMode="post" notificationCount={summary?.needsHuman || 0} />
 
-      <main className="mobile-partner-conversation">
+      <MobilePartnerChat
+        contextPath="/"
+        placeholder="Ask My Partner anything"
+        note="Voice and photos work here. Nothing posts without review."
+        onPhotos={handlePhotos}
+        platforms={selectedPlatforms}
+        readOnly={readOnly}
+      >
         <PartnerMessage>
           <p>{contentItem ? 'I found the strongest post to lead with.' : 'Tell me what you want to promote, or choose a recent photo.'}</p>
           <strong>
@@ -178,18 +184,7 @@ export default function MobilePartnerHome({
             <small>Open Inbox for a suggested reply</small>
           </button>
         ) : null}
-      </main>
-
-      <div className="mobile-partner-composer-dock">
-        <MobileVoiceComposer
-          value={composer}
-          onChange={setComposer}
-          onSubmit={openPartner}
-          onPhotos={handlePhotos}
-          placeholder="Ask My Partner anything"
-        />
-        <p>Voice and photos work here. Nothing posts without review.</p>
-      </div>
+      </MobilePartnerChat>
     </div>
   )
 }

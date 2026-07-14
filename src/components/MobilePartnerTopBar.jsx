@@ -11,6 +11,11 @@ export default function MobilePartnerTopBar({ activeMode, notificationCount = 0 
   const navigate = useNavigate()
   const count = Math.max(0, Number(notificationCount || 0))
 
+  function resetWorkspaceScroll() {
+    document.querySelector('.portal-shell-mobile-partner > div > main')?.scrollTo({ top: 0, behavior: 'auto' })
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }
+
   return (
     <header className="mobile-partner-topbar">
       <div className="mobile-partner-topbar-row">
@@ -42,6 +47,7 @@ export default function MobilePartnerTopBar({ activeMode, notificationCount = 0 
             className="mobile-partner-mode-link"
             data-active={activeMode === id ? 'true' : undefined}
             aria-current={activeMode === id ? 'page' : undefined}
+            onClick={resetWorkspaceScroll}
           >
             <Icon size={17} weight={activeMode === id ? 'fill' : 'regular'} />
             <span>{label}</span>

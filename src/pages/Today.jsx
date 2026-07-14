@@ -408,6 +408,7 @@ export default function Today() {
           calendarPosts={calendarPosts}
           onComplete={handleComplete}
           savePending={saveStateMutation.isPending}
+          readOnly={Boolean(outlet.billingAccess?.readOnly)}
         />
       ) : null}
       <div className={`today-page portal-page ${mobilePartnerRollout ? 'today-rollout-desktop' : ''}`}>

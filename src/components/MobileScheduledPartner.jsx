@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   CalendarBlank,
@@ -9,7 +8,7 @@ import {
   XLogo,
 } from '@phosphor-icons/react'
 import MobilePartnerTopBar from './MobilePartnerTopBar'
-import MobileVoiceComposer from './MobileVoiceComposer'
+import MobilePartnerChat from './MobilePartnerChat'
 
 function formatSchedule(value) {
   if (!value) return 'Schedule time unavailable'
@@ -45,22 +44,21 @@ export default function MobileScheduledPartner({
   deletingId = '',
   onDelete,
   error = '',
+  readOnly = false,
 }) {
   const navigate = useNavigate()
-  const [composer, setComposer] = useState('')
-
-  function openPartner(message = '') {
-    window.dispatchEvent(new CustomEvent('map:open-portal-partner', {
-      detail: { message: String(message || '').trim() },
-    }))
-    setComposer('')
-  }
 
   return (
     <div className="mobile-scheduled-partner">
       <MobilePartnerTopBar activeMode="scheduled" />
 
-      <main className="mobile-scheduled-conversation">
+      <MobilePartnerChat
+        contextPath="/post/scheduled"
+        placeholder="Ask about your schedule"
+        note="Changes still require your review."
+        readOnly={readOnly}
+        conversationClassName="mobile-scheduled-conversation"
+      >
         <div className="mobile-partner-message">
           <span className="mobile-partner-message-avatar">
             <img src="/assets/map-option-b-mark.png" alt="" />
@@ -130,17 +128,7 @@ export default function MobileScheduledPartner({
             </div>
           </div>
         ) : null}
-      </main>
-
-      <div className="mobile-partner-composer-dock">
-        <MobileVoiceComposer
-          value={composer}
-          onChange={setComposer}
-          onSubmit={openPartner}
-          placeholder="Ask about your schedule"
-        />
-        <p>Changes still require your review.</p>
-      </div>
+      </MobilePartnerChat>
     </div>
   )
 }

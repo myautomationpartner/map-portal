@@ -16,6 +16,9 @@ const createSource = await readFile(new URL('./pages/CreatePost.jsx', import.met
 const attentionSource = await readFile(new URL('./pages/Attention.jsx', import.meta.url), 'utf8')
 const portalApiSource = await readFile(new URL('./lib/portalApi.js', import.meta.url), 'utf8')
 const voiceComposerSource = await readFile(new URL('./components/MobileVoiceComposer.jsx', import.meta.url), 'utf8')
+const mobileChatSource = await readFile(new URL('./components/MobilePartnerChat.jsx', import.meta.url), 'utf8')
+const appHtmlSource = await readFile(new URL('../index.html', import.meta.url), 'utf8')
+const imageAssistSource = await readFile(new URL('./lib/imageAssist.js', import.meta.url), 'utf8')
 
 test('mobile Partner rollout is limited to the two approved first customers', () => {
   assert.deepEqual(
@@ -29,7 +32,9 @@ test('mobile Partner rollout is limited to the two approved first customers', ()
 
 test('mobile home reuses Publisher and carries Facebook, Instagram, and X choices forward', () => {
   assert.match(homeSource, /useState\(\['facebook', 'instagram', 'twitter'\]\)/)
-  assert.match(homeSource, /state: \{ recentPhotos: files, preselectedPlatforms: selectedPlatforms \}/)
+  assert.match(homeSource, /recentPhotos: files/)
+  assert.match(homeSource, /preselectedPlatforms: selectedPlatforms/)
+  assert.match(homeSource, /initialCaption: options\.caption/)
   assert.match(homeSource, /navigate\('\/post', \{ state: \{ preselectedPlatforms: selectedPlatforms \} \}\)/)
   assert.match(homeSource, /Nothing posts without review\./)
 })
@@ -39,19 +44,40 @@ test('rollout navigation uses the three approved top-level conversation modes', 
   assert.match(topBarSource, /label: 'Post', to: '\/'/)
   assert.match(topBarSource, /label: 'Scheduled', to: '\/post\/scheduled'/)
   assert.match(topBarSource, /aria-label="My Partner workspaces"/)
+  assert.match(topBarSource, /resetWorkspaceScroll/)
   assert.match(homeSource, /<MobilePartnerTopBar activeMode="post"/)
   assert.match(scheduledSource, /<MobilePartnerTopBar activeMode="scheduled"/)
   assert.match(navSource, /if \(partnerRollout\) return null/)
 })
 
 test('voice and recent-photo controls are present throughout the mobile core flow', () => {
-  assert.match(homeSource, /<MobileVoiceComposer/)
+  assert.match(homeSource, /<MobilePartnerChat/)
   assert.match(partnerSource, /<MobileVoiceComposer/)
   assert.match(createSource, /<MobileVoiceComposer/)
   assert.match(attentionSource, /<MobileVoiceComposer/)
-  assert.match(scheduledSource, /<MobileVoiceComposer/)
+  assert.match(scheduledSource, /<MobilePartnerChat/)
+  assert.match(mobileChatSource, /<MobileVoiceComposer/)
   assert.doesNotMatch(voiceComposerSource, /<form/)
   assert.match(voiceComposerSource, /type="button"[\s\S]{0,180}onClick=\{handleSubmit\}/)
+  assert.match(voiceComposerSource, /aria-label="Add a photo or file"/)
+  assert.match(voiceComposerSource, />Take Photo</)
+  assert.match(voiceComposerSource, />Photo Library</)
+  assert.match(voiceComposerSource, />Choose File</)
+  assert.match(mobileChatSource, /generatePublisherAssist\(/)
+  assert.match(mobileChatSource, /image_data_urls: imageDataUrls/)
+  assert.match(mobileChatSource, /Attachments ready for this post/)
+  assert.match(imageAssistSource, /canvas\.toDataURL\('image\/jpeg'/)
+})
+
+test('mobile Partner chat stays inline, supports multiline drafts, and opts into iPhone safe areas', () => {
+  assert.match(homeSource, /<MobilePartnerChat/)
+  assert.match(scheduledSource, /<MobilePartnerChat/)
+  assert.doesNotMatch(homeSource, /map:open-portal-partner/)
+  assert.doesNotMatch(scheduledSource, /map:open-portal-partner/)
+  assert.match(mobileChatSource, /sendPortalPartnerMessage/)
+  assert.match(mobileChatSource, /submitOnEnter=\{false\}/)
+  assert.match(voiceComposerSource, /textarea\.scrollHeight/)
+  assert.match(appHtmlSource, /viewport-fit=cover/)
 })
 
 test('mobile Publisher defaults to the three first-pass platforms and still requires final approval', () => {

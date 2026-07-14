@@ -1,5 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
-import { Camera, PaperPlaneRight, StopCircle, Waveform } from '@phosphor-icons/react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  Camera,
+  FolderOpen,
+  Images,
+  PaperPlaneRight,
+  Plus,
+  StopCircle,
+  Waveform,
+} from '@phosphor-icons/react'
 
 function getSpeechRecognition() {
   if (typeof window === 'undefined') return null
@@ -19,8 +27,13 @@ export default function MobileVoiceComposer({
 }) {
   const recognitionRef = useRef(null)
   const photoInputRef = useRef(null)
+  const cameraInputRef = useRef(null)
+  const fileInputRef = useRef(null)
+  const attachmentMenuRef = useRef(null)
+  const textareaRef = useRef(null)
   const voiceBaseRef = useRef('')
   const [listening, setListening] = useState(false)
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false)
   const [speechSupported, setSpeechSupported] = useState(() => (
     typeof window === 'undefined' ? true : Boolean(getSpeechRecognition())
   ))
@@ -28,6 +41,36 @@ export default function MobileVoiceComposer({
   useEffect(() => {
     return () => recognitionRef.current?.abort?.()
   }, [])
+
+  useEffect(() => {
+    if (!attachmentMenuOpen) return undefined
+
+    function closeOnOutsidePress(event) {
+      if (!attachmentMenuRef.current?.contains(event.target)) setAttachmentMenuOpen(false)
+    }
+
+    function closeOnEscape(event) {
+      if (event.key === 'Escape') setAttachmentMenuOpen(false)
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsidePress)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [attachmentMenuOpen])
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+
+    textarea.style.height = 'auto'
+    const maxHeight = Number.parseFloat(window.getComputedStyle(textarea).maxHeight) || 112
+    const nextHeight = Math.min(textarea.scrollHeight, maxHeight)
+    textarea.style.height = `${nextHeight}px`
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
+  }, [value])
 
   function toggleListening() {
     if (listening) {
@@ -70,33 +113,75 @@ export default function MobileVoiceComposer({
     onSubmit?.(cleanValue)
   }
 
+  function handleAttachmentSelection(event) {
+    const files = Array.from(event.target.files || [])
+    if (files.length) onPhotos?.(files)
+    event.target.value = ''
+  }
+
+  function openAttachmentPicker(inputRef) {
+    setAttachmentMenuOpen(false)
+    window.requestAnimationFrame(() => inputRef.current?.click())
+  }
+
   return (
     <div className={`mobile-voice-composer ${compact ? 'is-compact' : ''} ${onPhotos ? 'has-photos' : ''} ${showSend ? '' : 'no-send'}`}>
       {onPhotos ? (
-        <>
+        <div className="mobile-voice-composer-attachment" ref={attachmentMenuRef}>
           <input
             ref={photoInputRef}
             type="file"
             accept="image/*,video/*"
             multiple
             className="sr-only"
-            onChange={(event) => {
-              const files = Array.from(event.target.files || [])
-              if (files.length) onPhotos(files)
-              event.target.value = ''
-            }}
+            onChange={handleAttachmentSelection}
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="sr-only"
+            onChange={handleAttachmentSelection}
+          />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*"
+            multiple
+            className="sr-only"
+            onChange={handleAttachmentSelection}
           />
           <button
             type="button"
-            className="mobile-voice-composer-action is-photo"
-            onClick={() => photoInputRef.current?.click()}
-            aria-label="Choose recent photos or videos"
+            className={`mobile-voice-composer-action is-attachment ${attachmentMenuOpen ? 'is-open' : ''}`}
+            onClick={() => setAttachmentMenuOpen((open) => !open)}
+            aria-label="Add a photo or file"
+            aria-haspopup="menu"
+            aria-expanded={attachmentMenuOpen}
           >
-            <Camera size={21} weight="regular" />
+            <Plus size={22} weight="bold" />
           </button>
-        </>
+          {attachmentMenuOpen ? (
+            <div className="mobile-voice-attachment-menu" role="menu" aria-label="Add to post">
+              <button type="button" role="menuitem" onClick={() => openAttachmentPicker(cameraInputRef)}>
+                <Camera size={20} weight="regular" />
+                <span>Take Photo</span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => openAttachmentPicker(photoInputRef)}>
+                <Images size={20} weight="regular" />
+                <span>Photo Library</span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => openAttachmentPicker(fileInputRef)}>
+                <FolderOpen size={20} weight="regular" />
+                <span>Choose File</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
       ) : null}
       <textarea
+        ref={textareaRef}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}

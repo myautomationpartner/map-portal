@@ -516,6 +516,97 @@
     text-align: center;
   }
 
+  .mobile-partner-composer-attachments {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding: 0 0.15rem 0.5rem;
+    scrollbar-width: none;
+  }
+
+  .mobile-partner-home:has(.mobile-partner-composer-attachments) .mobile-partner-conversation {
+    padding-bottom: calc(11.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-partner-composer-attachments::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-partner-composer-attachment {
+    position: relative;
+    display: grid;
+    width: 5.1rem;
+    flex: 0 0 5.1rem;
+    grid-template-rows: 3.7rem auto;
+    overflow: hidden;
+    border: 1px solid var(--pulse-line);
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 8px 20px rgba(16, 37, 53, 0.12);
+  }
+
+  .mobile-partner-composer-attachment > img {
+    width: 100%;
+    height: 3.7rem;
+    object-fit: cover;
+  }
+
+  .mobile-partner-composer-attachment > svg {
+    align-self: center;
+    justify-self: center;
+    color: #08747a;
+  }
+
+  .mobile-partner-composer-attachment > span {
+    overflow: hidden;
+    padding: 0.25rem 0.35rem 0.32rem;
+    color: var(--pulse-muted);
+    font-size: 0.58rem;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-partner-composer-attachment > button {
+    position: absolute;
+    top: 0.22rem;
+    right: 0.22rem;
+    display: inline-flex;
+    width: 1.35rem;
+    height: 1.35rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    border-radius: 50%;
+    background: rgba(16, 37, 53, 0.86);
+    color: #ffffff;
+  }
+
+  .mobile-partner-message-attachments {
+    display: flex;
+    gap: 0.35rem;
+    overflow-x: auto;
+    margin-bottom: 0.5rem;
+  }
+
+  .mobile-partner-message-attachments img {
+    width: 4.25rem;
+    height: 4.25rem;
+    flex: 0 0 4.25rem;
+    border-radius: 12px;
+    object-fit: cover;
+  }
+
+  .mobile-partner-message-attachments span {
+    display: inline-flex;
+    max-width: 10rem;
+    align-items: center;
+    gap: 0.35rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .mobile-partner-home .mobile-voice-composer,
   .mobile-scheduled-partner .mobile-voice-composer,
   .attention-mobile-partner-rollout .mobile-voice-composer,
@@ -17221,6 +17312,62 @@ html[data-portal-theme="map-dark"] .attention-composer-shell button {
     color: var(--mobile-partner-muted, var(--portal-text-muted));
   }
 
+  .mobile-voice-composer-attachment {
+    position: relative;
+    align-self: end;
+  }
+
+  .mobile-voice-composer-action.is-attachment {
+    border: 1px solid var(--mobile-partner-line, var(--portal-border));
+    background: color-mix(in srgb, var(--mobile-partner-surface, #ffffff) 88%, var(--mobile-partner-line, #dbe5e8)) !important;
+  }
+
+  .mobile-voice-composer-action.is-attachment.is-open {
+    border-color: rgba(0, 174, 182, 0.48);
+    background: rgba(0, 174, 182, 0.12) !important;
+    color: #08747a !important;
+  }
+
+  .mobile-voice-attachment-menu {
+    position: absolute;
+    bottom: calc(100% + 0.65rem);
+    left: 0;
+    z-index: 120;
+    display: grid;
+    width: 12.5rem;
+    overflow: hidden;
+    border: 1px solid var(--mobile-partner-line, var(--portal-border));
+    border-radius: 18px;
+    background: var(--mobile-partner-surface, #ffffff);
+    padding: 0.35rem;
+    box-shadow: 0 16px 44px rgba(16, 37, 53, 0.2);
+  }
+
+  .mobile-voice-attachment-menu button {
+    display: flex;
+    min-height: 2.8rem;
+    align-items: center;
+    gap: 0.7rem;
+    border: 0;
+    border-radius: 13px;
+    background: transparent;
+    color: var(--mobile-partner-text, var(--portal-text));
+    padding: 0 0.75rem;
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 680;
+    text-align: left;
+  }
+
+  .mobile-voice-attachment-menu button:active {
+    background: rgba(0, 174, 182, 0.12);
+  }
+
+  .mobile-voice-attachment-menu button svg {
+    color: #08747a;
+    flex: 0 0 auto;
+  }
+
   .mobile-voice-composer-action.is-listening {
     background: #f0d9d6;
     color: #9e3f36;
@@ -20450,5 +20597,141 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     border-color: rgba(0, 174, 182, 0.3) !important;
     background: var(--pulse-aqua-soft) !important;
     color: #08747a !important;
+  }
+}
+
+/* iPhone standalone guardrails: respect the Dynamic Island, keep the composer
+   above the home indicator, and keep Partner replies inside the active mode. */
+@media (max-width: 767px) {
+  .mobile-partner-home,
+  .mobile-scheduled-partner,
+  .attention-mobile-partner-rollout {
+    --mobile-partner-topbar-space: calc(env(safe-area-inset-top, 0px) + 7.6rem);
+  }
+
+  .portal-shell-mobile-partner,
+  .portal-shell-mobile-partner > div,
+  .portal-shell-mobile-partner > div > main {
+    background: var(--pulse-bg, #f4f7f8);
+  }
+
+  .mobile-partner-topbar {
+    padding-top: max(0.7rem, calc(env(safe-area-inset-top, 0px) + 0.55rem));
+  }
+
+  .mobile-partner-home > .mobile-partner-topbar,
+  .mobile-scheduled-partner > .mobile-partner-topbar,
+  .attention-mobile-partner-rollout > .mobile-partner-topbar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 0;
+  }
+
+  .mobile-partner-home > .mobile-partner-conversation,
+  .mobile-scheduled-partner > .mobile-scheduled-conversation {
+    padding-top: calc(var(--mobile-partner-topbar-space) + 1.05rem);
+  }
+
+  .attention-mobile-partner-rollout .attention-mobile-shell {
+    height: calc(100dvh - var(--mobile-partner-topbar-space)) !important;
+    margin-top: var(--mobile-partner-topbar-space);
+  }
+
+  .attention-mobile-partner-rollout .attention-thread-pane.attention-mobile-open {
+    height: calc(100dvh - var(--mobile-partner-topbar-space)) !important;
+  }
+
+  .mobile-partner-home,
+  .mobile-scheduled-partner,
+  .attention-mobile-partner-rollout {
+    min-height: 100dvh;
+  }
+
+  .mobile-partner-composer-dock {
+    bottom: 0 !important;
+    background: var(--pulse-bg, #f4f7f8) !important;
+    padding-bottom: max(0.55rem, calc(env(safe-area-inset-bottom, 0px) + 0.34rem)) !important;
+  }
+
+  .mobile-voice-composer textarea,
+  html[data-portal-theme="map-dark"] .mobile-voice-composer textarea,
+  html[data-portal-theme="map-dark"] .create-post-mobile-partner-rollout .create-post-mobile-voice .mobile-voice-composer textarea {
+    min-height: 2.55rem !important;
+    font-size: 16px !important;
+    line-height: 1.4 !important;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .mobile-partner-inline-message {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.56rem;
+  }
+
+  .mobile-partner-inline-message.user {
+    justify-content: flex-end;
+    padding-left: 2.9rem;
+  }
+
+  .mobile-partner-inline-bubble {
+    max-width: min(88%, 32rem);
+    border: 1px solid var(--pulse-line);
+    border-radius: 20px 20px 20px 7px;
+    background: var(--pulse-surface);
+    color: var(--pulse-text);
+    padding: 0.78rem 0.85rem;
+    box-shadow: 0 8px 24px rgba(16, 37, 53, 0.07);
+  }
+
+  .mobile-partner-inline-message.user .mobile-partner-inline-bubble {
+    border-color: var(--pulse-ink);
+    border-radius: 20px 20px 7px 20px;
+    background: var(--pulse-ink);
+    color: #ffffff;
+  }
+
+  .mobile-partner-inline-bubble p {
+    margin: 0;
+    color: inherit !important;
+    font-size: 0.9rem;
+    line-height: 1.48;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .mobile-partner-inline-bubble.is-pending {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--pulse-muted);
+    font-size: 0.82rem;
+  }
+
+  .mobile-partner-inline-spinner {
+    animation: mobile-partner-inline-spin 0.9s linear infinite;
+  }
+
+  @keyframes mobile-partner-inline-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .mobile-partner-inline-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.42rem;
+    margin-top: 0.68rem;
+  }
+
+  .mobile-partner-inline-actions button {
+    min-height: 2.2rem;
+    border: 1px solid rgba(0, 174, 182, 0.35);
+    border-radius: 999px;
+    background: var(--pulse-aqua-soft);
+    color: #08747a;
+    padding: 0.42rem 0.68rem;
+    font-size: 0.72rem;
+    font-weight: 750;
   }
 }

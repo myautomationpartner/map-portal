@@ -1003,6 +1003,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     location.pathname !== '/post' &&
     location.pathname !== '/inbox' &&
     location.pathname !== '/attention'
+  const mobilePartnerRollout = isMobilePartnerRolloutTenant(tenant)
   const suppressPartnerLauncher = (
     (location.pathname === '/' && isMobilePartnerRolloutTenant(tenant)) ||
     ['/inbox', '/attention', '/post'].some((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
@@ -1161,7 +1162,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
   }
 
   return (
-    <div className="portal-shell flex">
+    <div className={`portal-shell flex ${mobilePartnerRollout ? 'portal-shell-mobile-partner' : ''}`}>
       {/* Desktop sidebar */}
       <Sidebar
         session={session}
@@ -1176,7 +1177,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
 
       {/* Main content area */}
       <div className="flex min-h-screen w-full flex-col md:ml-[188px] md:w-[calc(100%-188px)]">
-        <main className="flex-1 overflow-auto pb-24 md:pb-0">
+        <main className={`flex-1 overflow-auto md:pb-0 ${mobilePartnerRollout ? 'pb-0' : 'pb-24'}`}>
           {showBillingBanner ? (
             <PortalBillingBanner
               billingAccess={billingAccess}

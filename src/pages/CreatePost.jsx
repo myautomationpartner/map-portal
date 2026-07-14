@@ -2144,9 +2144,21 @@ export default function CreatePost() {
     const preselectedPlatforms = Array.isArray(location.state?.preselectedPlatforms)
       ? location.state.preselectedPlatforms
       : []
-    if (recentPhotosHandledRef.current || (!recentPhotos.length && !preselectedPlatforms.length)) return
+    const initialCaption = String(location.state?.initialCaption || '').trim()
+    const partnerPrompt = String(location.state?.partnerPrompt || '').trim()
+    const imageCountAnalyzed = Number(location.state?.imageCountAnalyzed || 0)
+    if (recentPhotosHandledRef.current || (!recentPhotos.length && !preselectedPlatforms.length && !initialCaption)) return
 
     recentPhotosHandledRef.current = true
+    if (initialCaption) {
+      setContent(initialCaption)
+      setGeneratedCaption(initialCaption)
+      setPlatformVariants({})
+      setDraftStatus(imageCountAnalyzed
+        ? `My Partner used your ${imageCountAnalyzed === 1 ? 'photo' : `${imageCountAnalyzed} photos`} and instructions to create this draft. Review it before publishing.`
+        : 'My Partner used your instructions to create this draft. Review it before publishing.')
+      if (partnerPrompt) setMediaSuggestion(`Customer request: ${partnerPrompt}`)
+    }
     if (preselectedPlatforms.length) {
       const selected = new Set(preselectedPlatforms)
       setSelectedPlatforms((current) => ({
