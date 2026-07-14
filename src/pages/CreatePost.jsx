@@ -44,7 +44,7 @@ import MobileVoiceComposer from '../components/MobileVoiceComposer'
 import MobilePartnerTopBar from '../components/MobilePartnerTopBar'
 import { GeneratedPostcard } from '../components/MobilePartnerChat'
 import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
-import { createVisionImageDataUrl, stampBrandLogo } from '../lib/imageAssist'
+import { createVisionImageDataUrl, isLogoOverlayOnlyRequest, stampBrandLogo } from '../lib/imageAssist'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 
@@ -2568,6 +2568,7 @@ export default function CreatePost() {
         mode,
         instruction: options.instruction || '',
         use_brand_logo: options.useBrandLogo === true,
+        logo_overlay_only: options.logoOverlayOnly === true,
         quality: 'low',
         ...imageInput,
       })
@@ -2750,6 +2751,7 @@ export default function CreatePost() {
         const improved = await handleImproveImage('custom', activeCreativeItem, {
           instruction: decision.imageInstruction,
           useBrandLogo: decision.useBrandLogo === true,
+          logoOverlayOnly: isLogoOverlayOnlyRequest(request, decision.useBrandLogo === true),
           captionOverride: changesCaption ? decision.caption : content,
           throwOnError: true,
           deferAttach: true,

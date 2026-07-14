@@ -48,6 +48,11 @@ export async function createVisionImageDataUrls(files, limit = 3) {
   return prepared.filter(Boolean)
 }
 
+export function isLogoOverlayOnlyRequest(request, useBrandLogo) {
+  if (!useBrandLogo || !/\b(logo|brand mark|watermark)\b/i.test(String(request || ''))) return false
+  return !/\b(brighten|darken|crop|resize|remove|replace|background|lighting|blur|sharpen|enhance|retouch|rotate|flip|reframe|recolor|colour|stylize|modernize|modernise|filter|cleanup|clean up)\b/i.test(String(request || ''))
+}
+
 export async function stampBrandLogo({
   imageBase64,
   imageMimeType = 'image/png',

@@ -10,7 +10,7 @@ import {
   X,
   XLogo,
 } from '@phosphor-icons/react'
-import { createVisionImageDataUrl, createVisionImageDataUrls, stampBrandLogo } from '../lib/imageAssist'
+import { createVisionImageDataUrl, createVisionImageDataUrls, isLogoOverlayOnlyRequest, stampBrandLogo } from '../lib/imageAssist'
 import { generatePublisherAssist, improvePublisherImage, sendPortalPartnerMessage } from '../lib/portalApi'
 import MobileVoiceComposer from './MobileVoiceComposer'
 
@@ -286,6 +286,7 @@ export default function MobilePartnerChat({
             mode: 'custom',
             instruction: decision.imageInstruction,
             use_brand_logo: decision.useBrandLogo === true,
+            logo_overlay_only: isLogoOverlayOnlyRequest(cleanText, decision.useBrandLogo === true),
             quality: 'low',
             image_data_url: imageDataUrl,
           })
