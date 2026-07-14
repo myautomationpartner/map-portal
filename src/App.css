@@ -21095,6 +21095,20 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     padding-inline: 0;
   }
 
+  .mobile-publisher-conversation .mobile-partner-inline-bubble p {
+    white-space: pre-wrap;
+  }
+
+  .mobile-publisher-conversation .mobile-partner-thinking {
+    align-items: center;
+    display: inline-flex;
+    gap: 0.55rem;
+  }
+
+  .mobile-publisher-conversation .mobile-partner-thinking p {
+    margin: 0;
+  }
+
   .create-post-review-modal-partner {
     --portal-text: var(--pulse-text);
     --portal-text-muted: var(--pulse-muted);

@@ -92,6 +92,7 @@ export default function MobilePartnerHome({
         initialCaption: options.caption || '',
         partnerPrompt: options.prompt || '',
         imageCountAnalyzed: Number(options.imageCountAnalyzed || 0),
+        partnerConversation: Array.isArray(options.conversation) ? options.conversation : [],
       },
     })
   }

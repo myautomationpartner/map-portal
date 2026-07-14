@@ -10,8 +10,8 @@ import {
   X,
   XLogo,
 } from '@phosphor-icons/react'
-import { createVisionImageDataUrls } from '../lib/imageAssist'
-import { generatePublisherAssist, sendPortalPartnerMessage } from '../lib/portalApi'
+import { createVisionImageDataUrl, createVisionImageDataUrls } from '../lib/imageAssist'
+import { generatePublisherAssist, improvePublisherImage, sendPortalPartnerMessage } from '../lib/portalApi'
 import MobileVoiceComposer from './MobileVoiceComposer'
 
 const ACTION_DESTINATIONS = {
@@ -45,6 +45,13 @@ function createPendingAttachment(file, index, attachmentUrls) {
     isImage,
     previewUrl,
   }
+}
+
+function base64ToImageFile(base64, mimeType = 'image/png', filename = 'partner-edited-image.png') {
+  const binary = window.atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return new File([bytes], filename, { type: mimeType })
 }
 
 function AssistantAvatar() {
@@ -199,6 +206,68 @@ export default function MobilePartnerChat({
     setPending(true)
 
     try {
+      if (generatedPost) {
+        const recentConversation = messages
+          .slice(-6)
+          .map((message) => `${message.role === 'user' ? 'Customer' : 'Partner'}: ${message.content}`)
+          .join('\n')
+        const payload = await generatePublisherAssist({
+          action: 'creative_chat',
+          caption: generatedPost.caption,
+          platforms: generatedPost.platforms,
+          max_chars: 2200,
+          context: [
+            `Latest customer request: ${cleanText}`,
+            `A postcard image is currently ${generatedPost.previewUrl ? 'attached' : 'not attached'}.`,
+            recentConversation ? `Recent conversation:\n${recentConversation}` : '',
+          ].filter(Boolean).join('\n'),
+        })
+        const decision = payload?.creative_decision
+        if (!decision?.intent) throw new Error('My Partner could not understand that request.')
+
+        const changesCaption = ['caption_edit', 'caption_and_image'].includes(decision.intent)
+        const changesImage = ['image_edit', 'caption_and_image'].includes(decision.intent)
+        let nextFiles = generatedPost.files
+        let nextPreviewUrl = generatedPost.previewUrl
+
+        if (changesCaption && !decision.caption?.trim()) {
+          throw new Error('My Partner did not return an updated caption.')
+        }
+        if (changesImage) {
+          const sourceFile = generatedPost.files.find((file) => String(file?.type || '').toLowerCase().startsWith('image/'))
+          if (!sourceFile) throw new Error('Add a photo first, then ask me to change the image.')
+          const imageDataUrl = await createVisionImageDataUrl(sourceFile, { maxDimension: 1536, quality: 0.86 })
+          if (!imageDataUrl) throw new Error('That photo could not be prepared for editing.')
+          const imagePayload = await improvePublisherImage({
+            caption: changesCaption ? decision.caption : generatedPost.caption,
+            platforms: generatedPost.platforms,
+            mode: 'custom',
+            instruction: decision.imageInstruction,
+            use_brand_logo: decision.useBrandLogo === true,
+            quality: 'low',
+            image_data_url: imageDataUrl,
+          })
+          const mimeType = imagePayload.mime_type || 'image/png'
+          const editedFile = base64ToImageFile(imagePayload.image_base64, mimeType)
+          nextFiles = [editedFile, ...generatedPost.files.filter((file) => file !== sourceFile)]
+          nextPreviewUrl = `data:${mimeType};base64,${imagePayload.image_base64}`
+        }
+
+        if (changesCaption || changesImage) {
+          setGeneratedPost((current) => ({
+            ...current,
+            files: nextFiles,
+            previewUrl: nextPreviewUrl,
+            caption: changesCaption ? decision.caption : current.caption,
+          }))
+        }
+        setMessages((current) => [
+          ...current,
+          createChatMessage('assistant', decision.assistantMessage || 'Done — I updated the postcard.'),
+        ])
+        return
+      }
+
       if (pendingAttachments.length && onPhotos) {
         if (readOnly) throw new Error('This portal is read-only right now, so it cannot create a new post draft.')
         const imageDataUrls = await createVisionImageDataUrls(pendingAttachments.map((attachment) => attachment.file))
@@ -312,6 +381,10 @@ export default function MobilePartnerChat({
               prompt: draft.prompt,
               imageCountAnalyzed: draft.imageCountAnalyzed,
               platforms: draft.platforms,
+              conversation: messages.map((message) => ({
+                role: message.role,
+                content: message.content,
+              })),
             })}
           />
         ) : null}

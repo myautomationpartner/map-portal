@@ -1323,6 +1323,7 @@ function MobilePublisherConversation({
   reviewMessages,
   reviewPending,
   reviewRevisionCount,
+  reviewLastChange,
   onReviewComposerChange,
   onReviewRequest,
   onReviewPhotos,
@@ -1386,7 +1387,15 @@ function MobilePublisherConversation({
         resetLabel="Back to Post"
         statusLabel={reviewRevisionCount ? 'Updated' : 'Final review'}
       />
-      {reviewRevisionCount ? <p>Caption updated from your chat request.</p> : null}
+      {reviewRevisionCount ? (
+        <p>
+          {reviewLastChange === 'image'
+            ? 'Image updated from your chat request.'
+            : reviewLastChange === 'caption_and_image'
+              ? 'Image and caption updated from your chat request.'
+              : 'Caption updated from your chat request.'}
+        </p>
+      ) : null}
       </div>
 
       <div className="mobile-publisher-timing">
@@ -1431,6 +1440,19 @@ function MobilePublisherConversation({
           <div className="mobile-partner-inline-bubble"><p>{message.content}</p></div>
         </div>
       ))}
+
+      {reviewPending ? (
+        <div className="mobile-partner-inline-message assistant" aria-live="polite">
+          <span className="mobile-partner-message-avatar">
+            <img src="/assets/map-option-b-mark.png" alt="" />
+            <i aria-hidden="true" />
+          </span>
+          <div className="mobile-partner-inline-bubble mobile-partner-thinking">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <p>Working on your request…</p>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mobile-publisher-chat-composer">
         <MobileVoiceComposer
@@ -1516,6 +1538,7 @@ export default function CreatePost() {
   const [reviewMessages, setReviewMessages] = useState([])
   const [reviewPending, setReviewPending] = useState(false)
   const [reviewRevisionCount, setReviewRevisionCount] = useState(0)
+  const [reviewLastChange, setReviewLastChange] = useState('')
   const [platformVariants, setPlatformVariants] = useState({})
   const [platformFormatStatus, setPlatformFormatStatus] = useState('')
   const [imageFormatState, setImageFormatState] = useState('idle')
@@ -2299,6 +2322,16 @@ export default function CreatePost() {
     const initialCaption = String(location.state?.initialCaption || '').trim()
     const partnerPrompt = String(location.state?.partnerPrompt || '').trim()
     const imageCountAnalyzed = Number(location.state?.imageCountAnalyzed || 0)
+    const partnerConversation = Array.isArray(location.state?.partnerConversation)
+      ? location.state.partnerConversation
+        .filter((message) => ['user', 'assistant'].includes(message?.role) && String(message?.content || '').trim())
+        .slice(-8)
+        .map((message, index) => ({
+          id: `handoff-${index}-${Date.now()}`,
+          role: message.role,
+          content: String(message.content).trim().slice(0, 900),
+        }))
+      : []
     if (recentPhotosHandledRef.current || (!recentPhotos.length && !preselectedPlatforms.length && !initialCaption)) return
 
     recentPhotosHandledRef.current = true
@@ -2310,6 +2343,7 @@ export default function CreatePost() {
         ? `My Partner used your ${imageCountAnalyzed === 1 ? 'photo' : `${imageCountAnalyzed} photos`} and instructions to create this draft. Review it before publishing.`
         : 'My Partner used your instructions to create this draft. Review it before publishing.')
       if (partnerPrompt) setMediaSuggestion(`Customer request: ${partnerPrompt}`)
+      if (partnerConversation.length) setReviewMessages(partnerConversation)
     }
     if (preselectedPlatforms.length) {
       const selected = new Set(preselectedPlatforms)
@@ -2509,7 +2543,7 @@ export default function CreatePost() {
     setExistingMediaUrl('')
   }
 
-  async function handleImproveImage(mode, sourceItem = activeCreativeItem) {
+  async function handleImproveImage(mode, sourceItem = activeCreativeItem, options = {}) {
     if (!requireWriteAccess('improve images with Partner')) return
     if (!clientId) {
       setImageImproveError('Client profile is still loading. Try again in a moment.')
@@ -2527,9 +2561,11 @@ export default function CreatePost() {
       const payload = await improvePublisherImage({
         client_id: clientId,
         business_name: profile?.clients?.business_name || '',
-        caption: content,
+        caption: options.captionOverride || content,
         platforms: activePlatforms,
         mode,
+        instruction: options.instruction || '',
+        use_brand_logo: options.useBrandLogo === true,
         quality: 'low',
         ...imageInput,
       })
@@ -2539,10 +2575,13 @@ export default function CreatePost() {
       clearPlatformImageVariants('')
       setImageImproveState('ready')
       setDraftStatus('Improved image attached. Review it before approving the post.')
+      return { payload, previewUrl }
     } catch (error) {
       console.error('[ImprovePublisherImage]', error)
       setImageImproveError(error.message || 'Could not improve this image right now.')
       setImageImproveState('error')
+      if (options.throwOnError) throw error
+      return null
     }
   }
 
@@ -2622,35 +2661,72 @@ export default function CreatePost() {
     }])
 
     try {
-      const requestedAction = /short|concise|trim|less word/i.test(request)
-        ? 'shorten'
-        : /call to action|\bcta\b|book|contact|click|visit/i.test(request)
-          ? 'cta'
-          : /engag|exciting|energy|friendl|fun|punch/i.test(request)
-            ? 'engaging'
-            : /option|version|variant|another caption/i.test(request)
-              ? 'variants'
-              : 'improve'
+      const recentConversation = reviewMessages
+        .slice(-6)
+        .map((message) => `${message.role === 'user' ? 'Customer' : 'Partner'}: ${message.content}`)
+        .join('\n')
       const payload = await generatePublisherAssist({
         client_id: clientId,
-        action: requestedAction,
+        action: 'creative_chat',
         caption: content,
         platforms: activePlatforms,
         max_chars: charLimit,
-        context: `Customer request during final review: ${request}\nApply this request to the current caption while preserving accurate business details. The revised caption must be materially different from the current caption. Return an updated draft only.`,
+        context: [
+          `Latest customer request: ${request}`,
+          `A postcard image is currently ${imagePreview ? 'attached' : 'not attached'}.`,
+          recentConversation ? `Recent review conversation:\n${recentConversation}` : '',
+        ].filter(Boolean).join('\n'),
       })
-      const suggestion = Array.isArray(payload?.suggestions) ? payload.suggestions[0] : null
-      if (!suggestion?.caption) throw new Error('My Partner did not return an updated caption.')
-      if (suggestion.caption.trim() === content.trim()) {
-        throw new Error('My Partner returned the same caption, so I left your draft unchanged. Please try a more specific edit request.')
+      const decision = payload?.creative_decision
+      if (!decision?.intent) throw new Error('My Partner could not understand that request.')
+
+      const changesCaption = ['caption_edit', 'caption_and_image'].includes(decision.intent)
+      const changesImage = ['image_edit', 'caption_and_image'].includes(decision.intent)
+
+      if (changesCaption) {
+        if (!decision.caption?.trim()) throw new Error('My Partner did not return an updated caption.')
+        if (decision.caption.trim() === content.trim()) {
+          throw new Error('That request did not produce a different caption. Try describing the tone or wording you want.')
+        }
+      }
+      if (changesImage && !imagePreview) {
+        throw new Error('Add a photo first, then ask me to change the image.')
       }
 
-      applyAssistSuggestion(suggestion)
-      setReviewRevisionCount((current) => current + 1)
+      if (changesImage) {
+        await handleImproveImage('custom', activeCreativeItem, {
+          instruction: decision.imageInstruction,
+          useBrandLogo: decision.useBrandLogo === true,
+          captionOverride: changesCaption ? decision.caption : content,
+          throwOnError: true,
+        })
+      }
+
+      if (changesCaption) {
+        applyAssistSuggestion({ caption: decision.caption })
+      }
+
+      if (changesCaption || changesImage) {
+        const changeType = changesCaption && changesImage
+          ? 'caption_and_image'
+          : changesImage
+            ? 'image'
+            : 'caption'
+        setReviewLastChange(changeType)
+        setReviewRevisionCount((current) => current + 1)
+      }
+
+      const defaultResponse = changesCaption && changesImage
+        ? 'Done — I updated the image and caption and brought the postcard back into view.'
+        : changesImage
+          ? 'Done — I updated the image and brought the postcard back into view.'
+          : changesCaption
+            ? 'Done — I updated the caption and brought the postcard back into view.'
+            : 'Tell me what you would like to change next.'
       setReviewMessages((current) => [...current, {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: `Done — I updated the caption. It now starts: “${suggestion.caption.slice(0, 90)}${suggestion.caption.length > 90 ? '…' : ''}” I brought the revised postcard back into view.`,
+        content: decision.assistantMessage || defaultResponse,
       }])
     } catch (error) {
       setReviewComposer(request)
@@ -3549,6 +3625,7 @@ export default function CreatePost() {
             reviewMessages={reviewMessages}
             reviewPending={reviewPending}
             reviewRevisionCount={reviewRevisionCount}
+            reviewLastChange={reviewLastChange}
             onReviewComposerChange={setReviewComposer}
             onReviewRequest={handleReviewRequest}
             onReviewPhotos={(files) => addLocalMediaFiles(files, 'recent')}
