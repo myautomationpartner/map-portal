@@ -450,6 +450,12 @@
     object-fit: cover;
   }
 
+  .mobile-partner-generated-postcard > img.is-promotional {
+    aspect-ratio: 4 / 5;
+    object-fit: contain;
+    background: var(--pulse-ink);
+  }
+
   .mobile-partner-generated-brandbar {
     position: relative;
     display: flex;

@@ -93,6 +93,12 @@ export default function MobilePartnerHome({
         partnerPrompt: options.prompt || '',
         imageCountAnalyzed: Number(options.imageCountAnalyzed || 0),
         partnerConversation: Array.isArray(options.conversation) ? options.conversation : [],
+        promoDesign: options.promoDesign || null,
+        promoSourceFile: options.promoSourceFile || null,
+        promoSourceImageBase64: options.promoSourceImageBase64 || '',
+        promoSourceImageMimeType: options.promoSourceImageMimeType || '',
+        promoLogoBase64: options.promoLogoBase64 || '',
+        promoLogoMimeType: options.promoLogoMimeType || '',
       },
     })
   }

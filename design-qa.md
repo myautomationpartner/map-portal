@@ -45,3 +45,38 @@ The focused inspection confirms that the selected original image remains the pos
 - Voice remains available in the persistent composer.
 
 final result: passed
+
+# MAP Conversational Promotional Graphic Designer QA
+
+- Source visual truth: `/Users/kennymonico/Library/Application Support/CleanShot/media/media_Ws91FsGMiN/CleanShot 2026-07-14 at 12.36.28@2x.png`
+- Side-by-side comparison: `/Users/kennymonico/Documents/MyAutomationPartner/map-portal/portal-app/design-qa-artifacts/promo-reference-comparison.png`
+- Live designer evidence: `/Users/kennymonico/Documents/MyAutomationPartner/smoke-agent/reports/mobile-my-partner-evidence/smoke_20260714_promotional_designer_v3/07-promotional-designer.png`
+- Live conversational revision evidence: `/Users/kennymonico/Documents/MyAutomationPartner/smoke-agent/reports/mobile-my-partner-evidence/smoke_20260714_promotional_designer_v3/08-promotional-revision.png`
+- Live Publisher review revision evidence: `/Users/kennymonico/Documents/MyAutomationPartner/smoke-agent/reports/mobile-my-partner-evidence/smoke_20260714_promotional_designer_v3/09-promotional-review-revision.png`
+- Existing image-editor evidence: `/Users/kennymonico/Documents/MyAutomationPartner/smoke-agent/reports/mobile-my-partner-evidence/smoke_20260714_promotional_designer_v3/04-verified-logo-image-edit.png`
+- Production viewport: 390 x 664 CSS pixels
+
+## Result
+
+The production result keeps the reference post's useful visual hierarchy—large event headline, clear date/time, three prominent offer cards, bold prices, business identity, and a strong call to action—while using MAP's cleaner navy, aqua, lime, and white system. The generated graphic is a true 1080 x 1350 social asset, not a screenshot of the chat card. The entire 4:5 design remains visible in both Post and Publisher review.
+
+## Findings
+
+- No actionable P0, P1, or P2 design mismatch remains.
+- Exact customer facts, including prices, names, dates, and times, are preserved in the structured brief and rendered deterministically.
+- The saved business logo is applied through the existing verified logo path; no guessed logo or duplicate image backend was introduced.
+- The uploaded photo remains the background/hero source, with readable contrast overlays and phone-safe text hierarchy.
+- Natural-language revisions rebuild the same source design, including price, headline, date, color, and call-to-action changes.
+- Review & post keeps the conversational composer available so the customer can ask for more changes before posting or scheduling.
+- The existing general photo editor still supports natural-language edits such as adding the verified MAP logo.
+
+## QA history
+
+1. The first promotional pass used the previous 16:9 postcard crop and hid the lower part of the 4:5 graphic.
+2. The postcard and Publisher review were corrected to show the full promotional asset without cropping.
+3. Run `smoke_20260714_promotional_designer_v2` recorded a transient aborted `portal-ai-assist` request and correctly set `blockDeploy=true`.
+4. The immediate clean rerun `smoke_20260714_promotional_designer_v3` passed 32/32 with `blockDeploy=false` and no console, page, or HTTP errors.
+5. Physical iPhone Mirroring verified the single native attachment chooser and return-to-composer path. Mirroring automation could not reliably synthesize a multi-line prompt, so the complete generation and both editor paths were exercised against the same live production build at the 390-pixel phone width.
+6. Nothing was published, scheduled, or sent to a customer.
+
+final result: passed

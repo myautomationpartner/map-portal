@@ -45,6 +45,7 @@ import MobilePartnerTopBar from '../components/MobilePartnerTopBar'
 import { GeneratedPostcard } from '../components/MobilePartnerChat'
 import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
 import { createVisionImageDataUrl, isLogoOverlayOnlyRequest, stampBrandLogo } from '../lib/imageAssist'
+import { isPromotionalDesignRevision, renderPromotionalGraphic } from '../lib/promoGraphic'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 
@@ -1325,6 +1326,7 @@ function MobilePublisherConversation({
   reviewPending,
   reviewRevisionCount,
   reviewLastChange,
+  promoDesign,
   onReviewComposerChange,
   onReviewRequest,
   onReviewPhotos,
@@ -1338,6 +1340,7 @@ function MobilePublisherConversation({
     previewUrl: imagePreview,
     caption: content,
     platforms: activePlatforms,
+    promoDesign,
   }
 
   useEffect(() => {
@@ -1541,6 +1544,8 @@ export default function CreatePost() {
   const [reviewPending, setReviewPending] = useState(false)
   const [reviewRevisionCount, setReviewRevisionCount] = useState(0)
   const [reviewLastChange, setReviewLastChange] = useState('')
+  const [promoDesign, setPromoDesign] = useState(null)
+  const [promoRenderAssets, setPromoRenderAssets] = useState(null)
   const [platformVariants, setPlatformVariants] = useState({})
   const [platformFormatStatus, setPlatformFormatStatus] = useState('')
   const [imageFormatState, setImageFormatState] = useState('idle')
@@ -2334,6 +2339,18 @@ export default function CreatePost() {
           content: String(message.content).trim().slice(0, 900),
         }))
       : []
+    const handedOffPromoDesign = location.state?.promoDesign && typeof location.state.promoDesign === 'object'
+      ? location.state.promoDesign
+      : null
+    const handedOffPromoAssets = handedOffPromoDesign
+      ? {
+          sourceFile: location.state?.promoSourceFile || null,
+          sourceImageBase64: String(location.state?.promoSourceImageBase64 || ''),
+          sourceImageMimeType: String(location.state?.promoSourceImageMimeType || 'image/jpeg'),
+          logoBase64: String(location.state?.promoLogoBase64 || ''),
+          logoMimeType: String(location.state?.promoLogoMimeType || 'image/png'),
+        }
+      : null
     if (recentPhotosHandledRef.current || (!recentPhotos.length && !preselectedPlatforms.length && !initialCaption)) return
 
     recentPhotosHandledRef.current = true
@@ -2346,6 +2363,10 @@ export default function CreatePost() {
         : 'My Partner used your instructions to create this draft. Review it before publishing.')
       if (partnerPrompt) setMediaSuggestion(`Customer request: ${partnerPrompt}`)
       if (partnerConversation.length) setReviewMessages(partnerConversation)
+      if (handedOffPromoDesign) {
+        setPromoDesign(handedOffPromoDesign)
+        setPromoRenderAssets(handedOffPromoAssets)
+      }
     }
     if (preselectedPlatforms.length) {
       const selected = new Set(preselectedPlatforms)
@@ -2678,6 +2699,49 @@ export default function CreatePost() {
     }])
 
     try {
+      if (promoDesign && promoRenderAssets && isPromotionalDesignRevision(request)) {
+        const payload = await generatePublisherAssist({
+          client_id: clientId,
+          action: 'promo_brief',
+          caption: request,
+          platforms: activePlatforms,
+          max_chars: charLimit,
+          context: [
+            `Current promo design: ${JSON.stringify(promoDesign)}`,
+            `Latest customer request: ${request}`,
+            'Revise only what the customer requested. Preserve every unchanged exact fact.',
+          ].join('\n'),
+        })
+        const nextPromoDesign = payload?.promo_design
+        if (!nextPromoDesign?.headline || !nextPromoDesign?.caption) {
+          throw new Error('My Partner could not rebuild that promotional graphic safely.')
+        }
+        const rendered = await renderPromotionalGraphic({
+          ...promoRenderAssets,
+          brief: nextPromoDesign,
+        })
+        attachImprovedImage({
+          file: rendered.file,
+          previewUrl: rendered.previewUrl,
+          mode: 'promo',
+          sourceItem: activeCreativeItem,
+        })
+        clearPlatformImageVariants('')
+        setPromoDesign(nextPromoDesign)
+        setContent(nextPromoDesign.caption)
+        setGeneratedCaption(nextPromoDesign.caption)
+        setPlatformVariants({})
+        setDraftStatus('Promotional graphic rebuilt with the requested details. Review it before approving the post.')
+        setReviewLastChange('caption_and_image')
+        setReviewRevisionCount((current) => current + 1)
+        setReviewMessages((current) => [...current, {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: 'Done — I rebuilt the promotional graphic with the exact requested details.',
+        }])
+        return
+      }
+
       const recentConversation = reviewMessages
         .slice(-6)
         .map((message) => `${message.role === 'user' ? 'Customer' : 'Partner'}: ${message.content}`)
@@ -3701,6 +3765,7 @@ export default function CreatePost() {
             reviewPending={reviewPending}
             reviewRevisionCount={reviewRevisionCount}
             reviewLastChange={reviewLastChange}
+            promoDesign={promoDesign}
             onReviewComposerChange={setReviewComposer}
             onReviewRequest={handleReviewRequest}
             onReviewPhotos={(files) => addLocalMediaFiles(files, 'recent')}

@@ -11,6 +11,7 @@ import {
   XLogo,
 } from '@phosphor-icons/react'
 import { createVisionImageDataUrl, createVisionImageDataUrls, isLogoOverlayOnlyRequest, stampBrandLogo } from '../lib/imageAssist'
+import { isPromotionalDesignRequest, isPromotionalDesignRevision, readImageFileDataUrl, renderPromotionalGraphic } from '../lib/promoGraphic'
 import { generatePublisherAssist, improvePublisherImage, sendPortalPartnerMessage } from '../lib/portalApi'
 import MobileVoiceComposer from './MobileVoiceComposer'
 
@@ -90,7 +91,13 @@ export function GeneratedPostcard({
 
   return (
     <article ref={cardRef} className="mobile-partner-generated-postcard" aria-label="Ready-to-review social post">
-      {draft.previewUrl ? <img src={draft.previewUrl} alt="Selected post creative" /> : null}
+      {draft.previewUrl ? (
+        <img
+          src={draft.previewUrl}
+          alt="Selected post creative"
+          className={draft.promoDesign ? 'is-promotional' : undefined}
+        />
+      ) : null}
       <div className="mobile-partner-generated-brandbar">
         <strong>My Automation Partner</strong>
         <span><i aria-hidden="true" />{statusLabel}</span>
@@ -207,6 +214,44 @@ export default function MobilePartnerChat({
 
     try {
       if (generatedPost) {
+        if (generatedPost.promoDesign && isPromotionalDesignRevision(cleanText)) {
+          const payload = await generatePublisherAssist({
+            action: 'promo_brief',
+            caption: cleanText,
+            platforms: generatedPost.platforms,
+            max_chars: 2200,
+            context: [
+              `Current promo design: ${JSON.stringify(generatedPost.promoDesign)}`,
+              `Latest customer request: ${cleanText}`,
+              'Revise only what the customer requested. Preserve every unchanged exact fact.',
+            ].join('\n'),
+          })
+          const promoDesign = payload?.promo_design
+          if (!promoDesign?.headline || !promoDesign?.caption) {
+            throw new Error('My Partner could not rebuild that promotional graphic safely.')
+          }
+          const rendered = await renderPromotionalGraphic({
+            sourceFile: generatedPost.promoSourceFile,
+            sourceImageBase64: generatedPost.promoSourceImageBase64,
+            sourceImageMimeType: generatedPost.promoSourceImageMimeType,
+            logoBase64: generatedPost.promoLogoBase64,
+            logoMimeType: generatedPost.promoLogoMimeType,
+            brief: promoDesign,
+          })
+          setGeneratedPost((current) => ({
+            ...current,
+            files: [rendered.file, ...current.files.slice(1)],
+            previewUrl: rendered.previewUrl,
+            caption: promoDesign.caption,
+            promoDesign,
+          }))
+          setMessages((current) => [
+            ...current,
+            createChatMessage('assistant', 'Done — I rebuilt the promotional graphic with the exact requested details.'),
+          ])
+          return
+        }
+
         const recentConversation = messages
           .slice(-6)
           .map((message) => `${message.role === 'user' ? 'Customer' : 'Partner'}: ${message.content}`)
@@ -348,6 +393,64 @@ export default function MobilePartnerChat({
       if (pendingAttachments.length && onPhotos) {
         if (readOnly) throw new Error('This portal is read-only right now, so it cannot create a new post draft.')
         const imageDataUrls = await createVisionImageDataUrls(pendingAttachments.map((attachment) => attachment.file))
+        if (isPromotionalDesignRequest(cleanText)) {
+          const sourceAttachment = pendingAttachments.find((attachment) => attachment.isImage)
+          const sourceImageDataUrl = imageDataUrls[0] || await readImageFileDataUrl(sourceAttachment?.file)
+          if (!sourceAttachment || !sourceImageDataUrl) {
+            throw new Error('Add a photo before asking My Partner to design a promotional graphic.')
+          }
+          const payload = await generatePublisherAssist({
+            action: 'promo_brief',
+            caption: cleanText,
+            platforms,
+            max_chars: 2200,
+            context: 'Create a phone-readable 4:5 promotional graphic brief from the exact customer facts and attached photo. Keep it as a draft for review.',
+            image_data_urls: [sourceImageDataUrl],
+          })
+          const promoDesign = payload?.promo_design
+          if (!promoDesign?.headline || !promoDesign?.caption) {
+            throw new Error('My Partner could not create a complete promotional graphic brief.')
+          }
+          const imagePayload = await improvePublisherImage({
+            caption: promoDesign.caption,
+            platforms,
+            mode: 'custom',
+            instruction: 'Return the source unchanged and provide the exact saved business logo for the promotional layout.',
+            use_brand_logo: true,
+            logo_overlay_only: true,
+            quality: 'low',
+            image_data_url: sourceImageDataUrl,
+          })
+          const rendered = await renderPromotionalGraphic({
+            sourceFile: sourceAttachment.file,
+            sourceImageBase64: imagePayload.image_base64,
+            sourceImageMimeType: imagePayload.mime_type || 'image/jpeg',
+            logoBase64: imagePayload.brand_logo_base64,
+            logoMimeType: imagePayload.brand_logo_mime_type || 'image/png',
+            brief: promoDesign,
+          })
+
+          setGeneratedPost({
+            files: [rendered.file, ...pendingAttachments.filter((attachment) => attachment !== sourceAttachment).map((attachment) => attachment.file)],
+            caption: promoDesign.caption,
+            prompt: cleanText,
+            imageCountAnalyzed: imageDataUrls.length,
+            previewUrl: rendered.previewUrl,
+            platforms: [...platforms],
+            promoDesign,
+            promoSourceFile: sourceAttachment.file,
+            promoSourceImageBase64: imagePayload.image_base64,
+            promoSourceImageMimeType: imagePayload.mime_type || 'image/jpeg',
+            promoLogoBase64: imagePayload.brand_logo_base64,
+            promoLogoMimeType: imagePayload.brand_logo_mime_type || 'image/png',
+          })
+          setAttachments([])
+          setMessages((current) => [
+            ...current,
+            createChatMessage('assistant', 'I designed a ready-to-review promotional graphic from your photo and exact offer details.'),
+          ])
+          return
+        }
         const payload = await generatePublisherAssist({
           action: 'create',
           caption: cleanText,
@@ -458,6 +561,12 @@ export default function MobilePartnerChat({
               prompt: draft.prompt,
               imageCountAnalyzed: draft.imageCountAnalyzed,
               platforms: draft.platforms,
+              promoDesign: draft.promoDesign || null,
+              promoSourceFile: draft.promoSourceFile || null,
+              promoSourceImageBase64: draft.promoSourceImageBase64 || '',
+              promoSourceImageMimeType: draft.promoSourceImageMimeType || '',
+              promoLogoBase64: draft.promoLogoBase64 || '',
+              promoLogoMimeType: draft.promoLogoMimeType || '',
               conversation: messages.map((message) => ({
                 role: message.role,
                 content: message.content,
