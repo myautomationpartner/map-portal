@@ -91,7 +91,7 @@ export async function stampBrandLogo({
   const visibleLeft = (width - visibleWidth) / 2
   const visibleTop = (height - visibleHeight) / 2
 
-  const scale = Math.min((visibleWidth * 0.24) / logoWidth, (visibleHeight * 0.28) / logoHeight)
+  const scale = Math.min((visibleWidth * 0.16) / logoWidth, (visibleHeight * 0.2) / logoHeight)
   const renderedWidth = Math.max(1, Math.round(logoWidth * scale))
   const renderedHeight = Math.max(1, Math.round(logoHeight * scale))
   const margin = Math.max(18, Math.round(Math.min(visibleWidth, visibleHeight) * 0.04))
