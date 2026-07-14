@@ -436,6 +436,7 @@
   .mobile-partner-generated-postcard {
     overflow: hidden;
     margin-left: 2.9rem;
+    scroll-margin-top: 8.4rem;
     border: 1px solid var(--pulse-line);
     border-radius: 23px;
     background: #ffffff;
@@ -445,7 +446,7 @@
   .mobile-partner-generated-postcard > img {
     display: block;
     width: 100%;
-    aspect-ratio: 4 / 3;
+    aspect-ratio: 16 / 9;
     object-fit: cover;
   }
 
@@ -503,12 +504,12 @@
     display: -webkit-box;
     overflow: hidden;
     margin: 0;
-    color: var(--pulse-text);
+    color: var(--pulse-text) !important;
     font-size: 0.78rem;
     font-weight: 560;
     line-height: 1.48;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 5;
+    -webkit-line-clamp: 4;
   }
 
   .mobile-partner-generated-caption textarea {

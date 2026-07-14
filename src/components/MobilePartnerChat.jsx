@@ -155,7 +155,7 @@ export default function MobilePartnerChat({
   useEffect(() => {
     if (!generatedPostPrompt) return undefined
     const frame = window.requestAnimationFrame(() => {
-      generatedPostRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      generatedPostRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
     return () => window.cancelAnimationFrame(frame)
   }, [generatedPostPrompt])
@@ -250,7 +250,7 @@ export default function MobilePartnerChat({
   return (
     <>
       <main className={conversationClassName}>
-        {children}
+        {generatedPost ? null : children}
 
         {messages.map((message) => (
           <div key={message.id} className={`mobile-partner-inline-message ${message.role}`}>
