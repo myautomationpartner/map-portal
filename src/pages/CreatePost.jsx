@@ -1463,6 +1463,7 @@ function MobilePublisherConversation({
           placeholder="Ask for changes before approval…"
           disabled={reviewPending || isSubmitting || isViewingPublishedPost}
           submitOnEnter={false}
+          stableTyping
         />
         <p>Type or speak an edit. My Partner will revise this draft, not publish it.</p>
       </div>

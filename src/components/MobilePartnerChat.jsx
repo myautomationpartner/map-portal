@@ -414,6 +414,7 @@ export default function MobilePartnerChat({
           placeholder={placeholder}
           disabled={pending}
           submitOnEnter={false}
+          stableTyping
         />
         <p>{note}</p>
       </div>

@@ -30,10 +30,12 @@ export default function MobileVoiceComposer({
   compact = false,
   showSend = true,
   submitOnEnter = true,
+  stableTyping = false,
 }) {
   const recognitionRef = useRef(null)
   const photoInputRef = useRef(null)
   const textareaRef = useRef(null)
+  const sendButtonRef = useRef(null)
   const lastInputValueRef = useRef(String(value || ''))
   const voiceBaseRef = useRef('')
   const [listening, setListening] = useState(false)
@@ -55,6 +57,23 @@ export default function MobileVoiceComposer({
     lastInputValueRef.current = nextValue
     resizeTextarea(textarea)
   }, [value])
+
+  useLayoutEffect(() => {
+    if (!sendButtonRef.current) return
+    sendButtonRef.current.disabled = disabled || !String(textareaRef.current?.value || '').trim()
+  })
+
+  function applyLocalValue(nextValue, { notify = true } = {}) {
+    const textarea = textareaRef.current
+    const normalizedValue = String(nextValue || '')
+    if (textarea && textarea.value !== normalizedValue) textarea.value = normalizedValue
+    lastInputValueRef.current = normalizedValue
+    resizeTextarea(textarea)
+    if (sendButtonRef.current) {
+      sendButtonRef.current.disabled = disabled || !normalizedValue.trim()
+    }
+    if (notify) onChange(normalizedValue)
+  }
 
   function toggleListening() {
     if (listening) {
@@ -81,7 +100,8 @@ export default function MobileVoiceComposer({
         transcript += event.results[index][0]?.transcript || ''
       }
       const nextValue = [voiceBaseRef.current, transcript.trim()].filter(Boolean).join(voiceBaseRef.current ? ' ' : '')
-      onChange(nextValue)
+      if (stableTyping) applyLocalValue(nextValue, { notify: false })
+      else onChange(nextValue)
     }
     recognition.onend = () => setListening(false)
     recognition.onerror = () => setListening(false)
@@ -94,6 +114,7 @@ export default function MobileVoiceComposer({
     event?.preventDefault?.()
     const cleanValue = String(textareaRef.current?.value ?? value).trim()
     if (!showSend || !cleanValue || disabled) return
+    if (stableTyping) applyLocalValue('', { notify: true })
     onSubmit?.(cleanValue)
   }
 
@@ -132,7 +153,10 @@ export default function MobileVoiceComposer({
           const nextValue = event.currentTarget.value
           lastInputValueRef.current = nextValue
           resizeTextarea(event.currentTarget)
-          onChange(nextValue)
+          if (sendButtonRef.current) {
+            sendButtonRef.current.disabled = disabled || !nextValue.trim()
+          }
+          if (!stableTyping) onChange(nextValue)
         }}
         placeholder={placeholder}
         rows={1}
@@ -155,9 +179,10 @@ export default function MobileVoiceComposer({
       </button>
       {showSend ? (
         <button
+          ref={sendButtonRef}
           type="button"
           className="mobile-voice-composer-send"
-          disabled={!String(value || '').trim() || disabled}
+          disabled={disabled}
           aria-label="Send to My Partner"
           onClick={handleSubmit}
         >
