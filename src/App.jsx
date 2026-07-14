@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { supabase } from './lib/supabase'
 import Login from './pages/Login'
@@ -27,14 +27,8 @@ function AuthProvider({ children }) {
   const [session, setSession] = useState(undefined)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
-
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession))
     return () => subscription.unsubscribe()
   }, [])
 
@@ -50,17 +44,28 @@ function AuthProvider({ children }) {
 }
 
 function ProtectedLayout({ session }) {
+  const location = useLocation()
   if (!session) return <Navigate to="/login" replace />
+
+  const dedicatedPartnerView = location.pathname === '/post'
+
+  if (dedicatedPartnerView) {
+    return (
+      <div className="min-h-screen bg-[#f3f8f9]">
+        <main className="min-h-screen overflow-auto">
+          <Outlet context={{ session }} />
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-[#0d0b08] flex">
       <Sidebar session={session} />
-
       <div className="flex-1 flex flex-col md:ml-64 min-h-screen">
         <main className="flex-1 overflow-auto pb-20 md:pb-0">
           <Outlet context={{ session }} />
         </main>
-
         <BottomNav />
       </div>
     </div>
@@ -74,10 +79,7 @@ export default function App() {
         <AuthProvider>
           {(session) => (
             <Routes>
-              <Route
-                path="/login"
-                element={session ? <Navigate to="/" replace /> : <Login />}
-              />
+              <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
               <Route element={<ProtectedLayout session={session} />}>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/inbox" element={<Inbox />} />
