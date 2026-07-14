@@ -233,6 +233,29 @@ export default function MobilePartnerChat({
         if (changesCaption && !decision.caption?.trim()) {
           throw new Error('My Partner did not return an updated caption.')
         }
+        if (changesCaption) {
+          const originalCaption = generatedPost.caption.trim()
+          const revisedCaption = decision.caption.trim()
+          if (revisedCaption === originalCaption) {
+            throw new Error('That request did not produce a different caption. Your original is still safe.')
+          }
+          if (/\b(shorter|shorten|concise|trim)\b/i.test(cleanText) && revisedCaption.length >= originalCaption.length) {
+            throw new Error('The proposed caption was not actually shorter, so I kept your original.')
+          }
+          const verificationPayload = await generatePublisherAssist({
+            action: 'verify_caption_edit',
+            caption: revisedCaption,
+            platforms: generatedPost.platforms,
+            max_chars: 2200,
+            context: [
+              `Customer request: ${cleanText}`,
+              `Original caption: ${originalCaption}`,
+            ].join('\n'),
+          })
+          if (verificationPayload?.verification?.passed !== true) {
+            throw new Error(`I made a revision, but could not verify it matched your request. Your original is still safe. ${verificationPayload?.verification?.summary || ''}`.trim())
+          }
+        }
         if (changesImage) {
           const sourceFile = generatedPost.files.find((file) => String(file?.type || '').toLowerCase().startsWith('image/'))
           if (!sourceFile) throw new Error('Add a photo first, then ask me to change the image.')
@@ -263,7 +286,14 @@ export default function MobilePartnerChat({
         }
         setMessages((current) => [
           ...current,
-          createChatMessage('assistant', decision.assistantMessage || 'Done — I updated the postcard.'),
+          createChatMessage(
+            'assistant',
+            changesCaption && !changesImage
+              ? 'Done — I verified and updated the caption.'
+              : changesImage
+                ? 'I generated an updated image for you to review.'
+                : decision.assistantMessage || 'Tell me what you would like to change next.',
+          ),
         ])
         return
       }

@@ -2689,6 +2689,23 @@ export default function CreatePost() {
         if (decision.caption.trim() === content.trim()) {
           throw new Error('That request did not produce a different caption. Try describing the tone or wording you want.')
         }
+        if (/\b(shorter|shorten|concise|trim)\b/i.test(request) && decision.caption.trim().length >= content.trim().length) {
+          throw new Error('The proposed caption was not actually shorter, so I kept your original.')
+        }
+        const verificationPayload = await generatePublisherAssist({
+          client_id: clientId,
+          action: 'verify_caption_edit',
+          caption: decision.caption.trim(),
+          platforms: activePlatforms,
+          max_chars: charLimit,
+          context: [
+            `Customer request: ${request}`,
+            `Original caption: ${content.trim()}`,
+          ].join('\n'),
+        })
+        if (verificationPayload?.verification?.passed !== true) {
+          throw new Error(`I made a revision, but could not verify it matched your request. Your original is still safe. ${verificationPayload?.verification?.summary || ''}`.trim())
+        }
       }
       if (changesImage && !imagePreview) {
         throw new Error('Add a photo first, then ask me to change the image.')
@@ -2718,16 +2735,16 @@ export default function CreatePost() {
       }
 
       const defaultResponse = changesCaption && changesImage
-        ? 'Done — I updated the image and caption and brought the postcard back into view.'
+        ? 'I verified the caption and generated an updated image for you to review.'
         : changesImage
-          ? 'Done — I updated the image and brought the postcard back into view.'
+          ? 'I generated an updated image for you to review.'
           : changesCaption
-            ? 'Done — I updated the caption and brought the postcard back into view.'
+            ? 'Done — I verified and updated the caption.'
             : 'Tell me what you would like to change next.'
       setReviewMessages((current) => [...current, {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: decision.assistantMessage || defaultResponse,
+        content: (changesCaption || changesImage) ? defaultResponse : decision.assistantMessage || defaultResponse,
       }])
     } catch (error) {
       setReviewComposer(request)
