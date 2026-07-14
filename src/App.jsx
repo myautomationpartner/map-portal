@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import Inbox from './pages/Inbox'
 import CreatePost from './pages/CreatePost'
+import PartnerPublisher from './pages/PartnerPublisher'
 import PostHistory from './pages/PostHistory'
 import PlatformStats from './pages/PlatformStats'
 import Sidebar from './components/Sidebar'
@@ -23,7 +24,7 @@ const queryClient = new QueryClient({
 })
 
 function AuthProvider({ children }) {
-  const [session, setSession] = useState(undefined) // undefined = loading
+  const [session, setSession] = useState(undefined)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -53,16 +54,13 @@ function ProtectedLayout({ session }) {
 
   return (
     <div className="min-h-screen bg-[#0d0b08] flex">
-      {/* Desktop sidebar */}
       <Sidebar session={session} />
 
-      {/* Main content area */}
       <div className="flex-1 flex flex-col md:ml-64 min-h-screen">
         <main className="flex-1 overflow-auto pb-20 md:pb-0">
           <Outlet context={{ session }} />
         </main>
 
-        {/* Mobile bottom nav */}
         <BottomNav />
       </div>
     </div>
@@ -83,7 +81,8 @@ export default function App() {
               <Route element={<ProtectedLayout session={session} />}>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/inbox" element={<Inbox />} />
-                <Route path="/post" element={<CreatePost />} />
+                <Route path="/post" element={<PartnerPublisher />} />
+                <Route path="/post/legacy" element={<CreatePost />} />
                 <Route path="/post/history" element={<PostHistory />} />
                 <Route path="/stats/:platform" element={<PlatformStats />} />
                 <Route path="/settings" element={<Settings />} />
