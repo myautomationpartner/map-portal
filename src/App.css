@@ -20901,3 +20901,9 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     font-weight: 750;
   }
 }
+
+@media (max-width: 767px) {
+  html[data-portal-theme="map-dark"] .mobile-partner-home .mobile-partner-generated-caption p {
+    color: #13202a !important;
+  }
+}
