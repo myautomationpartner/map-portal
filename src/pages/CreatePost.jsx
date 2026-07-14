@@ -44,6 +44,7 @@ import MobileVoiceComposer from '../components/MobileVoiceComposer'
 import MobilePartnerTopBar from '../components/MobilePartnerTopBar'
 import { GeneratedPostcard } from '../components/MobilePartnerChat'
 import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
+import { createVisionImageDataUrl, stampBrandLogo } from '../lib/imageAssist'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 
@@ -2570,13 +2571,27 @@ export default function CreatePost() {
         quality: 'low',
         ...imageInput,
       })
-      const file = base64ToImageFile(payload.image_base64, payload.mime_type || 'image/png', `partner-improved-${mode || 'image'}.png`)
-      const previewUrl = `data:${payload.mime_type || 'image/png'};base64,${payload.image_base64}`
-      attachImprovedImage({ file, previewUrl, mode, sourceItem })
-      clearPlatformImageVariants('')
+      let finalImageBase64 = payload.image_base64
+      let finalMimeType = payload.mime_type || 'image/png'
+      if (options.useBrandLogo === true) {
+        const stamped = await stampBrandLogo({
+          imageBase64: finalImageBase64,
+          imageMimeType: finalMimeType,
+          logoBase64: payload.brand_logo_base64,
+          logoMimeType: payload.brand_logo_mime_type || 'image/png',
+        })
+        finalImageBase64 = stamped.imageBase64
+        finalMimeType = stamped.mimeType
+      }
+      const file = base64ToImageFile(finalImageBase64, finalMimeType, `partner-improved-${mode || 'image'}.png`)
+      const previewUrl = `data:${finalMimeType};base64,${finalImageBase64}`
+      if (!options.deferAttach) {
+        attachImprovedImage({ file, previewUrl, mode, sourceItem })
+        clearPlatformImageVariants('')
+      }
       setImageImproveState('ready')
-      setDraftStatus('Improved image attached. Review it before approving the post.')
-      return { payload, previewUrl }
+      setDraftStatus(options.deferAttach ? 'Image generated. Verifying the requested change…' : 'Improved image attached. Review it before approving the post.')
+      return { payload, previewUrl, file, finalImageBase64, finalMimeType }
     } catch (error) {
       console.error('[ImprovePublisherImage]', error)
       setImageImproveError(error.message || 'Could not improve this image right now.')
@@ -2678,11 +2693,31 @@ export default function CreatePost() {
           recentConversation ? `Recent review conversation:\n${recentConversation}` : '',
         ].filter(Boolean).join('\n'),
       })
-      const decision = payload?.creative_decision
+      let decision = payload?.creative_decision
       if (!decision?.intent) throw new Error('My Partner could not understand that request.')
 
-      const changesCaption = ['caption_edit', 'caption_and_image'].includes(decision.intent)
-      const changesImage = ['image_edit', 'caption_and_image'].includes(decision.intent)
+      let changesCaption = ['caption_edit', 'caption_and_image'].includes(decision.intent)
+      let changesImage = ['image_edit', 'caption_and_image'].includes(decision.intent)
+
+      if (changesCaption && decision.caption?.trim() === content.trim()) {
+        const retryPayload = await generatePublisherAssist({
+          client_id: clientId,
+          action: 'creative_chat',
+          caption: content,
+          platforms: activePlatforms,
+          max_chars: charLimit,
+          context: [
+            `Latest customer request: ${request}`,
+            'The first proposed caption was identical to the original. Return a materially different complete caption that clearly performs the request.',
+          ].join('\n'),
+        })
+        const retryDecision = retryPayload?.creative_decision
+        if (retryDecision?.intent) {
+          decision = retryDecision
+          changesCaption = ['caption_edit', 'caption_and_image'].includes(decision.intent)
+          changesImage = ['image_edit', 'caption_and_image'].includes(decision.intent)
+        }
+      }
 
       if (changesCaption) {
         if (!decision.caption?.trim()) throw new Error('My Partner did not return an updated caption.')
@@ -2712,12 +2747,33 @@ export default function CreatePost() {
       }
 
       if (changesImage) {
-        await handleImproveImage('custom', activeCreativeItem, {
+        const improved = await handleImproveImage('custom', activeCreativeItem, {
           instruction: decision.imageInstruction,
           useBrandLogo: decision.useBrandLogo === true,
           captionOverride: changesCaption ? decision.caption : content,
           throwOnError: true,
+          deferAttach: true,
         })
+        if (!improved?.file) throw new Error('The updated image could not be prepared for verification.')
+        const verificationImage = await createVisionImageDataUrl(improved.file, { maxDimension: 960, quality: 0.82 })
+        const verificationPayload = await generatePublisherAssist({
+          client_id: clientId,
+          action: 'verify_image_edit',
+          caption: decision.imageInstruction,
+          platforms: activePlatforms,
+          max_chars: 700,
+          context: [
+            `Customer request: ${request}`,
+            decision.useBrandLogo === true ? 'The exact stored tenant logo was composited onto the result.' : '',
+          ].filter(Boolean).join('\n'),
+          image_data_urls: verificationImage ? [verificationImage] : [],
+        })
+        if (verificationPayload?.verification?.passed !== true) {
+          throw new Error(`I generated an image, but could not verify it matched your request. Your original is still safe. ${verificationPayload?.verification?.summary || ''}`.trim())
+        }
+        attachImprovedImage({ file: improved.file, previewUrl: improved.previewUrl, mode: 'custom', sourceItem: activeCreativeItem })
+        clearPlatformImageVariants('')
+        setDraftStatus('Verified image attached. Review it before approving the post.')
       }
 
       if (changesCaption) {
@@ -2735,9 +2791,9 @@ export default function CreatePost() {
       }
 
       const defaultResponse = changesCaption && changesImage
-        ? 'I verified the caption and generated an updated image for you to review.'
+        ? 'Done — I verified and updated the caption and image.'
         : changesImage
-          ? 'I generated an updated image for you to review.'
+          ? 'Done — I verified and updated the image.'
           : changesCaption
             ? 'Done — I verified and updated the caption.'
             : 'Tell me what you would like to change next.'

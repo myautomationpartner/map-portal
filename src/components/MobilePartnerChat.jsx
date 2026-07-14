@@ -10,7 +10,7 @@ import {
   X,
   XLogo,
 } from '@phosphor-icons/react'
-import { createVisionImageDataUrl, createVisionImageDataUrls } from '../lib/imageAssist'
+import { createVisionImageDataUrl, createVisionImageDataUrls, stampBrandLogo } from '../lib/imageAssist'
 import { generatePublisherAssist, improvePublisherImage, sendPortalPartnerMessage } from '../lib/portalApi'
 import MobileVoiceComposer from './MobileVoiceComposer'
 
@@ -222,13 +222,32 @@ export default function MobilePartnerChat({
             recentConversation ? `Recent conversation:\n${recentConversation}` : '',
           ].filter(Boolean).join('\n'),
         })
-        const decision = payload?.creative_decision
+        let decision = payload?.creative_decision
         if (!decision?.intent) throw new Error('My Partner could not understand that request.')
 
-        const changesCaption = ['caption_edit', 'caption_and_image'].includes(decision.intent)
-        const changesImage = ['image_edit', 'caption_and_image'].includes(decision.intent)
+        let changesCaption = ['caption_edit', 'caption_and_image'].includes(decision.intent)
+        let changesImage = ['image_edit', 'caption_and_image'].includes(decision.intent)
         let nextFiles = generatedPost.files
         let nextPreviewUrl = generatedPost.previewUrl
+
+        if (changesCaption && decision.caption?.trim() === generatedPost.caption.trim()) {
+          const retryPayload = await generatePublisherAssist({
+            action: 'creative_chat',
+            caption: generatedPost.caption,
+            platforms: generatedPost.platforms,
+            max_chars: 2200,
+            context: [
+              `Latest customer request: ${cleanText}`,
+              'The first proposed caption was identical to the original. Return a materially different complete caption that clearly performs the request.',
+            ].join('\n'),
+          })
+          const retryDecision = retryPayload?.creative_decision
+          if (retryDecision?.intent) {
+            decision = retryDecision
+            changesCaption = ['caption_edit', 'caption_and_image'].includes(decision.intent)
+            changesImage = ['image_edit', 'caption_and_image'].includes(decision.intent)
+          }
+        }
 
         if (changesCaption && !decision.caption?.trim()) {
           throw new Error('My Partner did not return an updated caption.')
@@ -270,10 +289,36 @@ export default function MobilePartnerChat({
             quality: 'low',
             image_data_url: imageDataUrl,
           })
-          const mimeType = imagePayload.mime_type || 'image/png'
-          const editedFile = base64ToImageFile(imagePayload.image_base64, mimeType)
+          let finalImageBase64 = imagePayload.image_base64
+          let mimeType = imagePayload.mime_type || 'image/png'
+          if (decision.useBrandLogo === true) {
+            const stamped = await stampBrandLogo({
+              imageBase64: finalImageBase64,
+              imageMimeType: mimeType,
+              logoBase64: imagePayload.brand_logo_base64,
+              logoMimeType: imagePayload.brand_logo_mime_type || 'image/png',
+            })
+            finalImageBase64 = stamped.imageBase64
+            mimeType = stamped.mimeType
+          }
+          const editedFile = base64ToImageFile(finalImageBase64, mimeType)
+          const verificationImage = await createVisionImageDataUrl(editedFile, { maxDimension: 960, quality: 0.82 })
+          const verificationPayload = await generatePublisherAssist({
+            action: 'verify_image_edit',
+            caption: decision.imageInstruction,
+            platforms: generatedPost.platforms,
+            max_chars: 700,
+            context: [
+              `Customer request: ${cleanText}`,
+              decision.useBrandLogo === true ? 'The exact stored tenant logo was composited onto the result.' : '',
+            ].filter(Boolean).join('\n'),
+            image_data_urls: verificationImage ? [verificationImage] : [],
+          })
+          if (verificationPayload?.verification?.passed !== true) {
+            throw new Error(`I generated an image, but could not verify it matched your request. Your original is still safe. ${verificationPayload?.verification?.summary || ''}`.trim())
+          }
           nextFiles = [editedFile, ...generatedPost.files.filter((file) => file !== sourceFile)]
-          nextPreviewUrl = `data:${mimeType};base64,${imagePayload.image_base64}`
+          nextPreviewUrl = `data:${mimeType};base64,${finalImageBase64}`
         }
 
         if (changesCaption || changesImage) {
@@ -291,7 +336,9 @@ export default function MobilePartnerChat({
             changesCaption && !changesImage
               ? 'Done — I verified and updated the caption.'
               : changesImage
-                ? 'I generated an updated image for you to review.'
+                ? changesCaption
+                  ? 'Done — I verified and updated the caption and image.'
+                  : 'Done — I verified and updated the image.'
                 : decision.assistantMessage || 'Tell me what you would like to change next.',
           ),
         ])

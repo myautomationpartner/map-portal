@@ -47,3 +47,54 @@ export async function createVisionImageDataUrls(files, limit = 3) {
   const prepared = await Promise.all(images.map((file) => createVisionImageDataUrl(file).catch(() => '')))
   return prepared.filter(Boolean)
 }
+
+export async function stampBrandLogo({
+  imageBase64,
+  imageMimeType = 'image/png',
+  logoBase64,
+  logoMimeType = 'image/png',
+}) {
+  if (!imageBase64 || !logoBase64) {
+    throw new Error('The verified business logo was not returned with this image edit.')
+  }
+
+  const [image, logo] = await Promise.all([
+    loadImage(`data:${imageMimeType};base64,${imageBase64}`),
+    loadImage(`data:${logoMimeType};base64,${logoBase64}`),
+  ])
+  const width = image.naturalWidth || image.width
+  const height = image.naturalHeight || image.height
+  const logoWidth = logo.naturalWidth || logo.width
+  const logoHeight = logo.naturalHeight || logo.height
+  if (!width || !height || !logoWidth || !logoHeight) {
+    throw new Error('The edited image or business logo could not be measured.')
+  }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d', { alpha: false })
+  if (!context) throw new Error('The business logo could not be applied to this image.')
+
+  context.drawImage(image, 0, 0, width, height)
+  const scale = Math.min((width * 0.24) / logoWidth, (height * 0.18) / logoHeight)
+  const renderedWidth = Math.max(1, Math.round(logoWidth * scale))
+  const renderedHeight = Math.max(1, Math.round(logoHeight * scale))
+  const margin = Math.max(18, Math.round(Math.min(width, height) * 0.03))
+  const x = width - renderedWidth - margin
+  const y = height - renderedHeight - margin
+
+  context.save()
+  context.shadowColor = 'rgba(0, 0, 0, 0.28)'
+  context.shadowBlur = Math.max(6, Math.round(width * 0.008))
+  context.shadowOffsetY = Math.max(3, Math.round(height * 0.004))
+  context.drawImage(logo, x, y, renderedWidth, renderedHeight)
+  context.restore()
+
+  const dataUrl = canvas.toDataURL('image/png')
+  return {
+    imageBase64: dataUrl.slice(dataUrl.indexOf(',') + 1),
+    mimeType: 'image/png',
+    placement: 'bottom-right',
+  }
+}
