@@ -1,4 +1,4 @@
-const CACHE_NAME = 'map-portal-shell-v1'
+const CACHE_NAME = 'map-portal-shell-v2'
 const SHELL_ASSETS = [
   '/',
   '/assets/map-option-b-mark.png',

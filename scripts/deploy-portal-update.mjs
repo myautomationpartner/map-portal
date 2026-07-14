@@ -171,6 +171,7 @@ function buildPublicEnv(client) {
     VITE_PORTAL_ASSET_BASE: sharedMode ? './' : '/',
     VITE_PORTAL_WORKER_NAME: client.worker_name || '',
     VITE_PORTAL_BILLING_STATUS: client.billing_status || '',
+    VITE_PORTAL_RELEASE: envValue(['VITE_PORTAL_RELEASE'], String(Date.now())),
     VITE_N8N_BASE_URL: envValue(['VITE_N8N_BASE_URL', 'N8N_BASE_URL'], DEFAULT_N8N_BASE_URL),
     VITE_CHATWOOT_APP_URL: envValue(['VITE_CHATWOOT_APP_URL', 'CHATWOOT_APP_URL'], DEFAULT_CHATWOOT_APP_URL),
     VITE_GOOGLE_PICKER_API_KEY: envValue(['VITE_GOOGLE_PICKER_API_KEY', 'GOOGLE_PICKER_API_KEY']),
@@ -200,6 +201,7 @@ function buildWranglerConfig(client, assetsDirectory) {
     `directory = "${assetsDirectory}"`,
     'binding = "ASSETS"',
     'not_found_handling = "single-page-application"',
+    'run_worker_first = true',
     ...(sharedMode ? [
       '',
       '[triggers]',

@@ -19,6 +19,10 @@ const voiceComposerSource = await readFile(new URL('./components/MobileVoiceComp
 const mobileChatSource = await readFile(new URL('./components/MobilePartnerChat.jsx', import.meta.url), 'utf8')
 const appHtmlSource = await readFile(new URL('../index.html', import.meta.url), 'utf8')
 const imageAssistSource = await readFile(new URL('./lib/imageAssist.js', import.meta.url), 'utf8')
+const pwaSource = await readFile(new URL('./lib/pwa.js', import.meta.url), 'utf8')
+const serviceWorkerSource = await readFile(new URL('../public/service-worker.js', import.meta.url), 'utf8')
+const workerSource = await readFile(new URL('../worker.js', import.meta.url), 'utf8')
+const deploySource = await readFile(new URL('../scripts/deploy-portal-update.mjs', import.meta.url), 'utf8')
 
 test('mobile Partner rollout is limited to the two approved first customers', () => {
   assert.deepEqual(
@@ -78,6 +82,18 @@ test('mobile Partner chat stays inline, supports multiline drafts, and opts into
   assert.match(mobileChatSource, /submitOnEnter=\{false\}/)
   assert.match(voiceComposerSource, /textarea\.scrollHeight/)
   assert.match(appHtmlSource, /viewport-fit=cover/)
+})
+
+test('installed phone portals refresh onto the current release instead of keeping stale attachment behavior', () => {
+  assert.match(pwaSource, /VITE_PORTAL_RELEASE/)
+  assert.match(pwaSource, /service-worker\.js\?release=/)
+  assert.match(pwaSource, /updateViaCache: 'none'/)
+  assert.match(pwaSource, /controllerchange/)
+  assert.match(pwaSource, /window\.location\.reload\(\)/)
+  assert.match(serviceWorkerSource, /map-portal-shell-v2/)
+  assert.match(workerSource, /assetNormalized\.url\.pathname !== '\/service-worker\.js'/)
+  assert.match(workerSource, /headers\.set\('cache-control', 'no-store, max-age=0'\)/)
+  assert.match(deploySource, /'run_worker_first = true'/)
 })
 
 test('mobile Publisher defaults to the three first-pass platforms and still requires final approval', () => {

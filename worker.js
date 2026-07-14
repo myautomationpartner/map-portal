@@ -7685,6 +7685,19 @@ export default {
     }
 
     const assetNormalized = normalizeNestedSpaAssetRequest(request, url)
-    return env.ASSETS.fetch(assetNormalized.request)
+    const assetResponse = await env.ASSETS.fetch(assetNormalized.request)
+    if (assetNormalized.url.pathname !== '/' && assetNormalized.url.pathname !== '/service-worker.js') {
+      return assetResponse
+    }
+
+    const headers = new Headers(assetResponse.headers)
+    headers.set('cache-control', 'no-store, max-age=0')
+    headers.set('pragma', 'no-cache')
+    headers.set('expires', '0')
+    return new Response(assetResponse.body, {
+      status: assetResponse.status,
+      statusText: assetResponse.statusText,
+      headers,
+    })
   },
 }

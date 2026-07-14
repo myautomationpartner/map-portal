@@ -1,5 +1,7 @@
 import { inferPathTenant } from './portalPath'
 
+const PORTAL_RELEASE = String(import.meta.env.VITE_PORTAL_RELEASE || 'development')
+
 function absolutePortalUrl(pathname) {
   const origin = window.location.origin
   return `${origin}${pathname}`
@@ -75,7 +77,20 @@ export function registerPortalPwa() {
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register(`${base}/service-worker.js`, { scope: manifest.scope }).catch((error) => {
+      let reloadingForNewVersion = false
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloadingForNewVersion) return
+        reloadingForNewVersion = true
+        window.location.reload()
+      })
+
+      navigator.serviceWorker.register(
+        `${base}/service-worker.js?release=${encodeURIComponent(PORTAL_RELEASE)}`,
+        {
+          scope: manifest.scope,
+          updateViaCache: 'none',
+        },
+      ).then((registration) => registration.update()).catch((error) => {
         console.warn('MAP portal service worker registration skipped.', error)
       })
     }, { once: true })
