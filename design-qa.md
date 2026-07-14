@@ -1,48 +1,45 @@
-# MAP Pulse Mobile Design QA
+# MAP Pulse Photo Postcard Design QA
 
 - Source visual truth: `/Users/kennymonico/.codex/generated_images/019f5c30-2be0-7783-8de8-46b192e1f273/exec-4f733e57-f663-48b0-ab6c-cf39720fe9b3.png`
-- Implementation screenshots:
-  - `/Users/kennymonico/.codex/visualizations/2026/07/13/019f5c30-2be0-7783-8de8-46b192e1f273/map-pulse-qa/post-mobile.png`
-  - `/Users/kennymonico/.codex/visualizations/2026/07/13/019f5c30-2be0-7783-8de8-46b192e1f273/map-pulse-qa/inbox-mobile.png`
-  - `/Users/kennymonico/.codex/visualizations/2026/07/13/019f5c30-2be0-7783-8de8-46b192e1f273/map-pulse-qa/scheduled-mobile.png`
-- Viewport: 390 x 844 CSS pixels
-- Theme: MAP mobile rollout rendered from the saved `map-dark` portal preference with the new light MAP Pulse workspace override
-- State: authenticated MAP customer portal; Post and Scheduled show their live empty states, while Inbox uses the existing launch-asset demo conversation to validate populated message and suggested-reply behavior
+- Operator issue evidence:
+  - `/Users/kennymonico/Library/Application Support/CleanShot/media/media_3NThuYm3S5/CleanShot 2026-07-14 at 09.49.40@2x.png`
+  - `/Users/kennymonico/Library/Application Support/CleanShot/media/media_DWvMIKVLlB/CleanShot 2026-07-14 at 09.49.50@2x.png`
+- Live implementation: `/Users/kennymonico/Documents/MyAutomationPartner/smoke-agent/reports/mobile-my-partner-evidence/smoke_20260714_postcard_native_chooser_v6/03-ai-postcard-with-photo.png`
+- Side-by-side comparison: `/Users/kennymonico/Documents/MyAutomationPartner/map-portal/portal-app/design-qa-postcard-comparison.png`
+- Production viewport: emulated iPhone 14, 390 x 664 CSS pixels
+- State: authenticated MAP Post conversation after selecting one image and asking AI to create a post
 
-## Full-view comparison evidence
+## Full-view and focused comparison evidence
 
-The source and implementation were opened together in one visual comparison input. The implementation preserves the selected design's deep ink header, cool light canvas, aqua primary action, lime status signal, white conversational surfaces, MAP avatar treatment, persistent voice composer, and sparse ChatGPT-like vertical rhythm. The requested product refinement intentionally adds a three-button mode switch directly under the brand row.
+The approved concept and live result were normalized to the same inspection height and placed together in one comparison board. The production card preserves the concept's image-first postcard, dark branded status strip, readable caption, compact platform choices, strong aqua review action, and persistent conversational composer. It adds the approved Inbox/Post/Scheduled switcher without obscuring the postcard.
 
-The source contains a populated post preview while the live MAP screenshot contains no current approval item. That is a content-state difference, not a layout substitution: the implementation presents a compact create-post attachment in the same conversation column and the populated post component retains the source design's media slot, status, platform choices, primary review action, and follow-up message.
-
-No focused crop was required because the full-view source and 390 x 844 implementation screenshots keep the header, mode switch, message typography, action surfaces, and composer controls legible at inspection size. The populated Inbox thread was also opened directly to inspect message bubbles and the suggested-reply panel at full readable size.
+The focused inspection confirms that the selected original image remains the postcard hero, the caption is dark and readable on white, Facebook/Instagram/X fit on one row, and Review & post plus Edit remain available above the composer. The custom attachment menu is gone, leaving one native iOS chooser.
 
 ## Findings
 
 - No actionable P0, P1, or P2 mismatch remains.
-- Fonts and typography: Plus Jakarta Sans with Sora headings provides a close modern sans-serif match, with clear hierarchy and no clipping at 390 px.
-- Spacing and layout rhythm: the header, three-mode control, conversation rail, attachments, and fixed composer fit without horizontal overflow or covered primary actions.
-- Colors and visual tokens: navy `#071521`, aqua `#00aeb6`, lime `#a9df38`, cool canvas `#f4f7f8`, and white surfaces consistently replace the earlier beige/gold rollout styling.
-- Image quality and asset fidelity: the existing MAP raster logo is reused; live post media remains the source for populated post attachments. No placeholder illustration or handcrafted logo was introduced.
-- Copy and content: Inbox, Post, and Scheduled are direct and familiar. Review language preserves the explicit customer approval boundary.
+- Typography: the caption and actions remain legible at phone size with no clipping.
+- Spacing: the full postcard fits in 317 x 480 CSS pixels and keeps its primary controls above the composer.
+- Colors: deep navy, aqua, lime, cool white, and dark caption text match the approved MAP Pulse system.
+- Image quality: the original selected media is used directly; the workflow does not replace it with a placeholder.
+- Copy: Ready to review and Review & post preserve the explicit customer approval boundary.
 
 ## Comparison history
 
-1. Initial browser pass found warm beige/gold theme rules overriding the selected MAP Pulse palette in Post, Inbox, the detailed editor, and suggested replies.
-2. The final cascade was corrected so rollout screens remain cool white, navy, aqua, and lime even when the saved portal theme is dark.
-3. The second pass found low-contrast message copy and beige outgoing Inbox bubbles. Text contrast and conversation surfaces were corrected to dark text on white and white text on navy.
-4. The final pass confirmed the three mode links, populated Inbox list, editable suggested reply, Scheduled empty state, detailed editor, fixed composer, 390 px width, and zero browser console errors.
+1. The operator evidence exposed a duplicated attachment choice: a custom three-option menu opened before the iOS native chooser.
+2. The custom menu was removed so the plus button invokes one native chooser directly.
+3. The first postcard pass still left an older approval card in the conversation and used a tall media treatment. The old content is now hidden for this state and the hero image uses a compact 16:9 crop.
+4. Two live QA passes found low-contrast caption text inherited from the legacy dark theme. A scoped postcard override corrected it to `rgb(19, 32, 42)`.
+5. Final production run `smoke_20260714_postcard_native_chooser_v6` passed 24/24 with no console, page, or HTTP failures.
 
 ## Primary interactions tested
 
-- Inbox, Post, and Scheduled top buttons each route to the correct workspace.
-- A realistic Inbox conversation opens from the message list.
-- `Use and edit` copies the suggested reply into the composer and enables Send without sending the test message.
-- Post opens the existing detailed editor while preserving the three-mode header and voice/photo input.
-- Scheduled opens its AI-style workspace and routes its empty-state action back to Post.
-
-## Follow-up polish
-
-- P3: capture one future QA screenshot with a real media-backed post and one with a real scheduled post so launch collateral can show the populated attachment states.
+- Plus opens one native file input and no custom stacked chooser.
+- A selected image stages beside the typed prompt.
+- AI returns the result in the Post conversation as an image-backed postcard.
+- Caption editing and Facebook/Instagram/X selection work inside the postcard.
+- Nothing publishes until Review & post is selected.
+- Review & post hands the same image, caption, and platforms to the detailed Publisher review.
+- Voice remains available in the persistent composer.
 
 final result: passed
