@@ -310,7 +310,6 @@ export default function MobilePartnerChat({
             max_chars: 700,
             context: [
               `Customer request: ${cleanText}`,
-              decision.useBrandLogo === true ? 'The exact stored tenant logo was composited onto the result.' : '',
             ].filter(Boolean).join('\n'),
             image_data_urls: verificationImage ? [verificationImage] : [],
           })

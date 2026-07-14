@@ -77,12 +77,21 @@ export async function stampBrandLogo({
   if (!context) throw new Error('The business logo could not be applied to this image.')
 
   context.drawImage(image, 0, 0, width, height)
-  const scale = Math.min((width * 0.24) / logoWidth, (height * 0.18) / logoHeight)
+  // The postcard displays images with a 16:9 cover crop. Keep the logo inside
+  // that visible center crop so square image-model outputs cannot hide it.
+  const postcardAspect = 16 / 9
+  const imageAspect = width / height
+  const visibleWidth = imageAspect > postcardAspect ? height * postcardAspect : width
+  const visibleHeight = imageAspect > postcardAspect ? height : width / postcardAspect
+  const visibleLeft = (width - visibleWidth) / 2
+  const visibleTop = (height - visibleHeight) / 2
+
+  const scale = Math.min((visibleWidth * 0.24) / logoWidth, (visibleHeight * 0.28) / logoHeight)
   const renderedWidth = Math.max(1, Math.round(logoWidth * scale))
   const renderedHeight = Math.max(1, Math.round(logoHeight * scale))
-  const margin = Math.max(18, Math.round(Math.min(width, height) * 0.03))
-  const x = width - renderedWidth - margin
-  const y = height - renderedHeight - margin
+  const margin = Math.max(18, Math.round(Math.min(visibleWidth, visibleHeight) * 0.04))
+  const x = Math.round(visibleLeft + visibleWidth - renderedWidth - margin)
+  const y = Math.round(visibleTop + visibleHeight - renderedHeight - margin)
 
   context.save()
   context.shadowColor = 'rgba(0, 0, 0, 0.28)'
