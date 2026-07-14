@@ -80,6 +80,7 @@ export function registerPortalPwa() {
       let reloadingForNewVersion = false
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (reloadingForNewVersion) return
+        if (/\/login\/?$/.test(window.location.pathname)) return
         reloadingForNewVersion = true
         window.location.reload()
       })
