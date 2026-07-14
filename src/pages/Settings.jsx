@@ -1,48 +1,61 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useOutletContext, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { buildTenantConfig } from '../lib/tenantConfig'
+import { buildSharedPortalPath, portalPath } from '../lib/portalPath'
+import { DASHBOARD_PLATFORMS } from '../lib/platformCatalog'
+import { fetchTeamAccessUsers, inviteTeamAccessUser, updateTeamAccessUser } from '../lib/portalApi'
+import {
+  getCurrentPushSubscription,
+  getPushNotificationStatus,
+  subscribeToPortalPush,
+  unsubscribeFromPortalPush,
+} from '../lib/pushNotifications'
 import {
   User, Lock, Building2, CheckCircle2, Loader2, AlertCircle,
-  Share2, Camera, Music2, Link2, RefreshCw, ExternalLink, Wifi, WifiOff
+  Link2, ExternalLink, Wifi, WifiOff, MessageCircle, Copy, RefreshCw, Mail, Save, Unlink2,
+  UserPlus, ShieldCheck, Ban, CreditCard, ChevronDown, Bell, BellOff
 } from 'lucide-react'
 
-const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
+const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
+const SETTINGS_DISCONNECT_ENDPOINT = '/api/social-connections/disconnect'
+const SETTINGS_REFRESH_ENDPOINT = '/api/social-connections/refresh'
 
-const PLATFORMS = [
-  {
-    id: 'facebook',
-    label: 'Facebook',
-    Icon: Share2,
-    gradient: 'from-blue-600 to-blue-400',
-    color: '#8ab4e0',
-    connectedBg: 'rgba(92,143,214,0.08)',
-    connectedBorder: 'rgba(92,143,214,0.2)',
-  },
-  {
-    id: 'instagram',
-    label: 'Instagram',
-    Icon: Camera,
-    gradient: 'from-pink-600 to-purple-500',
-    color: '#e879a0',
-    connectedBg: 'rgba(232,121,160,0.08)',
-    connectedBorder: 'rgba(232,121,160,0.2)',
-  },
-  {
-    id: 'tiktok',
-    label: 'TikTok',
-    Icon: Music2,
-    gradient: 'from-red-500 to-pink-500',
-    color: '#f0948a',
-    connectedBg: 'rgba(240,148,138,0.08)',
-    connectedBorder: 'rgba(240,148,138,0.2)',
-  },
+const PLATFORMS = DASHBOARD_PLATFORMS
+const TEAM_PERMISSION_OPTIONS = [
+  { id: 'read_only', label: 'Read Only', description: 'Can sign in and view allowed portal areas.' },
+  { id: 'create_post', label: 'Create Post', description: 'Can draft and prepare posts without publishing.' },
+  { id: 'publish_posts', label: 'Create and Publish posts', description: 'Can publish, schedule, and manage posts.' },
+  { id: 'view_documents', label: 'View documents', description: 'Can view secure portal documents.' },
+  { id: 'manage_secure_sharing', label: 'Create shared document rooms and shared links', description: 'Can create secure rooms and share links.' },
+  { id: 'full_admin', label: 'Full Administrator', description: 'Can manage users, settings, publishing, and documents.' },
 ]
 
+function buildTenantAwarePortalPath(path, clientSlug) {
+  const resolvedPath = portalPath(path)
+  if (resolvedPath !== path) return resolvedPath
+
+  if (typeof window === 'undefined') return resolvedPath
+  const host = window.location.hostname.replace(/^www\./, '').toLowerCase()
+  if (host === 'myautomationpartner.com' && clientSlug) {
+    return buildSharedPortalPath(clientSlug, path)
+  }
+
+  return resolvedPath
+}
+
 async function fetchUserProfile() {
+  const { data: userData, error: userError } = await supabase.auth.getUser()
+  if (userError) throw userError
+
+  const userId = userData?.user?.id
+  if (!userId) throw new Error('You are not signed in.')
+
   const { data, error } = await supabase
     .from('users')
     .select('*, clients(*)')
+    .eq('id', userId)
     .single()
   if (error) throw error
   return data
@@ -52,25 +65,116 @@ async function fetchConnections(clientId) {
   if (!clientId) return []
   const { data, error } = await supabase
     .from('social_connections')
-    .select('platform, zernio_account_id, username, connected_at')
+    .select('platform, zernio_account_id, zernio_profile_id, username, connected_at')
     .eq('client_id', clientId)
   if (error) throw error
   return data || []
 }
 
+async function websiteChatPortalFetch(path, options = {}) {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData?.session?.access_token
+  if (!token) throw new Error('You need to be signed in to manage website chat.')
+
+  const response = await fetch(portalPath(path), {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  })
+  const payload = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(payload?.error || 'Website chat request failed.')
+  }
+
+  return payload
+}
+
+async function fetchWebsiteChatSettings() {
+  return websiteChatPortalFetch('/api/website-chat/settings')
+}
+
+async function saveWebsiteChatSettings(body) {
+  return websiteChatPortalFetch('/api/website-chat/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+async function checkWebsiteChatInstallation() {
+  return websiteChatPortalFetch('/api/website-chat/check-installation', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+async function disconnectSocialConnection(platform) {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData?.session?.access_token
+  if (!token) throw new Error('You need to be signed in to disconnect accounts.')
+
+  const response = await fetch(portalPath(SETTINGS_DISCONNECT_ENDPOINT), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ platform }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(payload?.error || 'Could not disconnect this account.')
+  }
+  return payload
+}
+
+async function refreshSocialConnections(platform) {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData?.session?.access_token
+  if (!token) throw new Error('You need to be signed in to refresh accounts.')
+
+  const response = await fetch(portalPath(SETTINGS_REFRESH_ENDPOINT), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ platform }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || payload?.success === false) {
+    throw new Error(payload?.error || 'Could not refresh connected accounts.')
+  }
+  return payload
+}
+
+async function portalAuthHeaders() {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData?.session?.access_token
+  if (!token) throw new Error('You need to be signed in to manage social accounts.')
+
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  }
+}
+
 // ── Shared components ─────────────────────────────────────────────────────────
 
-function Section({ title, description, icon: Icon, children }) {
+function Section({ title, description, icon: Icon, children, id }) {
   return (
-    <div className="rounded-2xl overflow-hidden" style={{ background: '#1e1910', border: '1px solid #3d3420' }}>
-      <div className="px-6 py-5 flex items-center gap-3" style={{ borderBottom: '1px solid #3d3420' }}>
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center"
-          style={{ background: 'rgba(212,168,58,0.10)', border: '1px solid rgba(212,168,58,0.20)' }}>
-          <Icon className="w-4 h-4" style={{ color: '#d4a83a' }} strokeWidth={2} />
+    <div id={id} className="settings-section-panel portal-panel rounded-[32px] overflow-hidden">
+      <div className="flex items-center gap-3 border-b px-6 py-5" style={{ borderColor: 'var(--portal-border)' }}>
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg"
+          style={{ background: 'rgba(112,228,255,0.12)', border: '1px solid rgba(112,228,255,0.28)' }}>
+          <Icon className="w-4 h-4" style={{ color: 'var(--map-brand-cyan)' }} strokeWidth={2} />
         </div>
         <div>
-          <h2 className="text-sm font-semibold" style={{ color: '#f8f2e4' }}>{title}</h2>
-          {description && <p className="text-xs mt-0.5" style={{ color: '#8a7858' }}>{description}</p>}
+          <h2 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{title}</h2>
+          {description && <p className="mt-0.5 text-xs" style={{ color: 'var(--portal-text-muted)' }}>{description}</p>}
         </div>
       </div>
       <div className="px-6 py-5">{children}</div>
@@ -81,9 +185,9 @@ function Section({ title, description, icon: Icon, children }) {
 function Field({ label, value }) {
   return (
     <div>
-      <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: '#8a7858' }}>{label}</label>
-      <div className="rounded-xl px-4 py-3 text-sm" style={{ background: '#252015', border: '1px solid #3d3420', color: '#c8b898' }}>
-        {value || <span style={{ color: '#4e4228' }}>—</span>}
+      <label className="mb-2 block text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--portal-text-soft)' }}>{label}</label>
+      <div className="settings-field-value rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+        {value || <span style={{ color: 'var(--portal-text-soft)' }}>—</span>}
       </div>
     </div>
   )
@@ -92,11 +196,14 @@ function Field({ label, value }) {
 function StatusBadge({ status, message }) {
   if (!status) return null
   const isSuccess = status === 'success'
+  const isInfo = status === 'info'
   return (
-    <div className="flex items-center gap-2 text-sm rounded-xl px-4 py-3"
+    <div className="settings-status-badge flex items-center gap-2 text-sm rounded-xl px-4 py-3"
       style={isSuccess
-        ? { background: 'rgba(107,193,142,0.08)', border: '1px solid rgba(107,193,142,0.2)', color: '#6bc18e' }
-        : { background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.2)', color: '#e8899a' }
+        ? { background: 'rgba(133,247,169,0.10)', border: '1px solid rgba(133,247,169,0.24)', color: 'var(--portal-success)' }
+        : isInfo
+        ? { background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.28)', color: 'var(--map-brand-cyan)' }
+        : { background: 'rgba(255,122,184,0.12)', border: '1px solid rgba(255,122,184,0.28)', color: 'var(--map-brand-magenta)' }
       }>
       {isSuccess ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
       {message}
@@ -104,140 +211,897 @@ function StatusBadge({ status, message }) {
   )
 }
 
+function resolveSubscriptionStatus(billingAccess) {
+  if (billingAccess?.readOnly || billingAccess?.mode === 'blocked' || billingAccess?.mode === 'inactive') {
+    return {
+      label: 'Inactive',
+      tone: 'inactive',
+      description: billingAccess?.message || 'Payment is required to restore full portal access.',
+      color: 'var(--map-brand-magenta)',
+      background: 'rgba(255,122,184,0.12)',
+      border: 'rgba(255,122,184,0.28)',
+    }
+  }
+
+  if (billingAccess?.mode === 'trial') {
+    return {
+      label: 'Manual trial active',
+      tone: 'active',
+      description: billingAccess?.message || 'MAP is intentionally holding this workspace in manual trial access.',
+      color: 'var(--portal-success)',
+      background: 'rgba(133,247,169,0.10)',
+      border: 'rgba(133,247,169,0.24)',
+    }
+  }
+
+  if (billingAccess?.mode === 'warning') {
+    return {
+      label: 'Manual trial review',
+      tone: 'active',
+      description: billingAccess?.message || 'MAP is reviewing this manual trial before access changes.',
+      color: 'var(--portal-success)',
+      background: 'rgba(133,247,169,0.10)',
+      border: 'rgba(133,247,169,0.24)',
+    }
+  }
+
+  return {
+    label: 'Active',
+    tone: 'active',
+    description: 'Your portal subscription is active.',
+    color: 'var(--portal-success)',
+    background: 'rgba(133,247,169,0.10)',
+    border: 'rgba(133,247,169,0.24)',
+  }
+}
+
+function buildSubscriptionActions({ tenant, billingAccess, onBillingAction }) {
+  if (!billingAccess || !onBillingAction) return []
+
+  const canOpenPortal = Boolean(tenant?.billingPortalUrl || tenant?.billingCustomerId || tenant?.billingSubscriptionId)
+  const actions = []
+
+  if (billingAccess.actionType === 'checkout') {
+    actions.push({
+      key: 'checkout',
+      label: billingAccess.ctaLabel || 'Start paid subscription',
+      actionType: 'checkout',
+      icon: CreditCard,
+      variant: 'primary',
+    })
+  } else if (billingAccess.actionType === 'portal' || canOpenPortal) {
+    actions.push({
+      key: 'manage',
+      label: 'Manage subscription',
+      actionType: 'portal',
+      icon: CreditCard,
+      variant: 'primary',
+    })
+  }
+
+  if (canOpenPortal) {
+    actions.push(
+      {
+        key: 'payment-method',
+        label: 'Update payment method',
+        actionType: 'portal',
+        icon: CreditCard,
+        variant: actions.length ? 'secondary' : 'primary',
+      },
+      {
+        key: 'invoices',
+        label: 'View invoices',
+        actionType: 'portal',
+        icon: ExternalLink,
+        variant: 'secondary',
+      },
+      {
+        key: 'cancel',
+        label: 'Cancel plan',
+        actionType: 'portal',
+        icon: Ban,
+        variant: 'secondary',
+      },
+    )
+  }
+
+  return actions
+}
+
+function SettingsCategory({ title, description, icon: Icon, defaultOpen = false, children }) {
+  return (
+    <details
+      className="settings-category group rounded-[32px]"
+      defaultOpen={defaultOpen}
+      style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid var(--portal-border)' }}
+    >
+      <summary className="settings-category-summary flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 md:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <div
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+            style={{ background: 'rgba(112,228,255,0.12)', border: '1px solid rgba(112,228,255,0.28)' }}
+          >
+            <Icon className="h-4 w-4" style={{ color: 'var(--map-brand-cyan)' }} />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{title}</h2>
+            {description && <p className="mt-0.5 text-xs" style={{ color: 'var(--portal-text-muted)' }}>{description}</p>}
+          </div>
+        </div>
+        <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" style={{ color: 'var(--portal-text-muted)' }} />
+      </summary>
+      <div className="settings-category-body space-y-5 border-t p-4 md:p-5" style={{ borderColor: 'var(--portal-border)' }}>
+        {children}
+      </div>
+    </details>
+  )
+}
+
+function SubscriptionSection({ tenant, billingAccess, onBillingAction, billingActionPending }) {
+  const status = resolveSubscriptionStatus(billingAccess)
+  const billingActions = buildSubscriptionActions({ tenant, billingAccess, onBillingAction })
+  const showBillingActions = billingActions.length > 0
+
+  return (
+    <Section title="Subscription" description="Status, payment, and cancellation options" icon={CreditCard}>
+      <div className="space-y-5">
+        <div className="rounded-2xl p-4" style={{ background: status.background, border: `1px solid ${status.border}` }}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: status.color }}>
+                Subscription {status.label}
+              </p>
+              <h3 className="mt-2 text-xl font-semibold" style={{ color: 'var(--portal-text)' }}>
+                {tenant?.selectedPlan ? tenant.selectedPlan.replace(/_/g, ' ') : 'MAP Starter'}
+              </h3>
+              <p className="mt-2 max-w-2xl text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+                {status.description}
+              </p>
+            </div>
+            <span
+              className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-black uppercase tracking-[0.18em]"
+              style={{ background: 'rgba(9,14,24,0.50)', border: `1px solid ${status.border}`, color: status.color }}
+            >
+              <span className="h-2 w-2 rounded-full" style={{ background: status.color }} />
+              {status.tone}
+            </span>
+          </div>
+        </div>
+
+        {showBillingActions ? (
+          <>
+            <div className="flex flex-wrap gap-3">
+              {billingActions.map((action) => {
+                const Icon = action.icon
+                const className = action.variant === 'primary' ? 'portal-button-primary' : 'portal-button-secondary'
+                const isPending = billingActionPending === action.key
+                return (
+                  <button
+                    key={action.key}
+                    type="button"
+                    onClick={() => onBillingAction({ actionType: action.actionType, actionKey: action.key })}
+                    disabled={Boolean(billingActionPending)}
+                    className={`${className} inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-50`}
+                  >
+                    {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
+                    {isPending ? 'Opening billing...' : action.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            <p className="text-xs leading-relaxed" style={{ color: 'var(--portal-text-soft)' }}>
+              Checkout opens Stripe's secure payment flow. Subscription management, invoices, payment-method updates, and cancellation open in Stripe Customer Portal when a Stripe customer exists.
+            </p>
+          </>
+        ) : (
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--portal-text-soft)' }}>
+            Manual trial access is managed by MAP. Stripe subscription management becomes available after a Stripe customer or subscription is attached to this workspace.
+          </p>
+        )}
+      </div>
+    </Section>
+  )
+}
+
+function formatConnectionDate(value) {
+  if (!value) return 'Unknown'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return 'Unknown'
+  return parsed.toLocaleString([], {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function formatPlatformLabel(platform) {
+  if (!platform) return 'Account'
+  if (platform === 'twitter' || platform === 'x') return 'X / Twitter'
+  if (platform === 'linkedin') return 'LinkedIn'
+  if (platform === 'tiktok') return 'TikTok'
+  return platform.charAt(0).toUpperCase() + platform.slice(1)
+}
+
+function getConnectPendingTimeoutMessage(platform) {
+  const label = formatPlatformLabel(platform)
+  if (platform === 'twitter' || platform === 'x') {
+    return 'MAP did not receive a completed X / Twitter connection. If X showed "Something went wrong", close the auth window, sign in to X in a fresh tab, then try Connect again.'
+  }
+  return `${label} did not finish connecting yet. If the auth window completed, refresh this page; otherwise try Connect again.`
+}
+
+function normalizeConnectionPlatform(platform) {
+  const value = String(platform || '').trim().toLowerCase()
+  const platformMap = {
+    fb: 'facebook',
+    facebook_page: 'facebook',
+    ig: 'instagram',
+    tt: 'tiktok',
+    linked_in: 'linkedin',
+    linkedin_page: 'linkedin',
+    linkedin_company: 'linkedin',
+    li: 'linkedin',
+    x: 'twitter',
+    x_twitter: 'twitter',
+    xtwitter: 'twitter',
+  }
+  return platformMap[value] || value
+}
+
+function normalizeWorkflowError(data, fallbackMessage) {
+  const candidate =
+    data?.error ||
+    data?.message ||
+    data?.details ||
+    data?.description ||
+    data?.reason
+
+  if (typeof candidate === 'string' && candidate.trim()) {
+    return candidate.trim()
+  }
+
+  return fallbackMessage
+}
+
+function normalizeTeamPermissions(input) {
+  const values = Array.isArray(input) ? input : [input]
+  const normalized = Array.from(new Set(values
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)))
+
+  if (normalized.includes('full_admin')) return ['full_admin']
+  if (!normalized.includes('read_only')) normalized.unshift('read_only')
+  if (normalized.includes('publish_posts') && !normalized.includes('create_post')) normalized.push('create_post')
+  if (normalized.includes('manage_secure_sharing') && !normalized.includes('view_documents')) normalized.push('view_documents')
+  return normalized
+}
+
+function formatTeamPermissions(permissions) {
+  const normalized = normalizeTeamPermissions(permissions)
+  if (normalized.includes('full_admin')) return 'Full Administrator'
+  return TEAM_PERMISSION_OPTIONS
+    .filter((option) => normalized.includes(option.id))
+    .map((option) => option.label)
+    .join(', ')
+}
+
+function TeamAccessSection({ profile, billingAccess }) {
+  const queryClient = useQueryClient()
+  const [inviteForm, setInviteForm] = useState({
+    name: '',
+    email: '',
+    portal_permissions: ['read_only'],
+  })
+  const [editingUserId, setEditingUserId] = useState(null)
+  const [editingForm, setEditingForm] = useState(null)
+  const [savingUserId, setSavingUserId] = useState(null)
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [status, setStatus] = useState(null)
+
+  const canManageTeam = normalizeTeamPermissions(profile?.portal_permissions).includes('full_admin') || profile?.role === 'admin'
+  const query = useQuery({
+    queryKey: ['team-access-users', profile?.client_id],
+    queryFn: fetchTeamAccessUsers,
+    enabled: Boolean(profile?.client_id && canManageTeam),
+  })
+  const users = query.data?.users || []
+
+  function toggleInvitePermission(permission) {
+    setInviteForm((current) => ({
+      ...current,
+      portal_permissions: normalizeTeamPermissions(
+        current.portal_permissions.includes(permission)
+          ? current.portal_permissions.filter((item) => item !== permission)
+          : [...current.portal_permissions, permission],
+      ),
+    }))
+  }
+
+  function toggleEditPermission(permission) {
+    setEditingForm((current) => ({
+      ...current,
+      portal_permissions: normalizeTeamPermissions(
+        current.portal_permissions.includes(permission)
+          ? current.portal_permissions.filter((item) => item !== permission)
+          : [...current.portal_permissions, permission],
+      ),
+    }))
+  }
+
+  async function refreshTeam(payload) {
+    queryClient.setQueryData(['team-access-users', profile?.client_id], payload)
+    await queryClient.invalidateQueries({ queryKey: ['team-access-users', profile?.client_id] })
+    await queryClient.invalidateQueries({ queryKey: ['profile'] })
+  }
+
+  async function handleInvite(event) {
+    event.preventDefault()
+    setInviteLoading(true)
+    setStatus(null)
+    try {
+      const payload = await inviteTeamAccessUser(inviteForm)
+      await refreshTeam(payload)
+      setInviteForm({ name: '', email: '', portal_permissions: ['read_only'] })
+      setStatus({ type: 'success', message: `Invite sent to ${inviteForm.email}.` })
+    } catch (error) {
+      setStatus({ type: 'error', message: error instanceof Error ? error.message : 'Could not invite this user.' })
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
+  function startEditing(user) {
+    setEditingUserId(user.id)
+    setEditingForm({
+      name: user.name || '',
+      email: user.email || '',
+      portal_permissions: normalizeTeamPermissions(user.portal_permissions),
+      disabled: Boolean(user.disabled_at),
+    })
+    setStatus(null)
+  }
+
+  async function saveEditing(userId) {
+    setSavingUserId(userId)
+    setStatus(null)
+    try {
+      const payload = await updateTeamAccessUser(userId, editingForm)
+      await refreshTeam(payload)
+      setEditingUserId(null)
+      setEditingForm(null)
+      setStatus({ type: 'success', message: 'Portal access updated.' })
+    } catch (error) {
+      setStatus({ type: 'error', message: error instanceof Error ? error.message : 'Could not update this user.' })
+    } finally {
+      setSavingUserId(null)
+    }
+  }
+
+  if (!profile) {
+    return (
+      <Section title="Team Access" description="Portal users and permissions" icon={ShieldCheck}>
+        <div className="flex items-center gap-2" style={{ color: 'var(--portal-text-muted)' }}>
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Loading team access...</span>
+        </div>
+      </Section>
+    )
+  }
+
+  if (!canManageTeam) {
+    return (
+      <Section title="Team Access" description="Portal users and permissions" icon={ShieldCheck}>
+        <StatusBadge status="info" message="Only Full Administrators can invite users or change access." />
+      </Section>
+    )
+  }
+
+  return (
+    <Section title="Team Access" description="Invite portal users and control what they can do" icon={ShieldCheck}>
+      <div className="space-y-5">
+        {status && <StatusBadge status={status.type} message={status.message} />}
+
+        <form onSubmit={handleInvite} className="settings-team-form rounded-2xl p-4" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }}>
+          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+            <input
+              value={inviteForm.name}
+              onChange={(event) => setInviteForm((current) => ({ ...current, name: event.target.value }))}
+              placeholder="Name"
+              className="portal-input rounded-xl px-4 py-3 text-sm focus:outline-none"
+              disabled={inviteLoading || billingAccess?.readOnly}
+            />
+            <input
+              type="email"
+              value={inviteForm.email}
+              onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))}
+              placeholder="email@example.com"
+              className="portal-input rounded-xl px-4 py-3 text-sm focus:outline-none"
+              disabled={inviteLoading || billingAccess?.readOnly}
+              required
+            />
+            <button
+              type="submit"
+              disabled={inviteLoading || billingAccess?.readOnly}
+              className="portal-button-primary inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-50"
+            >
+              {inviteLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+              Invite
+            </button>
+          </div>
+          <div className="mt-4 grid gap-2 md:grid-cols-2">
+            {TEAM_PERMISSION_OPTIONS.map((option) => (
+              <label key={option.id} className="settings-permission-option flex items-start gap-3 rounded-xl p-3 text-sm" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+                <input
+                  type="checkbox"
+                  checked={inviteForm.portal_permissions.includes(option.id)}
+                  onChange={() => toggleInvitePermission(option.id)}
+                  disabled={billingAccess?.readOnly}
+                />
+                <span>
+                  <span className="block font-semibold">{option.label}</span>
+                  <span className="block text-xs" style={{ color: 'var(--portal-text-muted)' }}>{option.description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </form>
+
+        <div className="space-y-3">
+          {query.isLoading ? (
+            <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading team access...
+            </div>
+          ) : users.map((user) => {
+            const isEditing = editingUserId === user.id
+            return (
+              <div key={user.id} className="settings-team-user-row rounded-2xl p-4" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{user.name || user.email}</p>
+                    <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>{user.email}</p>
+                    <p className="mt-2 text-xs" style={{ color: user.disabled_at ? 'var(--map-brand-magenta)' : 'var(--portal-text-soft)' }}>
+                      {user.disabled_at ? 'Disabled' : formatTeamPermissions(user.portal_permissions)}
+                    </p>
+                  </div>
+                  {!isEditing && user.id !== profile?.id && (
+                    <button
+                      type="button"
+                      onClick={() => startEditing(user)}
+                      disabled={billingAccess?.readOnly}
+                      className="portal-button-secondary rounded-xl px-3 py-2 text-xs font-semibold disabled:opacity-50"
+                    >
+                      Edit access
+                    </button>
+                  )}
+                </div>
+
+                {isEditing && editingForm && (
+                  <div className="mt-4 space-y-3 border-t pt-4" style={{ borderColor: 'var(--portal-border)' }}>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <input
+                        value={editingForm.name}
+                        onChange={(event) => setEditingForm((current) => ({ ...current, name: event.target.value }))}
+                        className="portal-input rounded-xl px-4 py-3 text-sm"
+                      />
+                      <input
+                        type="email"
+                        value={editingForm.email}
+                        onChange={(event) => setEditingForm((current) => ({ ...current, email: event.target.value }))}
+                        className="portal-input rounded-xl px-4 py-3 text-sm"
+                      />
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {TEAM_PERMISSION_OPTIONS.map((option) => (
+                        <label key={option.id} className="settings-permission-option flex items-start gap-3 rounded-xl p-3 text-sm" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+                          <input
+                            type="checkbox"
+                            checked={editingForm.portal_permissions.includes(option.id)}
+                            onChange={() => toggleEditPermission(option.id)}
+                          />
+                          <span>
+                            <span className="block font-semibold">{option.label}</span>
+                            <span className="block text-xs" style={{ color: 'var(--portal-text-muted)' }}>{option.description}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <label className="inline-flex items-center gap-2 text-sm" style={{ color: 'var(--portal-text)' }}>
+                      <input
+                        type="checkbox"
+                        checked={editingForm.disabled}
+                        onChange={(event) => setEditingForm((current) => ({ ...current, disabled: event.target.checked }))}
+                      />
+                      <Ban className="h-4 w-4" />
+                      Disable this portal user
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => saveEditing(user.id)}
+                        disabled={savingUserId === user.id}
+                        className="portal-button-primary inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold disabled:opacity-50"
+                      >
+                        {savingUserId === user.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                        Save access
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingUserId(null)
+                          setEditingForm(null)
+                        }}
+                        className="portal-button-secondary rounded-xl px-4 py-2 text-xs font-semibold"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </Section>
+  )
+}
+
 // ── Social Connections section ────────────────────────────────────────────────
 
-function SocialConnectionsSection({ clientId, returnedPlatform }) {
+function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requireWriteAccess, billingAccess }) {
   const queryClient = useQueryClient()
   const [connectingPlatform, setConnectingPlatform] = useState(null)
-  const [syncing, setSyncing] = useState(false)
+  const [disconnectingPlatform, setDisconnectingPlatform] = useState(null)
   const [syncStatus, setSyncStatus] = useState(null)
+  const autoSyncTimeoutRef = useRef(null)
+  const connectionQueryKey = useMemo(() => ['social_connections', clientId], [clientId])
 
-  useEffect(() => {
-    if (!returnedPlatform || !clientId) return
-    setSyncStatus({ type: 'info', message: `${returnedPlatform.charAt(0).toUpperCase() + returnedPlatform.slice(1)} connected! Syncing your accounts…` })
-    handleSync()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [returnedPlatform, clientId])
+  function buildConnectReturnUrl(platform) {
+    if (typeof window === 'undefined') return ''
+    const url = new URL(buildTenantAwarePortalPath('/connect-return', clientSlug), window.location.origin)
+    url.searchParams.set('connected', platform)
+    url.searchParams.set('cid', clientId)
+    url.searchParams.set('source', 'settings')
+    url.searchParams.set('returnTo', buildTenantAwarePortalPath('/settings', clientSlug))
+    return url.toString()
+  }
 
   const { data: connections = [], isLoading: connectionsLoading } = useQuery({
-    queryKey: ['social_connections', clientId],
+    queryKey: connectionQueryKey,
     queryFn: () => fetchConnections(clientId),
     enabled: !!clientId,
+    refetchInterval: connectingPlatform ? 2000 : false,
+    refetchIntervalInBackground: true,
   })
 
-  const connectedMap = Object.fromEntries(connections.map(c => [c.platform, c]))
+  const connectedMap = useMemo(
+    () => Object.fromEntries(connections.map(c => [normalizeConnectionPlatform(c.platform), c])),
+    [connections],
+  )
+
+  const clearAutoSyncTimer = useCallback(() => {
+    if (autoSyncTimeoutRef.current) {
+      clearTimeout(autoSyncTimeoutRef.current)
+      autoSyncTimeoutRef.current = null
+    }
+  }, [])
+
+  async function checkConnectionStatus(platform = null, options = {}) {
+    const {
+      suppressNoAccountError = false,
+      keepStatus = false,
+      successPrefix = '',
+    } = options
+    const normalizedPlatform = platform ? normalizeConnectionPlatform(platform) : null
+
+    if (!clientId) return { success: false, found: false }
+
+    if (!keepStatus) {
+      setSyncStatus(null)
+    }
+
+    try {
+      await refreshSocialConnections(normalizedPlatform)
+      await queryClient.invalidateQueries({ queryKey: connectionQueryKey })
+      const latestConnections = await fetchConnections(clientId)
+      queryClient.setQueryData(connectionQueryKey, latestConnections)
+
+      const foundConnection = normalizedPlatform
+        ? latestConnections.find((entry) => normalizeConnectionPlatform(entry.platform) === normalizedPlatform)
+        : latestConnections[0]
+
+      if (foundConnection) {
+        setSyncStatus({
+          type: 'success',
+          message: `${successPrefix}${formatPlatformLabel(normalizedPlatform || foundConnection.platform)} is connected and ready for publishing and metrics.`,
+        })
+        return { success: true, found: true, connection: foundConnection }
+      }
+
+      if (!suppressNoAccountError) {
+        setSyncStatus({
+          type: 'info',
+          message: normalizedPlatform
+            ? `We're still waiting for MAP to receive the Zernio account event for ${formatPlatformLabel(normalizedPlatform)}.`
+            : 'We are still waiting for MAP to receive the Zernio account event.',
+        })
+      }
+
+      return { success: true, found: false }
+    } catch (error) {
+      if (!suppressNoAccountError) {
+        setSyncStatus({
+          type: 'error',
+          message: error instanceof Error ? error.message : 'Could not refresh connected accounts from Supabase. Please try again.',
+        })
+      }
+      return { success: false, found: false }
+    }
+  }
+
+  function startAutoSync(platform, attempt = 0) {
+    const maxAttempts = 24
+    const delayMs = attempt === 0 ? 1500 : 5000
+
+    clearAutoSyncTimer()
+    autoSyncTimeoutRef.current = setTimeout(async () => {
+      const normalizedPlatform = normalizeConnectionPlatform(platform)
+      const result = await checkConnectionStatus(normalizedPlatform, {
+        suppressNoAccountError: true,
+        keepStatus: true,
+        successPrefix: 'Connected. ',
+      })
+
+      if (result?.found) {
+        clearAutoSyncTimer()
+        setConnectingPlatform(null)
+        return
+      }
+
+      if (attempt + 1 >= maxAttempts) {
+        setConnectingPlatform(null)
+        setSyncStatus({
+          type: 'info',
+          message: getConnectPendingTimeoutMessage(normalizedPlatform),
+        })
+        clearAutoSyncTimer()
+        return
+      }
+
+      startAutoSync(platform, attempt + 1)
+    }, delayMs)
+  }
 
   async function handleConnect(platform) {
-    setConnectingPlatform(platform)
+    if (!requireWriteAccess('change social connections')) return
+
+    const normalizedPlatform = normalizeConnectionPlatform(platform)
+    const connectPopup = typeof window !== 'undefined'
+      ? window.open('', '_blank', 'width=600,height=700')
+      : null
+
+    if (connectPopup && !connectPopup.closed) {
+      connectPopup.document.write(`
+        <title>Opening ${formatPlatformLabel(normalizedPlatform)}…</title>
+        <body style="min-height:100vh;margin:0;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:radial-gradient(circle at 50% 0%, rgba(112,228,255,.18), transparent 28rem),linear-gradient(180deg,#07090f,#0f1726);font-family: ui-sans-serif, system-ui, sans-serif;color:#f5f7fb;">
+          <main style="max-width:420px;width:100%;border:1px solid rgba(255,255,255,.14);border-radius:24px;background:linear-gradient(145deg,rgba(255,255,255,.10),rgba(255,255,255,.035)),rgba(12,16,29,.9);box-shadow:0 28px 80px rgba(0,0,0,.45);padding:24px;">
+            <p style="margin:0 0 8px;font-size:15px;font-weight:700;color:#70e4ff;">Opening ${formatPlatformLabel(normalizedPlatform)}…</p>
+            <p style="margin:0;font-size:14px;line-height:1.5;color:#a6afc2;">If nothing happens in a moment, return to the portal and try again.</p>
+          </main>
+        </body>
+      `)
+    }
+
+    setConnectingPlatform(normalizedPlatform)
     setSyncStatus(null)
+    clearAutoSyncTimer()
+
     try {
-      const res = await fetch(`${N8N_BASE}/webhook/zernio-connect-url`, {
+      const res = await fetch(portalPath(SETTINGS_CONNECT_ENDPOINT), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, platform }),
+        headers: await portalAuthHeaders(),
+        body: JSON.stringify({
+          clientId,
+          platform: normalizedPlatform,
+          redirectUrl: buildConnectReturnUrl(normalizedPlatform),
+        }),
       })
       const data = await res.json().catch(() => ({}))
-      if (data.authUrl) {
-        window.open(data.authUrl, '_blank', 'width=600,height=700,noopener,noreferrer')
-        setSyncStatus({ type: 'info', message: `Connect your ${platform} account in the new tab, then click "Sync Accounts" when done.` })
+      if (res.ok && data.authUrl) {
+        if (connectPopup && !connectPopup.closed) {
+          connectPopup.opener = null
+          connectPopup.location.href = data.authUrl
+          connectPopup.focus()
+        } else {
+          window.location.assign(data.authUrl)
+        }
+        setSyncStatus({
+          type: 'info',
+          message: `Finish connecting ${formatPlatformLabel(normalizedPlatform)} in the new tab. This page will update when Zernio sends the account event to MAP.`,
+        })
+        startAutoSync(normalizedPlatform)
       } else {
-        setSyncStatus({ type: 'error', message: `Could not get connect URL for ${platform}. Try again.` })
+        if (connectPopup && !connectPopup.closed) {
+          connectPopup.close()
+        }
+        const details = normalizeWorkflowError(data, `Could not get connect URL for ${formatPlatformLabel(normalizedPlatform)}. Try again.`)
+        setSyncStatus({ type: 'error', message: details })
+        setConnectingPlatform(null)
       }
-    } catch (err) {
+    } catch {
+      if (connectPopup && !connectPopup.closed) {
+        connectPopup.close()
+      }
       setSyncStatus({ type: 'error', message: 'Failed to reach automation server. Check your connection.' })
-    } finally {
       setConnectingPlatform(null)
     }
   }
 
-  async function handleSync() {
-    if (!clientId) return
-    setSyncing(true)
+  async function handleDisconnect(platform, label) {
+    if (!requireWriteAccess('disconnect social accounts')) return
+    const normalizedPlatform = normalizeConnectionPlatform(platform)
+    const confirmed = window.confirm(`Disconnect ${label} from this MAP portal? Publishing, metrics, and inbox messages for this platform will stop until it is connected again.`)
+    if (!confirmed) return
+
+    setDisconnectingPlatform(normalizedPlatform)
     setSyncStatus(null)
+    clearAutoSyncTimer()
+
     try {
-      const res = await fetch(`${N8N_BASE}/webhook/zernio-sync-accounts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId }),
+      await disconnectSocialConnection(normalizedPlatform)
+      await queryClient.invalidateQueries({ queryKey: connectionQueryKey })
+      setSyncStatus({
+        type: 'success',
+        message: `${label} is disconnected from this portal. You can connect it again anytime.`,
       })
-      const data = await res.json().catch(() => ({}))
-      if (data.success) {
-        await queryClient.invalidateQueries({ queryKey: ['social_connections', clientId] })
-        setSyncStatus({ type: 'success', message: `Synced ${data.synced || 0} account${data.synced !== 1 ? 's' : ''} successfully.` })
-      } else {
-        setSyncStatus({ type: 'error', message: 'Sync completed but returned no accounts.' })
-      }
-    } catch (err) {
-      setSyncStatus({ type: 'error', message: 'Sync failed. Please try again.' })
+    } catch (error) {
+      setSyncStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : `Could not disconnect ${label}.`,
+      })
     } finally {
-      setSyncing(false)
+      setDisconnectingPlatform(null)
     }
   }
 
+  useEffect(() => {
+    if (!connectingPlatform || !connectedMap[connectingPlatform]) return
+    clearAutoSyncTimer()
+    setConnectingPlatform(null)
+    setSyncStatus({
+      type: 'success',
+      message: `${formatPlatformLabel(connectingPlatform)} is connected and ready for publishing and metrics.`,
+    })
+  }, [connectingPlatform, connectedMap, clearAutoSyncTimer])
+
+  useEffect(() => {
+    if (!returnedPlatform || !clientId) return
+    const normalizedPlatform = normalizeConnectionPlatform(returnedPlatform)
+
+    if (connectedMap[normalizedPlatform]) {
+      const timer = window.setTimeout(() => {
+        setSyncStatus({
+          type: 'success',
+          message: `${formatPlatformLabel(normalizedPlatform)} is connected and ready for publishing and metrics.`,
+        })
+        setConnectingPlatform(null)
+      }, 0)
+      clearAutoSyncTimer()
+      return () => window.clearTimeout(timer)
+    }
+
+    const timer = window.setTimeout(() => {
+      setSyncStatus({
+        type: 'info',
+        message: `${formatPlatformLabel(normalizedPlatform)} returned from Zernio. Waiting for the MAP account event…`,
+      })
+    }, 0)
+    startAutoSync(normalizedPlatform)
+    return () => {
+      window.clearTimeout(timer)
+      clearAutoSyncTimer()
+    }
+    // `startAutoSync` is intentionally kept local to this component state machine.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnedPlatform, clientId, connectedMap])
+
+  useEffect(() => () => clearAutoSyncTimer(), [clearAutoSyncTimer])
+
   return (
     <Section
+      id="social-accounts"
       title="Social Media Accounts"
       description="Connect your social accounts to enable publishing and metrics"
       icon={Link2}
     >
       {connectionsLoading ? (
-        <div className="flex items-center gap-2" style={{ color: '#8a7858' }}>
+        <div className="flex items-center gap-2" style={{ color: 'var(--portal-text-muted)' }}>
           <Loader2 className="w-4 h-4 animate-spin" />
           <span className="text-sm">Loading connections…</span>
         </div>
       ) : (
         <div className="space-y-3">
-          {PLATFORMS.map(({ id, label, Icon, gradient, color, connectedBg, connectedBorder }) => {
+          {PLATFORMS.map(({ id, label, Icon, accent, soft, connectionEnabled }) => {
             const conn = connectedMap[id]
             const isConnecting = connectingPlatform === id
+            const isDisconnecting = disconnectingPlatform === id
 
             return (
               <div
                 key={id}
                 className="flex items-center gap-4 p-4 rounded-xl transition-all"
                 style={conn
-                  ? { background: connectedBg, border: `1px solid ${connectedBorder}` }
-                  : { background: '#252015', border: '1px solid #3d3420' }
+                  ? { background: soft, border: `1px solid ${accent}30` }
+                  : { background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }
                 }>
                 {/* Platform icon */}
-                <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shrink-0`}>
-                  <Icon className="w-4 h-4 text-white" strokeWidth={2} />
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl shrink-0" style={{ background: accent }}>
+                  <Icon className="w-4 h-4 text-white" />
                 </div>
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium" style={{ color: '#f8f2e4' }}>{label}</p>
+                  <p className="text-sm font-medium" style={{ color: 'var(--portal-text)' }}>{label}</p>
                   {conn ? (
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <Wifi className="w-3 h-3" style={{ color }} />
-                      <p className="text-xs" style={{ color: '#8a7858' }}>
-                        {conn.username ? `@${conn.username}` : 'Connected'} · {new Date(conn.connected_at).toLocaleDateString()}
+                    <div className="mt-0.5 space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <Wifi className="w-3 h-3" style={{ color: accent }} />
+                        <p className="text-xs font-medium" style={{ color: 'var(--portal-text-muted)' }}>
+                          {conn.username ? `@${conn.username}` : 'Connected'}
+                        </p>
+                      </div>
+                      <p className="text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>
+                        Last synced: {formatConnectionDate(conn.connected_at)}
                       </p>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <WifiOff className="w-3 h-3" style={{ color: '#4e4228' }} />
-                      <p className="text-xs" style={{ color: '#4e4228' }}>Not connected</p>
+                      <WifiOff className="w-3 h-3" style={{ color: 'var(--portal-text-soft)' }} />
+                      <p className="text-xs" style={{ color: 'var(--portal-text-soft)' }}>Not connected</p>
                     </div>
                   )}
                 </div>
 
-                {/* Connect button */}
-                <button
-                  onClick={() => handleConnect(id)}
-                  disabled={!!connectingPlatform || syncing}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={conn
-                    ? { background: '#1e1910', border: '1px solid #3d3420', color: '#8a7858' }
-                    : { background: 'rgba(212,168,58,0.12)', border: '1px solid rgba(212,168,58,0.25)', color: '#d4a83a' }
-                  }>
-                  {isConnecting ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
+                {/* Connection actions */}
+                <div className="shrink-0 flex items-center gap-2">
+                  {conn ? (
+                    <>
+                      <div
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+                        style={{ background: 'rgba(133,247,169,0.10)', border: '1px solid rgba(133,247,169,0.24)', color: 'var(--portal-success)' }}>
+                        <CheckCircle2 className="w-3 h-3" />
+                        Connected
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDisconnect(id, label)}
+                        disabled={!!disconnectingPlatform || !!connectingPlatform || billingAccess?.readOnly}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{ background: 'rgba(255,122,184,0.10)', border: '1px solid rgba(255,122,184,0.24)', color: 'var(--map-brand-magenta)' }}
+                      >
+                        {isDisconnecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Unlink2 className="w-3 h-3" />}
+                        {isDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+                      </button>
+                    </>
                   ) : (
-                    <ExternalLink className="w-3 h-3" />
+                    <button
+                      onClick={() => connectionEnabled && handleConnect(id)}
+                      disabled={!connectionEnabled || !!connectingPlatform || billingAccess?.readOnly}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.28)', color: 'var(--map-brand-cyan)' }}>
+                      {isConnecting ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <ExternalLink className="w-3 h-3" />
+                      )}
+                      {isConnecting ? 'Connecting…' : connectionEnabled ? 'Connect' : 'Coming soon'}
+                    </button>
                   )}
-                  {conn ? 'Reconnect' : 'Connect'}
-                </button>
+                </div>
               </div>
             )
           })}
@@ -246,37 +1110,450 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
 
       {/* Status message */}
       {syncStatus && (
-        <div className="mt-4 flex items-start gap-2 text-sm rounded-xl px-4 py-3"
-          style={syncStatus.type === 'success'
-            ? { background: 'rgba(107,193,142,0.08)', border: '1px solid rgba(107,193,142,0.2)', color: '#6bc18e' }
-            : syncStatus.type === 'info'
-            ? { background: 'rgba(212,168,58,0.08)', border: '1px solid rgba(212,168,58,0.2)', color: '#d4a83a' }
-            : { background: 'rgba(196,85,110,0.08)', border: '1px solid rgba(196,85,110,0.2)', color: '#e8899a' }
-          }>
-          {syncStatus.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-          ) : (
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          )}
-          {syncStatus.message}
+        <div className="mt-4">
+          <StatusBadge status={syncStatus.type} message={syncStatus.message} />
         </div>
       )}
 
-      {/* Sync button */}
-      <div className="mt-4 pt-4 flex items-center justify-between" style={{ borderTop: '1px solid #3d3420' }}>
-        <p className="text-xs" style={{ color: '#4e4228' }}>
-          After connecting in the popup, sync to save your accounts here.
+      <div className="mt-4 border-t pt-4" style={{ borderColor: 'var(--portal-border)' }}>
+        <p className="text-xs" style={{ color: 'var(--portal-text-soft)' }}>
+          Connect each platform once in Zernio. Signed Zernio account events keep this page updated for publishing and metrics.
         </p>
+      </div>
+    </Section>
+  )
+}
+
+// ── Website Chat section ─────────────────────────────────────────────────────
+
+function formatInstallStatus(status) {
+  if (status === 'detected') return 'Installed'
+  if (status === 'not_detected') return 'Not detected'
+  if (status === 'needs_help') return 'Needs help'
+  if (status === 'map_install_requested') return 'MAP install requested'
+  return 'Not checked'
+}
+
+function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant }) {
+  const queryClient = useQueryClient()
+  const [form, setForm] = useState(null)
+  const [status, setStatus] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [copying, setCopying] = useState(false)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['website-chat-settings', client?.id],
+    queryFn: fetchWebsiteChatSettings,
+    enabled: !!client?.id,
+  })
+
+  const settings = data?.settings
+  const installSnippet = data?.installSnippet || ''
+
+  useEffect(() => {
+    if (!settings) return
+    setForm({
+      widget_color: settings.widget_color || '#38BDF8',
+      welcome_heading: settings.welcome_heading || 'Hi there',
+      welcome_tagline: settings.welcome_tagline || 'Send us a message and we will get back to you soon.',
+      greeting_enabled: settings.greeting_enabled ?? true,
+      greeting_message: settings.greeting_message || 'Hi! How can we help?',
+      pre_chat_form_enabled: settings.pre_chat_form_enabled ?? true,
+      pre_chat_message: settings.pre_chat_message || 'Tell us how to reach you before we start.',
+      saved_replies: Array.isArray(settings.saved_replies) ? settings.saved_replies : [],
+      automation_rules: Array.isArray(settings.automation_rules) ? settings.automation_rules : [],
+    })
+  }, [settings])
+
+  function updateForm(key, value) {
+    setForm((current) => ({ ...(current || {}), [key]: value }))
+  }
+
+  function updateSavedReply(index, key, value) {
+    setForm((current) => {
+      const replies = [...(current?.saved_replies || [])]
+      replies[index] = { ...(replies[index] || {}), [key]: value }
+      return { ...(current || {}), saved_replies: replies }
+    })
+  }
+
+  async function handleCopySnippet() {
+    if (!installSnippet) return
+    setCopying(true)
+    setStatus(null)
+    try {
+      await navigator.clipboard.writeText(installSnippet)
+      setStatus({ type: 'success', message: 'Website chat script copied.' })
+    } catch {
+      setStatus({ type: 'error', message: 'Could not copy the script. Select the script text and copy it manually.' })
+    } finally {
+      setCopying(false)
+    }
+  }
+
+  async function handleSave() {
+    if (!requireWriteAccess('update website chat')) return
+    if (!form) return
+    setSaving(true)
+    setStatus(null)
+    try {
+      const result = await saveWebsiteChatSettings(form)
+      await queryClient.invalidateQueries({ queryKey: ['website-chat-settings', client?.id] })
+      setStatus({
+        type: result?.sync?.warning ? 'info' : 'success',
+        message: result?.sync?.warning || 'Website chat settings saved.',
+      })
+    } catch (error) {
+      setStatus({ type: 'error', message: error instanceof Error ? error.message : 'Could not save website chat settings.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleCheckInstall() {
+    setChecking(true)
+    setStatus(null)
+    try {
+      const result = await checkWebsiteChatInstallation()
+      await queryClient.invalidateQueries({ queryKey: ['website-chat-settings', client?.id] })
+      setStatus({
+        type: result.detected ? 'success' : 'info',
+        message: result.detected
+          ? 'Website chat is installed on the saved website.'
+          : 'Website chat was not found on the saved homepage yet.',
+      })
+    } catch (error) {
+      setStatus({ type: 'error', message: error instanceof Error ? error.message : 'Could not check website chat installation.' })
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const webPersonBody = [
+    `Please add this website chat script to ${client?.website_url || 'our website'} before the closing </body> tag on every public page:`,
+    '',
+    installSnippet,
+  ].join('\n')
+
+  if (isLoading) {
+    return (
+      <Section title="Website Chat" description="Install and manage the website chat widget" icon={MessageCircle}>
+        <div className="flex items-center gap-2" style={{ color: 'var(--portal-text-muted)' }}>
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Loading website chat…</span>
+        </div>
+      </Section>
+    )
+  }
+
+  if (!settings) {
+    return (
+      <Section title="Website Chat" description="Install and manage the website chat widget" icon={MessageCircle}>
+        <StatusBadge status="info" message="Website chat is being prepared for this portal." />
+      </Section>
+    )
+  }
+
+  return (
+    <Section title="Website Chat" description="Install and manage your customer chat widget" icon={MessageCircle}>
+      <div className="space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }}>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{formatInstallStatus(settings.install_status)}</p>
+            <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
+              {settings.last_checked_at ? `Last checked ${formatConnectionDate(settings.last_checked_at)}` : 'Check your website after installing the script.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleCheckInstall}
+            disabled={checking}
+            className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-all disabled:opacity-50"
+            style={{ background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.28)', color: 'var(--map-brand-cyan)' }}
+          >
+            {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Check installation
+          </button>
+        </div>
+
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <label className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--portal-text-soft)' }}>
+              Install script
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleCopySnippet}
+                disabled={!installSnippet || copying}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50"
+                style={{ background: 'rgba(255,255,255,0.075)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+              >
+                {copying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />}
+                Copy script
+              </button>
+              <a
+                href={`mailto:?subject=${encodeURIComponent('Website chat install script')}&body=${encodeURIComponent(webPersonBody)}`}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all"
+                style={{ background: 'rgba(255,255,255,0.075)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+              >
+                <Mail className="h-3 w-3" />
+                Email to web person
+              </a>
+              <a
+                href={`mailto:${tenant.supportEmail}?subject=${encodeURIComponent('Please install my website chat')}&body=${encodeURIComponent(`Please help install website chat for ${client?.business_name || 'my business'}: ${client?.website_url || ''}`)}`}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all"
+                style={{ background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.28)', color: 'var(--map-brand-cyan)' }}
+              >
+                <MessageCircle className="h-3 w-3" />
+                Request MAP install
+              </a>
+            </div>
+          </div>
+          <textarea
+            readOnly
+            value={installSnippet}
+            rows={8}
+            className="portal-input w-full resize-y rounded-xl px-4 py-3 font-mono text-xs leading-5 focus:outline-none"
+          />
+        </div>
+
+        {form && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                Widget color
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={form.widget_color}
+                  onChange={(event) => updateForm('widget_color', event.target.value)}
+                  className="h-11 w-14 rounded-xl border-0 bg-transparent p-0"
+                  disabled={billingAccess?.readOnly}
+                />
+                <input
+                  value={form.widget_color}
+                  onChange={(event) => updateForm('widget_color', event.target.value)}
+                  className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none"
+                  disabled={billingAccess?.readOnly}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                Welcome heading
+              </label>
+              <input
+                value={form.welcome_heading}
+                onChange={(event) => updateForm('welcome_heading', event.target.value)}
+                className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none"
+                disabled={billingAccess?.readOnly}
+              />
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                Welcome tagline
+              </label>
+              <input
+                value={form.welcome_tagline}
+                onChange={(event) => updateForm('welcome_tagline', event.target.value)}
+                className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none"
+                disabled={billingAccess?.readOnly}
+              />
+            </div>
+
+            <label className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+              <input
+                type="checkbox"
+                checked={form.greeting_enabled}
+                onChange={(event) => updateForm('greeting_enabled', event.target.checked)}
+                disabled={billingAccess?.readOnly}
+              />
+              Send an automatic greeting
+            </label>
+
+            <label className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}>
+              <input
+                type="checkbox"
+                checked={form.pre_chat_form_enabled}
+                onChange={(event) => updateForm('pre_chat_form_enabled', event.target.checked)}
+                disabled={billingAccess?.readOnly}
+              />
+              Ask for contact info first
+            </label>
+
+            <div className="lg:col-span-2">
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                Greeting message
+              </label>
+              <textarea
+                value={form.greeting_message}
+                onChange={(event) => updateForm('greeting_message', event.target.value)}
+                rows={3}
+                className="portal-input w-full resize-y rounded-xl px-4 py-3 text-sm focus:outline-none"
+                disabled={billingAccess?.readOnly}
+              />
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                Saved replies
+              </label>
+              <div className="space-y-3">
+                {(form.saved_replies || []).slice(0, 3).map((reply, index) => (
+                  <div key={`${reply.title}-${index}`} className="grid gap-2 rounded-xl p-3" style={{ background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }}>
+                    <input
+                      value={reply.title || ''}
+                      onChange={(event) => updateSavedReply(index, 'title', event.target.value)}
+                      className="portal-input w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
+                      disabled={billingAccess?.readOnly}
+                    />
+                    <textarea
+                      value={reply.message || ''}
+                      onChange={(event) => updateSavedReply(index, 'message', event.target.value)}
+                      rows={2}
+                      className="portal-input w-full resize-y rounded-lg px-3 py-2 text-sm focus:outline-none"
+                      disabled={billingAccess?.readOnly}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {status && <StatusBadge status={status.type} message={status.message} />}
+
         <button
-          onClick={handleSync}
-          disabled={syncing || connectionsLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ background: '#252015', border: '1px solid #3d3420', color: '#c8b898' }}
-          onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(212,168,58,0.25)'}
-          onMouseLeave={e => e.currentTarget.style.borderColor = '#3d3420'}>
-          <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
-          Sync Accounts
+          type="button"
+          onClick={handleSave}
+          disabled={saving || billingAccess?.readOnly}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:-translate-y-px active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save website chat
         </button>
+      </div>
+    </Section>
+  )
+}
+
+function PhoneNotificationsSection({ billingAccess }) {
+  const [support, setSupport] = useState(() => ({
+    supported: false,
+    permission: 'default',
+    standalone: false,
+    secure: false,
+  }))
+  const [subscribed, setSubscribed] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [status, setStatus] = useState(null)
+
+  const refreshState = useCallback(async () => {
+    const nextSupport = getPushNotificationStatus()
+    setSupport(nextSupport)
+    if (!nextSupport.supported || !nextSupport.secure) {
+      setSubscribed(false)
+      setLoading(false)
+      return
+    }
+
+    const subscription = await getCurrentPushSubscription().catch(() => null)
+    setSubscribed(Boolean(subscription))
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    refreshState()
+  }, [refreshState])
+
+  async function handleEnable() {
+    setSaving(true)
+    setStatus(null)
+    try {
+      await subscribeToPortalPush({ deviceLabel: support.standalone ? 'Installed MAP app' : 'Browser' })
+      await refreshState()
+      setStatus({ type: 'success', message: 'Phone notifications are on for this device.' })
+    } catch (error) {
+      setStatus({ type: 'error', message: error.message || 'Could not turn on phone notifications.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDisable() {
+    setSaving(true)
+    setStatus(null)
+    try {
+      await unsubscribeFromPortalPush()
+      await refreshState()
+      setStatus({ type: 'info', message: 'Phone notifications are off for this device.' })
+    } catch (error) {
+      setStatus({ type: 'error', message: error.message || 'Could not turn off phone notifications.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const unavailable = !support.supported || !support.secure
+  const disabled = saving || loading || billingAccess?.readOnly || unavailable
+
+  return (
+    <Section title="Phone notifications" description="Inbox alerts for this phone or tablet" icon={Bell}>
+      <div className="space-y-4">
+        <div
+          className="rounded-2xl px-4 py-4 text-sm"
+          style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid var(--portal-border)', color: 'var(--portal-text-muted)' }}
+        >
+          {unavailable
+            ? 'This browser cannot receive MAP phone notifications.'
+            : support.standalone
+              ? 'This installed MAP app can receive Inbox alerts.'
+              : 'On iPhone, add MAP to your Home Screen and open it from the app icon before turning alerts on.'}
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>
+              {loading ? 'Checking this device...' : subscribed ? 'Notifications on' : 'Notifications off'}
+            </p>
+            <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-soft)' }}>
+              Permission: {support.permission === 'granted' ? 'Allowed' : support.permission === 'denied' ? 'Blocked' : 'Not set'}
+            </p>
+          </div>
+
+          {subscribed ? (
+            <button
+              type="button"
+              onClick={handleDisable}
+              disabled={saving || loading}
+              className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-50"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellOff className="h-4 w-4" />}
+              Turn off
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleEnable}
+              disabled={disabled}
+              className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
+              Turn on alerts
+            </button>
+          )}
+        </div>
+
+        {status && <StatusBadge status={status.type} message={status.message} />}
       </div>
     </Section>
   )
@@ -285,7 +1562,7 @@ function SocialConnectionsSection({ clientId, returnedPlatform }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Settings() {
-  const { session } = useOutletContext()
+  const { session, requireWriteAccess, billingAccess, onBillingAction, billingActionPending } = useOutletContext()
   const [searchParams, setSearchParams] = useSearchParams()
   const returnedPlatform = searchParams.get('connected') || null
 
@@ -344,132 +1621,187 @@ export default function Settings() {
   }
 
   const client = profile?.clients
+  const tenant = buildTenantConfig({ client })
+  const setupTarget = typeof window !== 'undefined' ? window.location.hash.replace('#', '') : ''
+  const focusSocialAccounts = setupTarget === 'social-accounts'
 
-  const inputStyle = {
-    background: '#252015',
-    border: '1px solid #3d3420',
-    color: '#f8f2e4',
-  }
-  const inputClass = 'w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all'
+  useEffect(() => {
+    if (!focusSocialAccounts || typeof window === 'undefined') return undefined
+    const timer = window.setTimeout(() => {
+      document.getElementById('social-accounts')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [focusSocialAccounts, isLoading])
 
   return (
-    <div className="p-6 md:p-8 max-w-3xl mx-auto">
-      <div className="mb-8">
-        <p className="text-xs uppercase tracking-widest font-medium mb-1" style={{ color: '#8a7858' }}>Account</p>
-        <h1 className="font-display text-2xl md:text-3xl font-semibold" style={{ color: '#f8f2e4' }}>Settings</h1>
-        <p className="text-sm mt-1" style={{ color: '#8a7858' }}>Manage your account, social connections, and preferences.</p>
-      </div>
-
-      <div className="space-y-5">
-
-        {/* Account info */}
-        <Section title="Account" description="Your login information" icon={User}>
-          {isLoading ? (
-            <div className="flex items-center gap-2" style={{ color: '#8a7858' }}>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm">Loading…</span>
+    <div className="portal-page settings-page w-full max-w-none space-y-6 md:p-5 xl:p-6">
+      <section className="portal-surface rounded-[36px] p-5 md:p-7">
+        <div className="portal-page-header">
+          <div>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className="portal-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
+                Settings
+              </span>
             </div>
-          ) : (
-            <div className="space-y-4">
-              <Field label="Name" value={profile?.name} />
-              <Field label="Email" value={profile?.email ?? session?.user?.email} />
-              <Field label="Role" value={profile?.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : undefined} />
-            </div>
-          )}
-        </Section>
+            <h1 className="portal-page-title font-display">Settings</h1>
+          </div>
+        </div>
+      </section>
 
-        {/* Business info */}
-        {client && (
-          <Section title="Business Profile" description="Details on file for your account" icon={Building2}>
-            <div className="space-y-4">
-              <Field label="Business Name" value={client.business_name} />
-              <Field label="Contact Email" value={client.contact_email} />
-              <Field label="Website" value={client.website_url} />
-            </div>
-            <p className="text-xs mt-4" style={{ color: '#4e4228' }}>
-              To update your business details, contact{' '}
-              <a href="mailto:billing@myautomationpartner.com"
-                className="transition-colors hover:text-brand-gold"
-                style={{ color: '#8a7858', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
-                billing@myautomationpartner.com
-              </a>
-            </p>
+      <div className="space-y-4">
+        <SettingsCategory
+          title="Subscription & billing"
+          description="Status, payment, cancellation, and subscription management"
+          icon={CreditCard}
+          defaultOpen
+        >
+          <SubscriptionSection
+            tenant={tenant}
+            billingAccess={billingAccess}
+            onBillingAction={onBillingAction}
+            billingActionPending={billingActionPending}
+          />
+        </SettingsCategory>
+
+        <SettingsCategory
+          title="Account & team"
+          description="Your login, portal users, and access levels"
+          icon={ShieldCheck}
+          defaultOpen
+        >
+          <Section title="Account" description="Your login information" icon={User}>
+            {isLoading ? (
+              <div className="flex items-center gap-2" style={{ color: 'var(--portal-text-muted)' }}>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">Loading…</span>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <Field label="Name" value={profile?.name} />
+                <Field label="Email" value={profile?.email ?? session?.user?.email} />
+                <Field label="Role" value={profile?.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : undefined} />
+              </div>
+            )}
           </Section>
-        )}
 
-        {/* Social connections */}
-        {profile?.client_id && (
-          <SocialConnectionsSection clientId={profile.client_id} returnedPlatform={returnedPlatform} />
-        )}
+          <TeamAccessSection profile={profile} billingAccess={billingAccess} />
+        </SettingsCategory>
 
-        {/* Change password */}
-        <Section title="Change Password" description="Update your login password" icon={Lock}>
-          <form onSubmit={handlePasswordChange} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: '#8a7858' }}>
-                Current Password
-              </label>
-              <input
-                type="password"
-                value={currentPw}
-                onChange={e => setCurrentPw(e.target.value)}
-                required
-                placeholder="••••••••"
-                className={inputClass}
-                style={inputStyle}
-                onFocus={e => e.target.style.borderColor = '#d4a83a'}
-                onBlur={e => e.target.style.borderColor = '#3d3420'}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: '#8a7858' }}>
-                New Password
-              </label>
-              <input
-                type="password"
-                value={newPw}
-                onChange={e => setNewPw(e.target.value)}
-                required
-                placeholder="Min. 8 characters"
-                className={inputClass}
-                style={inputStyle}
-                onFocus={e => e.target.style.borderColor = '#d4a83a'}
-                onBlur={e => e.target.style.borderColor = '#3d3420'}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: '#8a7858' }}>
-                Confirm New Password
-              </label>
-              <input
-                type="password"
-                value={confirmPw}
-                onChange={e => setConfirmPw(e.target.value)}
-                required
-                placeholder="••••••••"
-                className={inputClass}
-                style={inputStyle}
-                onFocus={e => e.target.style.borderColor = '#d4a83a'}
-                onBlur={e => e.target.style.borderColor = '#3d3420'}
-              />
-            </div>
+        <SettingsCategory
+          title="Business & channels"
+          description="Business profile, social accounts, and website chat"
+          icon={Building2}
+          defaultOpen={focusSocialAccounts}
+        >
+          {client && (
+            <Section title="Business Profile" description="Details on file for your account" icon={Building2}>
+              <div className="space-y-4">
+                <Field label="Business Name" value={client.business_name} />
+                <Field label="Contact Email" value={client.contact_email} />
+                <Field label="Website" value={client.website_url} />
+              </div>
+              <p className="text-xs mt-4" style={{ color: 'var(--portal-text-soft)' }}>
+                To update your business details, contact{' '}
+                <a href={`mailto:${tenant.supportEmail}`}
+                  className="transition-colors hover:text-brand-gold"
+                  style={{ color: 'var(--portal-text-muted)', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
+                  {tenant.supportEmail}
+                </a>
+              </p>
+            </Section>
+          )}
 
-            {pwStatus && <StatusBadge status={pwStatus.type} message={pwStatus.message} />}
+          {profile?.client_id && (
+            <SocialConnectionsSection
+              clientId={profile.client_id}
+              clientSlug={client?.slug}
+              returnedPlatform={returnedPlatform}
+              requireWriteAccess={requireWriteAccess}
+              billingAccess={billingAccess}
+            />
+          )}
 
-            <button
-              type="submit"
-              disabled={pwLoading}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:-translate-y-px active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ background: '#d4a83a', color: '#0d0b08' }}>
-              {pwLoading ? (
-                <><Loader2 className="w-4 h-4 animate-spin" />Updating…</>
-              ) : (
-                'Update Password'
-              )}
-            </button>
-          </form>
-        </Section>
+          {client && (
+            <WebsiteChatSection
+              client={client}
+              requireWriteAccess={requireWriteAccess}
+              billingAccess={billingAccess}
+              tenant={tenant}
+            />
+          )}
+        </SettingsCategory>
 
+        <SettingsCategory
+          title="Mobile app"
+          description="Phone setup and Inbox alerts"
+          icon={Bell}
+        >
+          <PhoneNotificationsSection billingAccess={billingAccess} />
+        </SettingsCategory>
+
+        <SettingsCategory
+          title="Security"
+          description="Password and account protection"
+          icon={Lock}
+        >
+          <Section title="Change Password" description="Update your login password" icon={Lock}>
+            <form onSubmit={handlePasswordChange} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                  Current Password
+                </label>
+                <input
+                  type="password"
+                  value={currentPw}
+                  onChange={e => setCurrentPw(e.target.value)}
+                  required
+                  placeholder="••••••••"
+                  className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  value={newPw}
+                  onChange={e => setNewPw(e.target.value)}
+                  required
+                  placeholder="Min. 8 characters"
+                  className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--portal-text-soft)' }}>
+                  Confirm New Password
+                </label>
+                <input
+                  type="password"
+                  value={confirmPw}
+                  onChange={e => setConfirmPw(e.target.value)}
+                  required
+                  placeholder="••••••••"
+                  className="portal-input w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
+                />
+              </div>
+
+              {pwStatus && <StatusBadge status={pwStatus.type} message={pwStatus.message} />}
+
+              <button
+                type="submit"
+                disabled={pwLoading}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:-translate-y-px active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}>
+                {pwLoading ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" />Updating…</>
+                ) : (
+                  'Update Password'
+                )}
+              </button>
+            </form>
+          </Section>
+        </SettingsCategory>
       </div>
     </div>
   )

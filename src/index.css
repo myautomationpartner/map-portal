@@ -1,9 +1,86 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap');
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,600&family=Inter:wght@300;400;500;600;700&display=swap');
 
 @theme {
-  --color-brand-gold: #d4a83a;
-  --color-brand-rose: #c4556e;
+  --color-brand-primary: #c9a84c;
+  --color-brand-secondary: #e8d5a0;
+  --color-brand-accent: #1a1814;
+}
+
+:root {
+  color-scheme: light;
+  --portal-bg: #f6f3ec;
+  --portal-bg-secondary: #fbfaf6;
+  --portal-surface: rgba(255, 255, 255, 0.96);
+  --portal-surface-strong: #ffffff;
+  --portal-surface-muted: #f1ece2;
+  --portal-border: rgba(20, 19, 16, 0.11);
+  --portal-border-strong: rgba(201, 168, 76, 0.42);
+  --portal-text: #1a1814;
+  --portal-text-muted: #5e554d;
+  --portal-text-soft: #8a8278;
+  --portal-primary: #c9a84c;
+  --portal-primary-strong: #b28f35;
+  --portal-secondary: #1a1814;
+  --portal-cyan: #e8d5a0;
+  --portal-blue: #3568a6;
+  --portal-sage: #5d7968;
+  --portal-success: #1fa971;
+  --portal-danger: #d85f98;
+  --portal-shadow: 0 18px 46px rgba(20, 19, 16, 0.08);
+  --portal-shadow-soft: 0 10px 24px rgba(20, 19, 16, 0.055);
+  --portal-nav: rgba(255, 255, 255, 0.88);
+  --portal-nav-strong: rgba(248, 251, 255, 0.98);
+  --portal-nav-text: #3f495c;
+  --portal-nav-text-strong: #172033;
+  --portal-nav-text-muted: #6f7a90;
+  --portal-nav-icon-bg: rgba(23, 32, 51, 0.06);
+  --portal-nav-icon-active-bg: rgba(14, 165, 198, 0.12);
+  --portal-theme-toggle-bg: rgba(255, 255, 255, 0.74);
+  --portal-dark: #0a0a0a;
+  --portal-radius-sm: 8px;
+  --portal-radius-md: 12px;
+  --portal-radius-lg: 16px;
+  --portal-radius-xl: 20px;
+}
+
+html[data-portal-theme="map-dark"] {
+  color-scheme: dark;
+  --map-brand-cyan: #1d9bf0;
+  --map-brand-purple: #1d9bf0;
+  --map-brand-magenta: #f4212e;
+  --map-brand-blue: #1d9bf0;
+  --map-brand-lime: #00ba7c;
+  --map-brand-orange: #ff7a00;
+  --portal-bg: #000000;
+  --portal-bg-secondary: #0f1419;
+  --portal-surface: #16181c;
+  --portal-surface-strong: #1d1f23;
+  --portal-surface-muted: #0f1419;
+  --portal-border: #2f3336;
+  --portal-border-strong: #3a3f45;
+  --portal-text: #ffffff;
+  --portal-text-muted: #c8d0d8;
+  --portal-text-soft: #9aa4ad;
+  --portal-primary: #1d9bf0;
+  --portal-primary-strong: #1d9bf0;
+  --portal-secondary: #8b98a5;
+  --portal-cyan: #1d9bf0;
+  --portal-blue: #1d9bf0;
+  --portal-sage: #00ba7c;
+  --portal-success: #00ba7c;
+  --portal-danger: #f4212e;
+  --portal-shadow: none;
+  --portal-shadow-soft: none;
+  --portal-nav: #000000;
+  --portal-nav-strong: #0f1419;
+  --portal-nav-text: #8b98a5;
+  --portal-nav-text-strong: #e7e9ea;
+  --portal-nav-text-muted: #71767b;
+  --portal-nav-icon-bg: #16181c;
+  --portal-nav-icon-active-bg: rgba(29, 155, 240, 0.16);
+  --portal-theme-toggle-bg: #16181c;
+  --portal-dark: #000000;
 }
 
 *, *::before, *::after {
@@ -14,9 +91,16 @@ body {
   margin: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #0d0b08;
-  font-family: 'Inter', system-ui, sans-serif;
-  color: #f8f2e4;
+  background:
+    radial-gradient(circle at top, rgba(255, 215, 0, 0.1), transparent 28%),
+    linear-gradient(180deg, #faf8f2 0%, #f6f3ec 48%, #f9f7f1 100%);
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  color: var(--portal-text);
+}
+
+html[data-portal-theme="map-dark"] body {
+  background: #000000;
+  color: var(--portal-text);
 }
 
 #root {
@@ -24,5 +108,5 @@ body {
 }
 
 .font-display {
-  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-family: 'Sora', 'Plus Jakarta Sans', system-ui, sans-serif;
 }

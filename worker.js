@@ -1,0 +1,7690 @@
+const DROPBOX_API_BASE = 'https://api.dropboxapi.com/2'
+const DROPBOX_CONTENT_API_BASE = 'https://content.dropboxapi.com/2'
+const DROPBOX_OAUTH_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token'
+const DEFAULT_CHATWOOT_BASE_URL = 'https://chatwoot.myautomationpartner.com'
+const DEFAULT_N8N_BASE_URL = 'https://n8n.myautomationpartner.com'
+const DEFAULT_ZERNIO_API_BASE_URL = 'https://zernio.com/api/v1'
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_xwASGbwUsZhX5CFNizTAmg_U50hkD7o'
+const DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME = 'Social Inbox'
+const CONTENT_PARTNER_CONTACT_NAME = 'My Partner'
+const TECHNICAL_HOST_SUFFIXES = ['.workers.dev', '.pages.dev']
+const DEFAULT_SHARED_PORTAL_PATH_PREFIX = 'portal'
+const PORTAL_TEAM_PERMISSIONS = new Set([
+  'read_only',
+  'create_post',
+  'publish_posts',
+  'view_documents',
+  'manage_secure_sharing',
+  'full_admin',
+])
+const SUPPORTED_MEDIA_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'webp',
+  'gif',
+  'bmp',
+  'avif',
+  'heic',
+  'heif',
+  'mp4',
+  'mov',
+])
+const TOKEN_STOP_WORDS = new Set([
+  'and',
+  'for',
+  'from',
+  'that',
+  'this',
+  'with',
+  'into',
+  'your',
+  'the',
+  'show',
+  'photo',
+  'image',
+  'idea',
+  'post',
+  'draft',
+  'studio',
+])
+
+function json(data, init = {}) {
+  return new Response(JSON.stringify(data), {
+    ...init,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      ...(init.headers || {}),
+    },
+  })
+}
+
+function getCanonicalPortalHost(env) {
+  return String(env.PORTAL_CANONICAL_HOST || '').trim().toLowerCase()
+}
+
+function getSharedPortalPathPrefix(env) {
+  return String(env.PORTAL_SHARED_PATH_PREFIX || DEFAULT_SHARED_PORTAL_PATH_PREFIX)
+    .trim()
+    .toLowerCase()
+    .replace(/^\/+|\/+$/g, '')
+}
+
+function extractTenantSlugFromPath(pathname, env) {
+  const segments = String(pathname || '')
+    .split('/')
+    .map((segment) => segment.trim().toLowerCase())
+    .filter(Boolean)
+  const prefix = getSharedPortalPathPrefix(env)
+
+  if (prefix && segments[0] === prefix && segments[1]) return segments[1]
+  return ''
+}
+
+function normalizeSharedPortalRequest(request, env) {
+  const url = new URL(request.url)
+  const segments = url.pathname.split('/').filter(Boolean)
+  const prefix = getSharedPortalPathPrefix(env)
+
+  if (!prefix || segments[0]?.toLowerCase() !== prefix || !segments[1]) {
+    return { request, url, tenantSlug: '' }
+  }
+
+  const tenantSlug = decodeURIComponent(segments[1]).trim().toLowerCase()
+  const strippedSegments = segments.slice(2)
+  const normalizedUrl = new URL(request.url)
+  normalizedUrl.pathname = `/${strippedSegments.join('/')}`.replace(/\/+$/, '') || '/'
+
+  const headers = new Headers(request.headers)
+  headers.set('x-map-tenant-slug', tenantSlug)
+  headers.set('x-map-original-pathname', url.pathname)
+
+  return {
+    request: new Request(normalizedUrl.toString(), {
+      method: request.method,
+      headers,
+      body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
+      redirect: request.redirect,
+    }),
+    url: normalizedUrl,
+    tenantSlug,
+  }
+}
+
+function normalizeNestedSpaAssetRequest(request, url) {
+  if (!['GET', 'HEAD'].includes(request.method)) return { request, url }
+
+  const segments = url.pathname.split('/').filter(Boolean)
+  const assetsIndex = segments.indexOf('assets')
+
+  if (assetsIndex <= 0) return { request, url }
+
+  const normalizedUrl = new URL(request.url)
+  normalizedUrl.pathname = `/${segments.slice(assetsIndex).join('/')}`
+
+  return {
+    request: new Request(normalizedUrl.toString(), {
+      method: request.method,
+      headers: request.headers,
+      redirect: request.redirect,
+    }),
+    url: normalizedUrl,
+  }
+}
+
+function buildSharedPortalTrailingSlashRedirect(request, env) {
+  if (!['GET', 'HEAD'].includes(request.method)) return null
+
+  const url = new URL(request.url)
+  const segments = url.pathname.split('/').filter(Boolean)
+  const prefix = getSharedPortalPathPrefix(env)
+
+  if (!prefix || segments.length !== 2 || segments[0]?.toLowerCase() !== prefix) return null
+  if (url.pathname.endsWith('/')) return null
+
+  url.pathname = `${url.pathname}/`
+
+  return new Response(null, {
+    status: 308,
+    headers: {
+      location: url.toString(),
+      'cache-control': 'no-store',
+    },
+  })
+}
+
+function shouldBypassCanonicalRedirect(url) {
+  const path = String(url.pathname || '')
+  if (path.startsWith('/api/')) return true
+  return /^\/[^/]+\/[^/]+\/api\//.test(path)
+}
+
+function buildCanonicalRedirect(request, env) {
+  const canonicalHost = getCanonicalPortalHost(env)
+  if (!canonicalHost) return null
+  if (!['GET', 'HEAD'].includes(request.method)) return null
+
+  const url = new URL(request.url)
+  const currentHost = String(
+    request.headers.get('x-forwarded-host')
+    || request.headers.get('host')
+    || url.hostname
+    || '',
+  )
+    .split(':')[0]
+    .trim()
+    .toLowerCase()
+
+  if (!currentHost || currentHost === canonicalHost) return null
+  if (shouldBypassCanonicalRedirect(url)) return null
+
+  const isTechnicalHost = TECHNICAL_HOST_SUFFIXES.some((suffix) => currentHost.endsWith(suffix))
+  if (!isTechnicalHost) return null
+
+  url.protocol = 'https:'
+  url.host = canonicalHost
+
+  return new Response(null, {
+    status: 308,
+    headers: {
+      location: url.toString(),
+      'cache-control': 'no-store',
+    },
+  })
+}
+
+function getN8nBaseUrl(env) {
+  return String(env.N8N_BASE_URL || DEFAULT_N8N_BASE_URL).replace(/\/$/, '')
+}
+
+function buildSafeN8nRedirectUrl(request, env, requestedRedirectUrl, tenantSlug = '') {
+  const requestUrl = new URL(request.url)
+  const prefix = getSharedPortalPathPrefix(env)
+  const safePath = prefix && tenantSlug
+    ? `/${prefix}/${tenantSlug}/connect-return`
+    : '/connect-return'
+  const fallbackUrl = new URL(safePath, requestUrl.origin)
+  fallbackUrl.searchParams.set('source', 'settings')
+
+  if (!requestedRedirectUrl) return fallbackUrl.toString()
+
+  try {
+    const parsed = new URL(String(requestedRedirectUrl), requestUrl.origin)
+    if (parsed.origin !== requestUrl.origin) return fallbackUrl.toString()
+    if (/\/(?:settings|login)\/?$/i.test(parsed.pathname)) {
+      parsed.pathname = parsed.pathname.replace(/\/(?:settings|login)\/?$/i, '/connect-return')
+      parsed.searchParams.set('source', parsed.searchParams.get('source') || 'settings')
+    }
+    return parsed.toString()
+  } catch {
+    return fallbackUrl.toString()
+  }
+}
+
+async function proxyN8nWebhook(request, env, webhookPath) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        allow: 'POST, OPTIONS',
+      },
+    })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+
+  const targetUrl = `${getN8nBaseUrl(env)}/webhook/${webhookPath}`
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+  if (auth.user.role !== 'admin') {
+    return json({ error: 'Only client admins can manage social connections.' }, { status: 403 })
+  }
+
+  let body = {}
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'Could not read request body as JSON.' }, { status: 400 })
+  }
+
+  const requestedClientId = String(body?.clientId || '').trim()
+  if (requestedClientId && requestedClientId !== String(auth.user.client_id || '')) {
+    return json({ error: 'This portal session is not authorized for the requested tenant.' }, { status: 403 })
+  }
+
+  const platform = normalizePlatform(body?.platform)
+  if (!platform) {
+    return json({ error: 'Choose a supported social platform to connect.' }, { status: 400 })
+  }
+
+  const zernioProfileId = firstString(auth.envConfig.zernioProfileId)
+  if (!zernioProfileId) {
+    return json({
+      error: 'This customer does not have a Zernio profile configured yet. Run the Zernio profile reconciliation before connecting social accounts.',
+    }, { status: 409 })
+  }
+
+  const tenantSlug = String(auth.user?.clients?.slug || '').trim().toLowerCase()
+  const stateToken = `map-connect:${auth.user.client_id}:${platform}:${randomHex(24)}`
+  const safeRedirectUrl = buildSafeN8nRedirectUrl(request, env, body?.redirectUrl, tenantSlug)
+  const redirectUrl = appendConnectStateToRedirectUrl(safeRedirectUrl, stateToken)
+
+  try {
+    await expirePendingSocialConnectionAttempts(auth.envConfig, { platform })
+    await createSocialConnectionAttempt(auth.envConfig, {
+      platform,
+      stateToken,
+      redirectUrl,
+      userId: auth.user.id,
+      zernioProfileId,
+    })
+  } catch (error) {
+    return json({
+      error: error?.message || 'Could not prepare the social connection attempt.',
+    }, { status: 502 })
+  }
+
+  const securedBody = {
+    ...(body && typeof body === 'object' ? body : {}),
+    clientId: auth.user.client_id,
+    platform,
+    tenantSlug,
+    redirectUrl,
+    state: stateToken,
+    connectState: stateToken,
+    profileId: zernioProfileId,
+    profile_id: zernioProfileId,
+    zernioProfileId,
+  }
+
+  if (webhookPath === 'zernio-connect-url') {
+    try {
+      const params = new URLSearchParams({
+        profileId: zernioProfileId,
+        redirect_url: redirectUrl,
+      })
+      const payload = await zernioFetch(env, `/connect/${encodeURIComponent(platform)}?${params.toString()}`)
+      const authUrl = firstString(payload?.authUrl, payload?.url, payload?.redirectUrl, payload?.connectUrl, payload?.data?.authUrl, payload?.data?.url)
+      if (!authUrl) {
+        return json({
+          success: false,
+          error: payload?.message || 'Zernio did not return a connect URL.',
+          payload,
+        }, { status: 502 })
+      }
+
+      return json({
+        success: true,
+        authUrl,
+        platform,
+        profileId: zernioProfileId,
+        state: payload?.state || stateToken,
+      })
+    } catch (error) {
+      return json({
+        success: false,
+        error: error?.message || 'Could not start the Zernio connect flow.',
+        details: error?.payload || null,
+      }, { status: error?.status || 502 })
+    }
+  }
+
+  try {
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(securedBody),
+    })
+
+    const responseText = await response.text()
+    return new Response(responseText, {
+      status: response.status,
+      headers: {
+        'content-type': response.headers.get('content-type') || 'application/json; charset=utf-8',
+        'cache-control': 'no-store',
+      },
+    })
+  } catch (error) {
+    return json({
+      error: error?.message || `Failed to reach ${webhookPath}.`,
+    }, { status: 502 })
+  }
+}
+
+function normalizePlatform(platform) {
+  const value = String(platform || '').trim().toLowerCase()
+  const platformMap = {
+    facebook: 'facebook',
+    facebook_page: 'facebook',
+    fb: 'facebook',
+    instagram: 'instagram',
+    ig: 'instagram',
+    tiktok: 'tiktok',
+    tt: 'tiktok',
+    linkedin: 'linkedin',
+    linked_in: 'linkedin',
+    linkedin_page: 'linkedin',
+    linkedin_company: 'linkedin',
+    li: 'linkedin',
+    twitter: 'twitter',
+    x: 'twitter',
+    x_twitter: 'twitter',
+    xtwitter: 'twitter',
+    google: 'google',
+    google_business: 'google',
+    google_business_profile: 'google',
+    gbp: 'google',
+  }
+
+  return platformMap[value] || null
+}
+
+function normalizeCommentPlatformFilter(platform) {
+  const value = String(platform || '').trim().toLowerCase()
+  if (value === 'metaads' || value === 'meta_ads' || value === 'meta-ads') return 'metaads'
+  return normalizePlatform(value)
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function normalizeTeamPermissions(input) {
+  const values = Array.isArray(input) ? input : [input]
+  const normalized = Array.from(new Set(values
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter((value) => PORTAL_TEAM_PERMISSIONS.has(value))))
+
+  if (normalized.includes('full_admin')) return ['full_admin']
+  if (!normalized.length) return ['read_only']
+  if (!normalized.includes('read_only')) normalized.unshift('read_only')
+  if (normalized.includes('publish_posts') && !normalized.includes('create_post')) {
+    normalized.push('create_post')
+  }
+  if (normalized.includes('manage_secure_sharing') && !normalized.includes('view_documents')) {
+    normalized.push('view_documents')
+  }
+
+  return Array.from(new Set(normalized))
+}
+
+export function getUserPermissions(user) {
+  const permissions = Array.isArray(user?.portal_permissions) ? user.portal_permissions : []
+  if (user?.role === 'admin' && !permissions.length) return ['full_admin']
+  return permissions
+}
+
+function userHasPermission(user, permission) {
+  const permissions = getUserPermissions(user)
+  return permissions.includes('full_admin') || permissions.includes(permission)
+}
+
+function requireFullAdmin(auth) {
+  if (auth.user?.role === 'admin' && userHasPermission(auth.user, 'full_admin')) return null
+  return json({ error: 'Only full administrators can manage portal users.' }, { status: 403 })
+}
+
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
+}
+
+function safeCompareHex(left, right) {
+  if (left.length !== right.length) return false
+  let mismatch = 0
+  for (let index = 0; index < left.length; index += 1) {
+    mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index)
+  }
+  return mismatch === 0
+}
+
+function randomHex(bytes = 24) {
+  const values = new Uint8Array(bytes)
+  crypto.getRandomValues(values)
+  return Array.from(values)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value || '')))
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+async function verifyZernioWebhookSignature(rawBody, signature, secret) {
+  const normalizedSignature = String(signature || '').trim().toLowerCase()
+  const normalizedSecret = String(secret || '')
+  if (!normalizedSignature || !normalizedSecret) return false
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(normalizedSecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+
+  const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody))
+  const expected = Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+
+  return safeCompareHex(expected, normalizedSignature)
+}
+
+function appendConnectStateToRedirectUrl(redirectUrl, stateToken) {
+  if (!stateToken) return redirectUrl
+  try {
+    const url = new URL(redirectUrl)
+    url.searchParams.set('connect_attempt', stateToken)
+    return url.toString()
+  } catch {
+    return redirectUrl
+  }
+}
+
+async function expirePendingSocialConnectionAttempts(envConfig, { platform }) {
+  const filters = new URLSearchParams({
+    client_id: `eq.${envConfig.clientId}`,
+    platform: `eq.${platform}`,
+    status: 'eq.pending',
+  })
+
+  await supabaseRest(
+    envConfig,
+    `/rest/v1/social_connection_attempts?${filters.toString()}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'expired',
+        completed_at: new Date().toISOString(),
+      }),
+    },
+  )
+}
+
+async function createSocialConnectionAttempt(envConfig, { platform, stateToken, redirectUrl, userId, zernioProfileId = '' }) {
+  const stateTokenHash = await sha256Hex(stateToken)
+  const profileId = firstString(zernioProfileId, envConfig.zernioProfileId)
+  const payload = [{
+    client_id: envConfig.clientId,
+    created_by: userId || null,
+    platform,
+    state_token_hash: stateTokenHash,
+    zernio_profile_id: profileId || null,
+    redirect_url: redirectUrl,
+    metadata: {
+      source: 'portal-connect-url',
+      client_slug: envConfig.clientSlug || null,
+      zernio_profile_id: profileId || null,
+    },
+  }]
+
+  const response = await supabaseRest(envConfig, '/rest/v1/social_connection_attempts', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(payload),
+  })
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+function getSupabaseConfig(env) {
+  const url = String(env.SUPABASE_URL || '').replace(/\/$/, '')
+  const serviceRoleKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '')
+  const publishableKey = String(env.SUPABASE_ANON_KEY || env.SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY || '')
+  const clientId = String(env.PORTAL_CLIENT_ID || '')
+  const webhookSecret = String(env.ZERNIO_WEBHOOK_SECRET || '')
+
+  if (!url || !serviceRoleKey || !webhookSecret) {
+    throw new Error('Missing worker secrets for Zernio webhook reconciliation.')
+  }
+
+  return { url, serviceRoleKey, publishableKey, clientId, webhookSecret }
+}
+
+function getPortalAuthConfig(env) {
+  const url = String(env.SUPABASE_URL || '').replace(/\/$/, '')
+  const serviceRoleKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '')
+  const publishableKey = String(env.SUPABASE_ANON_KEY || env.SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY || '')
+  const clientId = String(env.PORTAL_CLIENT_ID || '')
+
+  if (!url || !serviceRoleKey) {
+    throw new Error('Missing worker secrets for portal authentication.')
+  }
+
+  return { url, serviceRoleKey, publishableKey, clientId }
+}
+
+async function supabaseRest(envConfig, path, init = {}) {
+  const response = await fetch(`${envConfig.url}${path}`, {
+    ...init,
+    headers: {
+      apikey: envConfig.serviceRoleKey,
+      Authorization: `Bearer ${envConfig.serviceRoleKey}`,
+      'Content-Type': 'application/json',
+      ...(init.headers || {}),
+    },
+  })
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(text || `Supabase request failed (${response.status}).`)
+  }
+
+  return response
+}
+
+function getPortalPushConfig(env) {
+  const publicKey = firstString(env.PORTAL_PUSH_VAPID_PUBLIC_KEY)
+  const privateKey = firstString(env.PORTAL_PUSH_VAPID_PRIVATE_KEY)
+  const subject = firstString(env.PORTAL_PUSH_VAPID_SUBJECT, 'mailto:info@myautomationpartner.com')
+
+  return {
+    configured: Boolean(publicKey && privateKey),
+    publicKey,
+    privateKey,
+    subject,
+  }
+}
+
+function base64UrlEncodeBytes(bytes) {
+  const binary = Array.from(new Uint8Array(bytes), (byte) => String.fromCharCode(byte)).join('')
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+function base64UrlDecodeBytes(value) {
+  const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/')
+  const padding = '='.repeat((4 - (normalized.length % 4)) % 4)
+  const binary = atob(`${normalized}${padding}`)
+  const output = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) {
+    output[index] = binary.charCodeAt(index)
+  }
+  return output
+}
+
+async function buildVapidJwt(endpoint, config, now = new Date()) {
+  const publicBytes = base64UrlDecodeBytes(config.publicKey)
+  if (publicBytes.length !== 65 || publicBytes[0] !== 4) {
+    throw new Error('PORTAL_PUSH_VAPID_PUBLIC_KEY must be an uncompressed P-256 public key.')
+  }
+
+  const privateJwk = {
+    kty: 'EC',
+    crv: 'P-256',
+    x: base64UrlEncodeBytes(publicBytes.slice(1, 33)),
+    y: base64UrlEncodeBytes(publicBytes.slice(33, 65)),
+    d: config.privateKey,
+    ext: true,
+    key_ops: ['sign'],
+  }
+  const key = await crypto.subtle.importKey(
+    'jwk',
+    privateJwk,
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['sign'],
+  )
+  const header = base64UrlEncodeBytes(new TextEncoder().encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })))
+  const body = base64UrlEncodeBytes(new TextEncoder().encode(JSON.stringify({
+    aud: new URL(endpoint).origin,
+    exp: Math.floor(now.getTime() / 1000) + (12 * 60 * 60),
+    sub: config.subject,
+  })))
+  const signingInput = `${header}.${body}`
+  const signature = await crypto.subtle.sign(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    key,
+    new TextEncoder().encode(signingInput),
+  )
+
+  return `${signingInput}.${base64UrlEncodeBytes(signature)}`
+}
+
+async function sendNoPayloadWebPush(subscription, config) {
+  const endpoint = firstString(subscription?.endpoint)
+  if (!endpoint) return { ok: false, expired: true, status: 0, error: 'Missing push endpoint.' }
+
+  const jwt = await buildVapidJwt(endpoint, config)
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      TTL: '900',
+      Urgency: 'high',
+      Authorization: `vapid t=${jwt}, k=${config.publicKey}`,
+      'Crypto-Key': `p256ecdsa=${config.publicKey}`,
+      'Content-Length': '0',
+    },
+  })
+
+  if (response.ok || response.status === 201 || response.status === 202) {
+    return { ok: true, status: response.status }
+  }
+
+  return {
+    ok: false,
+    expired: response.status === 404 || response.status === 410,
+    status: response.status,
+    error: await response.text().catch(() => ''),
+  }
+}
+
+async function markPortalPushSubscriptionSent(envConfig, id) {
+  if (!id) return
+  await supabaseRest(envConfig, `/rest/v1/portal_push_subscriptions?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      last_sent_at: new Date().toISOString(),
+      last_error: null,
+    }),
+  }).catch(() => undefined)
+}
+
+async function markPortalPushSubscriptionFailed(envConfig, id, result) {
+  if (!id) return
+  const patch = {
+    failure_count: result?.expired ? 1 : undefined,
+    last_error: firstString(result?.error, result?.status ? `Push service returned ${result.status}.` : 'Push notification delivery failed.').slice(0, 500),
+    ...(result?.expired ? { enabled: false, disabled_at: new Date().toISOString() } : {}),
+  }
+
+  await supabaseRest(envConfig, `/rest/v1/portal_push_subscriptions?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  }).catch(() => undefined)
+}
+
+async function loadPortalPushSubscriptions(envConfig) {
+  const params = new URLSearchParams({
+    select: 'id,endpoint',
+    client_id: `eq.${envConfig.clientId}`,
+    enabled: 'eq.true',
+    order: 'last_seen_at.desc',
+    limit: '50',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/portal_push_subscriptions?${params.toString()}`)
+  const rows = await response.json().catch(() => [])
+  return Array.isArray(rows) ? rows : []
+}
+
+async function notifyPortalPushSubscribers(env, envConfig) {
+  const config = getPortalPushConfig(env)
+  if (!config.configured || !envConfig?.clientId) {
+    return { attempted: 0, sent: 0, skipped: true, reason: 'portal_push_not_configured' }
+  }
+
+  const subscriptions = await loadPortalPushSubscriptions(envConfig).catch(() => [])
+  let sent = 0
+  const results = await Promise.allSettled(subscriptions.map(async (subscription) => {
+    const result = await sendNoPayloadWebPush(subscription, config)
+    if (result.ok) {
+      sent += 1
+      await markPortalPushSubscriptionSent(envConfig, subscription.id)
+    } else {
+      await markPortalPushSubscriptionFailed(envConfig, subscription.id, result)
+    }
+    return result
+  }))
+
+  return {
+    attempted: subscriptions.length,
+    sent,
+    failed: results.filter((result) => result.status === 'rejected' || result.value?.ok === false).length,
+  }
+}
+
+async function handlePortalPushPublicKey(request, env) {
+  if (!['GET', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'GET, OPTIONS' } })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const config = getPortalPushConfig(env)
+  if (!config.publicKey) {
+    return json({ error: 'Phone notifications are not configured yet.' }, { status: 503 })
+  }
+
+  return json({ publicKey: config.publicKey, configured: config.configured })
+}
+
+async function handlePortalPushSubscriptions(request, env) {
+  if (!['POST', 'DELETE', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'POST, DELETE, OPTIONS' } })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const body = await request.json().catch(() => ({}))
+  const endpoint = firstString(body?.endpoint, body?.subscription?.endpoint)
+  if (!endpoint) return json({ error: 'Push subscription endpoint is required.' }, { status: 400 })
+
+  if (request.method === 'DELETE') {
+    await supabaseRest(auth.envConfig, `/rest/v1/portal_push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}&client_id=eq.${encodeURIComponent(auth.envConfig.clientId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        enabled: false,
+        disabled_at: new Date().toISOString(),
+        last_seen_at: new Date().toISOString(),
+      }),
+    })
+    return json({ success: true, subscribed: false })
+  }
+
+  const keys = body?.subscription?.keys || {}
+  const p256dh = firstString(keys.p256dh)
+  const authSecret = firstString(keys.auth)
+  if (!p256dh || !authSecret) {
+    return json({ error: 'Push subscription keys are required.' }, { status: 400 })
+  }
+
+  const response = await supabaseRest(auth.envConfig, '/rest/v1/portal_push_subscriptions?on_conflict=endpoint', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify([{
+      client_id: auth.envConfig.clientId,
+      user_id: auth.user.id,
+      endpoint,
+      p256dh,
+      auth: authSecret,
+      subscription_json: body.subscription,
+      user_agent: firstString(body.userAgent).slice(0, 500) || null,
+      device_label: firstString(body.deviceLabel).slice(0, 120) || null,
+      enabled: true,
+      failure_count: 0,
+      last_error: null,
+      disabled_at: null,
+      last_seen_at: new Date().toISOString(),
+    }]),
+  })
+  const rows = await response.json().catch(() => [])
+  const row = Array.isArray(rows) ? rows[0] : null
+
+  return json({ success: true, subscribed: true, id: row?.id || null })
+}
+
+async function authorizePortalUser(request, env) {
+  const authHeader = request.headers.get('authorization') || ''
+  const bearerToken = authHeader.replace(/^Bearer\s+/i, '').trim()
+  if (!bearerToken) {
+    return { error: json({ error: 'Authentication required.' }, { status: 401 }) }
+  }
+
+  let envConfig
+  try {
+    envConfig = getPortalAuthConfig(env)
+  } catch (error) {
+    return { error: json({ error: error.message || 'Portal auth is not configured.' }, { status: 500 }) }
+  }
+
+  const userResponse = await fetch(`${envConfig.url}/auth/v1/user`, {
+    headers: {
+      apikey: envConfig.serviceRoleKey,
+      Authorization: `Bearer ${bearerToken}`,
+    },
+  })
+
+  if (!userResponse.ok) {
+    return { error: json({ error: 'Invalid or expired portal session.' }, { status: 401 }) }
+  }
+
+  const authUser = await userResponse.json().catch(() => null)
+  const authUserId = String(authUser?.id || '').trim()
+  if (!authUserId) {
+    return { error: json({ error: 'Invalid portal session.' }, { status: 401 }) }
+  }
+
+  const requestedTenantSlug = String(
+    request.headers.get('x-map-tenant-slug')
+    || extractTenantSlugFromPath(new URL(request.url).pathname, env)
+    || '',
+  ).trim().toLowerCase()
+  const filters = new URLSearchParams({
+    select: 'id,client_id,role,email,name,portal_permissions,disabled_at,clients(slug,business_name,zernio_profile_id,zernio_profile_status)',
+    id: `eq.${authUserId}`,
+    limit: '1',
+  })
+  if (envConfig.clientId) filters.set('client_id', `eq.${envConfig.clientId}`)
+
+  let portalRows = []
+  try {
+    const response = await supabaseRest(envConfig, `/rest/v1/users?${filters.toString()}`)
+    portalRows = await response.json()
+  } catch (error) {
+    return { error: json({ error: error.message || 'Could not verify portal access.' }, { status: 502 }) }
+  }
+
+  const portalUser = Array.isArray(portalRows) ? portalRows[0] : null
+  if (!portalUser) {
+    return { error: json({ error: 'This portal session is not authorized for this tenant.' }, { status: 403 }) }
+  }
+
+  if (portalUser.disabled_at) {
+    return { error: json({ error: 'This portal user has been disabled.' }, { status: 403 }) }
+  }
+
+  const profileSlug = String(portalUser?.clients?.slug || '').trim().toLowerCase()
+  const zernioProfileId = firstString(portalUser?.clients?.zernio_profile_id)
+  const zernioProfileStatus = firstString(portalUser?.clients?.zernio_profile_status)
+  if (requestedTenantSlug && profileSlug && requestedTenantSlug !== profileSlug) {
+    return { error: json({ error: 'This portal session is not authorized for this tenant path.' }, { status: 403 }) }
+  }
+
+  return {
+    user: portalUser,
+    envConfig: {
+      ...envConfig,
+      clientId: envConfig.clientId || portalUser.client_id,
+      clientSlug: profileSlug,
+      zernioProfileId,
+      zernioProfileStatus,
+    },
+    bearerToken,
+  }
+}
+
+async function supabaseAuthAdmin(envConfig, path, init = {}) {
+  const response = await fetch(`${envConfig.url}/auth/v1${path}`, {
+    ...init,
+    headers: {
+      apikey: envConfig.serviceRoleKey,
+      Authorization: `Bearer ${envConfig.serviceRoleKey}`,
+      'Content-Type': 'application/json',
+      ...(init.headers || {}),
+    },
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    const message = payload?.msg || payload?.message || payload?.error_description || payload?.error || `Supabase Auth request failed (${response.status}).`
+    const error = new Error(message)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}
+
+function teamUserPayload(row) {
+  const permissions = normalizeTeamPermissions(row?.portal_permissions)
+  return {
+    id: row.id,
+    client_id: row.client_id,
+    name: row.name || '',
+    email: row.email || '',
+    role: row.role || 'viewer',
+    portal_permissions: permissions,
+    disabled_at: row.disabled_at || null,
+    invited_at: row.invited_at || null,
+    is_full_admin: permissions.includes('full_admin'),
+  }
+}
+
+async function fetchTeamUsers(envConfig) {
+  const params = new URLSearchParams({
+    select: 'id,client_id,name,email,role,portal_permissions,disabled_at,invited_at',
+    client_id: `eq.${envConfig.clientId}`,
+    order: 'email.asc',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/users?${params.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows.map(teamUserPayload) : []
+}
+
+function resolvePortalRedirect(request, envConfig) {
+  const url = new URL(request.url)
+  const pathSlug = extractTenantSlugFromPath(String(request.headers.get('x-map-original-pathname') || url.pathname), {})
+    || String(envConfig.clientSlug || '').trim().toLowerCase()
+
+  if (url.hostname.replace(/^www\./, '').toLowerCase() === 'myautomationpartner.com' && pathSlug) {
+    return `${url.origin}/${getSharedPortalPathPrefix({})}/${pathSlug}/login`
+  }
+
+  return `${url.origin}/login`
+}
+
+async function handleTeamAccessUsers(request, env) {
+  if (!['GET', 'POST', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'GET, POST, OPTIONS' } })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const adminError = requireFullAdmin(auth)
+  if (adminError) return adminError
+
+  if (request.method === 'GET') {
+    return json({ users: await fetchTeamUsers(auth.envConfig) })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const email = normalizeEmail(body.email)
+  const name = String(body.name || '').trim()
+  const permissions = normalizeTeamPermissions(body.portal_permissions || body.permissions)
+
+  if (!email || !email.includes('@')) {
+    return json({ error: 'Add a valid email address.' }, { status: 400 })
+  }
+  if (email === normalizeEmail(auth.user.email)) {
+    return json({ error: 'You cannot invite your own account.' }, { status: 400 })
+  }
+
+  const existingParams = new URLSearchParams({
+    select: 'id,email,client_id',
+    email: `eq.${email}`,
+    limit: '1',
+  })
+  const existingResponse = await supabaseRest(auth.envConfig, `/rest/v1/users?${existingParams.toString()}`)
+  const existingRows = await existingResponse.json()
+  const existing = Array.isArray(existingRows) ? existingRows[0] : null
+  if (existing) {
+    return json({ error: 'That email already has portal access.' }, { status: 409 })
+  }
+
+  let invitedUser
+  try {
+    invitedUser = await supabaseAuthAdmin(auth.envConfig, '/invite', {
+      method: 'POST',
+      body: JSON.stringify({
+        email,
+        data: {
+          name,
+          client_id: auth.envConfig.clientId,
+          invited_by: auth.user.id,
+        },
+        redirect_to: resolvePortalRedirect(request, auth.envConfig),
+      }),
+    })
+  } catch (error) {
+    return json({ error: error.message || 'Could not send the invite.' }, { status: error.status || 502 })
+  }
+
+  const authUserId = String(invitedUser?.id || invitedUser?.user?.id || '').trim()
+  if (!isUuidLike(authUserId)) {
+    return json({ error: 'Invite was sent but Supabase did not return a user id.' }, { status: 502 })
+  }
+
+  const role = permissions.includes('full_admin') ? 'admin' : 'viewer'
+  const insertResponse = await supabaseRest(auth.envConfig, '/rest/v1/users?select=id,client_id,name,email,role,portal_permissions,disabled_at,invited_at', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({
+      id: authUserId,
+      client_id: auth.envConfig.clientId,
+      name,
+      email,
+      role,
+      portal_permissions: permissions,
+      invited_by: auth.user.id,
+      invited_at: new Date().toISOString(),
+      last_access_updated_by: auth.user.id,
+      last_access_updated_at: new Date().toISOString(),
+    }),
+  })
+  const insertedRows = await insertResponse.json()
+  const inserted = Array.isArray(insertedRows) ? insertedRows[0] : insertedRows
+
+  return json({ user: teamUserPayload(inserted), users: await fetchTeamUsers(auth.envConfig) }, { status: 201 })
+}
+
+async function handleTeamAccessUserUpdate(request, env, userId) {
+  if (!['PATCH', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'PATCH, OPTIONS' } })
+
+  if (!isUuidLike(userId)) return json({ error: 'Invalid user id.' }, { status: 400 })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+  const adminError = requireFullAdmin(auth)
+  if (adminError) return adminError
+  if (userId === auth.user.id) return json({ error: 'You cannot change your own access from here.' }, { status: 400 })
+
+  const body = await request.json().catch(() => ({}))
+  const patch = {}
+
+  if (Object.prototype.hasOwnProperty.call(body, 'name')) {
+    patch.name = String(body.name || '').trim()
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'portal_permissions') || Object.prototype.hasOwnProperty.call(body, 'permissions')) {
+    const permissions = normalizeTeamPermissions(body.portal_permissions || body.permissions)
+    patch.portal_permissions = permissions
+    patch.role = permissions.includes('full_admin') ? 'admin' : 'viewer'
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'disabled')) {
+    patch.disabled_at = body.disabled ? new Date().toISOString() : null
+  }
+
+  const newEmail = Object.prototype.hasOwnProperty.call(body, 'email') ? normalizeEmail(body.email) : ''
+  if (newEmail) {
+    if (!newEmail.includes('@')) return json({ error: 'Add a valid email address.' }, { status: 400 })
+    patch.email = newEmail
+  }
+
+  if (!Object.keys(patch).length) return json({ error: 'No changes provided.' }, { status: 400 })
+
+  if (newEmail) {
+    try {
+      await supabaseAuthAdmin(auth.envConfig, `/admin/users/${encodeURIComponent(userId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ email: newEmail }),
+      })
+    } catch (error) {
+      return json({ error: error.message || 'Could not update the login email.' }, { status: error.status || 502 })
+    }
+  }
+
+  patch.last_access_updated_by = auth.user.id
+  patch.last_access_updated_at = new Date().toISOString()
+
+  const response = await supabaseRest(
+    auth.envConfig,
+    `/rest/v1/users?id=eq.${encodeURIComponent(userId)}&client_id=eq.${encodeURIComponent(auth.envConfig.clientId)}&select=id,client_id,name,email,role,portal_permissions,disabled_at,invited_at`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify(patch),
+    },
+  )
+  const rows = await response.json()
+  const updated = Array.isArray(rows) ? rows[0] : null
+  if (!updated) return json({ error: 'Portal user not found.' }, { status: 404 })
+
+  return json({ user: teamUserPayload(updated), users: await fetchTeamUsers(auth.envConfig) })
+}
+
+function getChatwootConfig(env) {
+  if (env?.baseUrl && env?.accountId && env?.apiToken) return env
+
+  const baseUrl = String(env.CHATWOOT_BASE_URL || DEFAULT_CHATWOOT_BASE_URL).replace(/\/$/, '')
+  const accountId = String(env.CHATWOOT_ACCOUNT_ID || '').trim()
+  const apiToken = String(env.CHATWOOT_API_ACCESS_TOKEN || '').trim()
+  const socialInboxId = parsePositiveInteger(env.CHATWOOT_SOCIAL_INBOX_ID)
+
+  if (!accountId || !apiToken) {
+    throw new Error('Chatwoot API is not configured for this portal yet.')
+  }
+
+  return { baseUrl, accountId, apiToken, socialInboxId }
+}
+
+async function getChatwootConfigForClient(env, envConfig, options = {}) {
+  const overrideAccountId = String(options.accountId || '').trim()
+  if (env.CHATWOOT_ACCOUNT_ID) {
+    const config = getChatwootConfig(env)
+    return overrideAccountId ? { ...config, accountId: overrideAccountId } : config
+  }
+
+  const baseUrl = String(env.CHATWOOT_BASE_URL || DEFAULT_CHATWOOT_BASE_URL).replace(/\/$/, '')
+  const apiToken = String(env.CHATWOOT_API_ACCESS_TOKEN || '').trim()
+  if (!apiToken) {
+    throw new Error('Chatwoot API is not configured for this portal yet.')
+  }
+
+  const settings = await loadWebsiteChatSettings(envConfig)
+  const accountId = overrideAccountId || String(settings?.chatwoot_account_id || '').trim()
+  if (!accountId) {
+    throw new Error('Chatwoot account is not configured for this tenant yet.')
+  }
+
+  return {
+    baseUrl,
+    apiToken,
+    accountId,
+    socialInboxId: parsePositiveInteger(settings?.chatwoot_social_inbox_id) || parsePositiveInteger(env.CHATWOOT_SOCIAL_INBOX_ID),
+  }
+}
+
+function getWebhookChatwootAccountId(payload, message, conversation) {
+  return firstString(
+    payload?.account?.id,
+    payload?.account_id,
+    payload?.accountId,
+    message?.account_id,
+    message?.accountId,
+    conversation?.account_id,
+    conversation?.accountId,
+  )
+}
+
+function getZernioConfig(env) {
+  const baseUrl = String(env.ZERNIO_API_BASE_URL || DEFAULT_ZERNIO_API_BASE_URL).replace(/\/$/, '')
+  const apiKey = String(env.ZERNIO_API_KEY || '').trim()
+
+  if (!apiKey) {
+    throw new Error('Zernio API key is not configured for inbox replies yet.')
+  }
+
+  return { baseUrl, apiKey }
+}
+
+function chatwootHeaders(apiToken, extra = {}) {
+  return {
+    api_access_token: apiToken,
+    'content-type': 'application/json',
+    ...extra,
+  }
+}
+
+function sanitizeChatwootError(message) {
+  return sanitizePortalCustomerError(message || 'Chatwoot request failed.')
+    .replace(/api_access_token=[^&\s]+/gi, 'api_access_token=<redacted>')
+    .replace(/api_access_token:?\s*["']?[^"',\s]+/gi, 'api_access_token: <redacted>')
+}
+
+function sanitizePortalCustomerError(message) {
+  const text = String(message || '').trim()
+  if (!text) return 'Inbox request failed.'
+
+  let parsed = null
+  if (text.startsWith('{') && text.endsWith('}')) {
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      parsed = null
+    }
+  }
+
+  const combined = [
+    text,
+    parsed?.code,
+    parsed?.message,
+    parsed?.details,
+    parsed?.hint,
+  ].filter(Boolean).join(' ').toLowerCase()
+
+  if (
+    combined.includes('social_drafts_slot_unique')
+    || (combined.includes('23505') && combined.includes('duplicate key'))
+  ) {
+    return 'That draft already exists. Open Publisher to review the existing draft or send a different request.'
+  }
+
+  return text
+}
+
+function classifyContentPartnerCommand(content) {
+  const text = String(content || '').trim().toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[.!?]+$/g, '')
+
+  if (!text) return ''
+  if (['menu', '/menu', 'help', '/help', 'options', 'start', 'restart'].includes(text)) return 'menu'
+  if (['show drafts', 'drafts', 'review drafts', 'see drafts', 'open drafts'].includes(text)) return 'drafts'
+  if (['scheduled', 'show scheduled', 'see scheduled', 'what is scheduled', 'scheduled posts', 'see scheduled posts'].includes(text)) return 'scheduled'
+  if (['create post', 'create a post', 'new post', 'make a post'].includes(text)) return 'create'
+  return ''
+}
+
+const CLOSED_CONTENT_PARTNER_DRAFT_STATES = new Set(['published', 'published_manually', 'archived', 'superseded'])
+const DELETABLE_CALENDAR_POST_STATUSES = new Set(['scheduled', 'published'])
+
+function isVisibleContentDraft(draft = {}) {
+  return !CLOSED_CONTENT_PARTNER_DRAFT_STATES.has(firstString(draft?.review_state).toLowerCase())
+}
+
+function canDeleteCalendarPost(post = {}) {
+  return DELETABLE_CALENDAR_POST_STATUSES.has(firstString(post?.status).toLowerCase())
+}
+
+function shouldRemoveLocalCalendarPostAfterRemoteDeleteError() {
+  return false
+}
+
+function buildRemoteCalendarPostDeletePayload(post = {}, envConfig = {}) {
+  const zernioPostId = getPostZernioPostId(post)
+  if (!zernioPostId) return null
+
+  return {
+    action: 'delete',
+    postId: post.id,
+    clientId: envConfig.clientId,
+    zernioPostId,
+    zernioProfileId: firstString(post?.zernio_profile_id, envConfig.zernioProfileId),
+  }
+}
+
+function parseContentPartnerDraftTime(value) {
+  const time = Date.parse(value || '')
+  return Number.isFinite(time) ? time : 0
+}
+
+function getContentPartnerDraftScheduledTime(draft) {
+  const scheduledTime = parseContentPartnerDraftTime(draft?.scheduled_for)
+  if (scheduledTime) return scheduledTime
+  return parseContentPartnerDraftTime(draft?.slot_date_local ? `${draft.slot_date_local}T23:59:59` : '')
+}
+
+function getContentPartnerDraftTouchedTime(draft) {
+  return parseContentPartnerDraftTime(draft?.updated_at) || parseContentPartnerDraftTime(draft?.created_at)
+}
+
+function selectContentPartnerReviewDraft(drafts = [], options = {}) {
+  const nowTime = options.now ? new Date(options.now).getTime() : Date.now()
+  return (drafts || [])
+    .filter((draft) => draft?.id && !CLOSED_CONTENT_PARTNER_DRAFT_STATES.has(String(draft.review_state || '').toLowerCase()))
+    .map((draft) => ({
+      draft,
+      scheduledTime: getContentPartnerDraftScheduledTime(draft),
+      touchedTime: getContentPartnerDraftTouchedTime(draft),
+    }))
+    .sort((left, right) => {
+      const leftUpcoming = left.scheduledTime >= nowTime
+      const rightUpcoming = right.scheduledTime >= nowTime
+      if (leftUpcoming !== rightUpcoming) return leftUpcoming ? -1 : 1
+      if (leftUpcoming && rightUpcoming && left.scheduledTime !== right.scheduledTime) {
+        return left.scheduledTime - right.scheduledTime
+      }
+      if (left.touchedTime !== right.touchedTime) return right.touchedTime - left.touchedTime
+      return String(left.draft.id).localeCompare(String(right.draft.id))
+    })[0]?.draft || null
+}
+
+function buildContentPartnerCommandReply(command, { basePath = '', draftId = '' } = {}) {
+  const portalBasePath = String(basePath || '').replace(/\/$/, '')
+  const postPath = `${portalBasePath}/post`
+  const reviewDraftPath = draftId ? `${postPath}?draftId=${encodeURIComponent(draftId)}` : postPath
+
+  if (command === 'drafts') {
+    return [
+      'Review drafts:',
+      reviewDraftPath,
+      '',
+      'Open the draft, adjust the text or image, then schedule it when it looks right.',
+    ].join('\n')
+  }
+
+  if (command === 'scheduled') {
+    return [
+      'See scheduled posts:',
+      postPath,
+      '',
+      'Open Publisher to review what is already on the calendar.',
+    ].join('\n')
+  }
+
+  if (command === 'create') {
+    return [
+      'Create a new post:',
+      postPath,
+      '',
+      'You can also send me the rough idea here and I will create a draft for review.',
+    ].join('\n')
+  }
+
+  return [
+    'What do you want to work on?',
+    '',
+    '1. Create a new post',
+    '2. Review drafts',
+    '3. See scheduled posts',
+    '4. Ask for help',
+    '',
+    'You can also just tell me what you need.',
+  ].join('\n')
+}
+
+async function loadNextContentPartnerReviewDraft(envConfig) {
+  const draftParams = new URLSearchParams({
+    select: 'id,scheduled_for,slot_date_local,review_state,created_at,updated_at',
+    client_id: `eq.${envConfig.clientId}`,
+    order: 'scheduled_for.asc.nullslast',
+    limit: '100',
+  })
+  const draftRowsResponse = await supabaseRest(envConfig, `/rest/v1/social_drafts?${draftParams.toString()}`)
+  const draftRows = await draftRowsResponse.json()
+  return selectContentPartnerReviewDraft(Array.isArray(draftRows) ? draftRows : [])
+}
+
+async function readChatwootResponse(response) {
+  const contentType = response.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    return response.json().catch(() => ({}))
+  }
+
+  const text = await response.text().catch(() => '')
+  return text ? { message: text } : {}
+}
+
+async function chatwootFetch(env, path, init = {}) {
+  const config = getChatwootConfig(env)
+  const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData
+  const response = await fetch(`${config.baseUrl}/api/v1/accounts/${config.accountId}${path}`, {
+    ...init,
+    headers: isFormData
+      ? { api_access_token: config.apiToken, ...(init.headers || {}) }
+      : chatwootHeaders(config.apiToken, init.headers || {}),
+  })
+
+  const payload = await readChatwootResponse(response)
+  if (!response.ok) {
+    const error = new Error(sanitizeChatwootError(payload?.message || payload?.error || `Chatwoot request failed (${response.status}).`))
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}
+
+async function callSupabaseFunction(envConfig, functionName, body, gatewayToken = '') {
+  const gatewayJwt = gatewayToken || envConfig.publishableKey || envConfig.serviceRoleKey
+  const response = await fetch(`${envConfig.url}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${gatewayJwt}`,
+      apikey: envConfig.publishableKey || envConfig.serviceRoleKey,
+      'x-map-service-role': envConfig.serviceRoleKey,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body || {}),
+  })
+
+  const payload = await readChatwootResponse(response)
+  if (!response.ok || payload?.success === false) {
+    const error = new Error(payload?.error || payload?.message || `${functionName} failed (${response.status}).`)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}
+
+async function zernioFetch(env, path, init = {}) {
+  const config = getZernioConfig(env)
+  const response = await fetch(`${config.baseUrl}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'content-type': 'application/json',
+      ...(init.headers || {}),
+    },
+  })
+
+  const payload = await readChatwootResponse(response)
+  if (!response.ok) {
+    const error = new Error(payload?.message || payload?.error || `Zernio request failed (${response.status}).`)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}
+
+export function buildZernioScopedSearchParams(params = {}, profileId = '') {
+  const query = new URLSearchParams()
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (key === 'profileId' || key === 'profile_id') return
+    const normalized = String(value ?? '').trim()
+    if (normalized) query.set(key, normalized)
+  })
+
+  const resolvedProfileId = firstString(profileId, params?.profileId, params?.profile_id)
+  if (resolvedProfileId) query.set('profileId', resolvedProfileId)
+  return query
+}
+
+function getConnectionZernioProfileId(connection = {}, envConfig = {}) {
+  return firstString(connection?.zernio_profile_id, envConfig?.zernioProfileId, envConfig?.zernio_profile_id)
+}
+
+function getPostZernioPostId(post = {}) {
+  return firstString(post?.zernio_post_id, post?.n8n_execution_id)
+}
+
+function zernioAdsPlatformForPortalPlatform(platform) {
+  const normalized = normalizePlatform(platform)
+  const map = {
+    facebook: 'facebook',
+    instagram: 'instagram',
+    tiktok: 'tiktok',
+    linkedin: 'linkedin',
+    twitter: 'twitter',
+  }
+  return map[normalized] || ''
+}
+
+function zernioAdsAccountLookupPlatforms(platform) {
+  const normalized = normalizePlatform(platform)
+  if (['facebook', 'instagram'].includes(normalized)) return ['metaads', normalized]
+
+  const adsPlatform = zernioAdsPlatformForPortalPlatform(normalized)
+  return adsPlatform ? [adsPlatform] : []
+}
+
+function extractZernioAccountId(account) {
+  return firstString(account?._id, account?.id, account?.accountId, account?.zernioAccountId)
+}
+
+function extractZernioProfileId(account) {
+  const metadata = account?.metadata || {}
+  return firstString(
+    typeof account?.profileId === 'string' ? account.profileId : '',
+    account?.profileId?._id,
+    account?.profileId?.id,
+    account?.profile_id,
+    account?.profile?.id,
+    account?.profile?._id,
+    metadata.profileId,
+    metadata.profile_id,
+  )
+}
+
+function extractPlatformAdAccountId(account) {
+  const metadata = account?.metadata || {}
+  const candidates = [
+    account?.adAccountId,
+    account?.ad_account_id,
+    account?.platformAdAccountId,
+    account?.platform_ad_account_id,
+    account?.platformAccountId,
+    account?.platform_account_id,
+    account?.externalAccountId,
+    account?.external_account_id,
+    account?.accountId,
+    metadata.adAccountId,
+    metadata.ad_account_id,
+    metadata.platformAdAccountId,
+    metadata.platform_ad_account_id,
+    metadata.externalAccountId,
+    metadata.external_account_id,
+    Array.isArray(metadata.subscribedAdAccountIds) ? metadata.subscribedAdAccountIds[0] : '',
+  ]
+
+  for (const candidate of candidates) {
+    const value = firstString(candidate)
+    if (value) return value
+  }
+
+  return ''
+}
+
+export function normalizeBoostAdAccountId(platform, adAccountId) {
+  const value = String(adAccountId || '').trim()
+  if (!value) return ''
+
+  const normalizedPlatform = String(platform || '').trim().toLowerCase()
+  if (['facebook', 'instagram', 'metaads'].includes(normalizedPlatform) && /^\d+$/.test(value)) {
+    return `act_${value}`
+  }
+
+  return value
+}
+
+function normalizeZernioAdAccount(account) {
+  const platform = String(account?.platform || account?.provider || '').trim().toLowerCase()
+  const adAccountId = normalizeBoostAdAccountId(platform, extractPlatformAdAccountId(account))
+  const zernioAccountId = extractZernioAccountId(account)
+  const displayName = firstString(account?.displayName, account?.name, account?.username, account?.handle)
+
+  return {
+    id: zernioAccountId || adAccountId,
+    zernioAccountId,
+    adAccountId,
+    platform,
+    label: displayName || maskBoostAdAccountId(adAccountId || zernioAccountId) || 'Ad account',
+    rawStatus: firstString(account?.status, account?.state),
+  }
+}
+
+export function normalizeZernioAdAccounts(accounts = []) {
+  return (Array.isArray(accounts) ? accounts : [])
+    .map(normalizeZernioAdAccount)
+    .filter((account) => account.id && account.adAccountId)
+}
+
+const DASHBOARD_SOCIAL_PLATFORMS = [
+  { id: 'facebook', label: 'Facebook', metricLabel: 'Followers', metricField: 'followers' },
+  { id: 'instagram', label: 'Instagram', metricLabel: 'Followers', metricField: 'followers' },
+  { id: 'twitter', label: 'X / Twitter', metricLabel: 'Followers', metricField: 'followers' },
+  { id: 'tiktok', label: 'TikTok', metricLabel: 'Followers', metricField: 'followers' },
+]
+
+function asDashboardMetric(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : null
+}
+
+function asDashboardRate(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null
+}
+
+function pickDashboardMetric(candidates = []) {
+  for (const candidate of candidates) {
+    const value = asDashboardMetric(candidate)
+    if (value !== null) return value
+  }
+  return null
+}
+
+function normalizeZernioDashboardAccount(account = {}) {
+  const metadata = account?.metadata && typeof account.metadata === 'object' ? account.metadata : {}
+  const analytics = account?.analytics && typeof account.analytics === 'object' ? account.analytics : {}
+  const metrics = account?.metrics && typeof account.metrics === 'object' ? account.metrics : {}
+  const insights = account?.insights && typeof account.insights === 'object' ? account.insights : {}
+  const stats = account?.stats && typeof account.stats === 'object' ? account.stats : {}
+  const source = { ...metadata, ...stats, ...insights, ...metrics, ...analytics, ...account }
+
+  return {
+    id: extractZernioAccountId(account),
+    profileId: extractZernioProfileId(account),
+    platform: normalizePlatform(firstString(account?.platform, account?.provider)),
+    username: firstString(account?.username, account?.handle, account?.displayName, account?.name),
+    followers: pickDashboardMetric([
+      source.followers,
+      source.followerCount,
+      source.followersCount,
+      source.follower_count,
+      source.followers_count,
+      source.audience,
+      source.audienceCount,
+    ]),
+    impressions: pickDashboardMetric([source.impressions, source.impressionCount, source.impressionsCount]),
+    reach: pickDashboardMetric([source.reach, source.reachCount, source.accountsReached]),
+    views: pickDashboardMetric([source.views, source.viewCount, source.videoViews]),
+    engagements: pickDashboardMetric([
+      source.engagements,
+      source.engagement,
+      source.totalEngagements,
+      source.total_interactions,
+      source.interactions,
+    ]),
+    engagementRate: asDashboardRate(source.engagementRate ?? source.engagement_rate),
+    lastSyncedAt: firstString(source.lastSyncedAt, source.last_synced_at, source.lastUpdated, source.updatedAt),
+  }
+}
+
+export function buildDashboardSocialPlatformSummary({
+  platform,
+  connection = null,
+  account = null,
+  dailyMetric = null,
+  postAggregate = null,
+} = {}) {
+  const normalizedPlatform = normalizePlatform(platform?.id || platform?.platform)
+  const normalizedAccount = account?.platform ? account : normalizeZernioDashboardAccount(account || {})
+  const connected = Boolean(connection?.zernio_account_id || normalizedAccount?.id)
+  const username = firstString(connection?.username, normalizedAccount?.username)
+
+  const dailyValue = pickDashboardMetric([
+    dailyMetric?.[platform?.metricField || 'followers'],
+    dailyMetric?.followers,
+    dailyMetric?.reach,
+    dailyMetric?.impressions,
+  ])
+  const accountValue = pickDashboardMetric([
+    normalizedAccount?.[platform?.metricField || 'followers'],
+    normalizedAccount?.followers,
+    normalizedAccount?.reach,
+    normalizedAccount?.impressions,
+    normalizedAccount?.views,
+    normalizedAccount?.engagements,
+  ])
+  const postEngagement = pickDashboardMetric([postAggregate?.engagements])
+  const postReach = pickDashboardMetric([postAggregate?.reach])
+  const postViews = pickDashboardMetric([postAggregate?.views, postAggregate?.impressions])
+
+  let metricLabel = platform?.metricLabel || 'Followers'
+  let metricValue = dailyValue
+  let metricSource = dailyValue !== null ? 'daily_metrics' : ''
+
+  if (metricValue === null && accountValue !== null) {
+    metricValue = accountValue
+    metricSource = 'zernio_account'
+  }
+
+  if (metricValue === null && postEngagement !== null) {
+    metricLabel = 'Engagement'
+    metricValue = postEngagement
+    metricSource = 'post_daily_metrics'
+  }
+
+  if (metricValue === null && postReach !== null) {
+    metricLabel = 'Reach'
+    metricValue = postReach
+    metricSource = 'post_daily_metrics'
+  }
+
+  if (metricValue === null && postViews !== null) {
+    metricLabel = 'Views'
+    metricValue = postViews
+    metricSource = 'post_daily_metrics'
+  }
+
+  const lastSyncedAt = firstString(
+    postAggregate?.latestSyncedAt,
+    normalizedAccount?.lastSyncedAt,
+    dailyMetric?.created_at,
+    dailyMetric?.metric_date,
+  )
+  const statusLabel = connected
+    ? metricValue !== null
+      ? 'Metrics current'
+      : 'Waiting for metrics'
+    : 'Not connected'
+  const statusTone = connected
+    ? metricValue !== null ? 'success' : 'pending'
+    : 'muted'
+
+  return {
+    platform: normalizedPlatform,
+    connected,
+    username,
+    zernioAccountId: firstString(connection?.zernio_account_id, normalizedAccount?.id),
+    zernioProfileId: firstString(connection?.zernio_profile_id, normalizedAccount?.profileId),
+    metricLabel,
+    metricValue,
+    metricSource: metricSource || 'none',
+    secondaryMetricLabel: postReach !== null ? 'Reach' : postViews !== null ? 'Views' : '',
+    secondaryMetricValue: postReach !== null ? postReach : postViews,
+    engagementRate: asDashboardRate(dailyMetric?.engagement_rate ?? normalizedAccount?.engagementRate ?? postAggregate?.engagementRate),
+    statusLabel,
+    statusTone,
+    lastSyncedAt,
+  }
+}
+
+async function listZernioAccounts(env, params = {}) {
+  const query = buildZernioScopedSearchParams(params, params.profileId)
+
+  const payload = await zernioFetch(env, `/accounts${query.toString() ? `?${query.toString()}` : ''}`)
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.accounts)) return payload.accounts
+  if (Array.isArray(payload?.data)) return payload.data
+  if (Array.isArray(payload?.data?.accounts)) return payload.data.accounts
+  return []
+}
+
+async function findZernioAccountById(env, accountId, profileId = '') {
+  const targetId = String(accountId || '').trim()
+  if (!targetId) return null
+
+  const accounts = await listZernioAccounts(env, { limit: 100, profileId })
+  return accounts.find((account) => extractZernioAccountId(account) === targetId) || null
+}
+
+async function listBoostAdAccountsForConnection(env, connection, platform) {
+  const adsPlatform = zernioAdsPlatformForPortalPlatform(platform)
+  if (!adsPlatform) return { adsPlatform: '', profileId: '', accounts: [] }
+
+  const socialAccount = await findZernioAccountById(env, connection?.zernio_account_id, connection?.zernio_profile_id)
+  const profileId = getConnectionZernioProfileId(connection) || extractZernioProfileId(socialAccount)
+  if (!profileId) return { adsPlatform, profileId: '', accounts: [] }
+
+  const accountPlatforms = zernioAdsAccountLookupPlatforms(platform)
+  const adsAccountsByPlatform = await Promise.all(
+    accountPlatforms.map((accountPlatform) => listZernioAccounts(env, {
+      platform: accountPlatform,
+      profileId,
+      limit: 100,
+    })),
+  )
+  const adsAccountsById = new Map()
+  adsAccountsByPlatform.flat().forEach((account) => {
+    const id = extractZernioAccountId(account) || extractPlatformAdAccountId(account)
+    if (id && !adsAccountsById.has(id)) adsAccountsById.set(id, account)
+  })
+
+  return {
+    adsPlatform,
+    profileId,
+    accounts: normalizeZernioAdAccounts([...adsAccountsById.values()]),
+  }
+}
+
+async function searchBoostTargetingForConnection(env, connection, platform, options = {}) {
+  const adsPlatform = zernioAdsPlatformForPortalPlatform(platform)
+  if (!adsPlatform) return []
+
+  const geoType = firstString(options.geoType).toLowerCase()
+  if (!['city', 'region', 'metro', 'zip'].includes(geoType)) {
+    throw new Error('Choose city, region, metro, or zip targeting.')
+  }
+
+  const query = firstString(options.query).trim()
+  if (!query) return []
+
+  const params = new URLSearchParams({
+    accountId: connection.zernio_account_id,
+    dimension: 'geo',
+    geoType,
+    q: query,
+    countryCode: firstString(options.countryCode, 'US').toUpperCase().slice(0, 2) || 'US',
+    limit: '8',
+  })
+  const payload = await zernioFetch(env, `/ads/targeting/search?${params.toString()}`)
+  const results = Array.isArray(payload?.results) ? payload.results : []
+  return results
+    .map((result) => ({
+      id: firstString(result.id, result.key),
+      key: firstString(result.key, result.id),
+      name: firstString(result.name, result.label),
+      type: firstString(result.type, geoType),
+    }))
+    .filter((result) => result.id && result.name)
+}
+
+function normalizeBoostGoal(goal) {
+  const value = String(goal || '').trim().toLowerCase()
+  const allowed = new Set([
+    'engagement',
+    'traffic',
+    'awareness',
+    'video_views',
+    'lead_generation',
+    'conversions',
+    'app_promotion',
+  ])
+  return allowed.has(value) ? value : null
+}
+
+function normalizeBudgetType(type) {
+  const value = String(type || '').trim().toLowerCase()
+  return value === 'lifetime' ? 'lifetime' : 'daily'
+}
+
+function normalizeBoostStatus(status) {
+  const value = String(status || '').trim().toLowerCase()
+    .replace(/[\s-]+/g, '_')
+  const statusMap = {
+    pending: 'pending',
+    pending_review: 'pending',
+    in_review: 'pending',
+    active: 'active',
+    live: 'active',
+    enabled: 'active',
+    paused: 'paused',
+    completed: 'completed',
+    complete: 'completed',
+    ended: 'completed',
+    cancelled: 'cancelled',
+    canceled: 'cancelled',
+    rejected: 'rejected',
+    disapproved: 'rejected',
+    failed: 'failed',
+    error: 'failed',
+  }
+  return statusMap[value] || 'active'
+}
+
+function parseBoostAmount(value) {
+  const amount = Number(value)
+  return Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) / 100 : null
+}
+
+export function validateBoostAdAccountId(platform, adAccountId) {
+  const value = String(adAccountId || '').trim()
+  if (!value) return 'Add an ad account once to launch the first boost.'
+  if (['facebook', 'instagram'].includes(platform) && !/^(act_)?\d+$/.test(value)) {
+    return 'Meta boosts need a numeric ad account ID from Ads setup.'
+  }
+  return ''
+}
+
+function maskBoostAdAccountId(adAccountId) {
+  const value = String(adAccountId || '').trim()
+  if (!value) return ''
+  if (value.length <= 10) return value
+  return `${value.slice(0, 6)}...${value.slice(-4)}`
+}
+
+export function pickBoostAdAccountId(inputValue, previousBoosts = []) {
+  const manualValue = String(inputValue || '').trim()
+  if (manualValue) return manualValue
+
+  const previous = (Array.isArray(previousBoosts) ? previousBoosts : [])
+    .find((boost) => String(boost?.ad_account_id || '').trim())
+  return String(previous?.ad_account_id || '').trim()
+}
+
+function normalizeBoostTargetingArray(value) {
+  return Array.isArray(value)
+    ? value
+      .map((entry) => (typeof entry === 'string' ? entry.trim() : entry))
+      .filter((entry) => {
+        if (!entry) return false
+        if (typeof entry === 'string') return Boolean(entry)
+        if (typeof entry !== 'object') return false
+        return Boolean(firstString(entry.id, entry.key, entry.name))
+      })
+    : []
+}
+
+export function normalizeBoostTargeting(targeting = {}) {
+  const source = targeting && typeof targeting === 'object' && !Array.isArray(targeting)
+    ? targeting
+    : {}
+  const normalized = { ...source }
+
+  for (const key of ['countries', 'regions', 'cities', 'zips', 'metros', 'custom_audiences', 'customAudiences']) {
+    if (key in normalized) {
+      const entries = normalizeBoostTargetingArray(normalized[key])
+      if (entries.length) normalized[key] = entries
+      else delete normalized[key]
+    }
+  }
+
+  return Object.fromEntries(Object.entries(normalized).filter(([, value]) => {
+    if (Array.isArray(value)) return value.length > 0
+    if (value && typeof value === 'object') return Object.keys(value).length > 0
+    return value !== '' && value !== null && value !== undefined
+  }))
+}
+
+export function validateBoostTargeting(platform, targeting = {}) {
+  if (!['facebook', 'instagram'].includes(platform)) return ''
+
+  const normalized = normalizeBoostTargeting(targeting)
+  const locationKeys = ['countries', 'regions', 'cities', 'zips', 'metros']
+  const hasLocation = locationKeys.some((key) => Array.isArray(normalized[key]) && normalized[key].length > 0)
+  const hasCustomAudience = ['custom_audiences', 'customAudiences'].some((key) => (
+    Array.isArray(normalized[key]) && normalized[key].length > 0
+  ))
+
+  if (!hasLocation && !hasCustomAudience) {
+    return 'Meta boosts need an audience location or a custom audience before launch.'
+  }
+
+  return ''
+}
+
+async function loadBoostRows(envConfig, { postId } = {}) {
+  const filters = new URLSearchParams({
+    select: '*',
+    client_id: `eq.${envConfig.clientId}`,
+    order: 'created_at.desc',
+  })
+
+  if (postId) filters.set('post_id', `eq.${postId}`)
+
+  const response = await supabaseRest(envConfig, `/rest/v1/post_boosts?${filters.toString()}`)
+  return response.json()
+}
+
+async function loadPostForBoost(envConfig, postId) {
+  const filters = new URLSearchParams({
+    select: 'id,client_id,content,platforms,status,published_at,n8n_execution_id,zernio_post_id,zernio_profile_id',
+    id: `eq.${postId}`,
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/posts?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function loadSocialConnectionForBoost(envConfig, platform) {
+  const filters = new URLSearchParams({
+    select: 'id,platform,zernio_account_id,zernio_profile_id,username',
+    client_id: `eq.${envConfig.clientId}`,
+    platform: `eq.${platform}`,
+    limit: '1',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/social_connections?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function loadSocialConnectionsForBoost(envConfig) {
+  const filters = new URLSearchParams({
+    select: 'id,platform,zernio_account_id,zernio_profile_id,username',
+    client_id: `eq.${envConfig.clientId}`,
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/social_connections?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows : []
+}
+
+async function loadTenantSocialConnections(envConfig) {
+  const filters = new URLSearchParams({
+    select: 'id,platform,zernio_account_id,zernio_profile_id,username',
+    client_id: `eq.${envConfig.clientId}`,
+    order: 'platform.asc',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/social_connections?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows : []
+}
+
+function zernioCommentPostTimestamp(post) {
+  return firstString(post?.createdTime, post?.createdAt, post?.timestamp, post?.date)
+}
+
+function normalizeZernioAdCommentPlacement(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized.includes('instagram')) return 'instagram'
+  if (normalized.includes('facebook')) return 'facebook'
+  return ''
+}
+
+export function normalizeZernioCommentPost(post, connection = {}) {
+  const accountId = firstString(post?.accountId, post?.account_id, connection.zernio_account_id)
+  const adId = firstString(
+    post?.adId,
+    post?.ad_id,
+    post?.ad?._id,
+    post?.ad?.id,
+    post?.platformAdId,
+    post?.creative?.effectiveObjectStoryId,
+    post?.creative?.effectiveInstagramMediaId,
+  )
+  const explicitPlacement = normalizeZernioAdCommentPlacement(firstString(
+    post?.placement,
+    post?.adPlacement,
+    post?.meta?.placement,
+  ))
+  const isAd = Boolean(post?.isAd || adId || explicitPlacement)
+  const placement = explicitPlacement || (isAd ? normalizeZernioAdCommentPlacement(post?.platform) : '')
+  return {
+    id: firstString(post?.id, post?.postId, post?.platformPostId, isAd && adId ? `${adId}${placement ? `:${placement}` : ''}` : ''),
+    platform: normalizePlatform(firstString(post?.platform, placement, connection.platform)) || (isAd ? placement : null),
+    accountId,
+    accountUsername: firstString(post?.accountUsername, post?.account_username, connection.username),
+    content: firstString(post?.content, post?.text, post?.caption, post?.message),
+    picture: firstString(post?.picture, post?.image, post?.thumbnail, post?.mediaUrl),
+    permalink: firstString(post?.permalink, post?.url, post?.link),
+    createdTime: zernioCommentPostTimestamp(post),
+    commentCount: Number(post?.commentCount ?? post?.comments ?? 0) || 0,
+    likeCount: Number(post?.likeCount ?? post?.likes ?? 0) || 0,
+    isAd,
+    adId,
+    placement,
+    raw: post,
+  }
+}
+
+export function normalizeZernioInboxComment(comment, postId = '', context = {}) {
+  const author = comment?.from || comment?.author || comment?.sender || comment?.user || {}
+  return {
+    id: firstString(comment?.id, comment?.commentId),
+    postId: firstString(comment?.postId, postId),
+    platform: normalizePlatform(firstString(comment?.platform, context.platform)),
+    authorId: firstString(author.id, author.userId, comment?.authorId, comment?.senderId),
+    authorName: firstString(author.name, author.displayName, author.username, comment?.authorName, comment?.username, 'Social commenter'),
+    authorAvatar: firstString(author.picture, author.avatarUrl, author.avatar, author.profilePictureUrl),
+    text: firstString(comment?.text, comment?.content, comment?.message),
+    createdTime: firstString(comment?.createdTime, comment?.createdAt, comment?.timestamp),
+    likeCount: Number(comment?.likeCount ?? comment?.likes ?? 0) || 0,
+    replyCount: Number(comment?.replyCount ?? comment?.replies?.length ?? 0) || 0,
+    hidden: Boolean(comment?.isHidden || comment?.hidden),
+    canReply: comment?.canReply !== false,
+    replies: Array.isArray(comment?.replies) ? comment.replies : [],
+    raw: comment,
+  }
+}
+
+function normalizeZernioCommentListPayload(payload, postId = '', context = {}) {
+  const comments = Array.isArray(payload?.comments)
+    ? payload.comments
+    : (Array.isArray(payload?.data) ? payload.data : (Array.isArray(payload) ? payload : []))
+  return comments.map((comment) => normalizeZernioInboxComment(comment, postId, context))
+}
+
+async function handleZernioCommentPosts(request, env) {
+  if (!['GET', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'GET, OPTIONS' } })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const requestedPlatform = normalizeCommentPlatformFilter(url.searchParams.get('platform') || '')
+  const requestedAccountId = firstString(url.searchParams.get('accountId'))
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 50) || 50, 1), 100)
+
+  const allConnections = await loadTenantSocialConnections(auth.envConfig)
+  const connections = allConnections.filter((connection) => {
+    if (!connection.zernio_account_id) return false
+    if (requestedPlatform === 'metaads' && !['facebook', 'instagram'].includes(normalizePlatform(connection.platform))) return false
+    if (requestedPlatform && requestedPlatform !== 'metaads' && normalizePlatform(connection.platform) !== requestedPlatform) return false
+    if (requestedAccountId && String(connection.zernio_account_id) !== requestedAccountId) return false
+    return true
+  })
+
+  if (requestedAccountId && !connections.length) {
+    return json({ error: 'That social account is not connected to this portal.' }, { status: 403 })
+  }
+
+  const results = []
+  const failures = []
+
+  await Promise.all(connections.map(async (connection) => {
+    const params = new URLSearchParams({
+      accountId: connection.zernio_account_id,
+      minComments: '1',
+      sortBy: 'date',
+      sortOrder: 'desc',
+      limit: String(limit),
+    })
+    if (requestedPlatform) params.set('platform', requestedPlatform)
+    const profileId = getConnectionZernioProfileId(connection, auth.envConfig)
+    if (profileId) params.set('profileId', profileId)
+
+    try {
+      const payload = await zernioFetch(env, `/inbox/comments?${params.toString()}`)
+      const posts = Array.isArray(payload?.data) ? payload.data : (Array.isArray(payload?.posts) ? payload.posts : [])
+      results.push(...posts.map((post) => normalizeZernioCommentPost(post, connection)))
+    } catch (error) {
+      failures.push({
+        accountId: connection.zernio_account_id,
+        platform: normalizePlatform(connection.platform),
+        username: connection.username || '',
+        error: error.message || 'Could not load comments.',
+      })
+    }
+  }))
+
+  results.sort((left, right) => {
+    const leftTime = Date.parse(left.createdTime || '') || 0
+    const rightTime = Date.parse(right.createdTime || '') || 0
+    return rightTime - leftTime
+  })
+
+  const seenPostKeys = new Set()
+  const dedupedResults = results.filter((post) => {
+    const key = post.isAd && post.adId
+      ? `ad:${post.adId}:${post.placement || ''}`
+      : `${post.accountId || ''}:${post.id || ''}`
+    if (!key || seenPostKeys.has(key)) return false
+    seenPostKeys.add(key)
+    return true
+  })
+
+  return json({
+    posts: dedupedResults.slice(0, limit),
+    accounts: allConnections
+      .filter((connection) => connection.zernio_account_id)
+      .map((connection) => ({
+        id: connection.zernio_account_id,
+        platform: normalizePlatform(connection.platform),
+        username: connection.username || '',
+      })),
+    failures,
+  })
+}
+
+async function handleZernioPostComments(request, env, postId) {
+  if (!['GET', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'GET, OPTIONS' } })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const accountId = firstString(url.searchParams.get('accountId'))
+  if (!accountId) return json({ error: 'Missing accountId.' }, { status: 400 })
+
+  const connections = await loadTenantSocialConnections(auth.envConfig)
+  const connection = connections.find((entry) => String(entry.zernio_account_id || '') === accountId)
+  if (!connection) return json({ error: 'That social account is not connected to this portal.' }, { status: 403 })
+
+  const params = new URLSearchParams({ accountId })
+  const profileId = getConnectionZernioProfileId(connection, auth.envConfig)
+  if (profileId) params.set('profileId', profileId)
+  const cursor = firstString(url.searchParams.get('cursor'))
+  if (cursor) params.set('cursor', cursor)
+
+  try {
+    const adId = firstString(url.searchParams.get('adId'))
+    const placement = normalizeZernioAdCommentPlacement(url.searchParams.get('placement'))
+    const requestedAdThread = ['1', 'true', 'yes'].includes(String(url.searchParams.get('isAd') || '').toLowerCase()) || Boolean(adId)
+    let payload
+    if (requestedAdThread) {
+      const resolvedAdId = adId || firstString(postId.split(':')[0])
+      if (!resolvedAdId) return json({ error: 'Missing adId for ad comments.' }, { status: 400 })
+      const adParams = new URLSearchParams()
+      if (placement) adParams.set('placement', placement)
+      if (cursor) adParams.set('cursor', cursor)
+      const adQuery = adParams.toString()
+      payload = await zernioFetch(env, `/ads/${encodeURIComponent(resolvedAdId)}/comments${adQuery ? `?${adQuery}` : ''}`)
+    } else {
+      payload = await zernioFetch(env, `/inbox/comments/${encodeURIComponent(postId)}?${params.toString()}`)
+    }
+    const comments = normalizeZernioCommentListPayload(payload, postId, { platform: connection.platform })
+    const chatwootSync = await getChatwootConfigForClient(env, auth.envConfig)
+      .then((chatwootConfig) => syncZernioCommentsToChatwoot(chatwootConfig, connection, comments, postId))
+      .catch((error) => [{
+        synced: false,
+        error: sanitizeChatwootError(error?.message || 'Could not sync comments to Chatwoot.'),
+      }])
+    return json({
+      comments,
+      pagination: payload?.pagination || null,
+      postId,
+      accountId,
+      chatwootSync,
+    })
+  } catch (error) {
+    return json({ error: error.message || 'Could not load post comments.' }, { status: error.status || 502 })
+  }
+}
+
+async function handleZernioCommentReply(request, env, postId) {
+  if (!['POST', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'POST, OPTIONS' } })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const body = await request.json().catch(() => ({}))
+  const accountId = firstString(body.accountId)
+  const commentId = firstString(body.commentId)
+  const message = firstString(body.message)
+
+  if (!accountId) return json({ error: 'Missing accountId.' }, { status: 400 })
+  if (!message) return json({ error: 'Reply message is required.' }, { status: 400 })
+
+  const connections = await loadTenantSocialConnections(auth.envConfig)
+  const connection = connections.find((entry) => String(entry.zernio_account_id || '') === accountId)
+  if (!connection) return json({ error: 'That social account is not connected to this portal.' }, { status: 403 })
+
+  try {
+    const payload = await zernioFetch(env, `/inbox/comments/${encodeURIComponent(postId)}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        accountId,
+        ...(getConnectionZernioProfileId(connection, auth.envConfig) ? { profileId: getConnectionZernioProfileId(connection, auth.envConfig) } : {}),
+        message,
+        ...(commentId ? { commentId } : {}),
+      }),
+    })
+
+    return json({
+      success: payload?.success !== false,
+      data: payload?.data || payload,
+      postId,
+      commentId: commentId || payload?.data?.commentId || payload?.commentId || null,
+      accountId,
+    })
+  } catch (error) {
+    return json({ error: error.message || 'Could not send the comment reply.' }, { status: error.status || 502 })
+  }
+}
+
+function asMetricInteger(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 0
+}
+
+function asMetricNumber(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
+}
+
+function pickZernioAnalyticsPayload(payload) {
+  if (payload?.data?.post && typeof payload.data.post === 'object') return payload.data.post
+  if (payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) return payload.data
+  if (payload?.post && typeof payload.post === 'object') return payload.post
+  return payload && typeof payload === 'object' ? payload : {}
+}
+
+export function normalizeZernioPostAnalytics(payload, { post, platform, connection, zernioProfileId = '' } = {}) {
+  const normalizedPlatform = normalizePlatform(platform)
+  const source = pickZernioAnalyticsPayload(payload)
+  const platformRows = Array.isArray(source.platformAnalytics)
+    ? source.platformAnalytics
+    : Array.isArray(source.platforms)
+      ? source.platforms
+      : []
+  const platformEntry = platformRows.find((entry) => normalizePlatform(entry?.platform) === normalizedPlatform) || null
+  const analytics = platformEntry?.analytics && typeof platformEntry.analytics === 'object'
+    ? platformEntry.analytics
+    : !platformEntry && source.analytics && typeof source.analytics === 'object'
+      ? source.analytics
+      : {}
+  const syncStatus = normalizeZernioMetricSyncStatus(platformEntry?.syncStatus || source.syncStatus)
+
+  if (!Object.keys(analytics).length && !platformEntry) return null
+
+  const likes = asMetricInteger(analytics.likes)
+  const comments = asMetricInteger(analytics.comments)
+  const shares = asMetricInteger(analytics.shares)
+  const saves = asMetricInteger(analytics.saves)
+  const clicks = asMetricInteger(analytics.clicks)
+  const engagements = asMetricInteger(
+    analytics.engagements
+    ?? analytics.engagement
+    ?? analytics.totalEngagements
+    ?? (likes + comments + shares + saves + clicks),
+  )
+  const lastUpdated = firstString(
+    analytics.lastUpdated,
+    analytics.last_updated,
+    source.lastUpdated,
+    source.last_updated,
+  )
+  const metricDate = lastUpdated && !Number.isNaN(Date.parse(lastUpdated))
+    ? new Date(lastUpdated).toISOString().slice(0, 10)
+    : new Date().toISOString().slice(0, 10)
+
+  return {
+    client_id: post?.client_id || '',
+    post_id: post?.id || '',
+    social_connection_id: connection?.id || null,
+    zernio_profile_id: firstString(connection?.zernio_profile_id, zernioProfileId, post?.zernio_profile_id),
+    platform: normalizedPlatform,
+    metric_date: metricDate,
+    zernio_post_id: firstString(source.latePostId, source.postId, post?.zernio_post_id, post?.n8n_execution_id),
+    platform_post_id: firstString(platformEntry?.platformPostId, source.platformPostId),
+    platform_post_url: firstString(platformEntry?.platformPostUrl, !platformEntry ? source.platformPostUrl : ''),
+    source: source.isExternal ? 'imported' : 'zernio',
+    sync_status: syncStatus,
+    views: asMetricInteger(analytics.views),
+    impressions: asMetricInteger(analytics.impressions),
+    reach: asMetricInteger(analytics.reach),
+    likes,
+    comments,
+    shares,
+    saves,
+    clicks,
+    engagements,
+    engagement_rate: asMetricNumber(analytics.engagementRate ?? analytics.engagement_rate),
+    raw_json: {
+      zernio: source,
+      platformAnalytics: platformEntry,
+    },
+    last_synced_at: new Date().toISOString(),
+  }
+}
+
+function normalizeZernioMetricSyncStatus(value) {
+  const status = firstString(value).toLowerCase()
+  if (status === 'pending' || status === 'partial' || status === 'processing') return 'pending'
+  if (status === 'failed' || status === 'error') return 'failed'
+  if (status === 'unavailable') return 'unavailable'
+  return 'synced'
+}
+
+async function loadPublishedPostsForMetrics(envConfig, platform, limit = 12) {
+  const filters = new URLSearchParams({
+    select: 'id,client_id,content,media_url,platforms,status,published_at,created_at,n8n_execution_id,zernio_post_id,zernio_profile_id,platform_variants_json',
+    client_id: `eq.${envConfig.clientId}`,
+    status: 'eq.published',
+    order: 'published_at.desc.nullslast,created_at.desc',
+    limit: String(limit),
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/posts?${filters.toString()}`)
+  const rows = await response.json()
+  const normalizedPlatform = normalizePlatform(platform)
+
+  return (Array.isArray(rows) ? rows : [])
+    .filter((post) => Array.isArray(post.platforms) && post.platforms.map(normalizePlatform).includes(normalizedPlatform))
+}
+
+async function loadPostDailyMetrics(envConfig, platform, postIds = []) {
+  if (!postIds.length) return []
+
+  const encodedIds = postIds.map((postId) => encodeURIComponent(postId)).join(',')
+  const filters = new URLSearchParams({
+    select: '*',
+    client_id: `eq.${envConfig.clientId}`,
+    platform: `eq.${normalizePlatform(platform)}`,
+    post_id: `in.(${encodedIds})`,
+    order: 'metric_date.desc,last_synced_at.desc',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/post_daily_metrics?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows : []
+}
+
+async function upsertPostDailyMetric(envConfig, metric) {
+  const payload = {
+    ...metric,
+    client_id: envConfig.clientId,
+  }
+  const response = await supabaseRest(envConfig, '/rest/v1/post_daily_metrics?on_conflict=post_id,platform,metric_date', {
+    method: 'POST',
+    headers: {
+      Prefer: 'resolution=merge-duplicates,return=representation',
+    },
+    body: JSON.stringify(payload),
+  })
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+function latestMetricByPost(metrics = []) {
+  const latest = new Map()
+  for (const metric of metrics) {
+    if (!metric?.post_id || latest.has(metric.post_id)) continue
+    latest.set(metric.post_id, metric)
+  }
+  return latest
+}
+
+function metricIsStale(metric, staleAfterMs = 6 * 60 * 60 * 1000) {
+  if (!metric?.last_synced_at) return true
+  const syncedAt = Date.parse(metric.last_synced_at)
+  if (Number.isNaN(syncedAt)) return true
+  return Date.now() - syncedAt > staleAfterMs
+}
+
+async function syncZernioPostMetrics(env, envConfig, posts, platform, existingMetrics = [], options = {}) {
+  const normalizedPlatform = normalizePlatform(platform)
+  const connections = await loadSocialConnectionsForBoost(envConfig)
+  const connection = connections.find((item) => normalizePlatform(item.platform) === normalizedPlatform) || null
+  const profileId = getConnectionZernioProfileId(connection, envConfig)
+  const latest = latestMetricByPost(existingMetrics)
+  const force = Boolean(options.force)
+  const maxPosts = Math.max(1, Math.min(Number(options.maxPosts || 6), 12))
+  const summary = {
+    attempted: 0,
+    synced: 0,
+    pending: 0,
+    skipped: 0,
+    failed: 0,
+    analyticsAvailable: true,
+    message: '',
+  }
+
+  const candidates = posts
+    .filter((post) => firstString(post?.zernio_post_id, post?.n8n_execution_id))
+    .filter((post) => force || metricIsStale(latest.get(post.id)))
+    .slice(0, maxPosts)
+
+  summary.skipped = posts.filter((post) => !firstString(post?.zernio_post_id, post?.n8n_execution_id)).length
+
+  for (const post of candidates) {
+    summary.attempted += 1
+    const zernioPostId = firstString(post?.zernio_post_id, post?.n8n_execution_id)
+
+    const query = new URLSearchParams({
+      postId: zernioPostId,
+      platform: normalizedPlatform,
+    })
+    if (connection?.zernio_account_id) query.set('accountId', connection.zernio_account_id)
+    if (profileId) query.set('profileId', profileId)
+
+    try {
+      const payload = await zernioFetch(env, `/analytics?${query.toString()}`)
+      const metric = normalizeZernioPostAnalytics(payload, { post, platform: normalizedPlatform, connection, zernioProfileId: profileId })
+      if (!metric) {
+        summary.pending += 1
+        continue
+      }
+
+      await upsertPostDailyMetric(envConfig, metric)
+      if (metric.sync_status === 'pending') {
+        summary.pending += 1
+      } else if (metric.sync_status === 'failed' || metric.sync_status === 'unavailable') {
+        summary.failed += 1
+      } else {
+        summary.synced += 1
+      }
+    } catch (error) {
+      summary.failed += 1
+      if (error.status === 402 || error.payload?.code === 'analytics_addon_required') {
+        summary.analyticsAvailable = false
+        summary.message = 'Zernio analytics add-on is required before post metrics can sync.'
+        break
+      }
+      if (!summary.message) summary.message = error.message || 'Some post metrics could not be synced yet.'
+    }
+  }
+
+  return summary
+}
+
+function buildPostMetricsResponse(posts, metrics, sync = null) {
+  const latest = latestMetricByPost(metrics)
+  return {
+    success: true,
+    sync,
+    posts: posts.map((post) => ({
+      post,
+      metrics: latest.get(post.id) || null,
+    })),
+  }
+}
+
+function latestDashboardDailyMetricsByPlatform(rows = []) {
+  const latest = new Map()
+  for (const row of rows) {
+    const platform = normalizePlatform(row?.platform)
+    if (!platform || latest.has(platform)) continue
+    latest.set(platform, row)
+  }
+  return latest
+}
+
+function aggregateDashboardPostMetrics(rows = []) {
+  const latestByPostPlatform = new Map()
+  for (const row of rows) {
+    const platform = normalizePlatform(row?.platform)
+    if (!platform || !row?.post_id) continue
+    const key = `${platform}:${row.post_id}`
+    if (latestByPostPlatform.has(key)) continue
+    latestByPostPlatform.set(key, row)
+  }
+
+  const aggregates = new Map()
+  for (const row of latestByPostPlatform.values()) {
+    const platform = normalizePlatform(row.platform)
+    const current = aggregates.get(platform) || {
+      platform,
+      posts: 0,
+      views: 0,
+      impressions: 0,
+      reach: 0,
+      engagements: 0,
+      clicks: 0,
+      engagementRate: null,
+      latestSyncedAt: '',
+    }
+    current.posts += 1
+    current.views += asMetricInteger(row.views)
+    current.impressions += asMetricInteger(row.impressions)
+    current.reach += asMetricInteger(row.reach)
+    current.engagements += asMetricInteger(row.engagements)
+    current.clicks += asMetricInteger(row.clicks)
+    const engagementRate = asDashboardRate(row.engagement_rate)
+    if (engagementRate !== null) {
+      current.engagementRate = current.engagementRate === null
+        ? engagementRate
+        : Math.max(current.engagementRate, engagementRate)
+    }
+    const latestSyncedAt = firstString(row.last_synced_at, row.created_at)
+    if (latestSyncedAt && (!current.latestSyncedAt || Date.parse(latestSyncedAt) > Date.parse(current.latestSyncedAt))) {
+      current.latestSyncedAt = latestSyncedAt
+    }
+    aggregates.set(platform, current)
+  }
+  return aggregates
+}
+
+async function loadDashboardDailyMetrics(envConfig) {
+  const filters = new URLSearchParams({
+    select: 'platform,metric_date,followers,impressions,reach,engagement_rate,created_at',
+    client_id: `eq.${envConfig.clientId}`,
+    order: 'metric_date.desc,created_at.desc',
+    limit: '200',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/daily_metrics?${filters.toString()}`)
+  const rows = await response.json()
+  return latestDashboardDailyMetricsByPlatform(Array.isArray(rows) ? rows : [])
+}
+
+async function loadDashboardPostMetricAggregates(envConfig) {
+  const filters = new URLSearchParams({
+    select: 'post_id,platform,metric_date,views,impressions,reach,engagements,clicks,engagement_rate,last_synced_at,created_at',
+    client_id: `eq.${envConfig.clientId}`,
+    order: 'metric_date.desc,last_synced_at.desc,created_at.desc',
+    limit: '240',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/post_daily_metrics?${filters.toString()}`)
+  const rows = await response.json()
+  return aggregateDashboardPostMetrics(Array.isArray(rows) ? rows : [])
+}
+
+async function maybeSyncDashboardPostMetrics(env, envConfig, connections = [], options = {}) {
+  if (!connections.length) {
+    return { attempted: 0, synced: 0, pending: 0, skipped: 0, failed: 0, platforms: [] }
+  }
+
+  const force = Boolean(options.force)
+  const platforms = [...new Set(connections.map((connection) => normalizePlatform(connection.platform)).filter(Boolean))]
+  const summary = { attempted: 0, synced: 0, pending: 0, skipped: 0, failed: 0, platforms: [] }
+
+  for (const platform of platforms) {
+    const posts = await loadPublishedPostsForMetrics(envConfig, platform, 6)
+    const existingMetrics = await loadPostDailyMetrics(envConfig, platform, posts.map((post) => post.id))
+    const platformSummary = posts.length
+      ? await syncZernioPostMetrics(env, envConfig, posts, platform, existingMetrics, { force, maxPosts: 3 })
+      : { attempted: 0, synced: 0, pending: 0, skipped: 0, failed: 0, analyticsAvailable: true, message: '' }
+
+    summary.attempted += platformSummary.attempted || 0
+    summary.synced += platformSummary.synced || 0
+    summary.pending += platformSummary.pending || 0
+    summary.skipped += platformSummary.skipped || 0
+    summary.failed += platformSummary.failed || 0
+    summary.platforms.push({ platform, ...platformSummary })
+  }
+
+  return summary
+}
+
+async function handleDashboardSocialMetrics(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'GET, OPTIONS' } })
+  }
+
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const shouldSync = url.searchParams.get('sync') !== '0'
+  const force = url.searchParams.get('force') === '1'
+
+  try {
+    let connections = await loadTenantSocialConnections(auth.envConfig)
+    const profileId = firstString(auth.envConfig.zernioProfileId)
+    let zernioAccounts = []
+    let zernioAvailable = Boolean(profileId)
+    let sync = null
+
+    if (profileId) {
+      try {
+        zernioAccounts = (await listZernioAccounts(env, { profileId, limit: 100 }))
+          .map(normalizeZernioDashboardAccount)
+          .filter((account) => account.id && account.platform && account.profileId === profileId)
+      } catch {
+        zernioAvailable = false
+      }
+    }
+
+    if (shouldSync) {
+      sync = await maybeSyncDashboardPostMetrics(env, auth.envConfig, connections, { force })
+      connections = await loadTenantSocialConnections(auth.envConfig)
+    }
+
+    const dailyMetricsByPlatform = await loadDashboardDailyMetrics(auth.envConfig)
+    const postAggregatesByPlatform = await loadDashboardPostMetricAggregates(auth.envConfig)
+    const connectionByPlatform = new Map()
+    connections.forEach((connection) => {
+      const platform = normalizePlatform(connection.platform)
+      if (platform && !connectionByPlatform.has(platform)) connectionByPlatform.set(platform, connection)
+    })
+    const accountByPlatform = new Map()
+    zernioAccounts.forEach((account) => {
+      if (!account.platform) return
+      const connection = connectionByPlatform.get(account.platform)
+      if (connection?.zernio_account_id && connection.zernio_account_id !== account.id) return
+      if (!accountByPlatform.has(account.platform)) accountByPlatform.set(account.platform, account)
+    })
+
+    return json({
+      success: true,
+      profileId: profileId || null,
+      profileStatus: auth.envConfig.zernioProfileStatus || null,
+      zernioAvailable,
+      sync,
+      platforms: DASHBOARD_SOCIAL_PLATFORMS.map((platform) => buildDashboardSocialPlatformSummary({
+        platform,
+        connection: connectionByPlatform.get(platform.id) || null,
+        account: accountByPlatform.get(platform.id) || null,
+        dailyMetric: dailyMetricsByPlatform.get(platform.id) || null,
+        postAggregate: postAggregatesByPlatform.get(platform.id) || null,
+      })),
+    })
+  } catch (error) {
+    return json({
+      success: false,
+      error: error.message || 'Could not load dashboard social metrics.',
+      details: error.payload || null,
+    }, { status: error.status || 502 })
+  }
+}
+
+async function handlePostMetrics(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'GET, OPTIONS' } })
+  }
+
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const platform = normalizePlatform(url.searchParams.get('platform'))
+  if (!platform) return json({ error: 'Choose a supported platform.' }, { status: 400 })
+
+  const force = url.searchParams.get('force') === '1'
+  const shouldSync = url.searchParams.get('sync') !== '0'
+
+  try {
+    const posts = await loadPublishedPostsForMetrics(auth.envConfig, platform)
+    let metrics = await loadPostDailyMetrics(auth.envConfig, platform, posts.map((post) => post.id))
+    let sync = null
+
+    if (shouldSync && posts.length) {
+      sync = await syncZernioPostMetrics(env, auth.envConfig, posts, platform, metrics, { force })
+      metrics = await loadPostDailyMetrics(auth.envConfig, platform, posts.map((post) => post.id))
+    }
+
+    return json(buildPostMetricsResponse(posts, metrics, sync))
+  } catch (error) {
+    return json({
+      error: error.message || 'Could not load post metrics.',
+      details: error.payload || null,
+    }, { status: error.status || 502 })
+  }
+}
+
+async function insertPostBoost(envConfig, payload) {
+  const response = await supabaseRest(envConfig, '/rest/v1/post_boosts', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(payload),
+  })
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function loadBoostRowsForStatusSync(envConfig) {
+  const filters = new URLSearchParams({
+    select: 'id,client_id,platform,status,platform_campaign_id,zernio_profile_id,zernio_account_id,zernio_response_json',
+    status: 'in.(pending,active)',
+    platform_campaign_id: 'not.is.null',
+    order: 'created_at.desc',
+    limit: '100',
+  })
+  if (envConfig.clientId) filters.set('client_id', `eq.${envConfig.clientId}`)
+  const response = await supabaseRest(envConfig, `/rest/v1/post_boosts?${filters.toString()}`)
+  const rows = await response.json().catch(() => [])
+  return Array.isArray(rows) ? rows : []
+}
+
+async function patchPostBoostStatus(envConfig, boostId, payload) {
+  if (!boostId) return null
+  const response = await supabaseRest(envConfig, `/rest/v1/post_boosts?id=eq.${encodeURIComponent(boostId)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(payload),
+  })
+  const rows = await response.json().catch(() => [])
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function listZernioBoostCampaigns(env, { profileId, platform }) {
+  const params = new URLSearchParams({
+    profileId,
+    platform,
+    limit: '100',
+    source: 'all',
+  })
+  const payload = await zernioFetch(env, `/ads/campaigns?${params.toString()}`)
+  return Array.isArray(payload?.campaigns) ? payload.campaigns : []
+}
+
+function normalizeBoostCampaignId(campaign = {}) {
+  return firstString(
+    campaign.platformCampaignId,
+    campaign.platform_campaign_id,
+    campaign.campaignId,
+    campaign.campaign_id,
+    campaign.id,
+    campaign._id,
+  )
+}
+
+function normalizeBoostAdId(campaign = {}) {
+  return firstString(
+    campaign.platformAdId,
+    campaign.platform_ad_id,
+    campaign.adId,
+    campaign.ad_id,
+    campaign.zernioAdId,
+    campaign.zernio_ad_id,
+  )
+}
+
+async function handleBoostCampaigns(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'GET, OPTIONS' } })
+  }
+
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const requestedPlatform = normalizePlatform(url.searchParams.get('platform') || '')
+  const boosts = await loadBoostRows(auth.envConfig, {})
+  const connections = await loadSocialConnectionsForBoost(auth.envConfig)
+  const campaigns = []
+  const errors = []
+  const seen = new Set()
+  const localBoostByCampaignId = new Map()
+
+  for (const boost of boosts) {
+    const campaignId = firstString(boost.platform_campaign_id)
+    if (campaignId) localBoostByCampaignId.set(campaignId, boost)
+  }
+
+  for (const connection of connections) {
+    const platform = normalizePlatform(connection.platform)
+    if (requestedPlatform && platform !== requestedPlatform) continue
+    const profileId = getConnectionZernioProfileId(connection, auth.envConfig)
+    if (!profileId || !zernioAdsPlatformForPortalPlatform(platform)) continue
+
+    try {
+      const rows = await listZernioBoostCampaigns(env, { profileId, platform })
+      for (const campaign of rows) {
+        const campaignId = normalizeBoostCampaignId(campaign)
+        const adId = normalizeBoostAdId(campaign)
+        const key = `${platform}:${campaignId || adId || campaigns.length}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        campaigns.push({
+          ...campaign,
+          platform,
+          profileId,
+          zernioProfileId: profileId,
+          connectionId: connection.id || null,
+          username: connection.username || '',
+          localBoost: campaignId ? (localBoostByCampaignId.get(campaignId) || null) : null,
+          source: 'zernio',
+        })
+      }
+    } catch (error) {
+      errors.push({
+        platform,
+        profileId,
+        message: error.message || 'Could not load boost campaigns.',
+      })
+    }
+  }
+
+  for (const boost of boosts) {
+    const platform = normalizePlatform(boost.platform)
+    if (requestedPlatform && platform !== requestedPlatform) continue
+    const campaignId = firstString(boost.platform_campaign_id)
+    const key = `${platform}:${campaignId || boost.id}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    campaigns.push({
+      id: boost.zernio_ad_id || boost.id,
+      platform,
+      name: boost.name || 'Boosted post',
+      status: boost.status || 'saved',
+      goal: boost.goal || '',
+      budget: {
+        amount: boost.budget_amount,
+        type: boost.budget_type,
+        currency: boost.currency,
+      },
+      platformCampaignId: boost.platform_campaign_id,
+      platformAdSetId: boost.platform_ad_set_id,
+      platformAdId: boost.platform_ad_id,
+      zernioResponse: boost.zernio_response_json,
+      localBoost: boost,
+      source: 'post_boosts',
+    })
+  }
+
+  return json({
+    success: true,
+    campaigns,
+    errors,
+    source: 'zernio_ads',
+  })
+}
+
+function normalizeBoostCampaignStatus(campaign = {}) {
+  return normalizeBoostStatus(firstString(campaign.status, campaign.reviewStatus))
+}
+
+async function syncPostBoostStatuses(env) {
+  const envConfig = getPortalAuthConfig(env)
+  const boosts = await loadBoostRowsForStatusSync(envConfig)
+  if (!boosts.length) return { checked: 0, updated: 0, activated: 0, notifications: { attempted: 0, sent: 0 } }
+
+  const campaignsByScope = new Map()
+  let updated = 0
+  let activated = 0
+  const notifications = { attempted: 0, sent: 0, failed: 0 }
+
+  for (const boost of boosts) {
+    const profileId = firstString(boost.zernio_profile_id)
+    const platform = normalizePlatform(boost.platform)
+    if (!profileId || !platform || !boost.platform_campaign_id) continue
+
+    const scopeKey = `${profileId}:${platform}`
+    if (!campaignsByScope.has(scopeKey)) {
+      campaignsByScope.set(scopeKey, await listZernioBoostCampaigns(env, { profileId, platform }).catch(() => []))
+    }
+    const campaign = campaignsByScope.get(scopeKey)
+      .find((entry) => firstString(entry.platformCampaignId, entry.id, entry.campaignId) === boost.platform_campaign_id)
+    if (!campaign) continue
+
+    const nextStatus = normalizeBoostCampaignStatus(campaign)
+    const previousStatus = normalizeBoostStatus(boost.status)
+    const existingResponse = boost.zernio_response_json && typeof boost.zernio_response_json === 'object'
+      ? boost.zernio_response_json
+      : {}
+    const alreadyNotifiedActive = Boolean(existingResponse?.map_sync?.active_notified_at)
+    const becameActive = nextStatus === 'active' && previousStatus !== 'active'
+    const shouldNotifyActive = nextStatus === 'active' && !alreadyNotifiedActive
+    const mapSync = {
+      ...(existingResponse.map_sync || {}),
+      last_status_sync_at: new Date().toISOString(),
+      campaign_status: firstString(campaign.status),
+      campaign_review_status: firstString(campaign.reviewStatus),
+      ...(shouldNotifyActive ? { active_notified_at: new Date().toISOString() } : {}),
+    }
+
+    if (nextStatus !== previousStatus || shouldNotifyActive) {
+      await patchPostBoostStatus(envConfig, boost.id, {
+        status: nextStatus,
+        zernio_response_json: {
+          ...existingResponse,
+          campaign,
+          map_sync: mapSync,
+        },
+      })
+      updated += 1
+    }
+
+    if (shouldNotifyActive) {
+      const pushResult = await notifyPortalPushSubscribers(env, { ...envConfig, clientId: boost.client_id })
+      notifications.attempted += pushResult.attempted || 0
+      notifications.sent += pushResult.sent || 0
+      notifications.failed += pushResult.failed || 0
+      activated += becameActive ? 1 : 0
+    }
+  }
+
+  return { checked: boosts.length, updated, activated, notifications }
+}
+
+async function buildPostBoostReadiness(envConfig, postId) {
+  const post = await loadPostForBoost(envConfig, postId)
+  if (!post) return { postFound: false, platforms: [] }
+
+  const postPlatforms = [...new Set(Array.isArray(post.platforms) ? post.platforms.map(normalizePlatform).filter(Boolean) : [])]
+  const [connections, boosts] = await Promise.all([
+    loadSocialConnectionsForBoost(envConfig),
+    loadBoostRows(envConfig, {}),
+  ])
+
+  const connectionsByPlatform = new Map()
+  connections.forEach((connection) => {
+    const platform = normalizePlatform(connection.platform)
+    if (platform && !connectionsByPlatform.has(platform)) connectionsByPlatform.set(platform, connection)
+  })
+
+  const platformReadiness = postPlatforms.map((platform) => {
+    const connection = connectionsByPlatform.get(platform)
+    const previousBoost = boosts.find((boost) => normalizePlatform(boost.platform) === platform && String(boost.ad_account_id || '').trim())
+    const issues = []
+
+    if (post.status !== 'published') {
+      issues.push({ code: 'not_published', message: 'Boost is available after this post is published.' })
+    }
+    const zernioPostId = getPostZernioPostId(post)
+    if (!zernioPostId) {
+      issues.push({ code: 'missing_zernio_post_id', message: 'This post is missing its Zernio post ID.' })
+    }
+    if (!connection?.zernio_account_id) {
+      issues.push({ code: 'missing_social_connection', message: `Connect ${platform} in Settings before boosting.` })
+    }
+
+    return {
+      platform,
+      connected: Boolean(connection?.zernio_account_id),
+      publishedToPlatform: postPlatforms.includes(platform),
+      hasZernioPostId: Boolean(zernioPostId),
+      canBoost: issues.length === 0,
+      zernioAccountId: connection?.zernio_account_id || '',
+      savedAdAccountId: previousBoost?.ad_account_id || '',
+      savedAdAccountLabel: maskBoostAdAccountId(previousBoost?.ad_account_id || ''),
+      issues,
+    }
+  })
+
+  return {
+    postFound: true,
+    postId: post.id,
+    postStatus: post.status || '',
+    hasZernioPostId: Boolean(getPostZernioPostId(post)),
+    platforms: platformReadiness,
+  }
+}
+
+async function handlePostBoostReadiness(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'GET, OPTIONS' } })
+  }
+
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const postId = String(url.searchParams.get('postId') || '').trim()
+  if (!postId) return json({ error: 'Choose a post to check boost readiness.' }, { status: 400 })
+
+  try {
+    const readiness = await buildPostBoostReadiness(auth.envConfig, postId)
+    return json({ success: true, readiness })
+  } catch (error) {
+    return json({ error: error.message || 'Could not check boost readiness.' }, { status: error.status || 502 })
+  }
+}
+
+async function handleBoostAdAccounts(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'GET, OPTIONS' } })
+  }
+
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const platform = normalizePlatform(url.searchParams.get('platform'))
+  if (!platform) return json({ error: 'Choose a supported platform.' }, { status: 400 })
+
+  try {
+    const connection = await loadSocialConnectionForBoost(auth.envConfig, platform)
+    if (!connection?.zernio_account_id) {
+      return json({ error: `Connect ${platform} in Settings before setting up boosts.` }, { status: 409 })
+    }
+
+    const previousBoosts = await loadBoostRows(auth.envConfig, {})
+    const saved = previousBoosts
+      .filter((boost) => normalizePlatform(boost.platform) === platform && String(boost.ad_account_id || '').trim())
+      .map((boost) => ({
+        id: boost.ad_account_id,
+        adAccountId: boost.ad_account_id,
+        label: maskBoostAdAccountId(boost.ad_account_id),
+        source: 'saved',
+      }))
+
+    const live = await listBoostAdAccountsForConnection(env, connection, platform)
+    const seen = new Set()
+    const accounts = [...live.accounts.map((account) => ({ ...account, source: 'zernio' })), ...saved]
+      .filter((account) => {
+        const key = String(account.adAccountId || account.id || '').trim()
+        if (!key || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+    return json({
+      success: true,
+      platform,
+      adsPlatform: live.adsPlatform,
+      profileIdAvailable: Boolean(live.profileId),
+      accounts,
+    })
+  } catch (error) {
+    return json({
+      error: error.message || 'Could not load boost ad accounts.',
+      details: error.payload || null,
+    }, { status: error.status || 502 })
+  }
+}
+
+async function handleBoostTargetingSearch(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'GET, OPTIONS' } })
+  }
+
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const platform = normalizePlatform(url.searchParams.get('platform'))
+  const geoType = String(url.searchParams.get('geoType') || '').trim().toLowerCase()
+  const query = String(url.searchParams.get('q') || '').trim()
+  const countryCode = String(url.searchParams.get('countryCode') || 'US').trim().toUpperCase().slice(0, 2) || 'US'
+  if (!platform) return json({ error: 'Choose a supported platform.' }, { status: 400 })
+  if (!query) return json({ success: true, results: [] })
+
+  try {
+    const connection = await loadSocialConnectionForBoost(auth.envConfig, platform)
+    if (!connection?.zernio_account_id) {
+      return json({ error: `Connect ${platform} in Settings before searching boost audiences.` }, { status: 409 })
+    }
+    const results = await searchBoostTargetingForConnection(env, connection, platform, { geoType, query, countryCode })
+    return json({ success: true, platform, geoType, results })
+  } catch (error) {
+    return json({
+      error: error.message || 'Could not search boost targeting.',
+      details: error.payload || null,
+    }, { status: error.status || 502 })
+  }
+}
+
+async function handleBoostAdsConnect(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'POST, OPTIONS' } })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+  if (auth.user.role !== 'admin') {
+    return json({ error: 'Only client admins can connect ad accounts.' }, { status: 403 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const platform = normalizePlatform(body.platform)
+  if (!platform) return json({ error: 'Choose a supported platform.' }, { status: 400 })
+
+  const adsPlatform = zernioAdsPlatformForPortalPlatform(platform)
+  if (!adsPlatform) {
+    return json({ error: 'Ads setup is not available for this platform yet.' }, { status: 400 })
+  }
+
+  try {
+    const connection = await loadSocialConnectionForBoost(auth.envConfig, platform)
+    if (!connection?.zernio_account_id) {
+      return json({ error: `Connect ${platform} in Settings before setting up boosts.` }, { status: 409 })
+    }
+
+    const live = await listBoostAdAccountsForConnection(env, connection, platform)
+    if (live.accounts.length) {
+      return json({
+        success: true,
+        alreadyConnected: true,
+        accounts: live.accounts,
+      })
+    }
+
+    if (!live.profileId) {
+      return json({
+        error: 'Zernio did not return a profile ID for this social account yet. Reconnect the social account, then try Ads setup again.',
+      }, { status: 409 })
+    }
+
+    const tenantSlug = String(auth.user?.clients?.slug || '').trim().toLowerCase()
+    const safeReturnUrl = buildSafeN8nRedirectUrl(request, env, body.redirectUrl, tenantSlug)
+    const params = new URLSearchParams({
+      profileId: live.profileId,
+      returnUrl: safeReturnUrl,
+      redirect_url: safeReturnUrl,
+    })
+
+    const requestedAdAccountId = String(body.adAccountId || '').trim()
+    if (requestedAdAccountId) params.set('adAccountId', requestedAdAccountId)
+    if (connection.zernio_account_id) params.set('accountId', connection.zernio_account_id)
+
+    const payload = await zernioFetch(env, `/connect/${adsPlatform}/ads?${params.toString()}`)
+    const authUrl = firstString(payload?.authUrl, payload?.url, payload?.redirectUrl, payload?.connectUrl, payload?.data?.authUrl, payload?.data?.url)
+
+    if (!authUrl) {
+      return json({
+        success: true,
+        alreadyConnected: Boolean(payload?.alreadyConnected || payload?.connected),
+        message: payload?.message || 'Zernio accepted the ads setup request.',
+        payload,
+      })
+    }
+
+    return json({ success: true, authUrl, adsPlatform })
+  } catch (error) {
+    const status = error.status || 502
+    return json({
+      error: error.message || 'Could not start Zernio Ads setup.',
+      details: error.payload || null,
+    }, { status })
+  }
+}
+
+async function handlePostBoosts(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'GET, POST, OPTIONS' } })
+  }
+
+  if (!['GET', 'POST'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET, POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  if (request.method === 'GET') {
+    const url = new URL(request.url)
+    const postId = String(url.searchParams.get('postId') || '').trim()
+    try {
+      const boosts = await loadBoostRows(auth.envConfig, { postId })
+      return json({ success: true, boosts })
+    } catch (error) {
+      return json({ error: error.message || 'Could not load boosts.' }, { status: 502 })
+    }
+  }
+
+  if (auth.user.role !== 'admin') {
+    return json({ error: 'Only client admins can boost posts.' }, { status: 403 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const postId = String(body.postId || '').trim()
+  const platform = normalizePlatform(body.platform)
+  const goal = normalizeBoostGoal(body.goal)
+  const budgetAmount = parseBoostAmount(body.budgetAmount)
+  const budgetType = normalizeBudgetType(body.budgetType)
+  const adAccountId = String(body.adAccountId || '').trim()
+  const currency = String(body.currency || 'USD').trim().toUpperCase().slice(0, 3) || 'USD'
+  const name = String(body.name || 'MAP Boost').trim().slice(0, 255)
+  const startsAt = String(body.startsAt || '').trim() || null
+  const endsAt = String(body.endsAt || '').trim() || null
+  const targeting = normalizeBoostTargeting(body.targeting)
+
+  if (!postId) return json({ error: 'Choose a published post to boost.' }, { status: 400 })
+  if (!platform) return json({ error: 'Choose a supported platform to boost.' }, { status: 400 })
+  if (!goal) return json({ error: 'Choose a supported boost goal.' }, { status: 400 })
+  if (!budgetAmount) return json({ error: 'Enter a boost budget greater than $0.' }, { status: 400 })
+
+  try {
+    const post = await loadPostForBoost(auth.envConfig, postId)
+    if (!post) return json({ error: 'Published post was not found for this portal.' }, { status: 404 })
+    if (post.status !== 'published') {
+      return json({ error: 'Boost is available after a post is published.' }, { status: 409 })
+    }
+    const zernioPostId = getPostZernioPostId(post)
+    if (!zernioPostId) {
+      return json({ error: 'This post is missing its Zernio post ID and cannot be boosted yet.' }, { status: 409 })
+    }
+    if (!Array.isArray(post.platforms) || !post.platforms.includes(platform)) {
+      return json({ error: `This post was not published to ${platform}.` }, { status: 409 })
+    }
+
+    const connection = await loadSocialConnectionForBoost(auth.envConfig, platform)
+    if (!connection?.zernio_account_id) {
+      return json({ error: `Connect ${platform} in Settings before boosting.` }, { status: 409 })
+    }
+
+    const previousBoosts = await loadBoostRows(auth.envConfig, {})
+    const resolvedAdAccountId = normalizeBoostAdAccountId(platform, pickBoostAdAccountId(
+      adAccountId,
+      previousBoosts.filter((boost) => normalizePlatform(boost.platform) === platform),
+    ))
+    const adAccountError = validateBoostAdAccountId(platform, resolvedAdAccountId)
+    if (adAccountError) return json({ error: adAccountError }, { status: 400 })
+    const targetingError = validateBoostTargeting(platform, targeting)
+    if (targetingError) return json({ error: targetingError }, { status: 400 })
+
+    const zernioBody = {
+      postId: zernioPostId,
+      accountId: connection.zernio_account_id,
+      ...(getConnectionZernioProfileId(connection, auth.envConfig) ? { profileId: getConnectionZernioProfileId(connection, auth.envConfig) } : {}),
+      adAccountId: resolvedAdAccountId,
+      name,
+      goal,
+      budget: {
+        amount: budgetAmount,
+        type: budgetType,
+        currency,
+      },
+      ...(startsAt || endsAt ? { schedule: { ...(startsAt ? { startDate: startsAt } : {}), ...(endsAt ? { endDate: endsAt } : {}) } } : {}),
+      ...(Object.keys(targeting).length ? { targeting } : {}),
+    }
+
+    const zernioResult = await zernioFetch(env, '/ads/boost', {
+      method: 'POST',
+      body: JSON.stringify(zernioBody),
+    })
+    const ad = zernioResult?.ad || zernioResult?.data?.ad || {}
+    const boost = await insertPostBoost(auth.envConfig, {
+      client_id: auth.envConfig.clientId,
+      post_id: post.id,
+      social_connection_id: connection.id || null,
+      platform,
+      zernio_profile_id: getConnectionZernioProfileId(connection, auth.envConfig) || null,
+      zernio_account_id: connection.zernio_account_id,
+      ad_account_id: resolvedAdAccountId,
+      name,
+      goal,
+      budget_amount: budgetAmount,
+      budget_type: budgetType,
+      currency,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      targeting_json: targeting,
+      zernio_ad_id: ad._id || ad.id || null,
+      platform_ad_id: ad.platformAdId || null,
+      platform_campaign_id: ad.platformCampaignId || null,
+      platform_ad_set_id: ad.platformAdSetId || null,
+      status: normalizeBoostStatus(ad.status),
+      zernio_response_json: zernioResult || {},
+      created_by: auth.user.id,
+    })
+
+    return json({
+      success: true,
+      boost,
+      message: zernioResult?.message || 'Boost launched.',
+    }, { status: 201 })
+  } catch (error) {
+    return json({
+      error: error.message || 'Could not launch boost.',
+      details: error.payload || null,
+    }, { status: error.status || 502 })
+  }
+}
+
+function isMissingRemoteScheduledDelete(payload, raw) {
+  const message = [
+    payload?.message,
+    payload?.error,
+    raw,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  return message.includes('404') && message.includes('post not found')
+}
+
+async function loadTenantPostForDelete(envConfig, postId) {
+  const filters = new URLSearchParams({
+    select: 'id,client_id,status,n8n_execution_id,zernio_post_id,zernio_profile_id',
+    id: `eq.${postId}`,
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/posts?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function deleteRemoteCalendarPost(env, envConfig, post) {
+  const deletePayload = buildRemoteCalendarPostDeletePayload(post, envConfig)
+  if (!deletePayload) {
+    const error = new Error('This calendar item is missing its provider post ID, so MAP cannot safely remove it from the connected social channels.')
+    error.status = 409
+    error.payload = { reason: 'missing_provider_post_id' }
+    throw error
+  }
+
+  const response = await fetch(`${getN8nBaseUrl(env)}/webhook/social-publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(deletePayload),
+  })
+  const raw = await response.text()
+  let payload = {}
+  try {
+    payload = raw ? JSON.parse(raw) : {}
+  } catch {
+    payload = {}
+  }
+
+  if (!response.ok || payload?.success === false) {
+    if (isMissingRemoteScheduledDelete(payload, raw)) {
+      return {
+        attempted: true,
+        ignoredMissingRemotePost: true,
+        message: payload?.message || payload?.error || raw || 'Remote post was already missing.',
+      }
+    }
+    const error = new Error(payload?.message || payload?.error || raw || 'Could not delete this post in the publisher workflow.')
+    error.status = response.status || 502
+    error.payload = payload
+    throw error
+  }
+
+  return {
+    attempted: true,
+    success: true,
+    message: payload?.message || 'Remote post deleted.',
+  }
+}
+
+async function deleteTenantPost(envConfig, postId) {
+  const filters = new URLSearchParams({
+    select: 'id',
+    id: `eq.${postId}`,
+    client_id: `eq.${envConfig.clientId}`,
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/posts?${filters.toString()}`, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=representation' },
+  })
+  const rows = await response.json().catch(() => [])
+  return Array.isArray(rows) ? rows : []
+}
+
+async function handleScheduledPostDelete(request, env, postId) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'POST, DELETE, OPTIONS' } })
+  }
+
+  if (!['POST', 'DELETE'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST, DELETE' } })
+  }
+
+  if (!isUuidLike(postId)) {
+    return json({ error: 'Invalid post id.' }, { status: 400 })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  if (auth.user.role !== 'admin') {
+    return json({ error: 'Only client admins can delete calendar posts.' }, { status: 403 })
+  }
+
+  try {
+    const post = await loadTenantPostForDelete(auth.envConfig, postId)
+    if (!post) {
+      return json({ error: 'Calendar post was not found for this portal.' }, { status: 404 })
+    }
+    if (!canDeleteCalendarPost(post)) {
+      return json({ error: 'Only scheduled or posted calendar items can be deleted here.' }, { status: 409 })
+    }
+
+    let remoteDelete = null
+    try {
+      remoteDelete = await deleteRemoteCalendarPost(env, auth.envConfig, post)
+    } catch (remoteError) {
+      if (!shouldRemoveLocalCalendarPostAfterRemoteDeleteError(post)) {
+        throw remoteError
+      }
+      remoteDelete = {
+        attempted: true,
+        success: false,
+        localCleanupAfterRemoteError: true,
+        message: remoteError.message || 'Remote post delete could not be confirmed.',
+        details: remoteError.payload || null,
+      }
+    }
+
+    const deletedRows = await deleteTenantPost(auth.envConfig, post.id)
+    if (!deletedRows.length) {
+      return json({ error: 'The calendar post was not deleted. Please refresh and try again.' }, { status: 409 })
+    }
+
+    return json({
+      success: true,
+      deletedPostId: post.id,
+      remoteDelete,
+    })
+  } catch (error) {
+    return json({
+      error: error.message || 'Could not delete this calendar post.',
+      details: error.payload || null,
+    }, { status: error.status || 502 })
+  }
+}
+
+function parsePositiveInteger(value) {
+  const parsed = Number.parseInt(String(value || ''), 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function trimText(value, maxLength = 500) {
+  return String(value || '').trim().slice(0, maxLength)
+}
+
+function normalizeHexColor(value, fallback = '#C9A84C') {
+  const color = String(value || '').trim()
+  return /^#[0-9A-Fa-f]{6}$/.test(color) ? color : fallback
+}
+
+function normalizeJsonArray(value, fallback = []) {
+  return Array.isArray(value) ? value : fallback
+}
+
+function normalizeWebsiteChatPreChatFields(fields) {
+  const requested = normalizeJsonArray(fields, [])
+  const findRequested = (key) => requested.find((field) => String(field?.key || field?.name || '').toLowerCase() === key)
+  const nameField = findRequested('name') || findRequested('fullname')
+  const emailField = findRequested('email') || findRequested('emailaddress')
+  const phoneField = findRequested('phone') || findRequested('phonenumber')
+
+  return [
+    {
+      name: 'fullName',
+      type: 'text',
+      label: trimText(nameField?.label, 60) || 'Name',
+      enabled: nameField?.enabled !== false,
+      required: nameField?.required !== false,
+      field_type: 'standard',
+    },
+    {
+      name: 'emailAddress',
+      type: 'email',
+      label: trimText(emailField?.label, 60) || 'Email',
+      enabled: emailField?.enabled !== false,
+      required: emailField?.required !== false,
+      field_type: 'standard',
+    },
+    {
+      name: 'phoneNumber',
+      type: 'text',
+      label: trimText(phoneField?.label, 60) || 'Phone',
+      enabled: phoneField ? phoneField.enabled !== false : true,
+      required: Boolean(phoneField?.required),
+      field_type: 'standard',
+    },
+  ]
+}
+
+function buildWebsiteChatPreChatFormOptions(settings = {}, patch = {}) {
+  return {
+    pre_chat_message: trimText(
+      patch.pre_chat_message ?? settings.pre_chat_message,
+      300,
+    ) || 'Tell us how to reach you before we start.',
+    pre_chat_fields: normalizeWebsiteChatPreChatFields(
+      patch.pre_chat_fields ?? settings.pre_chat_fields,
+    ),
+  }
+}
+
+function buildWebsiteChatSnippet(settings) {
+  const baseUrl = String(settings?.chatwoot_base_url || DEFAULT_CHATWOOT_BASE_URL).replace(/\/$/, '')
+  const websiteToken = String(settings?.chatwoot_website_token || '').trim()
+  if (!websiteToken) return ''
+
+  return [
+    '<script>',
+    '  (function(d,t) {',
+    `    var BASE_URL="${baseUrl.replace(/"/g, '&quot;')}";`,
+    '    var g=d.createElement(t),s=d.getElementsByTagName(t)[0];',
+    '    g.src=BASE_URL+"/packs/js/sdk.js";',
+    '    g.defer=true;',
+    '    g.async=true;',
+    '    s.parentNode.insertBefore(g,s);',
+    '    g.onload=function(){',
+    `      window.chatwootSDK.run({ websiteToken: "${websiteToken.replace(/"/g, '&quot;')}", baseUrl: BASE_URL });`,
+    '    };',
+    '  })(document,"script");',
+    '</script>',
+  ].join('\n')
+}
+
+async function loadWebsiteChatSettings(envConfig) {
+  const params = new URLSearchParams({
+    select: '*',
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/client_website_chat_settings?${params.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function loadPortalClientBySlug(envConfig, slug) {
+  const normalizedSlug = String(slug || '').trim().toLowerCase()
+  if (!normalizedSlug) return null
+
+  const params = new URLSearchParams({
+    select: 'id,slug,business_name,website_url,portal_domain',
+    slug: `eq.${normalizedSlug}`,
+    limit: '1',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/clients?${params.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function getPortalWebhookConfig(request, env) {
+  const envConfig = getPortalAuthConfig(env)
+  if (envConfig.clientId) return envConfig
+
+  const requestedTenantSlug = String(
+    request.headers.get('x-map-tenant-slug')
+    || extractTenantSlugFromPath(new URL(request.url).pathname, env)
+    || '',
+  ).trim().toLowerCase()
+  const client = await loadPortalClientBySlug(envConfig, requestedTenantSlug)
+  if (!client?.id) {
+    throw new Error('Could not resolve tenant for Chatwoot webhook.')
+  }
+
+  return {
+    ...envConfig,
+    clientId: client.id,
+    clientSlug: client.slug,
+  }
+}
+
+async function loadPortalClient(envConfig) {
+  const params = new URLSearchParams({
+    select: 'id,slug,business_name,website_url,portal_domain',
+    id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/clients?${params.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function updateWebsiteChatSettings(envConfig, body) {
+  const response = await supabaseRest(
+    envConfig,
+    `/rest/v1/client_website_chat_settings?client_id=eq.${encodeURIComponent(envConfig.clientId)}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify(body),
+    },
+  )
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+function websiteChatResponse(settings, extras = {}) {
+  return {
+    configured: Boolean(settings?.chatwoot_website_token),
+    settings,
+    installSnippet: buildWebsiteChatSnippet(settings),
+    ...extras,
+  }
+}
+
+function sanitizeWebsiteChatSettingsPatch(body) {
+  const patch = {}
+  if ('widget_color' in body) patch.widget_color = normalizeHexColor(body.widget_color)
+  if ('welcome_heading' in body) patch.welcome_heading = trimText(body.welcome_heading, 80) || 'Hi there'
+  if ('welcome_tagline' in body) patch.welcome_tagline = trimText(body.welcome_tagline, 180) || 'Send us a message and we will get back to you soon.'
+  if ('greeting_enabled' in body) patch.greeting_enabled = Boolean(body.greeting_enabled)
+  if ('greeting_message' in body) patch.greeting_message = trimText(body.greeting_message, 500) || 'Hi! How can we help?'
+  if ('pre_chat_form_enabled' in body) patch.pre_chat_form_enabled = Boolean(body.pre_chat_form_enabled)
+  if ('pre_chat_message' in body) patch.pre_chat_message = trimText(body.pre_chat_message, 300) || 'Tell us how to reach you before we start.'
+  if ('pre_chat_fields' in body) patch.pre_chat_fields = normalizeJsonArray(body.pre_chat_fields, [])
+  if ('saved_replies' in body) {
+    patch.saved_replies = normalizeJsonArray(body.saved_replies, [])
+      .slice(0, 12)
+      .map((reply) => ({
+        title: trimText(reply?.title, 60) || 'Reply',
+        message: trimText(reply?.message, 1200),
+      }))
+      .filter((reply) => reply.message)
+  }
+  if ('automation_rules' in body) {
+    patch.automation_rules = normalizeJsonArray(body.automation_rules, [])
+      .slice(0, 8)
+      .map((rule) => ({
+        id: trimText(rule?.id, 50),
+        enabled: Boolean(rule?.enabled),
+        label: trimText(rule?.label, 80),
+        message: trimText(rule?.message, 1200),
+      }))
+      .filter((rule) => rule.id && rule.label)
+  }
+  return patch
+}
+
+async function syncWebsiteChatToChatwoot(env, settings, patch) {
+  const inboxId = parsePositiveInteger(settings?.chatwoot_website_inbox_id)
+  if (!inboxId) return { synced: false, reason: 'Website Chat inbox id is not configured.' }
+
+  const chatwootPatch = {}
+  if ('widget_color' in patch) chatwootPatch.widget_color = patch.widget_color
+  if ('greeting_enabled' in patch) chatwootPatch.greeting_enabled = patch.greeting_enabled
+  if ('greeting_message' in patch) chatwootPatch.greeting_message = patch.greeting_message
+  if ('pre_chat_form_enabled' in patch || 'pre_chat_message' in patch || 'pre_chat_fields' in patch) {
+    chatwootPatch.enable_email_collect = true
+    chatwootPatch.channel = {
+      pre_chat_form_enabled: 'pre_chat_form_enabled' in patch
+        ? patch.pre_chat_form_enabled
+        : Boolean(settings?.pre_chat_form_enabled),
+      pre_chat_form_options: buildWebsiteChatPreChatFormOptions(settings, patch),
+    }
+  }
+
+  if (!Object.keys(chatwootPatch).length) {
+    return { synced: false, reason: 'No Chatwoot widget fields changed.' }
+  }
+
+  await chatwootFetch(env, `/inboxes/${inboxId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(chatwootPatch),
+  })
+
+  return { synced: true }
+}
+
+async function handleWebsiteChatSettings(request, env) {
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  if (request.method === 'GET') {
+    const settings = await loadWebsiteChatSettings(auth.envConfig)
+    return json(websiteChatResponse(settings))
+  }
+
+  if (request.method !== 'PATCH') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET, PATCH' } })
+  }
+
+  if (auth.user.role !== 'admin') {
+    return json({ error: 'Only client admins can change website chat settings.' }, { status: 403 })
+  }
+
+  const currentSettings = await loadWebsiteChatSettings(auth.envConfig)
+  if (!currentSettings) {
+    return json({ error: 'Website chat settings are not configured for this portal yet.' }, { status: 404 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const patch = sanitizeWebsiteChatSettingsPatch(body)
+  if (!Object.keys(patch).length) {
+    return json(websiteChatResponse(currentSettings, { sync: { synced: false, reason: 'No changes provided.' } }))
+  }
+
+  let sync = { synced: false }
+  try {
+    sync = await syncWebsiteChatToChatwoot(env, currentSettings, patch)
+  } catch (error) {
+    sync = { synced: false, warning: error.message || 'Could not sync widget changes to Chatwoot.' }
+  }
+
+  const updated = await updateWebsiteChatSettings(auth.envConfig, patch)
+  return json(websiteChatResponse(updated, { sync }))
+}
+
+async function handleWebsiteChatInstallCheck(request, env) {
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const [settings, client] = await Promise.all([
+    loadWebsiteChatSettings(auth.envConfig),
+    loadPortalClient(auth.envConfig),
+  ])
+
+  if (!settings?.chatwoot_website_token) {
+    return json({ error: 'Website chat token is not configured yet.' }, { status: 404 })
+  }
+
+  const websiteUrl = String(client?.website_url || '').trim()
+  if (!websiteUrl) {
+    const updated = await updateWebsiteChatSettings(auth.envConfig, {
+      install_status: 'needs_help',
+      last_checked_at: new Date().toISOString(),
+      last_check_error: 'No website URL is saved for this client.',
+    })
+    return json(websiteChatResponse(updated, { detected: false }))
+  }
+
+  try {
+    const response = await fetch(websiteUrl, {
+      redirect: 'follow',
+      headers: {
+        'user-agent': 'MAP Website Chat Install Checker/1.0',
+      },
+    })
+    const html = await response.text()
+    const hasToken = html.includes(settings.chatwoot_website_token)
+    const hasChatwoot = html.includes(settings.chatwoot_base_url) || html.includes('chatwootSDK.run')
+    const detected = response.ok && hasToken && hasChatwoot
+    const now = new Date().toISOString()
+    const updated = await updateWebsiteChatSettings(auth.envConfig, {
+      install_status: detected ? 'detected' : 'not_detected',
+      last_checked_at: now,
+      last_detected_at: detected ? now : settings.last_detected_at,
+      last_check_error: detected ? null : 'The widget script was not found on the saved website homepage.',
+    })
+
+    return json(websiteChatResponse(updated, { detected, checkedUrl: websiteUrl }))
+  } catch (error) {
+    const updated = await updateWebsiteChatSettings(auth.envConfig, {
+      install_status: 'needs_help',
+      last_checked_at: new Date().toISOString(),
+      last_check_error: error.message || 'Could not fetch the saved website homepage.',
+    })
+    return json(websiteChatResponse(updated, { detected: false, checkedUrl: websiteUrl }))
+  }
+}
+
+async function handleChatwootMobileSetupEmail(request, env) {
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const email = String(auth.user?.email || '').trim().toLowerCase()
+  if (!email) {
+    return json({ error: 'Your portal user does not have an email address.' }, { status: 400 })
+  }
+
+  const baseUrl = String(env.CHATWOOT_BASE_URL || DEFAULT_CHATWOOT_BASE_URL).replace(/\/$/, '')
+  const response = await fetch(`${baseUrl}/auth/password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email,
+      redirect_url: `${baseUrl}/app/login`,
+    }),
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    return json({
+      error: sanitizeChatwootError(payload?.message || payload?.error || 'Could not send the mobile inbox setup email.'),
+    }, { status: response.status })
+  }
+
+  return json({
+    success: true,
+    email,
+    message: 'Mobile inbox setup email sent.',
+  })
+}
+
+async function handleContentPartnerConversation(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: { allow: 'POST, OPTIONS' },
+    })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  try {
+    const { conversation, contact, inbox, assignment } = await findOrCreateChatwootContentPartnerConversation(env, auth.envConfig, auth.user)
+    const conversationId = conversation?.id || conversation?.payload?.id
+    if (!conversationId) throw new Error('MAP Content Partner conversation could not be opened.')
+
+    return json({
+      success: true,
+      conversationId,
+      inboxId: inbox?.id || null,
+      contactId: contact?.id || null,
+      assignedToPortalUser: Boolean(assignment?.assigned || assignment?.alreadyAssigned),
+      title: CONTENT_PARTNER_CONTACT_NAME,
+      reviewPath: '/post',
+    })
+  } catch (error) {
+    return json({
+      error: sanitizeChatwootError(error?.message || 'Could not open MAP Content Partner.'),
+    }, { status: error?.status || 502 })
+  }
+}
+
+function classifyPortalPartnerIntent(message) {
+  const text = String(message || '').toLowerCase()
+  const hasAny = (terms) => terms.some((term) => text.includes(term))
+
+  if (hasAny(['social setup', 'social media accounts', 'set up social', 'set up my social', 'setup social', 'connect social', 'connect facebook', 'connect instagram', 'connect tiktok', 'facebook business', 'facebook page', 'meta business', 'personal account', 'business page', 'no social media', 'new social media'])) {
+    return 'social_setup'
+  }
+
+  if (
+    hasAny(['content partner', 'make a post for me', 'make a social post', 'make me a post', 'write a post for me', 'draft for me', 'map to make', 'map make'])
+    || (hasAny(['content request', 'request content']) && !hasAny(['how do i', 'help me create', 'help me post']))
+  ) {
+    return 'content_request'
+  }
+
+  if (hasAny(['create a post', 'create post', 'new post', 'help me post', 'help me create', 'publisher', 'schedule a post', 'schedule post', 'publish a post', 'post myself', 'write my post'])) {
+    return 'create_post'
+  }
+
+  if (hasAny(['caption', 'content', 'draft', 'social', 'facebook', 'instagram', 'tiktok', 'linkedin'])) {
+    return 'content_request'
+  }
+
+  if (hasAny(['website chat', 'chat widget', 'widget', 'install chat', 'chatwoot', 'mobile inbox', 'setup inbox'])) {
+    return 'website_chat'
+  }
+
+  if (hasAny(['training', 'train your partner', 'partner profile', 'moved', 'location', 'service area', 'audience', 'offer', 'avoid'])) {
+    return 'partner_training'
+  }
+
+  if (hasAny(['help', 'stuck', 'broken', 'error', 'issue', 'support', 'not working', 'problem'])) {
+    return 'support'
+  }
+
+  return 'general'
+}
+
+function buildPortalPartnerReply(intent, { message, currentPath, readOnly, clientName }) {
+  const safePath = trimText(currentPath || '/', 140)
+  const safeClientName = trimText(clientName || 'this portal', 100)
+  const contentText = trimText(message || '', 700)
+
+  if (intent === 'support') {
+    return {
+      reply: `I can hand this to support with the workspace and route attached. Current route: ${safePath}.`,
+      actions: [
+        { type: 'open_inbox' },
+      ],
+    }
+  }
+
+  if (intent === 'partner_training') {
+    return {
+      reply: readOnly
+        ? 'I can review Partner training, but this portal is read-only right now so I cannot save updates.'
+        : `I can help refresh the Partner profile for ${safeClientName}. I will show the editable fields first and save only after confirmation.`,
+      actions: readOnly
+        ? [{ type: 'open_inbox' }]
+        : [{ type: 'open_partner_training' }],
+    }
+  }
+
+  if (intent === 'website_chat') {
+    return {
+      reply: readOnly
+        ? 'I can explain Website Chat setup, but this portal is read-only right now so install checks and setting updates are blocked.'
+        : 'I can check whether Website Chat is installed, copy the install script, or open the full Website Chat settings.',
+      actions: readOnly
+        ? [{ type: 'open_settings_chat' }]
+        : [
+            { type: 'check_website_chat' },
+            { type: 'copy_website_chat_script' },
+            { type: 'open_settings_chat' },
+          ],
+    }
+  }
+
+  if (intent === 'create_post') {
+    return {
+      reply: readOnly
+        ? 'I can explain how Publisher works, but this portal is read-only right now so posting and scheduling actions are blocked.'
+        : 'I can guide you to Publisher. Start with the post idea, choose connected platforms, add media if needed, then preview before scheduling or publishing. I will not publish anything for you.',
+      actions: [
+        { type: 'open_create_post' },
+        ...(readOnly ? [] : [{ type: 'open_content_partner' }]),
+      ],
+    }
+  }
+
+  if (intent === 'social_setup') {
+    return {
+      reply: readOnly
+        ? 'I can explain social setup, but this portal is read-only right now so I cannot launch account connections.'
+        : 'I can walk through Facebook, Instagram, and TikTok setup. Key Facebook note: Meta starts from a personal Facebook login, then you create or manage a separate public business Page for the company.',
+      actions: [
+        { type: 'open_social_setup' },
+        { type: 'open_settings_chat' },
+      ],
+    }
+  }
+
+  if (intent === 'content_request') {
+    return {
+      reply: readOnly
+        ? 'I can help shape the content request, but this portal is read-only right now so I cannot create a draft handoff.'
+        : contentText
+          ? 'I can hand this to Content Partner in Inbox. The request will stay draft-only for review.'
+          : 'Tell me the post idea, then I can hand it to Content Partner in Inbox for draft creation.',
+      actions: readOnly
+        ? [{ type: 'copy_content_request' }]
+        : [
+            { type: 'open_content_partner' },
+            { type: 'copy_content_request' },
+          ],
+    }
+  }
+
+  return {
+    reply: 'I can help with support, creating posts, Partner training, Website Chat setup, or content requests. Pick a guided action and I will keep it safe.',
+    actions: [
+      { type: 'open_inbox' },
+      { type: 'open_create_post' },
+      ...(readOnly ? [] : [{ type: 'open_partner_training' }]),
+      { type: 'open_settings_chat' },
+      ...(readOnly ? [] : [{ type: 'open_content_partner' }]),
+    ],
+  }
+}
+
+async function handlePortalPartnerMessage(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: { allow: 'POST, OPTIONS' },
+    })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const body = await request.json().catch(() => ({}))
+  const message = trimText(body?.message || '', 900)
+  const currentPath = trimText(body?.currentPath || '', 180)
+  const readOnly = Boolean(body?.readOnly)
+  const intent = classifyPortalPartnerIntent(message)
+  const clientName = firstString(auth.user?.clients?.business_name, auth.user?.clients?.slug)
+  const response = buildPortalPartnerReply(intent, {
+    message,
+    currentPath,
+    readOnly,
+    clientName,
+  })
+
+  return json({
+    success: true,
+    intent,
+    clientId: auth.envConfig.clientId,
+    clientSlug: auth.envConfig.clientSlug || null,
+    ...response,
+  })
+}
+
+async function handleChatwootProxy(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: { allow: 'GET, POST, OPTIONS' },
+    })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const route = url.pathname.replace(/^\/api\/chatwoot\/?/, '')
+
+  try {
+    const chatwootConfig = await getChatwootConfigForClient(env, auth.envConfig)
+
+    if (route === 'health') {
+      getChatwootConfig(chatwootConfig)
+      return json({ configured: true })
+    }
+
+    if (route === 'inboxes' && request.method === 'GET') {
+      const payload = await chatwootFetch(chatwootConfig, '/inboxes')
+      return json(payload)
+    }
+
+    if (route === 'agents' && request.method === 'GET') {
+      const payload = await chatwootFetch(chatwootConfig, '/agents')
+      return json(payload)
+    }
+
+    if (route === 'conversations' && request.method === 'GET') {
+      const params = new URLSearchParams()
+      params.set('status', url.searchParams.get('status') || 'open')
+      params.set('assignee_type', url.searchParams.get('assignee_type') || 'all')
+      params.set('page', String(parsePositiveInteger(url.searchParams.get('page')) || 1))
+
+      const q = String(url.searchParams.get('q') || '').trim()
+      const inboxId = parsePositiveInteger(url.searchParams.get('inbox_id'))
+      if (q) params.set('q', q.slice(0, 120))
+      if (inboxId) params.set('inbox_id', String(inboxId))
+
+      const payload = await chatwootFetch(chatwootConfig, `/conversations?${params.toString()}`)
+      return json(payload)
+    }
+
+    const messagesMatch = /^conversations\/(\d+)\/messages$/.exec(route)
+    if (messagesMatch && request.method === 'GET') {
+      const conversationId = messagesMatch[1]
+      const payload = await chatwootFetch(chatwootConfig, `/conversations/${conversationId}/messages`)
+      return json(payload)
+    }
+
+    if (messagesMatch && request.method === 'POST') {
+      const conversationId = messagesMatch[1]
+      const body = await request.json().catch(() => ({}))
+      const content = String(body.content || '').trim()
+      if (!content) {
+        return json({ error: 'Reply content is required.' }, { status: 400 })
+      }
+
+      const conversation = await chatwootFetch(chatwootConfig, `/conversations/${conversationId}`)
+      const shouldBridgeToZernio = isZernioBackedConversation(conversation) && !body.private
+      const shouldRunContentPartner = isContentPartnerConversation(conversation) && !body.private
+      let zernioResult = null
+
+      if (shouldRunContentPartner) {
+        await assignChatwootContentPartnerConversation(env, conversation, auth.user).catch((error) => {
+          console.warn('Content Partner conversation assignment skipped.', sanitizeChatwootError(error?.message || error))
+        })
+      }
+
+      if (shouldBridgeToZernio) {
+        zernioResult = await sendZernioConversationReply(env, conversation, content)
+      }
+
+      const payload = await chatwootFetch(chatwootConfig, `/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({
+          content: content.slice(0, 5000),
+          message_type: 'outgoing',
+          private: Boolean(body.private),
+          content_type: 'text',
+          source_id: zernioResult?.messageId ? `zernio:${zernioResult.messageId}` : undefined,
+          content_attributes: zernioResult ? {
+            zernio_bridge_sent: true,
+            zernio_message_id: zernioResult.messageId || null,
+          } : {},
+        }),
+      })
+      if (shouldRunContentPartner) {
+        const createdMessage = extractChatwootRecord(payload) || {}
+        const contentPartnerMessage = {
+          ...createdMessage,
+          id: firstString(createdMessage.id, createdMessage.source_id),
+          conversation_id: firstString(createdMessage.conversation_id, conversationId),
+          inbox_id: createdMessage.inbox_id || conversation?.inbox_id || null,
+          content: firstString(createdMessage.content, content),
+          message_type: 'outgoing',
+          private: false,
+          sender: createdMessage.sender || {
+            id: auth.user?.id || null,
+            name: auth.user?.email || 'Portal user',
+          },
+        }
+        const contentPartnerResult = await processContentPartnerMessage(
+          env,
+          auth.envConfig,
+          { message: contentPartnerMessage, conversation },
+          contentPartnerMessage,
+          conversation,
+          auth.bearerToken,
+        )
+        const responsePayload = payload && typeof payload === 'object' && !Array.isArray(payload)
+          ? { ...payload }
+          : { payload }
+        responsePayload.contentPartner = {
+          deduped: Boolean(contentPartnerResult?.deduped),
+          requestId: contentPartnerResult?.requestId || null,
+          draftId: contentPartnerResult?.draftId || null,
+        }
+        return json(responsePayload)
+      }
+      return json(payload)
+    }
+
+    const statusMatch = /^conversations\/(\d+)\/status$/.exec(route)
+    if (statusMatch && request.method === 'POST') {
+      const conversationId = statusMatch[1]
+      const body = await request.json().catch(() => ({}))
+      const status = String(body.status || '').trim().toLowerCase()
+      const allowedStatuses = new Set(['open', 'resolved', 'pending'])
+      if (!allowedStatuses.has(status)) {
+        return json({ error: 'Status must be open, pending, or resolved.' }, { status: 400 })
+      }
+
+      const payload = await chatwootFetch(chatwootConfig, `/conversations/${conversationId}/toggle_status`, {
+        method: 'POST',
+        body: JSON.stringify({ status }),
+      })
+      return json(payload)
+    }
+
+    return json({ error: 'Chatwoot route not found.' }, { status: 404 })
+  } catch (error) {
+    const status = error?.status || (String(error?.message || '').includes('not configured') ? 503 : 502)
+    return json({ error: sanitizeChatwootError(error?.message) }, { status })
+  }
+}
+
+function getChatwootSocialInboxId(env) {
+  const configured = getChatwootConfig(env).socialInboxId
+  if (configured) return configured
+  return null
+}
+
+async function resolveChatwootSocialInbox(env) {
+  const configuredId = getChatwootSocialInboxId(env)
+  if (configuredId) return { id: configuredId }
+
+  const inboxes = await chatwootFetch(env, '/inboxes')
+  const payload = Array.isArray(inboxes?.payload) ? inboxes.payload : (Array.isArray(inboxes) ? inboxes : [])
+  const socialInbox = payload.find((inbox) => (
+    String(inbox?.name || '').trim().toLowerCase() === DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME.toLowerCase()
+    && String(inbox?.channel_type || '').toLowerCase().includes('api')
+  ))
+
+  if (!socialInbox?.id) {
+    throw new Error('Chatwoot Social Inbox API channel is not configured.')
+  }
+
+  return socialInbox
+}
+
+function getConversationCustomAttributes(conversation) {
+  return conversation?.custom_attributes || conversation?.payload?.custom_attributes || {}
+}
+
+function isZernioBackedConversation(conversation) {
+  const attrs = getConversationCustomAttributes(conversation)
+  return Boolean(attrs?.zernio_conversation_id && attrs?.zernio_account_id)
+}
+
+function buildContentPartnerIdentifier(clientId) {
+  return `map-content-partner:${clientId}`.slice(0, 255)
+}
+
+function isContentPartnerConversation(conversation) {
+  const attrs = getConversationCustomAttributes(conversation)
+  const additional = conversation?.additional_attributes || conversation?.payload?.additional_attributes || {}
+  const senderIdentifier = firstString(
+    conversation?.meta?.sender?.identifier,
+    conversation?.contact?.identifier,
+    conversation?.contact_inbox?.source_id,
+  )
+  return attrs?.source === 'map_content_partner'
+    || attrs?.map_content_partner === true
+    || additional?.source === 'map_content_partner'
+    || senderIdentifier.startsWith('map-content-partner:')
+}
+
+function isContentPartnerAutomationMessage(message) {
+  const attrs = message?.content_attributes || {}
+  const sourceId = firstString(message?.source_id, message?.echo_id)
+
+  return attrs?.map_content_partner_reply === true
+    || attrs?.map_content_partner_system === true
+    || sourceId.startsWith('map-content-partner:reply:')
+    || sourceId.startsWith('map-content-partner:greeting:')
+}
+
+function isContentPartnerGeneratedReplyContent(content) {
+  const text = firstString(content)
+  return text.startsWith('Here ya go!')
+    || text.startsWith('Draft ready.')
+    || text.startsWith('What do you want to work on?')
+    || text.startsWith('Tell me what the post should be about')
+    || text.startsWith('I can help fill an open spot.')
+    || text.startsWith('Drafts waiting:')
+    || text.startsWith('Upcoming scheduled posts:')
+    || text.startsWith('No drafts are waiting right now.')
+    || text.startsWith('No upcoming posts are scheduled right now.')
+}
+
+function shouldProcessContentPartnerWebhookMessage(message, conversation) {
+  if (!isContentPartnerConversation(conversation)) return false
+  if (message?.private) return false
+  const messageType = firstString(message?.message_type).toLowerCase()
+  if (messageType === 'incoming' || Number(message?.message_type) === 0) return false
+  const senderIdentifier = firstString(message?.sender?.identifier, message?.contact?.identifier)
+  if (senderIdentifier.startsWith('map-content-partner:')) return false
+  if (isContentPartnerAutomationMessage(message)) return false
+
+  const content = firstString(message?.content)
+  if (isContentPartnerGeneratedReplyContent(content)) return false
+
+  const hasContent = Boolean(content)
+  const hasAttachments = normalizeChatwootMessageAttachments({}, message).length > 0
+  return hasContent || hasAttachments
+}
+
+async function ensureChatwootContactInbox(env, contact, inboxId, sourceId) {
+  if (!contact?.id) return contact
+  if (getContactInboxSourceId(contact, inboxId)) return contact
+
+  try {
+    await chatwootFetch(env, `/contacts/${contact.id}/contact_inboxes`, {
+      method: 'POST',
+      body: JSON.stringify({
+        inbox_id: inboxId,
+        source_id: sourceId,
+      }),
+    })
+  } catch (error) {
+    if (error?.status !== 422 && error?.status !== 409) throw error
+  }
+
+  return findChatwootContactByIdentifier(env, sourceId)
+}
+
+async function findOrCreateChatwootContentPartnerContact(env, inboxId, envConfig) {
+  const identifier = buildContentPartnerIdentifier(envConfig.clientId)
+  const existing = await findChatwootContactByIdentifier(env, identifier)
+  if (existing?.id) return ensureChatwootContactInbox(env, existing, inboxId, identifier)
+
+  const created = await chatwootFetch(env, '/contacts', {
+    method: 'POST',
+    body: JSON.stringify({
+      inbox_id: inboxId,
+      name: CONTENT_PARTNER_CONTACT_NAME,
+      identifier,
+      additional_attributes: {
+        source: 'map_content_partner',
+      },
+      custom_attributes: {
+        source: 'map_content_partner',
+        map_content_partner: true,
+        portal_client_id: envConfig.clientId,
+      },
+    }),
+  })
+
+  const contact = Array.isArray(created?.payload) ? created.payload[0] : created?.payload || created
+  if (contact?.id) return ensureChatwootContactInbox(env, contact, inboxId, identifier)
+
+  return findChatwootContactByIdentifier(env, identifier)
+}
+
+async function findChatwootContentPartnerConversation(env, contactId, inboxId, envConfig) {
+  const payload = await chatwootFetch(env, `/contacts/${contactId}/conversations`)
+  const conversations = Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
+  return conversations.find((conversation) => (
+    Number(conversation?.inbox_id) === Number(inboxId)
+    && isContentPartnerConversation(conversation)
+    && String(getConversationCustomAttributes(conversation)?.portal_client_id || '') === String(envConfig.clientId)
+    && String(conversation?.status || '').toLowerCase() !== 'resolved'
+  )) || conversations.find((conversation) => (
+    Number(conversation?.inbox_id) === Number(inboxId)
+    && isContentPartnerConversation(conversation)
+  )) || null
+}
+
+async function createChatwootContentPartnerConversation(env, contact, inboxId, envConfig) {
+  const sourceId = getContactInboxSourceId(contact, inboxId) || buildContentPartnerIdentifier(envConfig.clientId)
+  const conversation = await chatwootFetch(env, '/conversations', {
+    method: 'POST',
+    body: JSON.stringify({
+      source_id: sourceId,
+      inbox_id: inboxId,
+      contact_id: contact.id,
+      status: 'open',
+      custom_attributes: {
+        source: 'map_content_partner',
+        map_content_partner: true,
+        portal_client_id: envConfig.clientId,
+      },
+      additional_attributes: {
+        source: 'map_content_partner',
+      },
+    }),
+  })
+
+  const conversationId = conversation?.id || conversation?.payload?.id
+  if (conversationId) {
+    await chatwootFetch(env, `/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content: 'Send me a rough note, photos, or both. I will turn it into a Publisher draft for you to review before anything posts.',
+        message_type: 'incoming',
+        private: false,
+        content_type: 'text',
+        source_id: `map-content-partner:greeting:${envConfig.clientId}`,
+        content_attributes: {
+          map_content_partner_system: true,
+        },
+      }),
+    })
+  }
+
+  return conversation
+}
+
+function getChatwootAgentId(agent) {
+  return parsePositiveInteger(firstString(
+    agent?.id,
+    agent?.user_id,
+    agent?.user?.id,
+  ))
+}
+
+function getChatwootAgentEmail(agent) {
+  return normalizeEmail(firstString(
+    agent?.email,
+    agent?.user?.email,
+  ))
+}
+
+function getChatwootConversationId(conversation) {
+  return parsePositiveInteger(firstString(
+    conversation?.id,
+    conversation?.payload?.id,
+  ))
+}
+
+function getChatwootConversationStatus(conversation) {
+  return firstString(
+    conversation?.status,
+    conversation?.payload?.status,
+  ).toLowerCase()
+}
+
+function getChatwootConversationAssigneeId(conversation) {
+  return parsePositiveInteger(firstString(
+    conversation?.assignee_id,
+    conversation?.payload?.assignee_id,
+    conversation?.meta?.assignee?.id,
+    conversation?.payload?.meta?.assignee?.id,
+    conversation?.assignee?.id,
+    conversation?.payload?.assignee?.id,
+  ))
+}
+
+async function findChatwootAgentByEmail(env, email) {
+  const normalizedEmail = normalizeEmail(email)
+  if (!normalizedEmail) return null
+
+  const payload = await chatwootFetch(env, '/agents')
+  const agents = Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
+  return agents.find((agent) => getChatwootAgentEmail(agent) === normalizedEmail) || null
+}
+
+async function assignChatwootContentPartnerConversation(env, conversation, portalUser) {
+  const conversationId = getChatwootConversationId(conversation)
+  const portalEmail = normalizeEmail(portalUser?.email)
+  if (!conversationId || !portalEmail) {
+    return { assigned: false, alreadyAssigned: false, reason: 'missing_conversation_or_user' }
+  }
+
+  const agent = await findChatwootAgentByEmail(env, portalEmail)
+  const assigneeId = getChatwootAgentId(agent)
+  if (!assigneeId) {
+    return { assigned: false, alreadyAssigned: false, reason: 'chatwoot_agent_not_found' }
+  }
+
+  if (getChatwootConversationAssigneeId(conversation) === assigneeId) {
+    return { assigned: false, alreadyAssigned: true, assigneeId }
+  }
+
+  await chatwootFetch(env, `/conversations/${conversationId}/assignments`, {
+    method: 'POST',
+    body: JSON.stringify({ assignee_id: assigneeId }),
+  })
+
+  return { assigned: true, alreadyAssigned: false, assigneeId }
+}
+
+async function ensureChatwootConversationOpen(env, conversation) {
+  const conversationId = getChatwootConversationId(conversation)
+  if (!conversationId || getChatwootConversationStatus(conversation) === 'open') {
+    return { reopened: false }
+  }
+
+  await chatwootFetch(env, `/conversations/${conversationId}/toggle_status`, {
+    method: 'POST',
+    body: JSON.stringify({ status: 'open' }),
+  })
+
+  return { reopened: true, conversationId }
+}
+
+async function findOrCreateChatwootContentPartnerConversation(env, envConfig, portalUser = null) {
+  const chatwootConfig = await getChatwootConfigForClient(env, envConfig)
+  const inbox = await resolveChatwootSocialInbox(chatwootConfig)
+  const contact = await findOrCreateChatwootContentPartnerContact(chatwootConfig, inbox.id, envConfig)
+  if (!contact?.id) throw new Error('Could not create MAP Content Partner contact.')
+
+  const existing = await findChatwootContentPartnerConversation(chatwootConfig, contact.id, inbox.id, envConfig)
+  if (existing?.id) {
+    const reopen = await ensureChatwootConversationOpen(chatwootConfig, existing).catch((error) => ({
+      reopened: false,
+      reason: sanitizeChatwootError(error?.message || 'Could not reopen Content Partner conversation.'),
+    }))
+    const assignment = await assignChatwootContentPartnerConversation(chatwootConfig, existing, portalUser).catch((error) => ({
+      assigned: false,
+      alreadyAssigned: false,
+      reason: sanitizeChatwootError(error?.message || 'Could not assign Content Partner conversation.'),
+    }))
+    return { conversation: existing, contact, inbox, assignment, reopen }
+  }
+
+  const conversation = await createChatwootContentPartnerConversation(chatwootConfig, contact, inbox.id, envConfig)
+  const assignment = await assignChatwootContentPartnerConversation(chatwootConfig, conversation, portalUser).catch((error) => ({
+    assigned: false,
+    alreadyAssigned: false,
+    reason: sanitizeChatwootError(error?.message || 'Could not assign Content Partner conversation.'),
+  }))
+  return { conversation, contact, inbox, assignment }
+}
+
+async function contentPartnerReplyExists(env, conversationId, triggerMessageId) {
+  if (!conversationId || !triggerMessageId) return false
+  const payload = await chatwootFetch(env, `/conversations/${conversationId}/messages`)
+  const messages = Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
+  const triggerNumericId = parsePositiveInteger(triggerMessageId)
+  return messages.some((message) => (
+    String(message?.content_attributes?.map_content_partner_trigger_message_id || '') === String(triggerMessageId)
+    || String(message?.echo_id || '') === `map-content-partner:${triggerMessageId}`
+    || String(message?.echo_id || '') === `map-content-partner:reply:${triggerMessageId}`
+    || String(message?.source_id || '') === `map-content-partner:${triggerMessageId}`
+    || String(message?.source_id || '') === `map-content-partner:reply:${triggerMessageId}`
+    || (triggerNumericId && Number(message?.id) > triggerNumericId && isContentPartnerGeneratedReplyContent(message?.content))
+  ))
+}
+
+function extractChatwootRecord(payload) {
+  if (Array.isArray(payload?.payload)) return payload.payload[0] || null
+  if (payload?.payload && typeof payload.payload === 'object') return payload.payload
+  if (payload?.message && typeof payload.message === 'object') return payload.message
+  return payload && typeof payload === 'object' ? payload : null
+}
+
+function getPortalReviewUrl(env, draftId, envConfig = null) {
+  const canonicalHost = getCanonicalPortalHost(env)
+  const path = draftId ? `/post?draftId=${encodeURIComponent(draftId)}` : '/post'
+  const basePath = getPortalBasePath(envConfig)
+  return canonicalHost ? `https://${canonicalHost}${basePath}${path}` : `${basePath}${path}`
+}
+
+function getPortalBasePath(envConfig = null) {
+  const slug = String(envConfig?.clientSlug || '').trim().toLowerCase()
+  const prefix = getSharedPortalPathPrefix({})
+  return slug ? `/${prefix}/${slug}` : ''
+}
+
+function getPortalOrigin(env, envConfig = null) {
+  const canonicalHost = getCanonicalPortalHost(env)
+  if (!canonicalHost) return ''
+  return `https://${canonicalHost}${getPortalBasePath(envConfig)}`
+}
+
+function getContentPartnerPreviewUrl(env, draftId, requestId, envConfig = null) {
+  const origin = getPortalOrigin(env, envConfig)
+  if (!origin || !draftId || !requestId) return ''
+  const path = `/api/content-partner/previews/${encodeURIComponent(draftId)}.svg`
+  return `${origin}${path}?token=${encodeURIComponent(requestId)}`
+}
+
+function uuidToShortToken(uuid) {
+  const normalized = String(uuid || '').trim().toLowerCase()
+  if (!isUuidLike(normalized)) return ''
+  const hex = normalized.replace(/-/g, '')
+  let binary = ''
+  for (let index = 0; index < hex.length; index += 2) {
+    binary += String.fromCharCode(parseInt(hex.slice(index, index + 2), 16))
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+function shortTokenToUuid(token) {
+  const normalized = String(token || '').trim().replace(/-/g, '+').replace(/_/g, '/')
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) return ''
+  const padded = `${normalized}${'='.repeat((4 - (normalized.length % 4)) % 4)}`
+  let binary = ''
+  try {
+    binary = atob(padded)
+  } catch {
+    return ''
+  }
+  if (binary.length !== 16) return ''
+  const hex = Array.from(binary, (char) => char.charCodeAt(0).toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+function getContentPartnerReviewUrl(env, draftId, requestId, envConfig = null) {
+  const origin = getPortalOrigin(env, envConfig)
+  if (!origin || !draftId || !requestId) return ''
+  const shortToken = uuidToShortToken(requestId)
+  if (shortToken) return `${origin}/r/${encodeURIComponent(shortToken)}`
+  return `${origin}/content-preview/${encodeURIComponent(draftId)}?token=${encodeURIComponent(requestId)}`
+}
+
+function getContentPartnerQuickFixUrl(env, requestId, action, envConfig = null) {
+  const origin = getPortalOrigin(env, envConfig)
+  const shortToken = uuidToShortToken(requestId)
+  const normalizedAction = String(action || '').trim().toLowerCase()
+  if (!origin || !shortToken || !normalizedAction) return ''
+  return `${origin}/f/${encodeURIComponent(shortToken)}/${encodeURIComponent(normalizedAction)}`
+}
+
+function normalizeChatwootMessageAttachments(payload, message) {
+  if (Array.isArray(message?.attachments)) return message.attachments
+  if (Array.isArray(payload?.attachments)) return payload.attachments
+  if (Array.isArray(payload?.message?.attachments)) return payload.message.attachments
+  return []
+}
+
+function escapeSvgText(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function wrapPreviewText(value, maxChars, maxLines) {
+  const words = String(value || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean)
+  const lines = []
+  let current = ''
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word
+    if (next.length > maxChars && current) {
+      lines.push(current)
+      current = word
+    } else {
+      current = next
+    }
+
+    if (lines.length === maxLines) break
+  }
+
+  if (lines.length < maxLines && current) lines.push(current)
+  const consumedLength = lines.join(' ').length
+  const sourceLength = words.join(' ').length
+  if (sourceLength > consumedLength && lines.length) {
+    lines[lines.length - 1] = `${lines[lines.length - 1].replace(/[.,;:!?-]+$/, '')}...`
+  }
+
+  return lines.length ? lines : ['Ready for review.']
+}
+
+function formatPreviewDate(value) {
+  const date = new Date(value || '')
+  if (Number.isNaN(date.getTime())) return 'Ready to schedule'
+
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function parseJsonObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value !== 'string' || !value.trim()) return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function extractMediaSuggestionFromDraft(draft) {
+  const reviewNotes = parseJsonObject(draft?.review_notes)
+  if (reviewNotes.mediaSuggestion) return firstString(reviewNotes.mediaSuggestion)
+
+  const requirements = Array.isArray(draft?.asset_requirements_json) ? draft.asset_requirements_json : []
+  const mediaConcept = requirements.find((item) => item?.type === 'media_concept' && item?.suggestion)
+  return firstString(mediaConcept?.suggestion)
+}
+
+function normalizePreviewPlatforms(value) {
+  const platforms = Array.isArray(value) ? value : []
+  return platforms
+    .map((platform) => normalizePlatform(platform) || String(platform || '').trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 5)
+}
+
+function renderTextLines(lines, { x, y, lineHeight, size, weight = 500, color = '#1f1f1f', letterSpacing = 0 }) {
+  return lines.map((line, index) => (
+    `<text x="${x}" y="${y + (index * lineHeight)}" font-size="${size}" font-weight="${weight}" fill="${color}" letter-spacing="${letterSpacing}">${escapeSvgText(line)}</text>`
+  )).join('')
+}
+
+function renderPreviewPlatformChips(platforms, x, y) {
+  const labels = {
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+    tiktok: 'TikTok',
+    linkedin: 'LinkedIn',
+    twitter: 'X',
+  }
+  const colors = {
+    facebook: '#2f6ecb',
+    instagram: '#c13584',
+    tiktok: '#111111',
+    linkedin: '#0a66c2',
+    twitter: '#111111',
+  }
+  const items = normalizePreviewPlatforms(platforms)
+  const chips = items.length ? items : ['facebook', 'instagram']
+
+  let offset = 0
+  return chips.map((platform) => {
+    const label = labels[platform] || platform.replace(/_/g, ' ')
+    const width = Math.max(104, Math.min(168, 46 + (label.length * 12)))
+    const chip = [
+      `<rect x="${x + offset}" y="${y}" width="${width}" height="44" rx="16" fill="${colors[platform] || '#70e4ff'}" opacity="0.18"/>`,
+      `<circle cx="${x + offset + 24}" cy="${y + 22}" r="10" fill="${colors[platform] || '#6b7280'}"/>`,
+      `<text x="${x + offset + 44}" y="${y + 29}" font-size="20" font-weight="800" fill="#dbe3f4">${escapeSvgText(label)}</text>`,
+    ].join('')
+    offset += width + 14
+    return chip
+  }).join('')
+}
+
+function renderContentPartnerPreviewSvg({
+  businessName,
+  title,
+  caption,
+  scheduledFor,
+  platforms,
+  mediaSuggestion,
+} = {}) {
+  const name = firstString(businessName, 'Your business')
+  const draftTitle = firstString(title, 'Publisher draft')
+  const captionText = firstString(caption, 'A new social post draft is ready for review.')
+  const mediaText = firstString(mediaSuggestion, 'Add or choose the best image before scheduling.')
+  const titleLines = wrapPreviewText(draftTitle, 34, 2)
+  const captionLines = wrapPreviewText(captionText, 64, 5)
+  const mediaLines = wrapPreviewText(mediaText, 62, 1)
+  const scheduleLabel = formatPreviewDate(scheduledFor)
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+  <defs>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#07090f"/>
+      <stop offset="0.54" stop-color="#0b0e18"/>
+      <stop offset="1" stop-color="#0f1320"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#172037" stop-opacity="0.98"/>
+      <stop offset="1" stop-color="#101627" stop-opacity="0.95"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#70e4ff"/>
+      <stop offset="0.52" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#988cff"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="30" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="900" fill="url(#page)"/>
+  <path d="M0 118 H1200 M0 238 H1200 M0 358 H1200 M0 478 H1200 M0 598 H1200 M0 718 H1200 M120 0 V900 M240 0 V900 M360 0 V900 M480 0 V900 M600 0 V900 M720 0 V900 M840 0 V900 M960 0 V900 M1080 0 V900" stroke="#ffffff" stroke-opacity="0.035" stroke-width="1"/>
+  <rect x="72" y="58" width="1056" height="784" rx="22" fill="url(#panel)" filter="url(#shadow)"/>
+  <rect x="72" y="58" width="1056" height="784" rx="22" fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="2"/>
+  <rect x="106" y="92" width="988" height="124" rx="18" fill="#ffffff" opacity="0.055"/>
+  <rect x="126" y="116" width="76" height="76" rx="18" fill="url(#accent)"/>
+  <text x="164" y="164" text-anchor="middle" font-size="25" font-weight="900" fill="#071018">MAP</text>
+  <text x="230" y="142" font-size="27" font-weight="800" fill="#f5f7fb">${escapeSvgText(name)}</text>
+  <text x="230" y="176" font-size="20" font-weight="600" fill="#a6afc2">Content Partner draft preview</text>
+  <rect x="814" y="122" width="232" height="58" rx="16" fill="#70e4ff" fill-opacity="0.12" stroke="#70e4ff" stroke-opacity="0.34" stroke-width="2"/>
+  <text x="930" y="158" text-anchor="middle" font-size="21" font-weight="850" fill="#dbe3f4">Manual review</text>
+  <text x="112" y="275" font-size="18" font-weight="800" fill="#70e4ff">PUBLISHER DRAFT</text>
+  ${renderTextLines(titleLines, { x: 112, y: 338, lineHeight: 58, size: 50, weight: 900, color: '#f5f7fb' })}
+  <rect x="112" y="516" width="976" height="216" rx="18" fill="#ffffff" fill-opacity="0.065" stroke="#ffffff" stroke-opacity="0.13" stroke-width="2"/>
+  <text x="146" y="562" font-size="18" font-weight="800" fill="#70e4ff">POST COPY</text>
+  ${renderTextLines(captionLines, { x: 146, y: 606, lineHeight: 29, size: 24, weight: 500, color: '#dbe3f4' })}
+  <line x1="112" y1="744" x2="1088" y2="744" stroke="#ffffff" stroke-opacity="0.13" stroke-width="2"/>
+  <text x="112" y="778" font-size="18" font-weight="800" fill="#70e4ff">SUGGESTED TIME</text>
+  <text x="112" y="814" font-size="28" font-weight="800" fill="#f5f7fb">${escapeSvgText(scheduleLabel)}</text>
+  <text x="512" y="778" font-size="18" font-weight="800" fill="#70e4ff">IMAGE IDEA</text>
+  ${renderTextLines(mediaLines, { x: 512, y: 814, lineHeight: 26, size: 21, weight: 600, color: '#a6afc2' })}
+  ${renderPreviewPlatformChips(platforms, 112, 454)}
+</svg>`
+}
+
+async function loadContentPartnerPreview(envConfig, draftId, requestId) {
+  if (!isUuidLike(draftId) || !isUuidLike(requestId)) return null
+
+  const requestParams = new URLSearchParams({
+    select: 'id,generated_draft_id,ai_metadata_json,created_at',
+    id: `eq.${requestId}`,
+    generated_draft_id: `eq.${draftId}`,
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const requestRowsResponse = await supabaseRest(envConfig, `/rest/v1/content_partner_requests?${requestParams.toString()}`)
+  const requestRows = await requestRowsResponse.json()
+  const requestRow = Array.isArray(requestRows) ? requestRows[0] : null
+  if (!requestRow?.id) return null
+
+  const draftParams = new URLSearchParams({
+    select: 'id,draft_title,draft_caption,scheduled_for,review_notes,asset_requirements_json,client_id',
+    id: `eq.${draftId}`,
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const draftRowsResponse = await supabaseRest(envConfig, `/rest/v1/social_drafts?${draftParams.toString()}`)
+  const draftRows = await draftRowsResponse.json()
+  const draft = Array.isArray(draftRows) ? draftRows[0] : null
+  if (!draft?.id) return null
+
+  const clientParams = new URLSearchParams({
+    select: 'business_name,slug',
+    id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const clientRowsResponse = await supabaseRest(envConfig, `/rest/v1/clients?${clientParams.toString()}`)
+  const clientRows = await clientRowsResponse.json()
+  const client = Array.isArray(clientRows) ? clientRows[0] || {} : {}
+  const aiMeta = parseJsonObject(requestRow.ai_metadata_json)
+
+  return {
+    businessName: firstString(client.business_name, client.slug),
+    title: draft.draft_title,
+    caption: draft.draft_caption,
+    scheduledFor: draft.scheduled_for,
+    mediaSuggestion: extractMediaSuggestionFromDraft(draft),
+    platforms: normalizePreviewPlatforms(aiMeta.recommendedPlatforms),
+  }
+}
+
+async function handleContentPartnerPreview(request, env, draftId) {
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET, HEAD' } })
+  }
+
+  const url = new URL(request.url)
+  const requestId = String(url.searchParams.get('token') || '').trim()
+  if (!draftId || !requestId) return json({ error: 'Preview token is required.' }, { status: 400 })
+
+  let envConfig
+  try {
+    envConfig = await getPortalWebhookConfig(request, env)
+  } catch (error) {
+    return json({ error: error.message || 'Portal preview is not configured.' }, { status: 500 })
+  }
+
+  try {
+    const preview = await loadContentPartnerPreview(envConfig, draftId, requestId)
+    if (!preview) return json({ error: 'Preview was not found.' }, { status: 404 })
+    const contentType = 'image/svg+xml; charset=utf-8'
+
+    if (request.method === 'HEAD') {
+      return new Response(null, {
+        headers: {
+          'content-type': contentType,
+          'cache-control': 'private, max-age=900',
+        },
+      })
+    }
+
+    return new Response(renderContentPartnerPreviewSvg(preview), {
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'private, max-age=900',
+      },
+    })
+  } catch (error) {
+    return json({ error: error.message || 'Could not render the preview.' }, { status: error?.status || 502 })
+  }
+}
+
+function htmlResponse(markup, init = {}) {
+  return new Response(markup, {
+    ...init,
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'content-security-policy': "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+      ...(init.headers || {}),
+    },
+  })
+}
+
+function platformLabel(platform) {
+  const labels = {
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+    tiktok: 'TikTok',
+    linkedin: 'LinkedIn',
+    twitter: 'X / Twitter',
+  }
+  return labels[platform] || String(platform || '').replace(/_/g, ' ')
+}
+
+function formatReviewDate(value) {
+  const date = new Date(value || '')
+  if (Number.isNaN(date.getTime())) return 'Ready to schedule'
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function jsonArray(value) {
+  if (Array.isArray(value)) return value
+  if (typeof value !== 'string' || !value.trim()) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function inferSocialMediaType(asset = {}) {
+  const explicit = String(asset.mediaType || asset.media_type || '').toLowerCase()
+  if (explicit === 'video' || explicit === 'image') return explicit
+  const typeField = String(asset.type || '').toLowerCase()
+  if (typeField === 'video' || typeField === 'image') return typeField
+
+  const contentType = String(
+    asset.contentType
+    || asset.content_type
+    || asset.mimeType
+    || asset.mime_type
+    || asset.file_type
+    || '',
+  ).toLowerCase()
+  if (contentType.startsWith('video/')) return 'video'
+  if (contentType.startsWith('image/')) return 'image'
+
+  const raw = firstString(asset.url, asset.link, asset.download_url, asset.file_url, asset.data_url, asset.name, asset.fileName, asset.filename)
+  const path = (() => {
+    try {
+      return new URL(raw).pathname
+    } catch {
+      return raw
+    }
+  })()
+  if (/\.(mp4|m4v|mov|webm)(?:$|[?#])/i.test(path)) return 'video'
+  return 'image'
+}
+
+function extractReviewMediaAssets(draft) {
+  const reviewNotes = parseJsonObject(draft?.review_notes)
+  const requirements = jsonArray(draft?.asset_requirements_json)
+  const assets = []
+  const seen = new Set()
+
+  const addAsset = (asset = {}) => {
+    const url = firstString(asset.url, asset.link, asset.download_url, asset.file_url, asset.data_url)
+    if (!url || seen.has(url)) return
+    seen.add(url)
+    assets.push({
+      url,
+      name: firstString(asset.name, asset.fileName, asset.filename, asset.suggestion, 'Attached media'),
+      thumbnail: firstString(asset.thumbnail, asset.thumb_url, asset.previewUrl),
+      contentType: firstString(asset.contentType, asset.content_type, asset.file_type),
+      mimeType: firstString(asset.mimeType, asset.mime_type, asset.contentType, asset.content_type, asset.file_type),
+      mediaType: inferSocialMediaType(asset),
+    })
+  }
+
+  jsonArray(reviewNotes.mediaAssets).forEach(addAsset)
+  requirements
+    .filter((item) => item?.type === 'source_media' || item?.url)
+    .forEach(addAsset)
+
+  return assets
+}
+
+function normalizeReviewPlatforms(aiMeta, reviewNotes) {
+  const fromAi = normalizePreviewPlatforms(aiMeta?.recommendedPlatforms)
+  if (fromAi.length) return fromAi
+  const fromNotes = normalizePreviewPlatforms(reviewNotes?.recommendedPlatforms)
+  if (fromNotes.length) return fromNotes
+  return ['facebook', 'instagram']
+}
+
+async function loadContentPartnerReview(envConfig, draftId, requestId) {
+  if (!isUuidLike(draftId) || !isUuidLike(requestId)) return null
+
+  const requestParams = new URLSearchParams({
+    select: 'id,client_id,chatwoot_conversation_id,chatwoot_message_id,generated_draft_id,status,ai_metadata_json,created_at',
+    id: `eq.${requestId}`,
+    generated_draft_id: `eq.${draftId}`,
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const requestRowsResponse = await supabaseRest(envConfig, `/rest/v1/content_partner_requests?${requestParams.toString()}`)
+  const requestRows = await requestRowsResponse.json()
+  const requestRow = Array.isArray(requestRows) ? requestRows[0] : null
+  if (!requestRow?.id) return null
+
+  const draftParams = new URLSearchParams({
+    select: 'id,client_id,draft_title,draft_body,draft_caption,scheduled_for,review_notes,asset_requirements_json,review_state,approved_at,published_reference,source_workflow,created_at',
+    id: `eq.${draftId}`,
+    client_id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const draftRowsResponse = await supabaseRest(envConfig, `/rest/v1/social_drafts?${draftParams.toString()}`)
+  const draftRows = await draftRowsResponse.json()
+  const draft = Array.isArray(draftRows) ? draftRows[0] : null
+  if (!draft?.id) return null
+
+  const clientParams = new URLSearchParams({
+    select: 'id,business_name,slug,portal_domain',
+    id: `eq.${envConfig.clientId}`,
+    limit: '1',
+  })
+  const clientRowsResponse = await supabaseRest(envConfig, `/rest/v1/clients?${clientParams.toString()}`)
+  const clientRows = await clientRowsResponse.json()
+  const client = Array.isArray(clientRows) ? clientRows[0] || {} : {}
+  const aiMeta = parseJsonObject(requestRow.ai_metadata_json)
+  const reviewNotes = parseJsonObject(draft.review_notes)
+
+  return {
+    request: requestRow,
+    draft,
+    client,
+    aiMeta,
+    reviewNotes,
+    businessName: firstString(client.business_name, client.slug, 'Your business'),
+    title: firstString(draft.draft_title, 'Publisher draft'),
+    caption: firstString(draft.draft_caption, draft.draft_body, 'A new social post draft is ready for review.'),
+    scheduledFor: draft.scheduled_for,
+    mediaSuggestion: extractMediaSuggestionFromDraft(draft),
+    mediaAssets: extractReviewMediaAssets(draft),
+    platforms: normalizeReviewPlatforms(aiMeta, reviewNotes),
+  }
+}
+
+function renderQuickReviewPage(env, context) {
+  const envConfig = { clientId: context.client?.id, clientSlug: context.client?.slug }
+  const approveUrl = `${getPortalBasePath(envConfig)}/api/content-partner/reviews/${encodeURIComponent(context.draft.id)}/approve?token=${encodeURIComponent(context.request.id)}`
+  const editorUrl = getPortalReviewUrl(env, context.draft.id, envConfig)
+  const previewUrl = getContentPartnerPreviewUrl(env, context.draft.id, context.request.id, envConfig)
+  const simplifyUrl = getContentPartnerQuickFixUrl(env, context.request.id, 's', envConfig)
+  const polishUrl = getContentPartnerQuickFixUrl(env, context.request.id, 'p', envConfig)
+  const imageUrl = getContentPartnerQuickFixUrl(env, context.request.id, 'i', envConfig)
+  const alreadyScheduled = Boolean(context.draft.published_reference)
+  const platformChips = context.platforms.map((platform) => (
+    `<span class="chip">${escapeHtml(platformLabel(platform))}</span>`
+  )).join('')
+  const firstMedia = context.mediaAssets[0]
+  const mediaHtml = firstMedia?.url
+    ? firstMedia.mediaType === 'video'
+      ? `<video class="media" src="${escapeHtml(firstMedia.url)}" controls muted playsinline preload="metadata"></video>`
+      : `<img class="media" src="${escapeHtml(firstMedia.thumbnail || firstMedia.url)}" alt="${escapeHtml(firstMedia.name || 'Selected media')}">`
+    : `<img class="preview" src="${escapeHtml(previewUrl)}" alt="Publisher draft preview">`
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(context.title)} · MAP Content Partner</title>
+  <style>
+    :root { color-scheme: dark; --ink:#f5f7fb; --muted:#a6afc2; --soft:#dbe3f4; --line:rgba(255,255,255,.12); --line-strong:rgba(255,255,255,.2); --paper:rgba(16,22,39,.78); --paper-strong:rgba(23,32,55,.92); --cyan:#70e4ff; --blue:#38bdf8; --purple:#988cff; --magenta:#ff7ab8; --dark:#07090f; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 50% -12%, rgba(112,228,255,.22), transparent 33rem), radial-gradient(circle at 85% 18%, rgba(56,189,248,.14), transparent 25rem), radial-gradient(circle at 12% 36%, rgba(152,140,255,.13), transparent 24rem), linear-gradient(180deg,#07090f 0%,#0b0e18 54%,#0f1320 100%); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body::before { content:""; position:fixed; inset:0; pointer-events:none; background-image:linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px); background-size:32px 32px; mask-image:linear-gradient(180deg, rgba(0,0,0,.36), transparent 82%); }
+    main { position:relative; width: min(980px, calc(100vw - 28px)); margin: 18px auto; background: var(--paper); border: 1px solid var(--line); border-radius: 20px; overflow: hidden; box-shadow: 0 34px 90px rgba(0,0,0,.45); backdrop-filter: blur(18px); }
+    header { display: flex; justify-content: space-between; gap: 18px; padding: 28px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg,rgba(23,32,55,.92),rgba(16,22,39,.72)); }
+    .eyebrow { margin: 0 0 8px; color: var(--cyan); font-size: 13px; font-weight: 900; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(34px, 6vw, 64px); line-height: 0.97; letter-spacing: 0; max-width: 760px; }
+    .badge { align-self: flex-start; white-space: nowrap; border: 1px solid rgba(112,228,255,.36); background: rgba(112,228,255,.12); color: var(--soft); border-radius: 999px; padding: 11px 15px; font-weight: 900; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.65fr); gap: 0; }
+    .copy { padding: 28px; border-right: 1px solid var(--line); }
+    .side { padding: 28px; background: rgba(255,255,255,.045); }
+    label { display: block; margin: 0 0 12px; color: var(--cyan); font-size: 13px; font-weight: 900; text-transform: uppercase; }
+    .caption { white-space: pre-wrap; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.055); padding: 20px; font-size: 22px; line-height: 1.45; color: var(--soft); }
+    .meta { display: grid; gap: 18px; margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--line); }
+    .value { margin: 0; color: var(--soft); font-size: 19px; line-height: 1.45; }
+    .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+    .chip { display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid rgba(152,140,255,.32); background: rgba(152,140,255,.12); color: var(--soft); padding: 8px 12px; font-weight: 900; }
+    .media, .preview { width: 100%; display: block; border-radius: 16px; border: 1px solid var(--line); background: rgba(7,9,15,.55); object-fit: contain; max-height: 430px; }
+    .actions { display: grid; gap: 12px; margin-top: 22px; }
+    .quick { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top: 22px; }
+    button, .secondary { width: 100%; border-radius: 16px; padding: 16px 18px; font: inherit; font-size: 18px; font-weight: 950; text-align: center; text-decoration: none; cursor: pointer; }
+    button { border: 1px solid rgba(112,228,255,.42); background: linear-gradient(135deg,var(--cyan),var(--blue)); color: #071018; box-shadow: 0 18px 36px rgba(56,189,248,.22); }
+    button:disabled { cursor: default; opacity: 0.58; box-shadow: none; }
+    .secondary { display: block; border: 1px solid var(--line); background: rgba(255,255,255,.055); color: var(--ink); }
+    .quick a { display:flex; min-height:52px; align-items:center; justify-content:center; border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,.055); color:var(--soft); text-align:center; text-decoration:none; font-weight:900; font-size:14px; line-height:1.15; }
+    .note { margin: 12px 0 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
+    @media (max-width: 760px) {
+      main { width: 100%; min-height: 100vh; margin: 0; border-radius: 0; border-left: 0; border-right: 0; }
+      header, .grid { display: block; }
+      header { padding: 22px; }
+      .badge { display: inline-flex; margin-top: 16px; }
+      .copy, .side { padding: 22px; border-right: 0; }
+      .copy { border-bottom: 1px solid var(--line); }
+      .quick { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">${escapeHtml(context.businessName)} · Content Partner</p>
+        <h1>${escapeHtml(context.title)}</h1>
+      </div>
+      <div class="badge">${alreadyScheduled ? 'Scheduled' : 'Ready for approval'}</div>
+    </header>
+    <section class="grid">
+      <div class="copy">
+        <label>Post copy</label>
+        <div class="caption">${escapeHtml(context.caption)}</div>
+        <div class="meta">
+          <div>
+            <label>Recommended time</label>
+            <p class="value">${escapeHtml(formatReviewDate(context.scheduledFor))}</p>
+          </div>
+          <div>
+            <label>Publishing to</label>
+            <div class="chips">${platformChips}</div>
+          </div>
+          <div>
+            <label>Image idea</label>
+            <p class="value">${escapeHtml(context.mediaSuggestion)}</p>
+          </div>
+        </div>
+      </div>
+      <aside class="side">
+        ${mediaHtml}
+        <div class="quick">
+          ${simplifyUrl ? `<a href="${escapeHtml(simplifyUrl)}">Simplify text</a>` : ''}
+          ${polishUrl ? `<a href="${escapeHtml(polishUrl)}">Polish tone</a>` : ''}
+          ${imageUrl ? `<a href="${escapeHtml(imageUrl)}">Fix image idea</a>` : ''}
+        </div>
+        <div class="actions">
+          <form method="post" action="${escapeHtml(approveUrl)}">
+            <button type="submit" ${alreadyScheduled ? 'disabled' : ''}>${alreadyScheduled ? 'Already scheduled' : 'Approve and schedule'}</button>
+          </form>
+          ${editorUrl ? `<a class="secondary" href="${escapeHtml(editorUrl)}">Open full editor</a>` : ''}
+        </div>
+        <p class="note">Approving schedules this draft at the recommended time. Need changes first? Use the full editor.</p>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>`
+}
+
+function renderQuickReviewResultPage({ title, message, linkHref = '', linkLabel = 'Back to preview', ok = true }) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)}</title>
+  <style>
+    body { margin:0; min-height:100vh; display:grid; place-items:center; background:radial-gradient(circle at 50% -12%, rgba(112,228,255,.22), transparent 33rem), radial-gradient(circle at 85% 18%, rgba(56,189,248,.14), transparent 25rem), linear-gradient(180deg,#07090f 0%,#0b0e18 54%,#0f1320 100%); color:#f5f7fb; font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    section { width:min(680px, calc(100vw - 32px)); background:rgba(16,22,39,.78); border:1px solid rgba(255,255,255,.12); border-radius:20px; padding:34px; box-shadow:0 34px 90px rgba(0,0,0,.45); backdrop-filter:blur(18px); }
+    .badge { display:inline-flex; border-radius:999px; padding:8px 13px; font-weight:900; background:${ok ? 'rgba(112,228,255,.12)' : 'rgba(255,122,184,.13)'}; color:${ok ? '#dbe3f4' : '#ffd7e8'}; border:1px solid ${ok ? 'rgba(112,228,255,.34)' : 'rgba(255,122,184,.34)'}; }
+    h1 { margin:20px 0 10px; font-size:clamp(34px, 6vw, 58px); line-height:1; }
+    p { margin:0; color:#a6afc2; font-size:20px; line-height:1.45; }
+    a { display:inline-flex; margin-top:24px; border-radius:16px; border:1px solid rgba(112,228,255,.42); background:linear-gradient(135deg,#70e4ff,#38bdf8); color:#071018; padding:15px 18px; text-decoration:none; font-weight:950; }
+  </style>
+</head>
+<body>
+  <section>
+    <span class="badge">${ok ? 'Scheduled' : 'Needs attention'}</span>
+    <h1>${escapeHtml(title)}</h1>
+    <p>${escapeHtml(message)}</p>
+    ${linkHref ? `<a href="${escapeHtml(linkHref)}">${escapeHtml(linkLabel)}</a>` : ''}
+  </section>
+</body>
+</html>`
+}
+
+function normalizeContentPartnerQuickFixAction(action) {
+  const normalized = String(action || '').trim().toLowerCase()
+  const aliases = {
+    s: 'simplify',
+    short: 'simplify',
+    shorter: 'simplify',
+    simplify: 'simplify',
+    p: 'polish',
+    polish: 'polish',
+    tone: 'polish',
+    i: 'image',
+    image: 'image',
+    media: 'image',
+  }
+  return aliases[normalized] || ''
+}
+
+function simplifyDraftCaption(caption) {
+  const source = String(caption || '').replace(/\s+/g, ' ').trim()
+  if (!source) return ''
+  const sentences = source.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [source]
+  const kept = sentences.map((sentence) => sentence.trim()).filter(Boolean).slice(0, 2).join(' ')
+  return trimText(kept || source, 360)
+}
+
+function polishDraftCaption(caption) {
+  const source = String(caption || '').trim()
+  if (!source) return ''
+  const cleaned = source.replace(/\n{3,}/g, '\n\n')
+  if (/learn more|take a look|contact us|let us know/i.test(cleaned)) return cleaned
+  return `${cleaned}\n\nTake a look and let us know what you think.`
+}
+
+function improveImageSuggestion(current, context) {
+  const base = firstString(current, context?.mediaSuggestion, 'Use a clear, high-quality image that supports the post.')
+  if (/bright|clean|crop|text overlay|mobile/i.test(base)) return base
+  return `${base} Use a bright, clean crop with the main subject centered, avoid heavy text overlays, and make sure it reads well on mobile.`
+}
+
+async function updateContentPartnerDraftQuickFix(envConfig, context, action) {
+  const normalizedAction = normalizeContentPartnerQuickFixAction(action)
+  if (!normalizedAction) {
+    const error = new Error('Unsupported quick fix.')
+    error.status = 400
+    throw error
+  }
+  if (context.draft.published_reference) {
+    const error = new Error('This draft is already scheduled.')
+    error.status = 409
+    throw error
+  }
+
+  const reviewNotes = {
+    ...context.reviewNotes,
+    quickFixes: [
+      ...(Array.isArray(context.reviewNotes.quickFixes) ? context.reviewNotes.quickFixes : []),
+      { action: normalizedAction, appliedAt: new Date().toISOString() },
+    ].slice(-12),
+  }
+  const patch = { review_notes: JSON.stringify(reviewNotes) }
+
+  if (normalizedAction === 'simplify') {
+    patch.draft_caption = simplifyDraftCaption(context.caption)
+  } else if (normalizedAction === 'polish') {
+    patch.draft_caption = polishDraftCaption(context.caption)
+  } else if (normalizedAction === 'image') {
+    const requirements = jsonArray(context.draft.asset_requirements_json)
+    const nextSuggestion = improveImageSuggestion(context.mediaSuggestion, context)
+    const conceptIndex = requirements.findIndex((item) => item?.type === 'media_concept')
+    if (conceptIndex >= 0) {
+      requirements[conceptIndex] = {
+        ...requirements[conceptIndex],
+        suggestion: nextSuggestion,
+        quickFix: true,
+      }
+    } else {
+      requirements.unshift({
+        type: 'media_concept',
+        suggestion: nextSuggestion,
+        source: 'chatwoot_content_partner',
+        quickFix: true,
+      })
+    }
+    reviewNotes.mediaSuggestion = nextSuggestion
+    patch.review_notes = JSON.stringify(reviewNotes)
+    patch.asset_requirements_json = requirements
+  }
+
+  const filters = new URLSearchParams({
+    id: `eq.${context.draft.id}`,
+    client_id: `eq.${envConfig.clientId}`,
+  })
+  await supabaseRest(envConfig, `/rest/v1/social_drafts?${filters.toString()}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify(patch),
+  })
+
+  return normalizedAction
+}
+
+async function handleContentPartnerQuickFix(request, env, token, action) {
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+
+  const requestId = shortTokenToUuid(token)
+  if (!requestId) return json({ error: 'Quick fix link is invalid.' }, { status: 400 })
+
+  let envConfig
+  try {
+    envConfig = await getPortalWebhookConfig(request, env)
+  } catch (error) {
+    return json({ error: error.message || 'Portal review is not configured.' }, { status: 500 })
+  }
+
+  try {
+    const requestParams = new URLSearchParams({
+      select: 'generated_draft_id',
+      id: `eq.${requestId}`,
+      client_id: `eq.${envConfig.clientId}`,
+      limit: '1',
+    })
+    const response = await supabaseRest(envConfig, `/rest/v1/content_partner_requests?${requestParams.toString()}`)
+    const rows = await response.json()
+    const draftId = Array.isArray(rows) ? rows[0]?.generated_draft_id : ''
+    if (!draftId) return json({ error: 'Draft was not found.' }, { status: 404 })
+
+    const context = await loadContentPartnerReview(envConfig, draftId, requestId)
+    if (!context) return json({ error: 'Draft was not found.' }, { status: 404 })
+    await updateContentPartnerDraftQuickFix(envConfig, context, action)
+    const refreshed = await loadContentPartnerReview(envConfig, draftId, requestId)
+    return htmlResponse(renderQuickReviewPage(env, refreshed || context))
+  } catch (error) {
+    return htmlResponse(renderQuickReviewResultPage({
+      title: 'Could not update draft',
+      message: error.message || 'MAP could not apply that quick fix.',
+      linkHref: getContentPartnerReviewUrl(env, '', requestId, envConfig),
+      ok: false,
+    }), { status: error?.status || 502 })
+  }
+}
+
+function normalizeApprovalSchedule(value) {
+  const date = new Date(value || '')
+  const minimum = new Date(Date.now() + (10 * 60 * 1000))
+  if (Number.isNaN(date.getTime())) {
+    return { scheduledFor: minimum.toISOString(), adjusted: true }
+  }
+  if (date.getTime() < minimum.getTime()) {
+    return { scheduledFor: minimum.toISOString(), adjusted: true }
+  }
+  return { scheduledFor: date.toISOString(), adjusted: false }
+}
+
+async function sendContentPartnerApprovalNotice(env, context, post, scheduledFor) {
+  const conversationId = parsePositiveInteger(context.request?.chatwoot_conversation_id)
+  if (!conversationId) return
+
+  await chatwootFetch(env, `/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      content: `Approved and scheduled for ${formatReviewDate(scheduledFor)}.`,
+      message_type: 'incoming',
+      private: false,
+      content_type: 'text',
+      source_id: `map-content-partner:approved:${context.draft.id}`,
+      content_attributes: {
+        map_content_partner_system: true,
+        map_content_partner_approved: true,
+        map_content_partner_request_id: context.request.id,
+        map_content_partner_draft_id: context.draft.id,
+        map_content_partner_post_id: post?.id || null,
+      },
+    }),
+  })
+}
+
+async function scheduleApprovedContentPartnerDraft(env, envConfig, context) {
+  const content = firstString(context.caption, context.title)
+  if (!content) throw new Error('This draft does not have post copy to schedule.')
+
+  const platforms = context.platforms.length ? context.platforms : ['facebook', 'instagram']
+  const { scheduledFor, adjusted } = normalizeApprovalSchedule(context.scheduledFor)
+  const mediaAssets = context.mediaAssets
+  const mediaUrls = mediaAssets.map((asset) => asset.url).filter(Boolean)
+  const mediaUrl = mediaUrls[0] || null
+  const platformVariants = parseJsonObject(context.reviewNotes?.platformVariants)
+
+  const insertResponse = await supabaseRest(envConfig, '/rest/v1/posts?select=id,client_id,content,media_url,platforms,status,scheduled_for,n8n_execution_id,zernio_post_id,zernio_profile_id', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({
+      client_id: envConfig.clientId,
+      content,
+      media_url: mediaUrl,
+      platforms,
+      status: 'draft',
+      scheduled_for: scheduledFor,
+      platform_variants_json: platformVariants,
+      zernio_profile_id: envConfig.zernioProfileId || null,
+    }),
+  })
+  const insertedRows = await insertResponse.json()
+  const post = Array.isArray(insertedRows) ? insertedRows[0] : null
+  if (!post?.id) throw new Error('The approved post could not be saved.')
+
+  const n8nResponse = await fetch(`${getN8nBaseUrl(env)}/webhook/social-publish`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      postId: post.id,
+      clientId: envConfig.clientId,
+      zernioRequestId: post.id,
+      content,
+      platformVariants,
+      mediaVariants: {},
+      mediaUrl,
+      mediaUrls,
+      mediaAssets,
+      dropboxLinks: [],
+      platforms,
+      scheduledFor,
+      zernioProfileId: envConfig.zernioProfileId || undefined,
+      profileId: envConfig.zernioProfileId || undefined,
+    }),
+  })
+  const n8nRawText = await n8nResponse.text()
+  const n8nData = (() => {
+    try {
+      return n8nRawText ? JSON.parse(n8nRawText) : {}
+    } catch {
+      return {}
+    }
+  })()
+  const publishedPlatforms = Array.isArray(n8nData?.publishedPlatforms) ? n8nData.publishedPlatforms : []
+  const skippedPlatforms = Array.isArray(n8nData?.skippedPlatforms) ? n8nData.skippedPlatforms : []
+  const effectivePublishedPlatforms = publishedPlatforms.length
+    ? publishedPlatforms
+    : platforms.filter((platform) => !skippedPlatforms.includes(platform))
+  const n8nSuccess = n8nResponse.ok && n8nData?.success !== false && effectivePublishedPlatforms.length > 0
+
+  await supabaseRest(envConfig, `/rest/v1/posts?id=eq.${encodeURIComponent(post.id)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      status: n8nSuccess ? 'scheduled' : 'failed',
+      n8n_execution_id: n8nSuccess ? (n8nData?.zernioPostId ?? post.n8n_execution_id ?? null) : (post.n8n_execution_id || null),
+      zernio_post_id: n8nSuccess ? (n8nData?.zernioPostId ?? post.zernio_post_id ?? post.n8n_execution_id ?? null) : (post.zernio_post_id || post.n8n_execution_id || null),
+      zernio_profile_id: envConfig.zernioProfileId || post.zernio_profile_id || null,
+      published_at: null,
+    }),
+  })
+
+  if (!n8nSuccess) {
+    throw new Error(n8nData?.message || n8nData?.error || n8nRawText || 'The social publish workflow did not schedule this post.')
+  }
+
+  const updatedNotes = {
+    ...context.reviewNotes,
+    quickReviewApprovedAt: new Date().toISOString(),
+    quickReviewScheduledFor: scheduledFor,
+    quickReviewScheduleAdjusted: adjusted,
+    quickReviewPostId: post.id,
+    quickReviewPlatforms: platforms,
+    publishCount: (Number(context.reviewNotes?.publishCount) || 0) + 1,
+  }
+  await supabaseRest(envConfig, `/rest/v1/social_drafts?id=eq.${encodeURIComponent(context.draft.id)}&client_id=eq.${encodeURIComponent(envConfig.clientId)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      review_state: 'published_manually',
+      approved_at: updatedNotes.quickReviewApprovedAt,
+      published_reference: post.id,
+      review_notes: JSON.stringify(updatedNotes),
+    }),
+  })
+
+  await sendContentPartnerApprovalNotice(env, context, post, scheduledFor).catch((error) => {
+    console.warn('Content Partner approval notice skipped.', sanitizeChatwootError(error?.message || error))
+  })
+
+  return { post, scheduledFor, adjusted, platforms }
+}
+
+async function handleContentPartnerReviewPage(request, env, draftId) {
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET, HEAD' } })
+  }
+
+  const url = new URL(request.url)
+  const requestId = String(url.searchParams.get('token') || '').trim()
+  if (!draftId || !requestId) return json({ error: 'Review token is required.' }, { status: 400 })
+
+  let envConfig
+  try {
+    envConfig = await getPortalWebhookConfig(request, env)
+  } catch (error) {
+    return json({ error: error.message || 'Portal review is not configured.' }, { status: 500 })
+  }
+
+  try {
+    const context = await loadContentPartnerReview(envConfig, draftId, requestId)
+    if (!context) return json({ error: 'Review was not found.' }, { status: 404 })
+    if (request.method === 'HEAD') return htmlResponse('', { status: 200 })
+    return htmlResponse(renderQuickReviewPage(env, context))
+  } catch (error) {
+    return json({ error: error.message || 'Could not load this review.' }, { status: error?.status || 502 })
+  }
+}
+
+async function handleContentPartnerShortReview(request, env, token) {
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET, HEAD' } })
+  }
+
+  const requestId = shortTokenToUuid(token)
+  if (!requestId) return json({ error: 'Review link is invalid.' }, { status: 400 })
+
+  let envConfig
+  try {
+    envConfig = await getPortalWebhookConfig(request, env)
+  } catch (error) {
+    return json({ error: error.message || 'Portal review is not configured.' }, { status: 500 })
+  }
+
+  try {
+    const requestParams = new URLSearchParams({
+      select: 'generated_draft_id',
+      id: `eq.${requestId}`,
+      client_id: `eq.${envConfig.clientId}`,
+      limit: '1',
+    })
+    const response = await supabaseRest(envConfig, `/rest/v1/content_partner_requests?${requestParams.toString()}`)
+    const rows = await response.json()
+    const draftId = Array.isArray(rows) ? rows[0]?.generated_draft_id : ''
+    if (!draftId) return json({ error: 'Review was not found.' }, { status: 404 })
+
+    const context = await loadContentPartnerReview(envConfig, draftId, requestId)
+    if (!context) return json({ error: 'Review was not found.' }, { status: 404 })
+    if (request.method === 'HEAD') return htmlResponse('', { status: 200 })
+    return htmlResponse(renderQuickReviewPage(env, context))
+  } catch (error) {
+    return json({ error: error.message || 'Could not load this review.' }, { status: error?.status || 502 })
+  }
+}
+
+async function handleContentPartnerReviewApprove(request, env, draftId) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'POST, OPTIONS' } })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const url = new URL(request.url)
+  const requestId = String(url.searchParams.get('token') || '').trim()
+  const backUrl = getContentPartnerReviewUrl(env, draftId, requestId)
+  if (!draftId || !requestId) return htmlResponse(renderQuickReviewResultPage({
+    title: 'Missing review token',
+    message: 'This approval link is missing the secure review token.',
+    linkHref: backUrl,
+    ok: false,
+  }), { status: 400 })
+
+  let envConfig
+  try {
+    envConfig = await getPortalWebhookConfig(request, env)
+  } catch (error) {
+    return htmlResponse(renderQuickReviewResultPage({
+      title: 'Portal is not configured',
+      message: error.message || 'This portal cannot schedule posts right now.',
+      ok: false,
+    }), { status: 500 })
+  }
+
+  try {
+    const context = await loadContentPartnerReview(envConfig, draftId, requestId)
+    if (!context) {
+      return htmlResponse(renderQuickReviewResultPage({
+        title: 'Review not found',
+        message: 'This review link is no longer valid.',
+        ok: false,
+      }), { status: 404 })
+    }
+
+    if (context.draft.published_reference) {
+      return htmlResponse(renderQuickReviewResultPage({
+        title: 'Already scheduled',
+        message: `This draft was already approved and scheduled for ${formatReviewDate(context.draft.scheduled_for)}.`,
+        linkHref: backUrl,
+        linkLabel: 'View preview',
+      }))
+    }
+
+    const result = await scheduleApprovedContentPartnerDraft(env, envConfig, context)
+    const adjustedCopy = result.adjusted ? ' The original recommended time had passed, so MAP moved it to the next safe posting window.' : ''
+    return htmlResponse(renderQuickReviewResultPage({
+      title: 'Post scheduled',
+      message: `Your post is scheduled for ${formatReviewDate(result.scheduledFor)} on ${result.platforms.map(platformLabel).join(', ')}.${adjustedCopy}`,
+      linkHref: getPortalReviewUrl(env, context.draft.id, envConfig),
+      linkLabel: 'Open full editor',
+    }))
+  } catch (error) {
+    return htmlResponse(renderQuickReviewResultPage({
+      title: 'Could not schedule',
+      message: error.message || 'MAP could not schedule this post. Please open the full editor and try again.',
+      linkHref: backUrl,
+      linkLabel: 'Back to preview',
+      ok: false,
+    }), { status: error?.status || 502 })
+  }
+}
+
+async function createContentPartnerDraft(env, envConfig, payload, message, conversation, gatewayToken = '', chatwootContext = {}) {
+  const sender = message.sender || payload.sender || {}
+  const chatwootConfig = await getChatwootConfigForClient(env, envConfig, chatwootContext)
+  return callSupabaseFunction(envConfig, 'portal-content-partner', {
+    clientId: envConfig.clientId,
+    portalBaseUrl: getPortalOrigin(env, envConfig),
+    chatwootBaseUrl: chatwootConfig.baseUrl,
+    chatwootAccountId: chatwootConfig.accountId,
+    chatwootInboxId: conversation?.inbox_id || message.inbox_id || null,
+    chatwootConversationId: conversation?.id || message.conversation_id || null,
+    chatwootMessageId: firstString(message.id, message.source_id),
+    senderId: firstString(sender.id, message.sender_id),
+    senderName: firstString(sender.name, sender.available_name, message.sender?.name),
+    messageContent: firstString(message.content),
+    attachments: normalizeChatwootMessageAttachments(payload, message),
+  }, gatewayToken)
+}
+
+async function sendContentPartnerChatwootReply(env, envConfig, conversationId, triggerMessageId, result, chatwootContext = {}) {
+  const reviewUrl = getContentPartnerReviewUrl(env, result?.draftId, result?.requestId, envConfig)
+  const editorUrl = `${getPortalOrigin(env, envConfig) || ''}${result?.draftId ? `/post?draftId=${encodeURIComponent(result.draftId)}` : '/post'}`
+  const previewUrl = getContentPartnerPreviewUrl(env, result?.draftId, result?.requestId, envConfig)
+  const simplifyUrl = getContentPartnerQuickFixUrl(env, result?.requestId, 's', envConfig)
+  const imageUrl = getContentPartnerQuickFixUrl(env, result?.requestId, 'i', envConfig)
+  const draftCaption = firstString(result?.caption, result?.draftCaption, result?.draft_caption)
+  const postUrl = reviewUrl || editorUrl
+  const lines = [
+    'Here ya go!',
+    postUrl ? `Review your post:\n${postUrl}` : '',
+  ].filter(Boolean)
+  const content = lines.join('\n\n').slice(0, 5000)
+  const contentAttributes = {
+    map_content_partner_reply: true,
+    map_content_partner_trigger_message_id: String(triggerMessageId),
+    map_content_partner_request_id: result?.requestId || null,
+    map_content_partner_draft_id: result?.draftId || null,
+    map_content_partner_review_url: reviewUrl || null,
+    map_content_partner_editor_url: editorUrl || null,
+    map_content_partner_preview_url: previewUrl || null,
+    map_content_partner_caption: draftCaption || null,
+    map_content_partner_simplify_url: simplifyUrl || null,
+    map_content_partner_image_url: imageUrl || null,
+  }
+
+  const chatwootConfig = await getChatwootConfigForClient(env, envConfig, chatwootContext)
+  return chatwootFetch(chatwootConfig, `/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      content,
+      message_type: 'incoming',
+      private: false,
+      content_type: 'text',
+      source_id: `map-content-partner:reply:${triggerMessageId}`,
+      content_attributes: contentAttributes,
+    }),
+  })
+}
+
+async function sendContentPartnerCommandChatwootReply(env, envConfig, conversationId, triggerMessageId, command, chatwootContext = {}) {
+  let reviewDraft = null
+  if (command === 'drafts') {
+    try {
+      reviewDraft = await loadNextContentPartnerReviewDraft(envConfig)
+    } catch {
+      reviewDraft = null
+    }
+  }
+
+  const content = buildContentPartnerCommandReply(command, {
+    basePath: getPortalBasePath(envConfig),
+    draftId: reviewDraft?.id || '',
+  }).slice(0, 5000)
+  const chatwootConfig = await getChatwootConfigForClient(env, envConfig, chatwootContext)
+  return chatwootFetch(chatwootConfig, `/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      content,
+      message_type: 'incoming',
+      private: false,
+      content_type: 'text',
+      source_id: `map-content-partner:reply:${triggerMessageId}`,
+      content_attributes: {
+        map_content_partner_reply: true,
+        map_content_partner_trigger_message_id: String(triggerMessageId),
+        map_content_partner_command: command,
+      },
+    }),
+  })
+}
+
+async function processContentPartnerMessage(env, envConfig, payload, message, conversation, gatewayToken = '', chatwootContext = {}) {
+  const triggerMessageId = firstString(message.id, message.source_id)
+  const conversationId = firstString(conversation.id, message.conversation_id)
+  if (!triggerMessageId || !conversationId) {
+    const error = new Error('Missing Chatwoot content partner message or conversation id.')
+    error.status = 400
+    throw error
+  }
+
+  const chatwootConfig = await getChatwootConfigForClient(env, envConfig, chatwootContext)
+  const alreadyReplied = await contentPartnerReplyExists(chatwootConfig, conversationId, triggerMessageId)
+  if (alreadyReplied) {
+    return { deduped: true, reason: 'Content Partner reply already exists.' }
+  }
+
+  const command = classifyContentPartnerCommand(message.content)
+  if (command) {
+    await sendContentPartnerCommandChatwootReply(env, envConfig, conversationId, triggerMessageId, command, chatwootContext)
+    return { command, chatwootReplySent: true }
+  }
+
+  const result = await createContentPartnerDraft(env, envConfig, payload, message, conversation, gatewayToken, chatwootContext)
+  if (result?.chatwootReplySent) return result
+  await sendContentPartnerChatwootReply(env, envConfig, conversationId, triggerMessageId, result, chatwootContext)
+  return result
+}
+
+function normalizeZernioEventName(request, payload) {
+  return String(
+    request.headers.get('x-zernio-event')
+    || request.headers.get('x-late-event')
+    || payload.event
+    || '',
+  ).trim()
+}
+
+function firstString(...values) {
+  for (const value of values) {
+    const normalized = String(value || '').trim()
+    if (normalized) return normalized
+  }
+  return ''
+}
+
+function normalizeZernioAccount(payload) {
+  const account = payload.account || {}
+  return {
+    id: firstString(account.id, account.accountId, payload.accountId, payload.zernioAccountId),
+    profileId: firstString(
+      typeof account.profileId === 'string' ? account.profileId : '',
+      account.profileId?._id,
+      account.profileId?.id,
+      account.profile_id,
+      payload.profileId,
+      payload.profile_id,
+      payload.data?.profileId,
+      payload.data?.profile_id,
+    ),
+    platform: normalizePlatform(firstString(account.platform, payload.platform)),
+    username: firstString(account.username, account.handle, account.displayName, payload.username),
+  }
+}
+
+export function normalizeZernioAccountEventDetails(payload) {
+  const account = payload.account || payload.data?.account || payload.data || {}
+  const metadata = payload.metadata || payload.data?.metadata || account.metadata || {}
+  return {
+    id: firstString(
+      account.id,
+      account._id,
+      account.accountId,
+      payload.accountId,
+      payload.zernioAccountId,
+      payload.id,
+    ),
+    profileId: firstString(
+      typeof account.profileId === 'string' ? account.profileId : '',
+      account.profileId?._id,
+      account.profileId?.id,
+      account.profile_id,
+      account.profile?.id,
+      account.profile?._id,
+      payload.profileId,
+      payload.profile_id,
+      payload.data?.profileId,
+      payload.data?.profile_id,
+      metadata.profileId,
+      metadata.profile_id,
+    ),
+    platform: normalizePlatform(firstString(account.platform, account.provider, account.network, payload.platform)),
+    username: firstString(
+      account.username,
+      account.handle,
+      account.displayName,
+      account.name,
+      payload.username,
+      payload.displayName,
+    ) || null,
+    state: firstString(
+      payload.state,
+      payload.oauthState,
+      payload.connectState,
+      payload.connectionState,
+      payload.data?.state,
+      payload.data?.oauthState,
+      metadata.state,
+      metadata.oauthState,
+      metadata.connectState,
+      account.state,
+      account.oauthState,
+    ),
+  }
+}
+
+export function normalizeZernioMessage(payload) {
+  const message = payload.message || payload.data?.message || {}
+  const conversation = payload.conversation || payload.data?.conversation || {}
+  const comment = payload.comment || payload.data?.comment || {}
+  const post = payload.post || payload.data?.post || comment.post || {}
+  const sender = message.sender || comment.author || comment.sender || comment.from || conversation.contact || payload.contact || {}
+  const attachments = Array.isArray(message.attachments)
+    ? message.attachments
+    : (Array.isArray(comment.attachments)
+        ? comment.attachments
+        : (Array.isArray(payload.attachments) ? payload.attachments : []))
+  const messageId = firstString(comment.id, comment.commentId, message.id, message.messageId, payload.commentId, payload.messageId, payload.id)
+  const conversationId = firstString(
+    conversation.id,
+    conversation.conversationId,
+    message.conversationId,
+    comment.conversationId,
+    comment.postId,
+    post.id,
+    post.postId,
+    payload.conversationId,
+    payload.postId,
+  )
+  const senderId = firstString(
+    sender.id,
+    sender.contactId,
+    sender.platformIdentifier,
+    sender.username,
+    sender.handle,
+    message.senderId,
+    comment.senderId,
+    comment.authorId,
+    conversation.contactId,
+    conversation.participantId,
+    conversationId,
+  )
+  const senderName = firstString(
+    sender.name,
+    sender.displayName,
+    sender.username,
+    conversation.name,
+    conversation.title,
+    'Social contact',
+  )
+  const content = firstString(comment.text, comment.content, comment.message, message.text, message.content, message.message, payload.text, payload.content)
+
+  return {
+    id: messageId,
+    conversationId,
+    senderId,
+    senderName,
+    senderEmail: firstString(sender.email),
+    senderPhone: firstString(sender.phone, sender.phoneNumber),
+    senderAvatar: firstString(sender.avatarUrl, sender.avatar, sender.profilePictureUrl),
+    content,
+    attachments,
+    timestamp: firstString(comment.timestamp, comment.createdAt, message.timestamp, message.createdAt, payload.timestamp),
+  }
+}
+
+function buildZernioContactIdentifier(accountId, senderId) {
+  return `zernio:${accountId}:${senderId}`.slice(0, 255)
+}
+
+function appendAttachmentLinks(content, attachments) {
+  const links = (attachments || [])
+    .map((attachment) => firstString(attachment.url, attachment.fileUrl, attachment.downloadUrl, attachment.mediaUrl))
+    .filter(Boolean)
+
+  if (!links.length) return content || '[Attachment received]'
+
+  const attachmentText = links.map((link) => `Attachment: ${link}`).join('\n')
+  return [content, attachmentText].filter(Boolean).join('\n\n')
+}
+
+async function findChatwootContactByIdentifier(env, identifier) {
+  const params = new URLSearchParams({ q: identifier })
+  const payload = await chatwootFetch(env, `/contacts/search?${params.toString()}`)
+  const contacts = Array.isArray(payload?.payload) ? payload.payload : []
+  return contacts.find((contact) => String(contact.identifier || '') === identifier) || null
+}
+
+function getContactInboxSourceId(contact, inboxId) {
+  const contactInboxes = Array.isArray(contact?.contact_inboxes) ? contact.contact_inboxes : []
+  const contactInbox = contactInboxes.find((entry) => Number(entry?.inbox?.id) === Number(inboxId))
+  return firstString(contactInbox?.source_id)
+}
+
+async function findOrCreateChatwootZernioContact(env, inboxId, account, message) {
+  const identifier = buildZernioContactIdentifier(account.id, message.senderId)
+  const existing = await findChatwootContactByIdentifier(env, identifier)
+  if (existing?.id) return ensureChatwootContactInbox(env, existing, inboxId, identifier)
+
+  const created = await chatwootFetch(env, '/contacts', {
+    method: 'POST',
+    body: JSON.stringify({
+      inbox_id: inboxId,
+      name: message.senderName,
+      email: message.senderEmail || undefined,
+      phone_number: message.senderPhone || undefined,
+      avatar_url: message.senderAvatar || undefined,
+      identifier,
+      additional_attributes: {
+        source: 'zernio',
+        platform: account.platform,
+      },
+      custom_attributes: {
+        zernio_account_id: account.id,
+        zernio_profile_id: account.profileId || null,
+        zernio_platform: account.platform,
+        zernio_sender_id: message.senderId,
+      },
+    }),
+  })
+
+  const contact = Array.isArray(created?.payload) ? created.payload[0] : created?.payload || created
+  if (contact?.id) return ensureChatwootContactInbox(env, contact, inboxId, identifier)
+
+  return findChatwootContactByIdentifier(env, identifier)
+}
+
+async function findChatwootZernioConversation(env, contactId, zernioConversationId, inboxId) {
+  const payload = await chatwootFetch(env, `/contacts/${contactId}/conversations`)
+  const conversations = Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
+  return conversations.find((conversation) => (
+    Number(conversation?.inbox_id) === Number(inboxId)
+    && String(conversation?.custom_attributes?.zernio_conversation_id || '') === String(zernioConversationId)
+    && String(conversation?.status || '').toLowerCase() !== 'resolved'
+  )) || conversations.find((conversation) => (
+    Number(conversation?.inbox_id) === Number(inboxId)
+    && String(conversation?.custom_attributes?.zernio_conversation_id || '') === String(zernioConversationId)
+  )) || null
+}
+
+async function findOrCreateChatwootZernioConversation(env, contact, inboxId, account, message) {
+  const existing = await findChatwootZernioConversation(env, contact.id, message.conversationId, inboxId)
+  if (existing?.id) return existing
+
+  const sourceId = getContactInboxSourceId(contact, inboxId)
+  if (!sourceId) {
+    throw new Error('Chatwoot contact source id is missing for the Social Inbox.')
+  }
+  return chatwootFetch(env, '/conversations', {
+    method: 'POST',
+    body: JSON.stringify({
+      source_id: sourceId,
+      inbox_id: inboxId,
+      contact_id: contact.id,
+      status: 'open',
+      custom_attributes: {
+        zernio_account_id: account.id,
+        zernio_profile_id: account.profileId || null,
+        zernio_conversation_id: message.conversationId,
+        zernio_platform: account.platform,
+        zernio_username: account.username || null,
+      },
+      additional_attributes: {
+        source: 'zernio',
+        platform: account.platform,
+        zernio_account_id: account.id,
+        zernio_profile_id: account.profileId || null,
+      },
+    }),
+  })
+}
+
+async function chatwootMessageExists(env, conversationId, externalMessageId) {
+  if (!externalMessageId) return false
+  const payload = await chatwootFetch(env, `/conversations/${conversationId}/messages`)
+  const messages = Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
+  return messages.some((message) => (
+    String(message?.source_id || '') === `zernio:${externalMessageId}`
+    || String(message?.content_attributes?.zernio_message_id || '') === String(externalMessageId)
+    || String(message?.external_source_ids?.zernio || '') === String(externalMessageId)
+  ))
+}
+
+async function findDefaultChatwootAgent(env) {
+  const payload = await chatwootFetch(env, '/agents')
+  const agents = Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
+  return agents.find((agent) => getChatwootAgentId(agent)) || null
+}
+
+async function assignChatwootZernioConversation(env, conversation) {
+  const conversationId = getChatwootConversationId(conversation)
+  if (!conversationId) return { assigned: false, reason: 'missing_conversation_id' }
+  if (getChatwootConversationAssigneeId(conversation)) return { assigned: false, alreadyAssigned: true }
+
+  const agent = await findDefaultChatwootAgent(env)
+  const assigneeId = getChatwootAgentId(agent)
+  if (!assigneeId) return { assigned: false, reason: 'chatwoot_agent_not_found' }
+
+  await chatwootFetch(env, `/conversations/${conversationId}/assignments`, {
+    method: 'POST',
+    body: JSON.stringify({ assignee_id: assigneeId }),
+  })
+
+  return { assigned: true, assigneeId }
+}
+
+function fallbackCommentAuthorName(comment, platform) {
+  const name = firstString(comment?.authorName)
+  if (name && name.toLowerCase() !== 'social commenter') return name
+  const platformName = firstString(platform)
+  return platformName ? `${platformName[0].toUpperCase()}${platformName.slice(1)} commenter` : 'Social commenter'
+}
+
+async function syncZernioCommentToChatwoot(chatwootConfig, connection, comment, postId) {
+  const account = {
+    id: firstString(connection?.zernio_account_id),
+    platform: normalizePlatform(firstString(connection?.platform, comment?.platform)),
+    username: firstString(connection?.username),
+  }
+  const message = {
+    id: firstString(comment?.id),
+    conversationId: firstString(comment?.postId, postId),
+    senderId: firstString(comment?.authorId, comment?.id),
+    senderName: fallbackCommentAuthorName(comment, account.platform),
+    senderEmail: '',
+    senderPhone: '',
+    senderAvatar: firstString(comment?.authorAvatar),
+    content: firstString(comment?.text),
+    attachments: [],
+    timestamp: firstString(comment?.createdTime),
+  }
+
+  if (!account.id || !account.platform || !message.id || !message.conversationId || !message.senderId) {
+    return { synced: false, skipped: true, reason: 'missing_comment_identity', commentId: message.id || null }
+  }
+
+  const inbox = await resolveChatwootSocialInbox(chatwootConfig)
+  const contact = await findOrCreateChatwootZernioContact(chatwootConfig, inbox.id, account, message)
+  const conversation = await findOrCreateChatwootZernioConversation(chatwootConfig, contact, inbox.id, account, message)
+  const conversationId = getChatwootConversationId(conversation)
+  if (!conversationId) throw new Error('Chatwoot conversation could not be created.')
+
+  const assignment = await assignChatwootZernioConversation(chatwootConfig, conversation).catch((error) => ({
+    assigned: false,
+    reason: sanitizeChatwootError(error?.message || 'Could not assign social conversation.'),
+  }))
+
+  if (await chatwootMessageExists(chatwootConfig, conversationId, message.id)) {
+    return { synced: false, deduped: true, conversationId, commentId: message.id, assignment }
+  }
+
+  const createdMessage = await chatwootFetch(chatwootConfig, `/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      content: appendAttachmentLinks(message.content, message.attachments).slice(0, 5000),
+      message_type: 'incoming',
+      private: false,
+      source_id: `zernio:${message.id}`,
+      content_type: 'text',
+      content_attributes: {
+        zernio_event: 'comment.received',
+        zernio_sync_source: 'zernio_comments_poll',
+        zernio_message_id: message.id,
+        zernio_comment_id: message.id,
+        zernio_comment_post_id: zernioCommentPostIdFromIds(message.id, message.conversationId),
+        zernio_conversation_id: message.conversationId,
+        zernio_account_id: account.id,
+        zernio_profile_id: account.profileId || connection.zernio_profile_id || null,
+        zernio_platform: account.platform,
+        zernio_timestamp: message.timestamp || null,
+        zernio_attachments: message.attachments,
+      },
+    }),
+  })
+
+  return {
+    synced: true,
+    conversationId,
+    messageId: createdMessage?.id || createdMessage?.payload?.id || null,
+    commentId: message.id,
+    assignment,
+  }
+}
+
+async function syncZernioCommentsToChatwoot(chatwootConfig, connection, comments, postId) {
+  const results = []
+  for (const comment of comments) {
+    try {
+      results.push(await syncZernioCommentToChatwoot(chatwootConfig, connection, comment, postId))
+    } catch (error) {
+      results.push({
+        synced: false,
+        error: sanitizeChatwootError(error?.message || 'Could not sync comment to Chatwoot.'),
+        commentId: firstString(comment?.id) || null,
+      })
+    }
+  }
+  return results
+}
+
+async function handleZernioInboxWebhook(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: { allow: 'POST, OPTIONS' },
+    })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+
+  let envConfig
+  try {
+    envConfig = getSupabaseConfig(env)
+  } catch (error) {
+    return json({ error: error.message || 'Webhook configuration is incomplete.' }, { status: 500 })
+  }
+
+  let rawBody = ''
+  try {
+    rawBody = await request.text()
+  } catch {
+    return json({ error: 'Could not read webhook body.' }, { status: 400 })
+  }
+
+  const signature = request.headers.get('x-zernio-signature') || request.headers.get('x-late-signature') || ''
+  const isValidSignature = await verifyZernioWebhookSignature(rawBody, signature, envConfig.webhookSecret)
+  if (!isValidSignature) {
+    return json({ error: 'Invalid webhook signature.' }, { status: 401 })
+  }
+
+  let payload = {}
+  try {
+    payload = JSON.parse(rawBody || '{}')
+  } catch {
+    return json({ error: 'Webhook payload was not valid JSON.' }, { status: 400 })
+  }
+
+  const eventName = normalizeZernioEventName(request, payload)
+  if (eventName === 'webhook.test') {
+    return json({ success: true, message: 'Inbox webhook test received.' })
+  }
+
+  const allowedEvents = new Set(['message.received', 'comment.received', 'review.new'])
+  if (!allowedEvents.has(eventName)) {
+    return json({ success: true, skipped: true, reason: 'Unhandled inbox event.', event: eventName })
+  }
+
+  const account = normalizeZernioAccount(payload)
+  const message = normalizeZernioMessage(payload)
+  if (!account.id || !account.platform || !message.conversationId || !message.senderId) {
+    return json({ error: 'Missing account, platform, conversation, or sender identifier.' }, { status: 400 })
+  }
+
+  let connection = null
+  try {
+    connection = await findSocialConnectionByAccountId(envConfig, account.id, account.profileId)
+  } catch (error) {
+    return json({ error: sanitizeChatwootError(error?.message || 'Could not resolve the Zernio account tenant.'), event: eventName }, { status: error?.status || 502 })
+  }
+  if (!connection) {
+    return json({ success: true, skipped: true, reason: 'Zernio account is not uniquely connected to a MAP tenant.', event: eventName })
+  }
+  if (account.platform && normalizePlatform(connection.platform) !== account.platform) {
+    return json({ success: true, skipped: true, reason: 'Zernio account platform did not match the MAP connection.', event: eventName })
+  }
+
+  const tenantEnvConfig = { ...envConfig, clientId: connection.client_id }
+  const connectedAccount = {
+    ...account,
+    username: account.username || connection.username,
+  }
+
+  try {
+    const chatwootConfig = await getChatwootConfigForClient(env, tenantEnvConfig)
+    const inbox = await resolveChatwootSocialInbox(chatwootConfig)
+    const contact = await findOrCreateChatwootZernioContact(chatwootConfig, inbox.id, connectedAccount, message)
+    const conversation = await findOrCreateChatwootZernioConversation(chatwootConfig, contact, inbox.id, connectedAccount, message)
+    const conversationId = getChatwootConversationId(conversation)
+    if (!conversationId) throw new Error('Chatwoot conversation could not be created.')
+    const assignment = await assignChatwootZernioConversation(chatwootConfig, conversation).catch((error) => ({
+      assigned: false,
+      reason: sanitizeChatwootError(error?.message || 'Could not assign social conversation.'),
+    }))
+
+    if (await chatwootMessageExists(chatwootConfig, conversationId, message.id)) {
+      return json({ success: true, deduped: true, conversationId, event: eventName, assignment })
+    }
+
+    const content = appendAttachmentLinks(message.content, message.attachments).slice(0, 5000)
+    const createdMessage = await chatwootFetch(chatwootConfig, `/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content,
+        message_type: 'incoming',
+        private: false,
+        source_id: message.id ? `zernio:${message.id}` : undefined,
+        content_type: 'text',
+        content_attributes: {
+          zernio_event: eventName,
+          zernio_message_id: message.id || null,
+          zernio_comment_id: eventName === 'comment.received' ? (message.id || null) : null,
+          zernio_comment_post_id: eventName === 'comment.received' ? (zernioCommentPostIdFromIds(message.id, message.conversationId) || null) : null,
+          zernio_conversation_id: message.conversationId,
+          zernio_account_id: connectedAccount.id,
+          zernio_profile_id: connectedAccount.profileId || connection.zernio_profile_id || null,
+          zernio_platform: connectedAccount.platform,
+          zernio_timestamp: message.timestamp || null,
+          zernio_attachments: message.attachments,
+        },
+      }),
+    })
+    const portalPush = await notifyPortalPushSubscribers(env, tenantEnvConfig).catch((error) => ({
+      attempted: 0,
+      sent: 0,
+      error: sanitizePortalCustomerError(error?.message || 'Portal push notification failed.'),
+    }))
+
+    return json({
+      success: true,
+      event: eventName,
+      platform: connectedAccount.platform,
+      inboxId: inbox.id,
+      contactId: contact.id,
+      conversationId,
+      messageId: createdMessage?.id || createdMessage?.payload?.id || null,
+      assignment,
+      portalPush,
+    })
+  } catch (error) {
+    return json({ error: sanitizeChatwootError(error?.message), event: eventName }, { status: error?.status || 502 })
+  }
+}
+
+async function sendZernioConversationReply(env, conversation, content, chatwootConfig = null) {
+  const attrs = getConversationCustomAttributes(conversation)
+  const zernioConversationId = firstString(attrs.zernio_conversation_id)
+  const zernioAccountId = firstString(attrs.zernio_account_id)
+  if (!zernioConversationId || !zernioAccountId) {
+    throw new Error('This Chatwoot conversation is missing Zernio routing metadata.')
+  }
+
+  const n8nWebhookUrl = String(env.ZERNIO_INBOX_SEND_WEBHOOK_URL || '').trim()
+  const conversationId = getChatwootConversationId(conversation)
+  const messages = chatwootConfig ? await loadChatwootConversationMessages(chatwootConfig, conversationId) : []
+  const request = buildZernioOutboundReplyRequest(conversation, messages, content)
+  if (!request) throw new Error('This Chatwoot conversation is missing Zernio routing metadata.')
+
+  const payload = n8nWebhookUrl && request.kind === 'conversation'
+    ? await sendZernioReplyThroughN8n(env, n8nWebhookUrl, request.body)
+    : await zernioFetch(env, request.path, {
+      method: 'POST',
+      body: JSON.stringify(request.body),
+    })
+
+  return {
+    payload,
+    messageId: firstString(payload?.message?.id, payload?.id, payload?.data?.id),
+    kind: request.kind,
+  }
+}
+
+async function sendZernioReplyThroughN8n(env, webhookUrl, body) {
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(env.ZERNIO_INBOX_SEND_SECRET ? { 'x-map-bridge-secret': String(env.ZERNIO_INBOX_SEND_SECRET) } : {}),
+    },
+    body: JSON.stringify(body),
+  })
+
+  const payload = await readChatwootResponse(response)
+  if (!response.ok || payload?.success === false) {
+    const error = new Error(payload?.message || payload?.error || `Zernio inbox send workflow failed (${response.status}).`)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}
+
+function zernioCommentPostIdFromIds(commentId, conversationId) {
+  const normalizedCommentId = firstString(commentId)
+  if (normalizedCommentId.includes('_')) return normalizedCommentId.split('_')[0]
+
+  const normalizedConversationId = firstString(conversationId)
+  if (normalizedConversationId.includes('_')) {
+    const segments = normalizedConversationId.split('_').filter(Boolean)
+    return segments[segments.length - 1] || ''
+  }
+
+  return ''
+}
+
+function getMessageContentAttributes(message) {
+  return message?.content_attributes || message?.payload?.content_attributes || {}
+}
+
+function findZernioCommentRoutingMessage(messages = []) {
+  return [...(Array.isArray(messages) ? messages : [])].reverse().find((message) => {
+    const attrs = getMessageContentAttributes(message)
+    return firstString(attrs.zernio_comment_id, attrs.zernio_message_id)
+      && firstString(attrs.zernio_event) === 'comment.received'
+  }) || null
+}
+
+export function buildZernioOutboundReplyRequest(conversation, messages = [], content = '') {
+  const attrs = getConversationCustomAttributes(conversation)
+  const accountId = firstString(attrs.zernio_account_id)
+  const profileId = firstString(attrs.zernio_profile_id)
+  const conversationId = firstString(attrs.zernio_conversation_id)
+  const message = firstString(content).slice(0, 5000)
+  if (!accountId || !conversationId || !message) return null
+
+  const commentMessage = findZernioCommentRoutingMessage(messages)
+  const commentAttrs = getMessageContentAttributes(commentMessage)
+  const commentId = firstString(commentAttrs.zernio_comment_id, commentAttrs.zernio_message_id)
+  if (commentId) {
+    const postId = firstString(
+      commentAttrs.zernio_comment_post_id,
+      commentAttrs.zernio_post_id,
+      zernioCommentPostIdFromIds(commentId, firstString(commentAttrs.zernio_conversation_id, conversationId)),
+    )
+    if (postId) {
+      return {
+        kind: 'comment',
+        path: `/inbox/comments/${encodeURIComponent(postId)}`,
+        body: {
+          accountId,
+          ...(profileId ? { profileId } : {}),
+          commentId,
+          message,
+        },
+      }
+    }
+  }
+
+  return {
+    kind: 'conversation',
+    path: `/inbox/conversations/${encodeURIComponent(conversationId)}/messages`,
+    body: {
+      accountId,
+      ...(profileId ? { profileId } : {}),
+      conversationId,
+      message,
+    },
+  }
+}
+
+async function loadChatwootConversationMessages(env, conversationId) {
+  if (!conversationId) return []
+  const payload = await chatwootFetch(env, `/conversations/${conversationId}/messages`)
+  return Array.isArray(payload?.payload) ? payload.payload : (Array.isArray(payload) ? payload : [])
+}
+
+async function handleChatwootMessageWebhook(request, env, ctx = null) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: { allow: 'POST, OPTIONS' },
+    })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+
+  const url = new URL(request.url)
+  const expectedToken = String(env.CHATWOOT_WEBHOOK_BRIDGE_SECRET || '').trim()
+  const pathTokenMatch = /^\/api\/chatwoot\/webhooks\/messages\/([^/]+)$/.exec(url.pathname)
+  const pathToken = pathTokenMatch?.[1] ? decodeURIComponent(pathTokenMatch[1]) : ''
+  const providedToken = firstString(
+    url.searchParams.get('token'),
+    pathToken,
+    request.headers.get('x-map-chatwoot-webhook-token'),
+    request.headers.get('x-chatwoot-webhook-token'),
+  )
+
+  if (expectedToken && providedToken !== expectedToken) {
+    return json({ error: 'Invalid Chatwoot webhook token.' }, { status: 401 })
+  }
+
+  const payload = await request.json().catch(() => ({}))
+  const eventName = firstString(payload.event, payload.event_name, payload.name)
+  const message = payload.message || payload
+  const conversation = payload.conversation || message.conversation || {}
+
+  if (eventName && eventName !== 'message_created') {
+    return json({ success: true, skipped: true, reason: 'Unhandled Chatwoot event.', event: eventName })
+  }
+
+  const isOutgoing = String(message.message_type || '').toLowerCase() === 'outgoing' || Number(message.message_type) === 1
+  const alreadyBridged = Boolean(message.content_attributes?.zernio_bridge_sent)
+  const isContentPartnerMessage = shouldProcessContentPartnerWebhookMessage(message, conversation)
+
+  if (isContentPartnerMessage) {
+    const processContentPartner = async () => {
+      const envConfig = await getPortalWebhookConfig(request, env)
+      const webhookAccountId = getWebhookChatwootAccountId(payload, message, conversation)
+      const chatwootContext = webhookAccountId ? { accountId: webhookAccountId } : {}
+      const chatwootConfig = await getChatwootConfigForClient(env, envConfig, chatwootContext)
+      await ensureChatwootConversationOpen(chatwootConfig, conversation).catch((error) => {
+        console.warn('Content Partner conversation reopen skipped.', sanitizeChatwootError(error?.message || error))
+      })
+      return processContentPartnerMessage(env, envConfig, payload, message, conversation, '', chatwootContext)
+    }
+
+    if (ctx?.waitUntil) {
+      ctx.waitUntil(processContentPartner().catch((error) => {
+        console.error('Content Partner async webhook failed.', sanitizeChatwootError(error?.message || error))
+      }))
+      return json({
+        success: true,
+        queued: true,
+        event: eventName || 'message_created',
+        contentPartner: true,
+      })
+    }
+
+    try {
+      const result = await processContentPartner()
+      return json({
+        success: true,
+        event: eventName || 'message_created',
+        contentPartner: true,
+        deduped: Boolean(result.deduped),
+        reason: result.reason || null,
+        requestId: result.requestId || null,
+        draftId: result.draftId || null,
+      })
+    } catch (error) {
+      return json({
+        error: sanitizeChatwootError(error?.message || 'Could not create Content Partner draft.'),
+      }, { status: error?.status || 502 })
+    }
+  }
+
+  if (!isOutgoing || message.private || alreadyBridged || !isZernioBackedConversation(conversation)) {
+    return json({ success: true, skipped: true, reason: 'Not an outbound Zernio-backed customer reply.' })
+  }
+
+  try {
+    const envConfig = await getPortalWebhookConfig(request, env)
+    const webhookAccountId = getWebhookChatwootAccountId(payload, message, conversation)
+    const chatwootContext = webhookAccountId ? { accountId: webhookAccountId } : {}
+    const chatwootConfig = await getChatwootConfigForClient(env, envConfig, chatwootContext)
+    const zernioResult = await sendZernioConversationReply(env, conversation, firstString(message.content), chatwootConfig)
+    return json({
+      success: true,
+      event: eventName || 'message_created',
+      zernioMessageId: zernioResult.messageId || null,
+      kind: zernioResult.kind || null,
+    })
+  } catch (error) {
+    return json({ error: error.message || 'Could not bridge Chatwoot reply to Zernio.' }, { status: error?.status || 502 })
+  }
+}
+
+async function replaceSocialConnection(envConfig, { platform, accountId, profileId, username, accountMetadata = {} }) {
+  const zernioProfileId = firstString(profileId, envConfig.zernioProfileId)
+  const accountFilters = new URLSearchParams({
+    zernio_account_id: `eq.${accountId}`,
+  })
+  if (zernioProfileId) accountFilters.set('zernio_profile_id', `eq.${zernioProfileId}`)
+  await supabaseRest(
+    envConfig,
+    `/rest/v1/social_connections?${accountFilters.toString()}`,
+    { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
+  )
+
+  const filters = new URLSearchParams({
+    client_id: `eq.${envConfig.clientId}`,
+    platform: `eq.${platform}`,
+  })
+
+  await supabaseRest(
+    envConfig,
+    `/rest/v1/social_connections?${filters.toString()}`,
+    { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
+  )
+
+  const payload = [{
+    client_id: envConfig.clientId,
+    platform,
+    zernio_account_id: accountId,
+    zernio_profile_id: zernioProfileId || null,
+    username,
+    zernio_account_metadata: accountMetadata && typeof accountMetadata === 'object' && !Array.isArray(accountMetadata)
+      ? accountMetadata
+      : {},
+    connected_at: new Date().toISOString(),
+  }]
+
+  await supabaseRest(
+    envConfig,
+    '/rest/v1/social_connections',
+    {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
+async function findSocialConnectionByAccountId(envConfig, accountId, profileId = '') {
+  if (!accountId) return null
+  const filters = new URLSearchParams({
+    select: 'id,client_id,platform,zernio_account_id,zernio_profile_id,username',
+    zernio_account_id: `eq.${accountId}`,
+    limit: '2',
+  })
+  const normalizedProfileId = firstString(profileId)
+  if (normalizedProfileId) filters.set('zernio_profile_id', `eq.${normalizedProfileId}`)
+
+  const response = await supabaseRest(envConfig, `/rest/v1/social_connections?${filters.toString()}`)
+  const rows = await response.json()
+  if (!Array.isArray(rows) || rows.length === 0) return null
+  if (rows.length === 1) return rows[0]
+  if (!normalizedProfileId) return null
+  const profileScopedRows = rows.filter((row) => firstString(row.zernio_profile_id) === normalizedProfileId)
+  return profileScopedRows.length === 1 ? profileScopedRows[0] : null
+}
+
+async function loadPendingSocialConnectionAttemptByState(envConfig, stateToken) {
+  if (!stateToken) return null
+  const filters = new URLSearchParams({
+    select: 'id,client_id,platform,zernio_profile_id,status,expires_at,created_at',
+    state_token_hash: `eq.${await sha256Hex(stateToken)}`,
+    status: 'eq.pending',
+    expires_at: `gte.${new Date().toISOString()}`,
+    limit: '1',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/social_connection_attempts?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows[0] : null
+}
+
+async function loadPendingSocialConnectionAttemptsByProfilePlatform(envConfig, profileId, platform) {
+  const zernioProfileId = firstString(profileId)
+  if (!zernioProfileId) return []
+  const filters = new URLSearchParams({
+    select: 'id,client_id,platform,zernio_profile_id,status,expires_at,created_at',
+    zernio_profile_id: `eq.${zernioProfileId}`,
+    platform: `eq.${platform}`,
+    status: 'eq.pending',
+    expires_at: `gte.${new Date().toISOString()}`,
+    order: 'created_at.desc',
+    limit: '2',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/social_connection_attempts?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) ? rows : []
+}
+
+async function loadClientByZernioProfileId(envConfig, profileId) {
+  const zernioProfileId = firstString(profileId)
+  if (!zernioProfileId) return null
+  const filters = new URLSearchParams({
+    select: 'id,slug,zernio_profile_id,zernio_profile_status',
+    zernio_profile_id: `eq.${zernioProfileId}`,
+    limit: '2',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/clients?${filters.toString()}`)
+  const rows = await response.json()
+  return Array.isArray(rows) && rows.length === 1 ? rows[0] : null
+}
+
+async function updateSocialConnectionAttempt(envConfig, attemptId, updates) {
+  if (!attemptId) return
+  const filters = new URLSearchParams({ id: `eq.${attemptId}` })
+  await supabaseRest(
+    envConfig,
+    `/rest/v1/social_connection_attempts?${filters.toString()}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify(updates),
+    },
+  )
+}
+
+async function completePendingSocialConnectionAttemptsByProfilePlatform(envConfig, { profileId, platform, accountId, username, source = 'zernio-profile-refresh' }) {
+  const zernioProfileId = firstString(profileId)
+  if (!zernioProfileId || !platform) return
+  const filters = new URLSearchParams({
+    client_id: `eq.${envConfig.clientId}`,
+    zernio_profile_id: `eq.${zernioProfileId}`,
+    platform: `eq.${platform}`,
+    status: 'eq.pending',
+  })
+  await supabaseRest(
+    envConfig,
+    `/rest/v1/social_connection_attempts?${filters.toString()}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'completed',
+        zernio_account_id: accountId || null,
+        username: username || null,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          source,
+          resolution: 'profile_refresh',
+          zernio_profile_id: zernioProfileId,
+        },
+      }),
+    },
+  )
+}
+
+function normalizeZernioListAccount(account) {
+  return {
+    id: extractZernioAccountId(account),
+    profileId: extractZernioProfileId(account),
+    platform: normalizePlatform(firstString(account?.platform, account?.provider)),
+    username: firstString(account?.username, account?.handle, account?.displayName, account?.name),
+    profileName: firstString(account?.profileId?.name, account?.profile?.name),
+    platformUserId: firstString(account?.platformUserId, account?.platform_user_id),
+  }
+}
+
+async function syncZernioProfileAccountsForClient(env, envConfig, options = {}) {
+  const zernioProfileId = firstString(envConfig.zernioProfileId)
+  if (!zernioProfileId) {
+    throw new Error('This customer does not have a Zernio profile configured yet.')
+  }
+
+  const requestedPlatform = normalizePlatform(options.platform)
+  const accounts = await listZernioAccounts(env, { profileId: zernioProfileId, limit: 100 })
+  const normalizedAccounts = accounts
+    .map(normalizeZernioListAccount)
+    .filter((account) => account.id && account.platform && account.profileId === zernioProfileId)
+    .filter((account) => !requestedPlatform || account.platform === requestedPlatform)
+
+  for (const account of normalizedAccounts) {
+    await replaceSocialConnection(envConfig, {
+      platform: account.platform,
+      accountId: account.id,
+      profileId: account.profileId,
+      username: account.username,
+      accountMetadata: {
+        source: 'zernio-profile-refresh',
+        profileName: account.profileName || null,
+        platformUserId: account.platformUserId || null,
+        zernioProfileMatchesClient: true,
+        syncedAt: new Date().toISOString(),
+      },
+    })
+    await completePendingSocialConnectionAttemptsByProfilePlatform(envConfig, {
+      profileId: account.profileId,
+      platform: account.platform,
+      accountId: account.id,
+      username: account.username,
+    })
+  }
+
+  return normalizedAccounts
+}
+
+async function markAmbiguousSocialConnectionAttempts(envConfig, attempts, { accountId, platform }) {
+  const ids = Array.isArray(attempts) ? attempts.map((attempt) => attempt.id).filter(Boolean) : []
+  if (!ids.length) return
+  const filters = new URLSearchParams({
+    id: `in.(${ids.join(',')})`,
+    status: 'eq.pending',
+  })
+  await supabaseRest(
+    envConfig,
+    `/rest/v1/social_connection_attempts?${filters.toString()}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'ambiguous',
+        zernio_account_id: accountId || null,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          source: 'zernio-account-webhook',
+          reason: 'multiple_pending_attempts',
+          platform,
+        },
+      }),
+    },
+  )
+}
+
+async function resolveSocialConnectionTarget(envConfig, { platform, accountId, profileId, stateToken }) {
+  const existingConnection = await findSocialConnectionByAccountId(envConfig, accountId, profileId)
+  if (existingConnection) {
+    const existingPlatform = normalizePlatform(existingConnection.platform)
+    if (existingPlatform && existingPlatform !== platform) {
+      return {
+        skipped: true,
+        reason: 'Zernio account is already connected under a different platform.',
+      }
+    }
+
+    return {
+      clientId: existingConnection.client_id,
+      source: 'existing_connection',
+      connection: existingConnection,
+    }
+  }
+
+  const stateAttempt = await loadPendingSocialConnectionAttemptByState(envConfig, stateToken)
+  if (stateAttempt) {
+    if (stateAttempt.zernio_profile_id && profileId && stateAttempt.zernio_profile_id !== profileId) {
+      await updateSocialConnectionAttempt(envConfig, stateAttempt.id, {
+        status: 'failed',
+        zernio_account_id: accountId || null,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          source: 'zernio-account-webhook',
+          reason: 'profile_mismatch',
+          event_profile_id: profileId,
+        },
+      })
+      return {
+        skipped: true,
+        reason: 'Connect attempt profile did not match the Zernio account event.',
+      }
+    }
+
+    const attemptPlatform = normalizePlatform(stateAttempt.platform)
+    if (attemptPlatform && attemptPlatform !== platform) {
+      await updateSocialConnectionAttempt(envConfig, stateAttempt.id, {
+        status: 'failed',
+        zernio_account_id: accountId || null,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          source: 'zernio-account-webhook',
+          reason: 'platform_mismatch',
+          event_platform: platform,
+        },
+      })
+      return {
+        skipped: true,
+        reason: 'Connect attempt platform did not match the Zernio account event.',
+      }
+    }
+
+    return {
+      clientId: stateAttempt.client_id,
+      source: 'state_attempt',
+      attempt: stateAttempt,
+    }
+  }
+
+  const profileClient = await loadClientByZernioProfileId(envConfig, profileId)
+  if (profileClient?.id) {
+    return {
+      clientId: profileClient.id,
+      source: 'profile_match',
+    }
+  }
+
+  const pendingAttempts = await loadPendingSocialConnectionAttemptsByProfilePlatform(envConfig, profileId, platform)
+  if (pendingAttempts.length === 1) {
+    return {
+      clientId: pendingAttempts[0].client_id,
+      source: 'single_pending_attempt',
+      attempt: pendingAttempts[0],
+    }
+  }
+
+  if (pendingAttempts.length > 1) {
+    await markAmbiguousSocialConnectionAttempts(envConfig, pendingAttempts, { accountId, platform })
+    return {
+      skipped: true,
+      reason: 'Multiple pending connect attempts matched this account event.',
+    }
+  }
+
+  return {
+    skipped: true,
+    reason: 'No existing connection or pending connect attempt matched this account event.',
+  }
+}
+
+async function removeSocialConnection(envConfig, { platform, accountId }) {
+  const filters = new URLSearchParams({
+    client_id: `eq.${envConfig.clientId}`,
+  })
+
+  if (accountId) {
+    filters.set('zernio_account_id', `eq.${accountId}`)
+  } else if (platform) {
+    filters.set('platform', `eq.${platform}`)
+  }
+
+  await supabaseRest(
+    envConfig,
+    `/rest/v1/social_connections?${filters.toString()}`,
+    { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
+  )
+}
+
+async function handleSocialConnectionDisconnect(request, env) {
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+  if (auth.user.role !== 'admin') {
+    return json({ error: 'Only client admins can disconnect social accounts.' }, { status: 403 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const platform = normalizePlatform(body.platform)
+  if (!platform) {
+    return json({ error: 'Choose a supported social platform to disconnect.' }, { status: 400 })
+  }
+
+  await removeSocialConnection(auth.envConfig, { platform })
+  return json({
+    success: true,
+    platform,
+    message: `${platform} is disconnected from this MAP portal.`,
+  })
+}
+
+async function handleSocialConnectionsRefresh(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { allow: 'POST, OPTIONS' } })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
+  }
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+  if (auth.user.role !== 'admin') {
+    return json({ error: 'Only client admins can refresh social accounts.' }, { status: 403 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  try {
+    const accounts = await syncZernioProfileAccountsForClient(env, auth.envConfig, {
+      platform: body?.platform,
+    })
+    return json({
+      success: true,
+      profileId: auth.envConfig.zernioProfileId || null,
+      accounts,
+    })
+  } catch (error) {
+    return json({
+      success: false,
+      error: error?.message || 'Could not refresh Zernio profile accounts.',
+      details: error?.payload || null,
+    }, { status: error?.status || 502 })
+  }
+}
+
+async function handleZernioAccountWebhook(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: { allow: 'POST, OPTIONS' },
+    })
+  }
+
+  if (request.method !== 'POST') {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+
+  let envConfig
+  try {
+    envConfig = getSupabaseConfig(env)
+  } catch (error) {
+    return json({ error: error.message || 'Webhook configuration is incomplete.' }, { status: 500 })
+  }
+
+  let rawBody = ''
+  try {
+    rawBody = await request.text()
+  } catch {
+    return json({ error: 'Could not read webhook body.' }, { status: 400 })
+  }
+
+  const signature = request.headers.get('x-zernio-signature') || request.headers.get('x-late-signature') || ''
+  const isValidSignature = await verifyZernioWebhookSignature(rawBody, signature, envConfig.webhookSecret)
+  if (!isValidSignature) {
+    return json({ error: 'Invalid webhook signature.' }, { status: 401 })
+  }
+
+  let payload = {}
+  try {
+    payload = JSON.parse(rawBody || '{}')
+  } catch {
+    return json({ error: 'Webhook payload was not valid JSON.' }, { status: 400 })
+  }
+
+  const eventName = String(
+    request.headers.get('x-zernio-event')
+    || request.headers.get('x-late-event')
+    || payload.event
+    || '',
+  ).trim()
+
+  if (eventName === 'webhook.test') {
+    return json({ success: true, message: 'Webhook test received.' })
+  }
+
+  const account = normalizeZernioAccountEventDetails(payload)
+  const platform = account.platform
+  const accountId = account.id
+  const username = account.username
+
+  if (!platform) {
+    return json({ success: true, skipped: true, reason: 'Unsupported or missing platform.', event: eventName })
+  }
+
+  try {
+    if (eventName === 'account.connected') {
+      if (!accountId) {
+        return json({ error: 'Missing accountId in account.connected payload.' }, { status: 400 })
+      }
+
+      const target = await resolveSocialConnectionTarget(envConfig, {
+        platform,
+        accountId,
+        profileId: account.profileId,
+        stateToken: account.state,
+      })
+      if (target.skipped || !target.clientId) {
+        return json({
+          success: true,
+          skipped: true,
+          reason: target.reason || 'Could not safely attribute account event.',
+          event: eventName,
+          platform,
+          accountId,
+          profileId: account.profileId || null,
+        })
+      }
+
+      const targetEnvConfig = { ...envConfig, clientId: target.clientId, zernioProfileId: account.profileId }
+      await replaceSocialConnection(targetEnvConfig, {
+        platform,
+        accountId,
+        profileId: account.profileId,
+        username,
+        accountMetadata: { source: 'zernio-account-webhook', eventId: payload.id || null },
+      })
+      if (target.attempt?.id) {
+        await updateSocialConnectionAttempt(envConfig, target.attempt.id, {
+          status: 'completed',
+          zernio_account_id: accountId,
+          zernio_profile_id: account.profileId || target.attempt.zernio_profile_id || null,
+          username,
+          completed_at: new Date().toISOString(),
+          metadata: {
+            source: 'zernio-account-webhook',
+            resolution: target.source,
+            zernio_profile_id: account.profileId || null,
+          },
+        })
+      }
+      return json({
+        success: true,
+        event: eventName,
+        platform,
+        accountId,
+        profileId: account.profileId || null,
+        action: 'upserted',
+        attribution: target.source,
+      })
+    }
+
+    if (eventName === 'account.disconnected') {
+      if (!accountId) {
+        return json({
+          success: true,
+          skipped: true,
+          reason: 'Missing accountId in account.disconnected payload.',
+          event: eventName,
+          platform,
+        })
+      }
+
+      const existingConnection = await findSocialConnectionByAccountId(envConfig, accountId, account.profileId)
+      if (!existingConnection) {
+        return json({
+          success: true,
+          skipped: true,
+          reason: 'No connected MAP tenant owns this Zernio account.',
+          event: eventName,
+          platform,
+          accountId,
+          profileId: account.profileId || null,
+        })
+      }
+
+      await removeSocialConnection({ ...envConfig, clientId: existingConnection.client_id }, { platform, accountId })
+      return json({
+        success: true,
+        event: eventName,
+        platform,
+        accountId,
+        profileId: account.profileId || null,
+        disconnectionType: payload.disconnectionType || null,
+        action: 'removed',
+      })
+    }
+  } catch (error) {
+    return json({ error: error.message || 'Webhook reconciliation failed.', event: eventName }, { status: 502 })
+  }
+
+  return json({ success: true, skipped: true, reason: 'Unhandled event.', event: eventName, platform })
+}
+
+function normalizePath(path) {
+  const cleaned = String(path || '')
+    .replace(/\/+/g, '/')
+    .replace(/\/$/, '')
+
+  if (!cleaned || cleaned === '.') return ''
+  return cleaned.startsWith('/') ? cleaned : `/${cleaned}`
+}
+
+function getIsoWeekFolder(dateString) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateString || '')
+  if (!match) {
+    throw new Error('Invalid date. Expected YYYY-MM-DD.')
+  }
+
+  const [, year, month, day] = match
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
+  if (Number.isNaN(date.getTime())) {
+    throw new Error('Invalid date. Expected YYYY-MM-DD.')
+  }
+
+  const dayOfWeek = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - dayOfWeek)
+  const weekYear = date.getUTCFullYear()
+  const yearStart = new Date(Date.UTC(weekYear, 0, 1))
+  const weekNumber = Math.ceil((((date - yearStart) / 86400000) + 1) / 7)
+
+  return `${weekYear}-w${String(weekNumber).padStart(2, '0')}`
+}
+
+function hashString(value) {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(index)
+    hash |= 0
+  }
+  return Math.abs(hash)
+}
+
+function tokenize(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token && token.length > 2 && !TOKEN_STOP_WORDS.has(token))
+}
+
+function getExtension(name) {
+  return String(name || '').split('.').pop()?.toLowerCase() || ''
+}
+
+function isSupportedMedia(entry) {
+  return entry?.['.tag'] === 'file' && SUPPORTED_MEDIA_EXTENSIONS.has(getExtension(entry.name))
+}
+
+function isImageMedia(entry) {
+  return entry?.['.tag'] === 'file' && ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif', 'heic', 'heif'].includes(getExtension(entry.name))
+}
+
+function scoreEntry(entry, { mediaHint, postType, weekFolder }) {
+  const fileName = String(entry?.name || '').toLowerCase()
+  const tokens = [...new Set([...tokenize(mediaHint), ...tokenize(postType)])]
+  const reasons = []
+  let score = 0
+
+  for (const token of tokens) {
+    if (fileName.includes(token)) {
+      score += token.length > 5 ? 6 : 4
+      reasons.push(`Matches "${token}"`)
+    }
+  }
+
+  const extension = getExtension(entry?.name)
+  if (['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'avif'].includes(extension)) {
+    score += 5
+    reasons.push('Photo-ready file type')
+  }
+
+  const weekHint = weekFolder.split('-').join('')
+  if (fileName.includes(weekHint) || fileName.includes(weekFolder.replace('-', ''))) {
+    score += 3
+    reasons.push('Week-specific filename')
+  }
+
+  if (/(hero|cover|banner|feature|spotlight|recital|class|studio|team|student|teacher)/.test(fileName)) {
+    score += 3
+  }
+
+  if (!reasons.length) {
+    reasons.push('Best visual match from this week folder')
+  }
+
+  score += hashString(`${weekFolder}:${entry?.path_lower || entry?.name}`) % 3
+
+  return { score, reasons }
+}
+
+async function dropboxRpc(endpoint, accessToken, body) {
+  const response = await fetch(`${DROPBOX_API_BASE}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    const error = new Error(payload.error_summary || `Dropbox API request failed for ${endpoint}.`)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload
+}
+
+async function exchangeDropboxRefreshToken(refreshToken, clientId, clientSecret) {
+  const response = await fetch(DROPBOX_OAUTH_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+    }),
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || !payload?.access_token) {
+    const error = new Error(payload.error_summary || payload.error_description || 'Dropbox token refresh failed.')
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload.access_token
+}
+
+async function getDropboxAccessToken(env) {
+  const refreshToken = String(env.DROPBOX_REFRESH_TOKEN || '').trim()
+  const clientId = String(env.DROPBOX_APP_KEY || '').trim()
+  const clientSecret = String(env.DROPBOX_APP_SECRET || '').trim()
+
+  if (refreshToken) {
+    if (!clientId || !clientSecret) {
+      throw new Error('Dropbox refresh token is configured, but app key/secret are missing.')
+    }
+
+    return exchangeDropboxRefreshToken(refreshToken, clientId, clientSecret)
+  }
+
+  const accessToken = String(env.DROPBOX_ACCESS_TOKEN || '').trim()
+  if (!accessToken) {
+    throw new Error('Dropbox access token is not configured in the worker.')
+  }
+
+  return accessToken
+}
+
+function isFolderMissing(error) {
+  return error?.payload?.error?.['.tag'] === 'path'
+    && error?.payload?.error?.path?.['.tag'] === 'not_found'
+}
+
+async function listFolderEntries(accessToken, path) {
+  const firstPage = await dropboxRpc('/files/list_folder', accessToken, {
+    path,
+    recursive: false,
+    include_media_info: true,
+    include_deleted: false,
+  })
+
+  const entries = [...(firstPage.entries || [])]
+  let cursor = firstPage.cursor
+  let hasMore = firstPage.has_more
+
+  while (hasMore && cursor) {
+    const nextPage = await dropboxRpc('/files/list_folder/continue', accessToken, { cursor })
+    entries.push(...(nextPage.entries || []))
+    cursor = nextPage.cursor
+    hasMore = nextPage.has_more
+  }
+
+  return entries
+}
+
+async function getSharedLinkMetadata(accessToken, url) {
+  return dropboxRpc('/sharing/get_shared_link_metadata', accessToken, { url })
+}
+
+async function listSharedFolderEntries(accessToken, url) {
+  const payload = await dropboxRpc('/files/list_folder', accessToken, {
+    path: '',
+    shared_link: { url },
+    recursive: false,
+    include_media_info: true,
+    include_deleted: false,
+  })
+
+  return payload.entries || []
+}
+
+async function getTemporaryLink(accessToken, path) {
+  const payload = await dropboxRpc('/files/get_temporary_link', accessToken, { path })
+  return payload?.link || null
+}
+
+async function listDirectSharedLinks(accessToken, path) {
+  const payload = await dropboxRpc('/sharing/list_shared_links', accessToken, {
+    path,
+    direct_only: true,
+  })
+  return payload?.links || []
+}
+
+async function createSharedLink(accessToken, path) {
+  const payload = await dropboxRpc('/sharing/create_shared_link_with_settings', accessToken, {
+    path,
+    settings: {
+      requested_visibility: 'public',
+    },
+  })
+  return payload?.url || null
+}
+
+async function getBestDropboxPreviewLink(accessToken, path) {
+  try {
+    return await getTemporaryLink(accessToken, path)
+  } catch {
+    // Fall through to shared-link lookup below.
+  }
+
+  try {
+    const existingLinks = await listDirectSharedLinks(accessToken, path)
+    if (existingLinks.length > 0) {
+      return existingLinks[0]?.url || null
+    }
+  } catch {
+    // Fall through to shared-link creation below.
+  }
+
+  try {
+    return await createSharedLink(accessToken, path)
+  } catch (error) {
+    if (error?.payload?.error?.['.tag'] === 'shared_link_already_exists') {
+      try {
+        const existingLinks = await listDirectSharedLinks(accessToken, path)
+        return existingLinks[0]?.url || null
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
+}
+
+async function getDropboxThumbnail(accessToken, path, size = 'w128h128') {
+  const response = await fetch(`${DROPBOX_CONTENT_API_BASE}/files/get_thumbnail_v2`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'Dropbox-API-Arg': JSON.stringify({
+        resource: { '.tag': 'path', path },
+        format: 'jpeg',
+        size,
+        mode: 'strict',
+      }),
+    },
+  })
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    const error = new Error(payload.error_summary || 'Dropbox thumbnail lookup failed.')
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return response
+}
+
+async function handleDropboxWeekMedia(request, env) {
+  let accessToken
+  try {
+    accessToken = await getDropboxAccessToken(env)
+  } catch (error) {
+    return json({ error: error.message || 'Dropbox credentials are not configured in the worker.' }, { status: 500 })
+  }
+
+  const url = new URL(request.url)
+  const dateString = url.searchParams.get('date') || ''
+  const mediaHint = url.searchParams.get('mediaHint') || ''
+  const postType = url.searchParams.get('postType') || ''
+
+  let weekFolder
+  try {
+    weekFolder = getIsoWeekFolder(dateString)
+  } catch (error) {
+    return json({ error: error.message }, { status: 400 })
+  }
+
+  const parentPath = normalizePath(env.DROPBOX_WEEKLY_PARENT_PATH || '/Social Posts')
+  const folderPath = normalizePath(`${parentPath}/${weekFolder}`)
+  const sharedWeekLink = env.DROPBOX_WEEKLY_SHARED_LINK || ''
+
+  let entries = []
+  try {
+    entries = await listFolderEntries(accessToken, folderPath)
+  } catch (error) {
+    let usedSharedLinkFallback = false
+
+    if (isFolderMissing(error) && sharedWeekLink) {
+      try {
+        const sharedMetadata = await getSharedLinkMetadata(accessToken, sharedWeekLink)
+        if (sharedMetadata?.name === weekFolder) {
+          entries = await listSharedFolderEntries(accessToken, sharedWeekLink)
+          usedSharedLinkFallback = true
+        }
+      } catch {
+        // Fall through to the standard empty-state response below.
+      }
+    }
+
+    if (isFolderMissing(error) && entries.length === 0) {
+      return json({
+        weekFolder,
+        folderPath,
+        suggestions: [],
+        message: `No Dropbox folder was found yet for ${weekFolder}.`,
+      })
+    }
+
+    if (!usedSharedLinkFallback) {
+      return json({
+        error: error.message || 'Dropbox lookup failed.',
+        weekFolder,
+        folderPath,
+      }, { status: 502 })
+    }
+  }
+
+  const rankedEntries = entries
+    .filter(isSupportedMedia)
+    .map((entry) => ({
+      entry,
+      ...scoreEntry(entry, { mediaHint, postType, weekFolder }),
+    }))
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 6)
+
+  const suggestions = await Promise.all(
+    rankedEntries.map(async ({ entry, score, reasons }) => {
+      const link = await getBestDropboxPreviewLink(accessToken, entry.path_lower || entry.path_display)
+
+      return {
+        name: entry.name,
+        size: entry.size || 0,
+        path: entry.path_display || entry.path_lower || '',
+        link,
+        thumbnail: isImageMedia(entry)
+          ? `/api/dropbox/thumbnail?path=${encodeURIComponent(entry.path_lower || entry.path_display || '')}&rev=${encodeURIComponent(entry.rev || '')}`
+          : null,
+        score,
+        reasons,
+      }
+    }),
+  )
+
+  return json({
+    weekFolder,
+    folderPath,
+    totalCandidates: entries.filter(isSupportedMedia).length,
+    suggestions,
+    message: suggestions.length
+      ? `Suggested from Dropbox folder ${weekFolder}.`
+      : `Dropbox folder ${weekFolder} is available, but no supported media files were found yet.`,
+  })
+}
+
+async function handleDropboxThumbnail(request, env) {
+  const url = new URL(request.url)
+  const path = String(url.searchParams.get('path') || '').trim()
+  if (!path) {
+    return json({ error: 'Missing Dropbox file path.' }, { status: 400 })
+  }
+
+  let accessToken
+  try {
+    accessToken = await getDropboxAccessToken(env)
+  } catch (error) {
+    return json({ error: error.message || 'Dropbox credentials are not configured in the worker.' }, { status: 500 })
+  }
+
+  try {
+    const thumbResponse = await getDropboxThumbnail(accessToken, path)
+    return new Response(thumbResponse.body, {
+      status: thumbResponse.status,
+      headers: {
+        'content-type': 'image/jpeg',
+        'cache-control': 'public, max-age=3600',
+      },
+    })
+  } catch (error) {
+    return json({ error: error.message || 'Could not load Dropbox thumbnail.' }, { status: error.status || 502 })
+  }
+}
+
+async function deleteSecureVaultStorageObject(envConfig, storagePath) {
+  const normalizedPath = String(storagePath || '')
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+  if (!normalizedPath) return false
+
+  const response = await fetch(`${envConfig.url}/storage/v1/object/secure-documents/${normalizedPath}`, {
+    method: 'DELETE',
+    headers: {
+      apikey: envConfig.serviceRoleKey,
+      Authorization: `Bearer ${envConfig.serviceRoleKey}`,
+    },
+  })
+
+  if (!response.ok && response.status !== 404) {
+    const text = await response.text().catch(() => '')
+    throw new Error(text || `Storage delete failed (${response.status}).`)
+  }
+
+  return response.ok
+}
+
+async function purgeExpiredSecureVaultArchive(env) {
+  const envConfig = getPortalAuthConfig(env)
+  const retentionDays = Number(env.SECURE_VAULT_ARCHIVE_RETENTION_DAYS || 30)
+  const cutoff = new Date(Date.now() - Math.max(1, retentionDays) * 24 * 60 * 60 * 1000).toISOString()
+  const filters = new URLSearchParams({
+    select: 'id,storage_path',
+    is_archived: 'eq.true',
+    archived_at: `lt.${cutoff}`,
+    limit: '100',
+  })
+
+  const response = await supabaseRest(envConfig, `/rest/v1/secure_documents?${filters.toString()}`)
+  const documents = await response.json()
+  const rows = Array.isArray(documents) ? documents : []
+  if (!rows.length) {
+    return { deletedDocuments: 0, deletedStorageObjects: 0, cutoff }
+  }
+
+  let deletedStorageObjects = 0
+  for (const document of rows) {
+    if (await deleteSecureVaultStorageObject(envConfig, document.storage_path)) {
+      deletedStorageObjects += 1
+    }
+  }
+
+  const ids = rows.map((document) => document.id).filter(Boolean)
+  if (ids.length) {
+    await supabaseRest(envConfig, `/rest/v1/secure_documents?id=in.(${ids.map(encodeURIComponent).join(',')})`, {
+      method: 'DELETE',
+      headers: {
+        Prefer: 'return=minimal',
+      },
+    })
+  }
+
+  return { deletedDocuments: ids.length, deletedStorageObjects, cutoff }
+}
+
+export {
+  buildVapidJwt,
+  buildContentPartnerCommandReply,
+  buildRemoteCalendarPostDeletePayload,
+  buildWebsiteChatPreChatFormOptions,
+  classifyContentPartnerCommand,
+  canDeleteCalendarPost,
+  getIsoWeekFolder,
+  isVisibleContentDraft,
+  shouldRemoveLocalCalendarPostAfterRemoteDeleteError,
+  selectContentPartnerReviewDraft,
+  sanitizePortalCustomerError,
+}
+
+export default {
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(purgeExpiredSecureVaultArchive(env))
+    ctx.waitUntil(syncPostBoostStatuses(env))
+  },
+
+  async fetch(request, env, ctx) {
+    const canonicalRedirect = buildCanonicalRedirect(request, env)
+    if (canonicalRedirect) {
+      return canonicalRedirect
+    }
+
+    const sharedPortalTrailingSlashRedirect = buildSharedPortalTrailingSlashRedirect(request, env)
+    if (sharedPortalTrailingSlashRedirect) {
+      return sharedPortalTrailingSlashRedirect
+    }
+
+    const normalized = normalizeSharedPortalRequest(request, env)
+    request = normalized.request
+    const url = normalized.url
+
+    if (url.pathname === '/api/n8n/zernio-connect-url') {
+      return proxyN8nWebhook(request, env, 'zernio-connect-url')
+    }
+
+    if (url.pathname === '/api/n8n/zernio-sync-accounts') {
+      return json({
+        success: false,
+        error: 'Zernio account sync is disabled because the account list is not tenant scoped. Signed Zernio account events update connected accounts instead.',
+      }, { status: 409 })
+    }
+
+    if (url.pathname === '/api/social-connections/disconnect') {
+      return handleSocialConnectionDisconnect(request, env)
+    }
+
+    if (url.pathname === '/api/social-connections/refresh') {
+      return handleSocialConnectionsRefresh(request, env)
+    }
+
+    if (url.pathname === '/api/team-access/users') {
+      return handleTeamAccessUsers(request, env)
+    }
+
+    if (url.pathname === '/api/dashboard-social-metrics') {
+      return handleDashboardSocialMetrics(request, env)
+    }
+
+    if (url.pathname === '/api/post-metrics') {
+      return handlePostMetrics(request, env)
+    }
+
+    const teamAccessUserMatch = /^\/api\/team-access\/users\/([^/]+)$/.exec(url.pathname)
+    if (teamAccessUserMatch) {
+      return handleTeamAccessUserUpdate(request, env, decodeURIComponent(teamAccessUserMatch[1]))
+    }
+
+    if (url.pathname === '/api/post-boosts') {
+      return handlePostBoosts(request, env)
+    }
+
+    if (url.pathname === '/api/boost-campaigns') {
+      return handleBoostCampaigns(request, env)
+    }
+
+    if (url.pathname === '/api/post-boost-readiness') {
+      return handlePostBoostReadiness(request, env)
+    }
+
+    if (url.pathname === '/api/boost-ad-accounts') {
+      return handleBoostAdAccounts(request, env)
+    }
+
+    if (url.pathname === '/api/boost-targeting-search') {
+      return handleBoostTargetingSearch(request, env)
+    }
+
+    if (url.pathname === '/api/boost-ads-connect') {
+      return handleBoostAdsConnect(request, env)
+    }
+
+    const scheduledPostDeleteMatch = /^\/api\/posts\/([^/]+)\/delete$/.exec(url.pathname)
+    if (scheduledPostDeleteMatch) {
+      return handleScheduledPostDelete(request, env, decodeURIComponent(scheduledPostDeleteMatch[1]))
+    }
+
+    if (url.pathname === '/api/zernio/account-events') {
+      return handleZernioAccountWebhook(request, env)
+    }
+
+    if (url.pathname === '/api/zernio/inbox-events') {
+      return handleZernioInboxWebhook(request, env)
+    }
+
+    if (url.pathname === '/api/portal-push/public-key') {
+      return handlePortalPushPublicKey(request, env)
+    }
+
+    if (url.pathname === '/api/portal-push/subscriptions') {
+      return handlePortalPushSubscriptions(request, env)
+    }
+
+    if (url.pathname === '/api/zernio/comments') {
+      return handleZernioCommentPosts(request, env)
+    }
+
+    const zernioPostCommentsMatch = /^\/api\/zernio\/comments\/([^/]+)$/.exec(url.pathname)
+    if (zernioPostCommentsMatch) {
+      return handleZernioPostComments(request, env, decodeURIComponent(zernioPostCommentsMatch[1]))
+    }
+
+    const zernioCommentReplyMatch = /^\/api\/zernio\/comments\/([^/]+)\/reply$/.exec(url.pathname)
+    if (zernioCommentReplyMatch) {
+      return handleZernioCommentReply(request, env, decodeURIComponent(zernioCommentReplyMatch[1]))
+    }
+
+    const chatwootMessageWebhookMatch = /^\/api\/chatwoot\/webhooks\/messages(?:\/[^/]+)?$/.exec(url.pathname)
+    if (chatwootMessageWebhookMatch) {
+      return handleChatwootMessageWebhook(request, env, ctx)
+    }
+
+    const contentPartnerReviewMatch = /^\/content-preview\/([^/]+)$/.exec(url.pathname)
+    if (contentPartnerReviewMatch) {
+      return handleContentPartnerReviewPage(request, env, decodeURIComponent(contentPartnerReviewMatch[1]))
+    }
+
+    const contentPartnerShortReviewMatch = /^\/r\/([^/]+)$/.exec(url.pathname)
+    if (contentPartnerShortReviewMatch) {
+      return handleContentPartnerShortReview(request, env, decodeURIComponent(contentPartnerShortReviewMatch[1]))
+    }
+
+    const contentPartnerQuickFixMatch = /^\/f\/([^/]+)\/([^/]+)$/.exec(url.pathname)
+    if (contentPartnerQuickFixMatch) {
+      return handleContentPartnerQuickFix(
+        request,
+        env,
+        decodeURIComponent(contentPartnerQuickFixMatch[1]),
+        decodeURIComponent(contentPartnerQuickFixMatch[2]),
+      )
+    }
+
+    const contentPartnerApproveMatch = /^\/api\/content-partner\/reviews\/([^/]+)\/approve$/.exec(url.pathname)
+    if (contentPartnerApproveMatch) {
+      return handleContentPartnerReviewApprove(request, env, decodeURIComponent(contentPartnerApproveMatch[1]))
+    }
+
+    const contentPartnerPreviewMatch = /^\/api\/content-partner\/previews\/([^/]+)\.svg$/.exec(url.pathname)
+    if (contentPartnerPreviewMatch) {
+      return handleContentPartnerPreview(
+        request,
+        env,
+        decodeURIComponent(contentPartnerPreviewMatch[1]),
+      )
+    }
+
+    if (url.pathname === '/api/content-partner/conversation') {
+      return handleContentPartnerConversation(request, env)
+    }
+
+    if (url.pathname === '/api/portal-partner/message' || url.pathname === '/api/portal-copilot/message') {
+      return handlePortalPartnerMessage(request, env)
+    }
+
+    if (url.pathname.startsWith('/api/chatwoot/')) {
+      return handleChatwootProxy(request, env)
+    }
+
+    if (url.pathname === '/api/website-chat/settings') {
+      return handleWebsiteChatSettings(request, env)
+    }
+
+    if (url.pathname === '/api/website-chat/check-installation') {
+      return handleWebsiteChatInstallCheck(request, env)
+    }
+
+    if (url.pathname === '/api/inbox/mobile-setup-email') {
+      return handleChatwootMobileSetupEmail(request, env)
+    }
+
+    if (url.pathname === '/api/dropbox/week-media') {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          headers: {
+            allow: 'GET, OPTIONS',
+          },
+        })
+      }
+
+      if (request.method !== 'GET') {
+        return json({ error: 'Method not allowed.' }, { status: 405 })
+      }
+
+      return handleDropboxWeekMedia(request, env)
+    }
+
+    if (url.pathname === '/api/dropbox/thumbnail') {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          headers: {
+            allow: 'GET, OPTIONS',
+          },
+        })
+      }
+
+      if (request.method !== 'GET') {
+        return json({ error: 'Method not allowed.' }, { status: 405 })
+      }
+
+      return handleDropboxThumbnail(request, env)
+    }
+
+    const assetNormalized = normalizeNestedSpaAssetRequest(request, url)
+    return env.ASSETS.fetch(assetNormalized.request)
+  },
+}

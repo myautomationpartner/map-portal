@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Workspace Launcher Mockup</title>
+    <style>
+      :root {
+        --portal-bg: #f6f3ec;
+        --portal-surface: rgba(255, 255, 255, 0.96);
+        --portal-panel: rgba(253, 251, 247, 0.94);
+        --portal-border: rgba(26, 24, 20, 0.1);
+        --portal-border-strong: rgba(201, 168, 76, 0.24);
+        --portal-text: #181714;
+        --portal-muted: #6f665d;
+        --portal-soft: #968b80;
+        --portal-primary: #c9a84c;
+        --portal-primary-strong: #98771e;
+        --portal-success: #1fa971;
+        --portal-danger: #d85f98;
+        --portal-radius-md: 18px;
+        --portal-radius-lg: 24px;
+        --portal-radius-xl: 30px;
+        --portal-shadow: 0 18px 50px rgba(26, 24, 20, 0.08);
+        --portal-shadow-soft: 0 12px 30px rgba(26, 24, 20, 0.055);
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--portal-text);
+        background:
+          radial-gradient(circle at 50% -12%, rgba(255, 215, 0, 0.11), transparent 28%),
+          linear-gradient(180deg, #fbfaf6, var(--portal-bg));
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background-image:
+          linear-gradient(rgba(20, 19, 16, 0.025) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(20, 19, 16, 0.025) 1px, transparent 1px);
+        background-size: 32px 32px;
+        mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.2), transparent 82%);
+      }
+
+      .page {
+        width: min(1560px, calc(100vw - 48px));
+        margin: 0 auto;
+        padding: 34px 0;
+      }
+
+      .workspace {
+        overflow: hidden;
+        border: 1px solid var(--portal-border);
+        border-radius: var(--portal-radius-xl);
+        background: linear-gradient(180deg, var(--portal-surface), var(--portal-panel));
+        box-shadow: var(--portal-shadow);
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) minmax(300px, 430px) auto;
+        gap: 14px;
+        align-items: center;
+        padding: 16px;
+        border-bottom: 1px solid var(--portal-border);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        width: fit-content;
+        padding: 7px 12px;
+        border-radius: 999px;
+        background: rgba(201, 168, 76, 0.12);
+        color: var(--portal-primary-strong);
+        font-size: 10px;
+        font-weight: 850;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .title-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 8px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 24px;
+        line-height: 1;
+        letter-spacing: -0.015em;
+      }
+
+      .count-pill {
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(26, 24, 20, 0.05);
+        color: var(--portal-muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .search {
+        position: relative;
+      }
+
+      .search input {
+        width: 100%;
+        height: 44px;
+        border: 1px solid rgba(26, 24, 20, 0.12);
+        border-radius: var(--portal-radius-md);
+        background: rgba(255, 255, 255, 0.98);
+        color: var(--portal-text);
+        font: inherit;
+        padding: 0 16px 0 42px;
+        outline: none;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+      }
+
+      .search span {
+        position: absolute;
+        left: 15px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--portal-soft);
+      }
+
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 9px;
+      }
+
+      .btn {
+        height: 42px;
+        border: 1px solid rgba(26, 24, 20, 0.12);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.96);
+        color: var(--portal-text);
+        cursor: default;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 850;
+        padding: 0 14px;
+      }
+
+      .btn.primary {
+        border-color: rgba(26, 24, 20, 0.12);
+        background: linear-gradient(135deg, #ffd700, var(--portal-primary));
+        box-shadow: 0 12px 26px rgba(201, 168, 76, 0.18);
+      }
+
+      .tabs {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--portal-border);
+      }
+
+      .tab {
+        flex: 0 0 auto;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(26, 24, 20, 0.05);
+        color: var(--portal-muted);
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .tab.active {
+        background: var(--portal-text);
+        color: #fff;
+      }
+
+      .content {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 300px;
+        gap: 16px;
+        padding: 16px;
+      }
+
+      .section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+
+      .section-title h2 {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--portal-soft);
+      }
+
+      .section-title a {
+        color: var(--portal-primary-strong);
+        font-size: 12px;
+        font-weight: 850;
+        text-decoration: none;
+      }
+
+      .app-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .app-card {
+        position: relative;
+        display: grid;
+        grid-template-columns: 42px minmax(0, 1fr) 34px;
+        gap: 11px;
+        align-items: center;
+        min-height: 82px;
+        padding: 12px;
+        border: 1px solid var(--portal-border);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: var(--portal-shadow-soft);
+      }
+
+      .app-card.active {
+        border-color: var(--portal-border-strong);
+        background:
+          linear-gradient(135deg, rgba(201, 168, 76, 0.11), transparent 50%),
+          rgba(255, 255, 255, 0.94);
+      }
+
+      .brand-icon {
+        display: grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        border: 1px solid rgba(26, 24, 20, 0.07);
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 10px 20px rgba(26, 24, 20, 0.075);
+      }
+
+      .brand-icon img {
+        width: 23px;
+        height: 23px;
+        object-fit: contain;
+      }
+
+      .app-main {
+        min-width: 0;
+      }
+
+      .app-name {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        margin: 0;
+        font-size: 14px;
+        font-weight: 900;
+      }
+
+      .app-name span:first-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: var(--portal-success);
+        box-shadow: 0 0 0 3px rgba(31, 169, 113, 0.1);
+      }
+
+      .meta {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        margin: 4px 0 0;
+        color: var(--portal-muted);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .mini-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 7px;
+      }
+
+      .open-link {
+        color: var(--portal-primary-strong);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .category {
+        color: var(--portal-soft);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .dots {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border: 1px solid rgba(26, 24, 20, 0.1);
+        border-radius: 999px;
+        background: #fff;
+        color: var(--portal-muted);
+        font-size: 20px;
+        line-height: 1;
+      }
+
+      .menu {
+        position: absolute;
+        z-index: 3;
+        right: 10px;
+        top: 50px;
+        width: 190px;
+        overflow: hidden;
+        border: 1px solid rgba(26, 24, 20, 0.12);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.98);
+        box-shadow: 0 24px 60px rgba(26, 24, 20, 0.14);
+      }
+
+      .menu button {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        border: 0;
+        background: transparent;
+        color: var(--portal-text);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 850;
+        padding: 12px 14px;
+        text-align: left;
+      }
+
+      .menu button + button {
+        border-top: 1px solid rgba(26, 24, 20, 0.07);
+      }
+
+      .menu .danger {
+        color: var(--portal-danger);
+        background: rgba(216, 95, 152, 0.07);
+      }
+
+      .sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .rail-card {
+        border: 1px solid var(--portal-border);
+        border-radius: var(--portal-radius-lg);
+        background: rgba(255, 255, 255, 0.72);
+        padding: 13px;
+      }
+
+      .rail-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .rail-item {
+        display: grid;
+        grid-template-columns: 32px minmax(0, 1fr) auto;
+        gap: 9px;
+        align-items: center;
+        min-height: 46px;
+        border: 1px solid rgba(26, 24, 20, 0.07);
+        border-radius: 15px;
+        background: rgba(255, 255, 255, 0.84);
+        padding: 7px;
+      }
+
+      .small-brand {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 11px;
+        background: #fff;
+        border: 1px solid rgba(26, 24, 20, 0.07);
+      }
+
+      .small-brand img {
+        width: 18px;
+        height: 18px;
+        object-fit: contain;
+      }
+
+      .rail-item p {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        margin: 0;
+        font-size: 13px;
+        font-weight: 850;
+      }
+
+      .rail-item span {
+        color: var(--portal-soft);
+        font-size: 11px;
+        font-weight: 750;
+      }
+
+      .add-mini,
+      .create-group {
+        border: 0;
+        border-radius: 999px;
+        background: rgba(201, 168, 76, 0.12);
+        color: var(--portal-primary-strong);
+        font-size: 12px;
+        font-weight: 900;
+        padding: 7px 10px;
+      }
+
+      .group-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 11px;
+        background: rgba(201, 168, 76, 0.12);
+        color: var(--portal-primary-strong);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      @media (max-width: 1100px) {
+        .topbar,
+        .content {
+          grid-template-columns: 1fr;
+        }
+
+        .actions {
+          justify-content: flex-start;
+        }
+
+        .app-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 720px) {
+        .page {
+          width: min(100vw - 24px, 1560px);
+          padding: 18px 0;
+        }
+
+        .app-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <div class="eyebrow">Workspace</div>
+            <div class="title-row">
+              <h1>Pinned apps</h1>
+              <span class="count-pill">8 apps</span>
+            </div>
+          </div>
+
+          <label class="search">
+            <span>⌕</span>
+            <input value="" placeholder="Search workspace apps..." />
+          </label>
+
+          <div class="actions">
+            <button class="btn">Edit layout</button>
+            <button class="btn primary">+ Add app</button>
+          </div>
+        </header>
+
+        <nav class="tabs" aria-label="Workspace categories">
+          <span class="tab active">All</span>
+          <span class="tab">Social</span>
+          <span class="tab">Files</span>
+          <span class="tab">Money</span>
+          <span class="tab">Website</span>
+          <span class="tab">Custom</span>
+        </nav>
+
+        <div class="content">
+          <section>
+            <div class="section-title">
+              <h2>Daily tools</h2>
+              <a href="#">Manage groups</a>
+            </div>
+
+            <div class="app-grid">
+              <article class="app-card active">
+                <div class="brand-icon"><img src="https://cdn.simpleicons.org/gmail/EA4335" alt="" /></div>
+                <div class="app-main">
+                  <p class="app-name"><span>Gmail</span><span class="status-dot"></span></p>
+                  <p class="meta">mail.google.com</p>
+                  <div class="mini-actions">
+                    <span class="open-link">Open app</span>
+                    <span class="category">Inbox</span>
+                  </div>
+                </div>
+                <div class="dots">…</div>
+                <div class="menu">
+                  <button>Edit shortcut</button>
+                  <button>Move to group</button>
+                  <button class="danger">Delete</button>
+                </div>
+              </article>
+
+              <article class="app-card">
+                <div class="brand-icon"><img src="https://cdn.simpleicons.org/instagram/E4405F" alt="" /></div>
+                <div class="app-main">
+                  <p class="app-name"><span>Instagram</span><span class="status-dot"></span></p>
+                  <p class="meta">Connected as dancescapes</p>
+                  <div class="mini-actions">
+                    <span class="open-link">Open app</span>
+                    <span class="category">Social</span>
+                  </div>
+                </div>
+                <div class="dots">…</div>
+              </article>
+
+              <article class="app-card">
+                <div class="brand-icon"><img src="https://cdn.simpleicons.org/googledrive/1A73E8" alt="" /></div>
+                <div class="app-main">
+                  <p class="app-name"><span>Google Drive</span></p>
+                  <p class="meta">drive.google.com</p>
+                  <div class="mini-actions">
+                    <span class="open-link">Open app</span>
+                    <span class="category">Files</span>
+                  </div>
+                </div>
+                <div class="dots">…</div>
+              </article>
+
+              <article class="app-card">
+                <div class="brand-icon"><img src="https://cdn.simpleicons.org/facebook/1877F2" alt="" /></div>
+                <div class="app-main">
+                  <p class="app-name"><span>Facebook Business</span><span class="status-dot"></span></p>
+                  <p class="meta">Connected page</p>
+                  <div class="mini-actions">
+                    <span class="open-link">Open app</span>
+                    <span class="category">Social</span>
+                  </div>
+                </div>
+                <div class="dots">…</div>
+              </article>
+
+              <article class="app-card">
+                <div class="brand-icon"><img src="https://cdn.simpleicons.org/canva/00C4CC" alt="" /></div>
+                <div class="app-main">
+                  <p class="app-name"><span>Canva</span></p>
+                  <p class="meta">canva.com</p>
+                  <div class="mini-actions">
+                    <span class="open-link">Open app</span>
+                    <span class="category">Creative</span>
+                  </div>
+                </div>
+                <div class="dots">…</div>
+              </article>
+
+              <article class="app-card">
+                <div class="brand-icon"><img src="https://cdn.simpleicons.org/stripe/635BFF" alt="" /></div>
+                <div class="app-main">
+                  <p class="app-name"><span>Stripe</span></p>
+                  <p class="meta">dashboard.stripe.com</p>
+                  <div class="mini-actions">
+                    <span class="open-link">Open app</span>
+                    <span class="category">Money</span>
+                  </div>
+                </div>
+                <div class="dots">…</div>
+              </article>
+
+              <article class="app-card">
+                <div class="brand-icon"><img src="https://cdn.simpleicons.org/quickbooks/2CA01C" alt="" /></div>
+                <div class="app-main">
+                  <p class="app-name"><span>QuickBooks</span></p>
+                  <p class="meta">app.qbo.intuit.com</p>
+                  <div class="mini-actions">
+                    <span class="open-link">Open app</span>
+                    <span class="category">Money</span>
+                  </div>
+                </div>
+                <div class="dots">…</div>
+              </article>
+
+              <article class="app-card">
+                <div class="brand-icon"><img src="https://cdn.simpleicons.org/safari/111111" alt="" /></div>
+                <div class="app-main">
+                  <p class="app-name"><span>Website Admin</span></p>
+                  <p class="meta">dancescapes.com</p>
+                  <div class="mini-actions">
+                    <span class="open-link">Open app</span>
+                    <span class="category">Website</span>
+                  </div>
+                </div>
+                <div class="dots">…</div>
+              </article>
+            </div>
+          </section>
+
+          <aside class="sidebar">
+            <section class="rail-card">
+              <div class="section-title">
+                <h2>User groups</h2>
+                <button class="create-group">+ New</button>
+              </div>
+              <div class="rail-list">
+                <div class="rail-item">
+                  <div class="group-chip">S</div>
+                  <div>
+                    <p>Social</p>
+                    <span>3 apps</span>
+                  </div>
+                  <span>›</span>
+                </div>
+                <div class="rail-item">
+                  <div class="group-chip">F</div>
+                  <div>
+                    <p>Files</p>
+                    <span>2 apps</span>
+                  </div>
+                  <span>›</span>
+                </div>
+                <div class="rail-item">
+                  <div class="group-chip">M</div>
+                  <div>
+                    <p>Money</p>
+                    <span>2 apps</span>
+                  </div>
+                  <span>›</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="rail-card">
+              <div class="section-title">
+                <h2>Suggested</h2>
+              </div>
+              <div class="rail-list">
+                <div class="rail-item">
+                  <div class="small-brand"><img src="https://cdn.simpleicons.org/wix/111111" alt="" /></div>
+                  <div>
+                    <p>Wix</p>
+                    <span>Website</span>
+                  </div>
+                  <button class="add-mini">Add</button>
+                </div>
+                <div class="rail-item">
+                  <div class="small-brand"><img src="https://cdn.simpleicons.org/linkedin/0A66C2" alt="" /></div>
+                  <div>
+                    <p>LinkedIn</p>
+                    <span>Social</span>
+                  </div>
+                  <button class="add-mini">Add</button>
+                </div>
+                <div class="rail-item">
+                  <div class="small-brand"><img src="https://cdn.simpleicons.org/mailchimp/FFE01B" alt="" /></div>
+                  <div>
+                    <p>Mailchimp</p>
+                    <span>Email</span>
+                  </div>
+                  <button class="add-mini">Add</button>
+                </div>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

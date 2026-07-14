@@ -1,0 +1,2125 @@
+#!/usr/bin/env node
+
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { randomBytes } from 'node:crypto'
+
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
+const PORTAL_ROOT = resolve(SCRIPT_DIR, '..')
+const PROJECT_ROOT = resolve(PORTAL_ROOT, '..', '..')
+const CREDENTIAL_PATH = resolve(PROJECT_ROOT, 'credential.txt')
+
+const FALLBACK_SUPABASE_URL = 'https://zgkxrlednyovuytaejok.supabase.co'
+const FALLBACK_SUPABASE_ANON_KEY = 'sb_publishable_xwASGbwUsZhX5CFNizTAmg_U50hkD7o'
+const DEFAULT_N8N_BASE_URL = 'https://n8n.myautomationpartner.com'
+const DEFAULT_CHATWOOT_APP_URL = 'https://chatwoot.myautomationpartner.com/app'
+const DEFAULT_CHATWOOT_BASE_URL = 'https://chatwoot.myautomationpartner.com'
+const DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME = 'Social Inbox'
+const CHATWOOT_CONTENT_PARTNER_CONTACT_NAME = 'My Partner'
+const CHATWOOT_CONTENT_PARTNER_GREETING = 'Send me a rough note, photos, or both. I will turn it into a Publisher draft for you to review before anything posts.'
+const DEFAULT_WEBSITE_CHAT_PRE_CHAT_MESSAGE = 'Before we get started, please share your name and email so we can reply.'
+
+function buildWebsiteChatPreChatFormOptions(message = DEFAULT_WEBSITE_CHAT_PRE_CHAT_MESSAGE) {
+  return {
+    pre_chat_message: message,
+    pre_chat_fields: [
+      { name: 'fullName', type: 'text', label: 'Name', enabled: true, required: true, field_type: 'standard' },
+      { name: 'emailAddress', type: 'email', label: 'Email', enabled: true, required: true, field_type: 'standard' },
+      { name: 'phoneNumber', type: 'text', label: 'Phone', enabled: true, required: false, field_type: 'standard' },
+    ],
+  }
+}
+const DEFAULT_ZERNIO_API_BASE_URL = 'https://zernio.com/api/v1'
+const DEFAULT_ZERNIO_PROFILE_PREFIX = 'MAP'
+const DEFAULT_PORTAL_LABEL = 'Client Portal'
+const DEFAULT_SUPPORT_EMAIL = 'info@myautomationpartner.com'
+const DEFAULT_SHARED_PORTAL_HOST = 'myautomationpartner.com'
+const DEFAULT_SHARED_PORTAL_PATH_PREFIX = 'portal'
+const DEFAULT_SHARED_PORTAL_WORKER_NAME = 'map-shared-portal'
+
+function parseArgs(argv) {
+  const args = {}
+  for (let index = 0; index < argv.length; index += 1) {
+    const current = argv[index]
+    if (!current.startsWith('--')) continue
+    const key = current.slice(2)
+    const next = argv[index + 1]
+    if (!next || next.startsWith('--')) {
+      args[key] = true
+      continue
+    }
+    args[key] = next
+    index += 1
+  }
+  return args
+}
+
+function readCredentialMap() {
+  if (!existsSync(CREDENTIAL_PATH)) return new Map()
+  const text = readFileSync(CREDENTIAL_PATH, 'utf8')
+  const values = new Map()
+
+  for (const line of text.split(/\r?\n/)) {
+    const match = line.match(/^([A-Z0-9_]+)=(.*)$/)
+    if (match) {
+      values.set(match[1], match[2].trim())
+      continue
+    }
+
+    const zernioKeyMatch = line.match(/^AD BOOST API-\s*(.+)$/)
+    if (zernioKeyMatch?.[1]?.trim()) {
+      values.set('ZERNIO_API_KEY', zernioKeyMatch[1].trim())
+    }
+  }
+
+  return values
+}
+
+const credentialMap = readCredentialMap()
+
+function readKeychainValue(serviceNames) {
+  const list = Array.isArray(serviceNames) ? serviceNames : [serviceNames]
+
+  for (const serviceName of list) {
+    if (!serviceName) continue
+    const result = spawnSync('security', ['find-generic-password', '-w', '-s', serviceName], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+
+    if (result.status === 0) {
+      const value = String(result.stdout || '').trim()
+      if (value) return value
+    }
+  }
+
+  return ''
+}
+
+function envValue(keys, fallback = '') {
+  const list = Array.isArray(keys) ? keys : [keys]
+
+  for (const key of list) {
+    if (process.env[key]) return String(process.env[key]).trim()
+    if (credentialMap.has(key)) return String(credentialMap.get(key)).trim()
+  }
+
+  return fallback
+}
+
+function secretValue(keys, options = {}) {
+  const list = Array.isArray(keys) ? keys : [keys]
+  const keychainServices = options.keychainServices || []
+
+  const plain = envValue(list)
+  if (plain) return plain
+
+  const keychainValue = readKeychainValue(keychainServices)
+  if (keychainValue) return keychainValue
+
+  return options.fallback || ''
+}
+
+function requiredValue(keys, label, fallback = '') {
+  const value = envValue(keys, fallback)
+  if (!value) {
+    throw new Error(`Missing required value for ${label}.`)
+  }
+  return value
+}
+
+function jsonHeaders(extra = {}) {
+  return {
+    'content-type': 'application/json',
+    ...extra,
+  }
+}
+
+function parsePositiveInteger(value) {
+  const parsed = Number.parseInt(String(value || ''), 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function compactObject(body) {
+  return Object.fromEntries(
+    Object.entries(body).filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== ''),
+  )
+}
+
+function normalizeHost(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '')
+    .replace(/:\d+$/, '')
+}
+
+function normalizePathSegment(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^\/+|\/+$/g, '')
+}
+
+function getSharedPortalHost() {
+  return normalizeHost(envValue(['MAP_SHARED_PORTAL_HOST', 'PORTAL_SHARED_HOST'], DEFAULT_SHARED_PORTAL_HOST))
+}
+
+function getSharedPortalZoneName() {
+  return normalizeHost(envValue(['MAP_SHARED_PORTAL_ZONE_NAME', 'CLOUDFLARE_ZONE_NAME'], getSharedPortalHost()))
+}
+
+function getSharedPortalPathPrefix() {
+  return normalizePathSegment(envValue(['MAP_SHARED_PORTAL_PATH_PREFIX', 'PORTAL_SHARED_PATH_PREFIX'], DEFAULT_SHARED_PORTAL_PATH_PREFIX))
+}
+
+function buildPortalPath(client) {
+  const slug = normalizePathSegment(client?.slug || client?.portal_subdomain)
+  if (!slug) return '/'
+
+  const prefix = getSharedPortalPathPrefix()
+  return prefix ? `/${prefix}/${slug}` : `/${slug}`
+}
+
+function buildPortalUrl(client, options = {}) {
+  const mode = options.deploymentMode || resolvePortalDeploymentMode({}, client)
+  const host = mode === 'shared-path' ? getSharedPortalHost() : normalizeHost(client.portal_domain)
+  const path = mode === 'shared-path' ? buildPortalPath(client) : ''
+  return `https://${host}${path}`
+}
+
+function resolvePortalDeploymentMode(args, client) {
+  const explicit = normalizePathSegment(args['deployment-mode'] || envValue(['MAP_PORTAL_DEPLOYMENT_MODE']))
+  if (args['shared-path'] || explicit === 'shared-path' || explicit === 'path') return 'shared-path'
+  if (args['dedicated-domain'] || explicit === 'dedicated-domain' || explicit === 'domain') return 'dedicated-domain'
+
+  const clientHost = normalizeHost(client?.portal_domain)
+  if (client?.worker_name === DEFAULT_SHARED_PORTAL_WORKER_NAME || clientHost === getSharedPortalHost()) {
+    return 'shared-path'
+  }
+
+  return 'dedicated-domain'
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function shouldRetryHttpStatus(status) {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504
+}
+
+async function fetchJson(url, init = {}) {
+  const parsedAttempts = Number.parseInt(String(init.retryAttempts || 3), 10)
+  const attempts = Number.isFinite(parsedAttempts) && parsedAttempts > 0 ? parsedAttempts : 3
+  const parsedDelay = Number.parseInt(String(init.retryDelayMs || 750), 10)
+  const retryDelayMs = Number.isFinite(parsedDelay) && parsedDelay > 0 ? parsedDelay : 750
+  const requestInit = { ...init }
+  delete requestInit.retryAttempts
+  delete requestInit.retryDelayMs
+
+  let lastError = null
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const response = await fetch(url, requestInit)
+    const text = await response.text()
+    let payload = null
+
+    try {
+      payload = text ? JSON.parse(text) : null
+    } catch {
+      payload = text
+    }
+
+    if (response.ok) return payload
+
+    lastError = new Error(`${requestInit.method || 'GET'} ${url} failed with ${response.status} ${response.statusText}: ${typeof payload === 'string' ? payload : JSON.stringify(payload)}`)
+    lastError.status = response.status
+    lastError.payload = payload
+    if (!shouldRetryHttpStatus(response.status) || attempt === attempts) break
+
+    const delay = retryDelayMs * attempt
+    process.stderr.write(`Transient ${response.status} from ${url}; retrying in ${delay}ms (${attempt}/${attempts}).\n`)
+    await sleep(delay)
+  }
+
+  throw lastError
+}
+
+function normalizeName(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
+function normalizeComparable(value) {
+  return normalizeName(value).toLowerCase()
+}
+
+function firstString(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined) continue
+    if (typeof value === 'object') continue
+    const normalized = String(value || '').trim()
+    if (normalized) return normalized
+  }
+  return ''
+}
+
+function zernioProfileNameForClient(client) {
+  return normalizeName(`${DEFAULT_ZERNIO_PROFILE_PREFIX} - ${client.business_name || client.slug || client.id}`)
+}
+
+function resolveZernioProfileId(profile) {
+  return firstString(profile?._id, profile?.id, profile?.profileId)
+}
+
+function resolveZernioProfileName(profile) {
+  return normalizeName(firstString(profile?.name, profile?.displayName, profile?.title))
+}
+
+function zernioProvisioningConfig() {
+  return {
+    baseUrl: envValue(['ZERNIO_API_BASE_URL'], DEFAULT_ZERNIO_API_BASE_URL).replace(/\/$/, ''),
+    apiKey: secretValue(['ZERNIO_API_KEY'], {
+      keychainServices: ['MAP_ZERNIO_API_KEY', 'ZERNIO_API_KEY'],
+    }),
+  }
+}
+
+function zernioHeaders(apiKey) {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    Accept: 'application/json',
+    ...jsonHeaders(),
+  }
+}
+
+async function zernioProvisioningFetch(path, init = {}) {
+  const config = zernioProvisioningConfig()
+  if (!config.apiKey) {
+    throw new Error('Missing ZERNIO_API_KEY for Zernio customer profile provisioning.')
+  }
+
+  return fetchJson(`${config.baseUrl}${path}`, {
+    ...init,
+    headers: {
+      ...zernioHeaders(config.apiKey),
+      ...(init.headers || {}),
+    },
+  })
+}
+
+function normalizeZernioList(payload, key) {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.[key])) return payload[key]
+  if (Array.isArray(payload?.data)) return payload.data
+  if (Array.isArray(payload?.data?.[key])) return payload.data[key]
+  return []
+}
+
+async function listZernioProfilesForProvisioning() {
+  return normalizeZernioList(await zernioProvisioningFetch('/profiles'), 'profiles')
+}
+
+async function createZernioProfileForClient(client) {
+  const name = zernioProfileNameForClient(client)
+  const payload = await zernioProvisioningFetch('/profiles', {
+    method: 'POST',
+    body: JSON.stringify({
+      name,
+      description: `Dedicated MAP customer profile for ${client.slug}.`,
+    }),
+  })
+  return payload?.data && typeof payload.data === 'object' ? payload.data : payload
+}
+
+function findZernioProfileForClient(client, profiles) {
+  const existingProfileId = firstString(client.zernio_profile_id)
+  if (existingProfileId) {
+    const byId = profiles.find((profile) => resolveZernioProfileId(profile) === existingProfileId)
+    if (byId) return byId
+  }
+
+  const expectedName = normalizeComparable(zernioProfileNameForClient(client))
+  return profiles.find((profile) => normalizeComparable(resolveZernioProfileName(profile)) === expectedName) || null
+}
+
+function resolveZernioAccountId(account) {
+  return firstString(account?._id, account?.id, account?.accountId, account?.providerAccountId)
+}
+
+function resolveZernioAccountProfileId(account) {
+  return firstString(
+    account?.profileId,
+    account?.profile_id,
+    account?.profileId?._id,
+    account?.profileId?.id,
+    account?.profile?._id,
+    account?.profile?.id,
+    account?.profile?.profileId,
+  )
+}
+
+function resolveZernioAccountProfileName(account) {
+  return normalizeName(firstString(
+    account?.profileName,
+    account?.profile_name,
+    account?.profileId?.name,
+    account?.profileId?.displayName,
+    account?.profile?.name,
+    account?.profile?.displayName,
+    account?.profile?.title,
+  ))
+}
+
+function resolveZernioAccountUsername(account) {
+  return firstString(
+    account?.username,
+    account?.handle,
+    account?.accountName,
+    account?.displayName,
+    account?.name,
+    account?.pageName,
+  )
+}
+
+function resolveZernioAccountPlatform(account) {
+  return firstString(
+    account?.platform,
+    account?.provider,
+    account?.type,
+    account?.network,
+    account?.service,
+  ).toLowerCase()
+}
+
+async function listZernioAccountsForProvisioning() {
+  return normalizeZernioList(await zernioProvisioningFetch('/accounts?limit=200'), 'accounts')
+}
+
+async function moveZernioAccountToProfile(accountId, profileId) {
+  if (!accountId || !profileId) {
+    throw new Error('Zernio account id and profile id are required to move an account.')
+  }
+
+  const payload = await zernioProvisioningFetch(`/accounts/${encodeURIComponent(accountId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ profileId }),
+  })
+  return payload?.data && typeof payload.data === 'object' ? payload.data : payload
+}
+
+async function reconcileClientZernioConnections({ client, profileId, profileName }) {
+  const summary = {
+    checked: 0,
+    moved: 0,
+    updatedConnections: 0,
+    missingAccounts: [],
+    needsReconnect: [],
+  }
+
+  if (!client?.id || !profileId) return summary
+
+  const connections = await fetchSupabaseRows(`/rest/v1/social_connections?select=id,platform,zernio_account_id,zernio_profile_id,zernio_account_metadata,username&client_id=eq.${encodeURIComponent(client.id)}&order=connected_at.desc`)
+  const rows = Array.isArray(connections) ? connections : []
+  const accounts = await listZernioAccountsForProvisioning()
+  const accountsById = new Map(accounts.map((account) => [resolveZernioAccountId(account), account]).filter(([accountId]) => Boolean(accountId)))
+
+  for (const connection of rows) {
+    const accountId = firstString(connection?.zernio_account_id)
+    if (!accountId) continue
+
+    summary.checked += 1
+    const account = accountsById.get(accountId)
+
+    if (!account) {
+      const missing = { connectionId: connection.id, platform: connection.platform || null, accountId }
+      summary.missingAccounts.push(missing)
+      summary.needsReconnect.push({ ...missing, reason: 'account_missing_in_zernio' })
+      continue
+    }
+
+    const originalProfileId = resolveZernioAccountProfileId(account)
+    const originalProfileName = resolveZernioAccountProfileName(account)
+    let repairedAccount = account
+    let repairedProfileId = originalProfileId
+
+    if (originalProfileId && originalProfileId !== profileId) {
+      if (normalizeComparable(originalProfileName) === 'default') {
+        repairedAccount = await moveZernioAccountToProfile(accountId, profileId)
+        repairedProfileId = resolveZernioAccountProfileId(repairedAccount) || profileId
+        summary.moved += 1
+      } else {
+        summary.needsReconnect.push({
+          connectionId: connection.id,
+          platform: connection.platform || resolveZernioAccountPlatform(account) || null,
+          accountId,
+          currentProfileId: originalProfileId,
+          currentProfileName: originalProfileName || null,
+          targetProfileId: profileId,
+          reason: 'account_belongs_to_another_customer_profile',
+        })
+      }
+    }
+
+    if (!repairedProfileId) {
+      repairedProfileId = profileId
+    }
+
+    const existingMetadata = connection.zernio_account_metadata && typeof connection.zernio_account_metadata === 'object'
+      ? connection.zernio_account_metadata
+      : {}
+    const username = resolveZernioAccountUsername(repairedAccount) || connection.username || null
+
+    await patchSupabase(`/rest/v1/social_connections?id=eq.${encodeURIComponent(connection.id)}`, {
+      zernio_profile_id: repairedProfileId,
+      username,
+      zernio_account_metadata: {
+        ...existingMetadata,
+        accountProfileId: repairedProfileId,
+        targetClientProfileId: profileId,
+        targetClientProfileName: profileName,
+        zernioProfileMatchesClient: repairedProfileId === profileId,
+        profileName: repairedProfileId === profileId ? profileName : (originalProfileName || null),
+        platform: resolveZernioAccountPlatform(repairedAccount) || connection.platform || null,
+        username,
+        reconciledAt: new Date().toISOString(),
+        reconciliationSource: 'provision-client-portal',
+      },
+    })
+    summary.updatedConnections += 1
+  }
+
+  return summary
+}
+
+async function ensureZernioCustomerProfile({ client, dryRun, skipZernioProfileProvisioning }) {
+  const expectedProfileName = zernioProfileNameForClient(client)
+  if (skipZernioProfileProvisioning) {
+    return {
+      skipped: true,
+      reason: 'Zernio customer profile provisioning skipped by flag.',
+      profileName: expectedProfileName,
+      profileId: firstString(client.zernio_profile_id) || null,
+    }
+  }
+
+  if (dryRun) {
+    return {
+      skipped: true,
+      reason: 'Dry run.',
+      profileName: expectedProfileName,
+      profileId: firstString(client.zernio_profile_id) || null,
+      wouldCreate: !firstString(client.zernio_profile_id),
+    }
+  }
+
+  const profiles = await listZernioProfilesForProvisioning()
+  let profile = findZernioProfileForClient(client, profiles)
+  let created = false
+
+  if (!profile) {
+    profile = await createZernioProfileForClient(client)
+    created = true
+  }
+
+  if (!resolveZernioProfileId(profile)) {
+    const refreshedProfiles = await listZernioProfilesForProvisioning()
+    profile = findZernioProfileForClient(client, refreshedProfiles) || profile
+  }
+
+  const profileId = resolveZernioProfileId(profile)
+  if (!profileId) {
+    throw new Error(`Zernio did not return a profile id for ${client.slug}.`)
+  }
+
+  const profileName = resolveZernioProfileName(profile) || expectedProfileName
+  const connectionReconciliation = await reconcileClientZernioConnections({ client, profileId, profileName })
+  const status = connectionReconciliation.needsReconnect.length ? 'needs_reconnect' : 'active'
+  const now = new Date().toISOString()
+  const existingMetadata = client.zernio_profile_metadata && typeof client.zernio_profile_metadata === 'object'
+    ? client.zernio_profile_metadata
+    : {}
+
+  await patchSupabase(`/rest/v1/clients?id=eq.${encodeURIComponent(client.id)}`, {
+    zernio_profile_id: profileId,
+    zernio_profile_status: status,
+    zernio_profile_created_at: client.zernio_profile_created_at || now,
+    zernio_profile_metadata: {
+      ...existingMetadata,
+      profileName,
+      provisionedAt: now,
+      provisionedBy: 'provision-client-portal',
+      provisioningSource: 'customer-onboarding',
+      createdInZernio: created,
+      reusedExistingProfile: !created,
+      connectionReconciliation,
+    },
+  })
+
+  return {
+    skipped: false,
+    profileId,
+    profileName,
+    created,
+    status,
+    connectionReconciliation,
+  }
+}
+
+function getChatwootProvisioningConfig() {
+  const baseUrl = envValue(['CHATWOOT_BASE_URL'], DEFAULT_CHATWOOT_BASE_URL).replace(/\/$/, '')
+  const platformToken = secretValue(['CHATWOOT_PLATFORM_API_ACCESS_TOKEN'], {
+    keychainServices: ['MAP_CHATWOOT_PLATFORM_API_ACCESS_TOKEN', 'CHATWOOT_PLATFORM_API_ACCESS_TOKEN'],
+  })
+  const adminToken = secretValue(['CHATWOOT_API_ACCESS_TOKEN'], {
+    keychainServices: ['MAP_CHATWOOT_API_ACCESS_TOKEN', 'CHATWOOT_API_ACCESS_TOKEN'],
+  })
+
+  return { baseUrl, platformToken, adminToken }
+}
+
+async function chatwootPlatformFetch(path, init = {}) {
+  const config = getChatwootProvisioningConfig()
+  if (!config.platformToken) {
+    throw new Error('Missing CHATWOOT_PLATFORM_API_ACCESS_TOKEN for Chatwoot tenant provisioning.')
+  }
+
+  return fetchJson(`${config.baseUrl}${path}`, {
+    ...init,
+    headers: {
+      api_access_token: config.platformToken,
+      ...jsonHeaders(init.headers || {}),
+    },
+  })
+}
+
+async function chatwootAccountFetch(accountId, path, init = {}) {
+  const config = getChatwootProvisioningConfig()
+  if (!config.adminToken) {
+    throw new Error('Missing CHATWOOT_API_ACCESS_TOKEN for Chatwoot inbox provisioning.')
+  }
+
+  return fetchJson(`${config.baseUrl}/api/v1/accounts/${accountId}${path}`, {
+    ...init,
+    headers: {
+      api_access_token: config.adminToken,
+      ...jsonHeaders(init.headers || {}),
+    },
+  })
+}
+
+function createTemporaryPassword() {
+  return `${randomBytes(18).toString('base64url')}aA1!`
+}
+
+async function listChatwootAccounts() {
+  const accounts = await chatwootPlatformFetch('/platform/api/v1/accounts')
+  return Array.isArray(accounts) ? accounts : (Array.isArray(accounts?.payload) ? accounts.payload : [])
+}
+
+function chatwootAccountRecord(response) {
+  if (!response) return null
+  if (response?.id) return response
+  if (response?.payload?.id) return response.payload
+  if (response?.data?.id) return response.data
+  if (response?.account?.id) return response.account
+  return null
+}
+
+async function loadWebsiteChatSettingsForClient(clientId) {
+  if (!clientId) return null
+
+  const rows = await fetchSupabaseRows(`/rest/v1/client_website_chat_settings?select=chatwoot_account_id&client_id=eq.${encodeURIComponent(clientId)}&limit=1`)
+  return Array.isArray(rows) ? (rows[0] || null) : null
+}
+
+async function findChatwootAccountFromSavedSettings(client) {
+  const settings = await loadWebsiteChatSettingsForClient(client?.id)
+  const accountId = parsePositiveInteger(settings?.chatwoot_account_id)
+  if (!accountId) return null
+
+  const response = await chatwootPlatformFetch(`/platform/api/v1/accounts/${accountId}`)
+  const account = chatwootAccountRecord(response)
+  if (!account?.id) {
+    throw new Error(`Saved Chatwoot account ${accountId} did not return a usable account record.`)
+  }
+
+  return account
+}
+
+async function findChatwootAccountForClient(client, options = {}) {
+  const accountName = String(client.business_name || client.slug || client.id).trim().toLowerCase()
+  let savedAccountFallbackError = ''
+
+  try {
+    const savedAccount = await findChatwootAccountFromSavedSettings(client)
+    if (savedAccount?.id) {
+      process.stderr.write(`Using saved Chatwoot account ${savedAccount.id} for ${client.slug || client.id} from tenant settings.\n`)
+      return savedAccount
+    }
+  } catch (error) {
+    savedAccountFallbackError = error instanceof Error ? error.message : String(error)
+  }
+
+  let accounts = []
+  try {
+    accounts = await listChatwootAccounts()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (options.allowCreateWhenLookupUnavailable && !savedAccountFallbackError) {
+      process.stderr.write(
+        `Chatwoot account lookup is unavailable for new client ${client.slug || client.id}; ` +
+        `continuing with account creation. Root cause: ${message}\n`,
+      )
+      return null
+    }
+
+    throw new Error(
+      `Unable to verify existing Chatwoot account for ${client.slug || client.id}; ` +
+      `refusing to create a replacement account while Chatwoot account lookup is unavailable. ` +
+      `Retry provisioning after the Chatwoot Platform API recovers. Root cause: ${message}` +
+      (savedAccountFallbackError ? ` Saved account fallback also failed: ${savedAccountFallbackError}` : ''),
+    )
+  }
+
+  return accounts.find((account) => {
+    const attributes = account?.custom_attributes || {}
+    const mapClientId = String(attributes.map_client_id || '').trim()
+    const mapClientSlug = String(attributes.map_client_slug || '').trim().toLowerCase()
+    const name = String(account?.name || '').trim().toLowerCase()
+
+    return mapClientId === String(client.id) || mapClientSlug === String(client.slug || '').toLowerCase() || name === accountName
+  }) || null
+}
+
+async function createOrUpdateChatwootAccount(client) {
+  const accountName = String(client.business_name || client.slug || client.id).trim()
+  const supportEmail = normalizeEmail(client.support_email) || DEFAULT_SUPPORT_EMAIL
+  const existing = await findChatwootAccountForClient(client, { allowCreateWhenLookupUnavailable: true })
+
+  if (existing?.id) {
+    const updated = await chatwootPlatformFetch(`/platform/api/v1/accounts/${existing.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(compactObject({
+        name: accountName,
+        domain: client.portal_domain || undefined,
+        support_email: supportEmail,
+        custom_attributes: {
+          map_client_id: client.id,
+          map_client_slug: client.slug,
+        },
+      })),
+    })
+    return updated || existing
+  }
+
+  return chatwootPlatformFetch('/platform/api/v1/accounts', {
+    method: 'POST',
+    body: JSON.stringify(compactObject({
+      name: accountName,
+      locale: 'en',
+      domain: client.portal_domain || undefined,
+      support_email: supportEmail,
+      custom_attributes: {
+        map_client_id: client.id,
+        map_client_slug: client.slug,
+      },
+    })),
+  })
+}
+
+async function createOrUpdateChatwootUser(userProfile, client, accountId) {
+  const email = normalizeEmail(userProfile?.email || client.support_email)
+  if (!email) throw new Error('Client portal user email is required for Chatwoot provisioning.')
+
+  const name = String(userProfile?.name || userProfile?.email?.split('@')[0] || client.business_name || email).trim()
+  const created = await chatwootPlatformFetch('/platform/api/v1/users', {
+    method: 'POST',
+    body: JSON.stringify({
+      email,
+      name,
+      display_name: name,
+      password: createTemporaryPassword(),
+      custom_attributes: {
+        map_client_id: client.id,
+        map_client_slug: client.slug,
+      },
+    }),
+  }).catch(async (error) => {
+    if (!String(error.message || '').includes('has already been taken')) throw error
+
+    // Platform API does not provide email search. The common case is a portal user
+    // already invited by earlier provisioning; resolve through account agents later.
+    return null
+  })
+
+  if (created?.id) return created
+
+  const agents = await chatwootAccountFetch(accountId, '/agents')
+  const list = Array.isArray(agents) ? agents : (Array.isArray(agents?.payload) ? agents.payload : [])
+  const existing = list.find((agent) => normalizeEmail(agent.email) === email)
+  if (existing?.id) return existing
+
+  throw new Error(`Chatwoot user ${email} already exists but could not be resolved in account ${accountId}.`)
+}
+
+async function createOrUpdateAccountUser(accountId, userId, role = 'administrator') {
+  return chatwootPlatformFetch(`/platform/api/v1/accounts/${accountId}/account_users`, {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId, role }),
+  }).catch((error) => {
+    const message = String(error.message || '')
+    if (message.includes('has already been taken') || message.includes('already exists')) {
+      return { skipped: true, reason: 'User already belongs to account.', accountId, userId, role }
+    }
+    throw error
+  })
+}
+
+async function findInboxByName(accountId, name) {
+  const response = await chatwootAccountFetch(accountId, '/inboxes')
+  const list = Array.isArray(response?.payload) ? response.payload : (Array.isArray(response) ? response : [])
+  return list.find((inbox) => String(inbox.name || '').trim().toLowerCase() === String(name || '').trim().toLowerCase()) || null
+}
+
+async function createOrUpdateWebsiteInbox(accountId, client) {
+  const existing = await findInboxByName(accountId, 'Website Chat')
+  if (existing?.id) {
+    return chatwootAccountFetch(accountId, `/inboxes/${existing.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        enable_email_collect: true,
+        channel: {
+          pre_chat_form_enabled: true,
+          pre_chat_form_options: buildWebsiteChatPreChatFormOptions(),
+        },
+      }),
+    }).catch(() => existing)
+  }
+
+  return chatwootAccountFetch(accountId, '/inboxes', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'Website Chat',
+      greeting_enabled: true,
+      greeting_message: `Hi! Send ${client.business_name || 'us'} a message and we will get back to you soon.`,
+      enable_email_collect: true,
+      enable_auto_assignment: true,
+      channel: {
+        type: 'web_widget',
+        website_url: client.website_url || buildPortalUrl(client),
+        widget_color: '#C9A84C',
+        pre_chat_form_enabled: true,
+        pre_chat_form_options: buildWebsiteChatPreChatFormOptions(),
+      },
+    }),
+  })
+}
+
+function buildChatwootWebhookUrl(client, callbackSecret) {
+  return `${buildPortalUrl(client)}/api/chatwoot/webhooks/messages/${encodeURIComponent(callbackSecret)}`
+}
+
+function resolveChatwootInboxWebhookUrl(inbox) {
+  return String(inbox?.webhook_url || inbox?.callback_webhook_url || inbox?.channel?.webhook_url || '').trim()
+}
+
+async function ensureSocialInboxWebhook(accountId, inbox, webhookUrl) {
+  if (!inbox?.id) return inbox
+
+  if (resolveChatwootInboxWebhookUrl(inbox) === webhookUrl) {
+    return { ...inbox, callbackWebhookVerified: true }
+  }
+
+  await chatwootAccountFetch(accountId, `/inboxes/${inbox.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      webhook_url: webhookUrl,
+      channel: {
+        webhook_url: webhookUrl,
+      },
+    }),
+  })
+
+  const refreshed = await findInboxByName(accountId, DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME)
+  if (resolveChatwootInboxWebhookUrl(refreshed) !== webhookUrl) {
+    throw new Error(`Chatwoot Social Inbox ${inbox.id} for account ${accountId} kept an out-of-date callback URL after update.`)
+  }
+
+  return { ...refreshed, callbackWebhookVerified: true }
+}
+
+async function createOrUpdateSocialInbox(accountId, client, callbackSecret) {
+  const webhookUrl = buildChatwootWebhookUrl(client, callbackSecret)
+  const existing = await findInboxByName(accountId, DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME)
+  if (existing?.id) return ensureSocialInboxWebhook(accountId, existing, webhookUrl)
+
+  const created = await chatwootAccountFetch(accountId, '/inboxes', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: DEFAULT_CHATWOOT_SOCIAL_INBOX_NAME,
+      enable_auto_assignment: true,
+      channel: {
+        type: 'api',
+        webhook_url: webhookUrl,
+      },
+    }),
+  })
+
+  return ensureSocialInboxWebhook(accountId, created, webhookUrl)
+}
+
+function chatwootPayloadList(response) {
+  if (Array.isArray(response?.payload)) return response.payload
+  if (Array.isArray(response)) return response
+  if (response?.payload?.contact) return [response.payload.contact]
+  if (response?.payload) return [response.payload]
+  if (response?.contact) return [response.contact]
+  return response ? [response] : []
+}
+
+function chatwootPayloadRecord(response) {
+  return chatwootPayloadList(response)[0] || null
+}
+
+function buildChatwootContentPartnerIdentifier(clientId) {
+  return `map-content-partner:${clientId}`.slice(0, 255)
+}
+
+async function findChatwootContentPartnerContact(accountId, client) {
+  const identifier = buildChatwootContentPartnerIdentifier(client.id)
+  const response = await chatwootAccountFetch(accountId, `/contacts/search?q=${encodeURIComponent(identifier)}`)
+  return chatwootPayloadList(response).find((contact) => contact?.identifier === identifier) || null
+}
+
+function getChatwootContactInboxSourceId(contact, inboxId) {
+  const contactInboxes = Array.isArray(contact?.contact_inboxes) ? contact.contact_inboxes : []
+  return contactInboxes.find((contactInbox) => (
+    Number(contactInbox?.inbox?.id || contactInbox?.inbox_id) === Number(inboxId)
+  ))?.source_id || ''
+}
+
+async function ensureChatwootContentPartnerContact(accountId, client, inboxId) {
+  const identifier = buildChatwootContentPartnerIdentifier(client.id)
+  let contact = await findChatwootContentPartnerContact(accountId, client)
+
+  if (!contact?.id) {
+    contact = chatwootPayloadRecord(await chatwootAccountFetch(accountId, '/contacts', {
+      method: 'POST',
+      body: JSON.stringify({
+        inbox_id: inboxId,
+        name: CHATWOOT_CONTENT_PARTNER_CONTACT_NAME,
+        identifier,
+        additional_attributes: {
+          source: 'map_content_partner',
+        },
+        custom_attributes: {
+          source: 'map_content_partner',
+          map_content_partner: true,
+          portal_client_id: client.id,
+          portal_client_slug: client.slug,
+        },
+      }),
+    }))
+  } else if (contact.name !== CHATWOOT_CONTENT_PARTNER_CONTACT_NAME) {
+    contact = chatwootPayloadRecord(await chatwootAccountFetch(accountId, `/contacts/${contact.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name: CHATWOOT_CONTENT_PARTNER_CONTACT_NAME }),
+    })) || contact
+  }
+
+  if (!contact?.id) throw new Error('Chatwoot Content Partner contact could not be created.')
+
+  if (!getChatwootContactInboxSourceId(contact, inboxId)) {
+    await chatwootAccountFetch(accountId, `/contacts/${contact.id}/contact_inboxes`, {
+      method: 'POST',
+      body: JSON.stringify({
+        inbox_id: inboxId,
+        source_id: identifier,
+      }),
+    }).catch((error) => {
+      const message = String(error.message || '')
+      if (!message.includes('409') && !message.includes('422') && !message.includes('already')) throw error
+      return null
+    })
+    contact = await findChatwootContentPartnerContact(accountId, client) || contact
+  }
+
+  return contact
+}
+
+function isChatwootContentPartnerConversation(conversation, client, inboxId) {
+  const customAttributes = conversation?.custom_attributes || {}
+  const additionalAttributes = conversation?.additional_attributes || {}
+  return Number(conversation?.inbox_id) === Number(inboxId)
+    && (
+      customAttributes.source === 'map_content_partner'
+      || customAttributes.map_content_partner === true
+      || additionalAttributes.source === 'map_content_partner'
+    )
+    && (!customAttributes.portal_client_id || String(customAttributes.portal_client_id) === String(client.id))
+}
+
+async function findChatwootContentPartnerConversation(accountId, contact, client, inboxId) {
+  const response = await chatwootAccountFetch(accountId, `/contacts/${contact.id}/conversations`)
+  const conversations = chatwootPayloadList(response)
+  return conversations.find((conversation) => (
+    isChatwootContentPartnerConversation(conversation, client, inboxId)
+    && String(conversation?.status || '').toLowerCase() !== 'resolved'
+  )) || conversations.find((conversation) => isChatwootContentPartnerConversation(conversation, client, inboxId)) || null
+}
+
+async function assignChatwootConversation(accountId, conversationId, assigneeId) {
+  if (!conversationId || !assigneeId) return { skipped: true, reason: 'Missing conversation or assignee id.' }
+
+  return chatwootAccountFetch(accountId, `/conversations/${conversationId}/assignments`, {
+    method: 'POST',
+    body: JSON.stringify({ assignee_id: assigneeId }),
+  })
+}
+
+async function ensureChatwootContentPartnerThread({ account, client, socialInbox, assigneeUserId }) {
+  const contact = await ensureChatwootContentPartnerContact(account.id, client, socialInbox.id)
+  const existing = await findChatwootContentPartnerConversation(account.id, contact, client, socialInbox.id)
+
+  if (existing?.id) {
+    if (String(existing.status || '').toLowerCase() === 'resolved') {
+      await chatwootAccountFetch(account.id, `/conversations/${existing.id}/toggle_status`, {
+        method: 'POST',
+        body: JSON.stringify({ status: 'open' }),
+      })
+    }
+    await assignChatwootConversation(account.id, existing.id, assigneeUserId)
+    return {
+      contactId: contact.id,
+      conversationId: existing.id,
+      created: false,
+      reopened: String(existing.status || '').toLowerCase() === 'resolved',
+      assignedToUserId: assigneeUserId || null,
+    }
+  }
+
+  const sourceId = getChatwootContactInboxSourceId(contact, socialInbox.id) || buildChatwootContentPartnerIdentifier(client.id)
+  const conversation = chatwootPayloadRecord(await chatwootAccountFetch(account.id, '/conversations', {
+    method: 'POST',
+    body: JSON.stringify({
+      source_id: sourceId,
+      inbox_id: socialInbox.id,
+      contact_id: contact.id,
+      status: 'open',
+      custom_attributes: {
+        source: 'map_content_partner',
+        map_content_partner: true,
+        portal_client_id: client.id,
+        portal_client_slug: client.slug,
+      },
+      additional_attributes: {
+        source: 'map_content_partner',
+      },
+    }),
+  }))
+  const conversationId = conversation?.id
+  if (!conversationId) throw new Error('Chatwoot Content Partner conversation could not be created.')
+
+  await chatwootAccountFetch(account.id, `/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      content: CHATWOOT_CONTENT_PARTNER_GREETING,
+      message_type: 'incoming',
+      private: false,
+      content_type: 'text',
+      source_id: `map-content-partner:greeting:${client.id}`,
+      content_attributes: {
+        map_content_partner_system: true,
+      },
+    }),
+  })
+  await assignChatwootConversation(account.id, conversationId, assigneeUserId)
+
+  return {
+    contactId: contact.id,
+    conversationId,
+    created: true,
+    reopened: false,
+    assignedToUserId: assigneeUserId || null,
+  }
+}
+
+async function setInboxMembers(accountId, inboxId, userIds) {
+  return chatwootAccountFetch(accountId, '/inbox_members', {
+    method: 'POST',
+    body: JSON.stringify({ inbox_id: inboxId, user_ids: userIds }),
+  })
+}
+
+function resolveWebsiteToken(inbox) {
+  return String(inbox?.website_token || inbox?.channel?.website_token || inbox?.channel?.websiteToken || '').trim()
+}
+
+function buildWebsiteChatSnippet({ baseUrl, websiteToken }) {
+  if (!websiteToken) return ''
+
+  return [
+    '<script>',
+    '  (function(d,t) {',
+    `    var BASE_URL="${baseUrl.replace(/"/g, '&quot;')}";`,
+    '    var g=d.createElement(t),s=d.getElementsByTagName(t)[0];',
+    '    g.src=BASE_URL+"/packs/js/sdk.js";',
+    '    g.defer=true;',
+    '    g.async=true;',
+    '    s.parentNode.insertBefore(g,s);',
+    '    g.onload=function(){',
+    `      window.chatwootSDK.run({ websiteToken: "${websiteToken.replace(/"/g, '&quot;')}", baseUrl: BASE_URL });`,
+    '    };',
+    '  })(document,"script");',
+    '</script>',
+  ].join('\n')
+}
+
+async function upsertWebsiteChatSettings({ client, account, websiteInbox }) {
+  const config = getChatwootProvisioningConfig()
+  const websiteToken = resolveWebsiteToken(websiteInbox)
+
+  if (!websiteToken) {
+    throw new Error(`Chatwoot Website Chat inbox ${websiteInbox?.id || ''} did not return a website token.`)
+  }
+
+  const snippet = buildWebsiteChatSnippet({ baseUrl: config.baseUrl, websiteToken })
+  await fetchJson(`${requiredValue(['SUPABASE_URL'], 'SUPABASE_URL', FALLBACK_SUPABASE_URL)}/rest/v1/client_website_chat_settings?on_conflict=client_id`, {
+    method: 'POST',
+    headers: {
+      apikey: requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY'),
+      Authorization: `Bearer ${requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY')}`,
+      Prefer: 'resolution=merge-duplicates,return=representation',
+      ...jsonHeaders(),
+    },
+    body: JSON.stringify({
+      client_id: client.id,
+      chatwoot_account_id: account.id,
+      chatwoot_website_inbox_id: websiteInbox.id,
+      chatwoot_website_token: websiteToken,
+      chatwoot_base_url: config.baseUrl,
+      widget_color: websiteInbox.widget_color || '#C9A84C',
+      greeting_enabled: websiteInbox.greeting_enabled ?? true,
+      greeting_message: websiteInbox.greeting_message || `Hi! Send ${client.business_name || 'us'} a message and we will get back to you soon.`,
+      pre_chat_form_enabled: true,
+      pre_chat_message: DEFAULT_WEBSITE_CHAT_PRE_CHAT_MESSAGE,
+      pre_chat_fields: [
+        { key: 'name', label: 'Name', required: true },
+        { key: 'email', label: 'Email', required: true },
+        { key: 'phone', label: 'Phone', required: false },
+      ],
+      install_status: 'not_checked',
+      last_check_error: null,
+      saved_replies: [
+        {
+          title: 'Thanks',
+          message: 'Thanks for reaching out. We will take a look and reply shortly.',
+        },
+        {
+          title: 'After hours',
+          message: 'Thanks for your message. We are currently away, but we will get back to you as soon as we are open.',
+        },
+      ],
+      automation_rules: [
+        {
+          id: 'instant-welcome',
+          enabled: true,
+          label: 'Instant welcome reply',
+          message: websiteInbox.greeting_message || `Hi! Send ${client.business_name || 'us'} a message and we will get back to you soon.`,
+        },
+        {
+          id: 'after-hours',
+          enabled: true,
+          label: 'After-hours reply',
+          message: 'Thanks for your message. We are currently away, but we will get back to you as soon as we are open.',
+        },
+      ],
+    }),
+  })
+
+  return {
+    websiteToken,
+    snippetConfigured: Boolean(snippet),
+  }
+}
+
+async function triggerChatwootPasswordReset(email) {
+  const config = getChatwootProvisioningConfig()
+  return fetchJson(`${config.baseUrl}/auth/password`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      email,
+      redirect_url: `${config.baseUrl}/app/login`,
+    }),
+  }).catch((error) => ({
+    error: error.message,
+  }))
+}
+
+async function loadPrimaryPortalUser(clientId) {
+  const rows = await fetchSupabaseRows(
+    `/rest/v1/users?select=id,email,name,role,client_id&client_id=eq.${encodeURIComponent(clientId)}&order=created_at.asc&limit=1`,
+  )
+  return Array.isArray(rows) && rows.length ? rows[0] : null
+}
+
+function resolveChatwootCallbackSecret({ deploymentMode }) {
+  const configured = secretValue(['CHATWOOT_WEBHOOK_BRIDGE_SECRET'], {
+    keychainServices: ['MAP_CHATWOOT_WEBHOOK_BRIDGE_SECRET', 'CHATWOOT_WEBHOOK_BRIDGE_SECRET'],
+  })
+
+  if (configured) return configured
+
+  if (deploymentMode === 'shared-path') {
+    throw new Error(
+      'CHATWOOT_WEBHOOK_BRIDGE_SECRET is required for shared-path portal provisioning. ' +
+      'The shared Worker and every shared-path Chatwoot Social Inbox must use the same stable callback token.',
+    )
+  }
+
+  return randomBytes(24).toString('hex')
+}
+
+async function provisionChatwootTenant({ client, dryRun, skipChatwootProvisioning, skipChatwootPasswordReset, deploymentMode }) {
+  if (dryRun || skipChatwootProvisioning) {
+    return {
+      skipped: true,
+      reason: dryRun ? 'Dry run.' : 'Chatwoot provisioning skipped by flag.',
+    }
+  }
+
+  const portalUser = await loadPrimaryPortalUser(client.id)
+  const customerEmail = normalizeEmail(portalUser?.email || client.support_email)
+  if (!customerEmail) {
+    throw new Error('No portal user/support email found for Chatwoot tenant provisioning.')
+  }
+
+  const callbackSecret = resolveChatwootCallbackSecret({ deploymentMode })
+  const account = await createOrUpdateChatwootAccount(client)
+  const operatorUserId = parsePositiveInteger(envValue(['CHATWOOT_OPERATOR_USER_ID'], '3'))
+  if (operatorUserId) {
+    await createOrUpdateAccountUser(account.id, operatorUserId, 'administrator')
+  }
+
+  const user = await createOrUpdateChatwootUser(portalUser, client, account.id)
+  await createOrUpdateAccountUser(account.id, user.id, 'administrator')
+
+  const websiteInbox = await createOrUpdateWebsiteInbox(account.id, client)
+  const socialInbox = await createOrUpdateSocialInbox(account.id, client, callbackSecret)
+  const websiteChatSettings = await upsertWebsiteChatSettings({ client, account, websiteInbox })
+  const inboxMemberIds = [...new Set([user.id, operatorUserId].filter(Boolean))]
+  await setInboxMembers(account.id, websiteInbox.id, inboxMemberIds)
+  await setInboxMembers(account.id, socialInbox.id, inboxMemberIds)
+  const contentPartnerThread = await ensureChatwootContentPartnerThread({
+    account,
+    client,
+    socialInbox,
+    assigneeUserId: user.id,
+  })
+  const passwordReset = skipChatwootPasswordReset
+    ? { skipped: true, reason: 'Customer mobile setup uses the MAP portal; no Chatwoot mobile setup email is sent by provisioning.' }
+    : await triggerChatwootPasswordReset(customerEmail)
+
+  return {
+    skipped: false,
+    accountId: account.id,
+    userId: user.id,
+    userEmail: customerEmail,
+    websiteInboxId: websiteInbox.id,
+    socialInboxId: socialInbox.id,
+    socialInbox,
+    contentPartnerThread,
+    websiteChatSettings,
+    callbackSecret,
+    passwordReset,
+  }
+}
+
+async function resolveCloudflareAccountId(token) {
+  if (envValue(['CLOUDFLARE_ACCOUNT_ID'])) {
+    return envValue(['CLOUDFLARE_ACCOUNT_ID'])
+  }
+
+  const payload = await fetchJson('https://api.cloudflare.com/client/v4/accounts', {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
+  const accounts = Array.isArray(payload?.result) ? payload.result : []
+  if (accounts.length !== 1 || !accounts[0]?.id) {
+    throw new Error('Could not uniquely resolve the Cloudflare account id.')
+  }
+
+  return accounts[0].id
+}
+
+async function fetchSupabaseObject(path) {
+  const supabaseUrl = requiredValue(['SUPABASE_URL'], 'SUPABASE_URL', FALLBACK_SUPABASE_URL)
+  const serviceRoleKey = requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY')
+
+  return await fetchJson(`${supabaseUrl}${path}`, {
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Accept: 'application/vnd.pgrst.object+json',
+    },
+  })
+}
+
+async function fetchSupabaseRows(path) {
+  const supabaseUrl = requiredValue(['SUPABASE_URL'], 'SUPABASE_URL', FALLBACK_SUPABASE_URL)
+  const serviceRoleKey = requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY')
+
+  return await fetchJson(`${supabaseUrl}${path}`, {
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Accept: 'application/json',
+    },
+  })
+}
+
+async function patchSupabase(path, body) {
+  const supabaseUrl = requiredValue(['SUPABASE_URL'], 'SUPABASE_URL', FALLBACK_SUPABASE_URL)
+  const serviceRoleKey = requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY')
+
+  return await fetchJson(`${supabaseUrl}${path}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Prefer: 'return=representation',
+      ...jsonHeaders(),
+    },
+    body: JSON.stringify(body),
+  })
+}
+
+async function postSupabase(path, body, options = {}) {
+  const supabaseUrl = requiredValue(['SUPABASE_URL'], 'SUPABASE_URL', FALLBACK_SUPABASE_URL)
+  const serviceRoleKey = requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY')
+
+  return await fetchJson(`${supabaseUrl}${path}`, {
+    method: 'POST',
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Prefer: options.prefer || 'return=representation',
+      ...jsonHeaders(),
+    },
+    body: JSON.stringify(body),
+  })
+}
+
+async function callSupabaseRpc(name, body) {
+  const supabaseUrl = requiredValue(['SUPABASE_URL'], 'SUPABASE_URL', FALLBACK_SUPABASE_URL)
+  const serviceRoleKey = requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY')
+
+  return await fetchJson(`${supabaseUrl}/rest/v1/rpc/${name}`, {
+    method: 'POST',
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      Prefer: 'return=representation',
+      ...jsonHeaders(),
+    },
+    body: JSON.stringify(body),
+  })
+}
+
+async function countOpportunityRadarRuns(clientId) {
+  const rows = await fetchSupabaseRows(
+    `/rest/v1/client_research_runs?select=id&client_id=eq.${encodeURIComponent(clientId)}&limit=1`,
+  )
+  return Array.isArray(rows) ? rows.length : 0
+}
+
+async function triggerOpportunityRadar(client, mode, body = {}) {
+  const supabaseUrl = requiredValue(['SUPABASE_URL'], 'SUPABASE_URL', FALLBACK_SUPABASE_URL)
+  const serviceRoleKey = requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY')
+
+  return await fetchJson(`${supabaseUrl}/functions/v1/opportunity-radar-run`, {
+    method: 'POST',
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      ...jsonHeaders(),
+    },
+    body: JSON.stringify({
+      client_id: client.id,
+      client_slug: client.slug,
+      mode,
+      ...body,
+    }),
+  })
+}
+
+async function runInitialOpportunityRadar({ client, deploymentState, dryRun, skipInitialRadar }) {
+  if (dryRun || skipInitialRadar) {
+    return {
+      skipped: true,
+      reason: dryRun ? 'Dry run.' : 'Initial Opportunity Radar run skipped by flag.',
+    }
+  }
+
+  if (deploymentState?.skipped) {
+    return {
+      skipped: true,
+      reason: 'Only runs during real onboarding provisioning, not ad hoc tenant redeploys.',
+    }
+  }
+
+  const existingRunCount = await countOpportunityRadarRuns(client.id)
+  if (existingRunCount > 0) {
+    return {
+      skipped: true,
+      reason: 'Client already has Opportunity Radar run history.',
+      existingRunCount,
+    }
+  }
+
+  let monthlyFoundation = null
+  let weeklyDeep = null
+  try {
+    monthlyFoundation = await triggerOpportunityRadar(client, 'monthly_foundation')
+    weeklyDeep = await triggerOpportunityRadar(client, 'weekly_deep')
+  } catch (error) {
+    if (error?.status === 409 && error?.payload?.skipped) {
+      return {
+        skipped: true,
+        reason: error.payload.reason || 'Initial Opportunity Radar skipped.',
+        clientId: error.payload.clientId || client.id,
+        clientSlug: error.payload.clientSlug || client.slug,
+      }
+    }
+    throw error
+  }
+
+  return {
+    skipped: false,
+    monthlyFoundation,
+    weeklyDeep,
+  }
+}
+
+function getDateParts(value, timeZone) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const parts = Object.fromEntries(formatter.formatToParts(value).map((part) => [part.type, part.value]))
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`,
+  }
+}
+
+function addMinutesToTime(time, minutes) {
+  const [hours, mins] = String(time || '09:00').split(':').map((part) => Number.parseInt(part, 10))
+  const total = ((Number.isFinite(hours) ? hours : 9) * 60) + (Number.isFinite(mins) ? mins : 0) + minutes
+  const normalized = ((total % 1440) + 1440) % 1440
+  return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}`
+}
+
+function postTypeForSuggestion(suggestion) {
+  const type = String(suggestion?.suggestion_type || '').trim()
+  if (type === 'ad_brief') return 'promotional_offer'
+  if (type === 'story_prompt') return 'community_story'
+  if (type === 'reel_prompt') return 'behind_the_scenes'
+  if (type === 'caption_starter') return 'expert_tip'
+  return 'signature_highlight'
+}
+
+function normalizeDraftCaption(suggestion) {
+  return String(suggestion?.caption_starter || suggestion?.creative_direction || suggestion?.title || '').trim()
+}
+
+function buildStarterDraftRow({ client, plannerProfile, suggestion, index }) {
+  const publishAt = suggestion?.recommended_publish_at
+    ? new Date(suggestion.recommended_publish_at)
+    : new Date(Date.now() + ((index + 1) * 24 * 60 * 60 * 1000))
+  const timezone = String(client.timezone || 'America/New_York')
+  const parts = getDateParts(publishAt, timezone)
+  const postType = postTypeForSuggestion(suggestion)
+  const caption = normalizeDraftCaption(suggestion)
+  const title = String(suggestion?.title || `Starter draft ${index + 1}`).trim()
+  const platformList = Array.isArray(suggestion?.recommended_platforms) ? suggestion.recommended_platforms : []
+
+  return {
+    client_id: client.id,
+    planner_client_slug: plannerProfile?.policy_template_key || client.slug,
+    planner_policy_version: plannerProfile?.policy_version || '2026-04-24',
+    source_workflow: 'initial_portal_setup',
+    slot_date_local: parts.date,
+    slot_label: `Starter Idea ${index + 1}`,
+    slot_start_local: parts.time,
+    slot_end_local: addMinutesToTime(parts.time, 30),
+    timezone,
+    scheduled_for: publishAt.toISOString(),
+    post_type: postType,
+    draft_title: title,
+    draft_body: [
+      caption,
+      suggestion?.creative_direction ? `Creative direction: ${suggestion.creative_direction}` : '',
+    ].filter(Boolean).join('\n\n'),
+    draft_caption: caption,
+    review_state: 'draft_created',
+    asset_requirements_json: [],
+    seasonal_modifier_context_json: [],
+    review_notes: JSON.stringify({
+      generationSource: 'initial_portal_setup',
+      generationMode: 'opportunity_radar_seed',
+      opportunitySuggestionId: suggestion?.id || null,
+      opportunityId: suggestion?.opportunity_id || null,
+      recommendedPlatforms: platformList,
+      creativeDirection: suggestion?.creative_direction || null,
+      seededAt: new Date().toISOString(),
+    }),
+  }
+}
+
+async function seedInitialSocialDrafts({ client, dryRun, skipInitialSocialDrafts }) {
+  if (dryRun || skipInitialSocialDrafts) {
+    return {
+      skipped: true,
+      reason: dryRun ? 'Dry run.' : 'Initial social draft seeding skipped by flag.',
+    }
+  }
+
+  const existingDrafts = await fetchSupabaseRows(
+    `/rest/v1/social_drafts?select=id&client_id=eq.${encodeURIComponent(client.id)}&limit=1`,
+  )
+  if (Array.isArray(existingDrafts) && existingDrafts.length > 0) {
+    return {
+      skipped: true,
+      reason: 'Client already has social drafts.',
+      existingDraftCount: existingDrafts.length,
+    }
+  }
+
+  const suggestions = await fetchSupabaseRows(
+    `/rest/v1/client_opportunity_suggestions?select=*&client_id=eq.${encodeURIComponent(client.id)}&review_state=eq.suggested&order=recommended_publish_at.asc.nullslast,created_at.asc&limit=5`,
+  )
+  if (!Array.isArray(suggestions) || suggestions.length === 0) {
+    return {
+      skipped: true,
+      reason: 'No Opportunity Radar suggestions were available to seed starter drafts.',
+    }
+  }
+
+  const plannerProfiles = await fetchSupabaseRows(
+    `/rest/v1/client_planner_profiles?select=policy_template_key,policy_version&client_id=eq.${encodeURIComponent(client.id)}&limit=1`,
+  )
+  const plannerProfile = Array.isArray(plannerProfiles) ? plannerProfiles[0] : null
+  const rows = suggestions.map((suggestion, index) => buildStarterDraftRow({
+    client,
+    plannerProfile,
+    suggestion,
+    index,
+  }))
+
+  const inserted = await postSupabase(
+    '/rest/v1/social_drafts?on_conflict=client_id,slot_date_local,slot_label',
+    rows,
+    { prefer: 'resolution=merge-duplicates,return=representation' },
+  )
+  const insertedRows = Array.isArray(inserted) ? inserted : []
+
+  await Promise.all(insertedRows.map((draft, index) => {
+    const suggestion = suggestions[index]
+    if (!draft?.id || !suggestion?.id) return null
+    return patchSupabase(
+      `/rest/v1/client_opportunity_suggestions?id=eq.${encodeURIComponent(suggestion.id)}`,
+      {
+        review_state: 'converted_to_draft',
+        converted_draft_id: draft.id,
+      },
+    )
+  }).filter(Boolean))
+
+  return {
+    skipped: false,
+    draftCount: insertedRows.length || rows.length,
+    suggestionIds: suggestions.map((suggestion) => suggestion.id).filter(Boolean),
+    draftIds: insertedRows.map((draft) => draft.id).filter(Boolean),
+  }
+}
+
+async function persistProvisioningSummary({ run, webhookResult, zernioProfile, chatwootProvisioning, initialOpportunityRadar, initialSocialDrafts, dryRun }) {
+  if (dryRun || !run?.id) {
+    return {
+      skipped: true,
+      reason: dryRun ? 'Dry run.' : 'Missing provisioning run.',
+    }
+  }
+
+  const currentMetadata = run.deployment_metadata && typeof run.deployment_metadata === 'object'
+    ? run.deployment_metadata
+    : {}
+  const chatwootSummary = summarizeChatwootProvisioning(chatwootProvisioning)
+
+  await patchSupabase(
+    `/rest/v1/onboarding_provisioning_runs?id=eq.${encodeURIComponent(run.id)}`,
+    {
+      deployment_metadata: {
+        ...currentMetadata,
+        zernio_webhook: webhookResult?.skipped && currentMetadata.zernio_webhook
+          ? currentMetadata.zernio_webhook
+          : webhookResult || null,
+        zernio_profile: zernioProfile || null,
+        chatwoot_provisioning: chatwootSummary?.skipped && currentMetadata.chatwoot_provisioning
+          ? currentMetadata.chatwoot_provisioning
+          : chatwootSummary,
+        initial_opportunity_radar: initialOpportunityRadar?.skipped && currentMetadata.initial_opportunity_radar
+          ? currentMetadata.initial_opportunity_radar
+          : initialOpportunityRadar || null,
+        initial_social_drafts: initialSocialDrafts?.skipped && currentMetadata.initial_social_drafts
+          ? currentMetadata.initial_social_drafts
+          : initialSocialDrafts || null,
+      },
+    },
+  )
+
+  return {
+    skipped: false,
+    runId: run.id,
+  }
+}
+
+function shell(command, options = {}) {
+  const result = spawnSync(command[0], command.slice(1), {
+    cwd: options.cwd || PORTAL_ROOT,
+    env: {
+      ...process.env,
+      ...(options.env || {}),
+    },
+    encoding: 'utf8',
+    stdio: options.stdio || 'pipe',
+  })
+
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout || `${command.join(' ')} failed.`)
+  }
+
+  return result
+}
+
+function printSummary(label, payload) {
+  process.stdout.write(`\n${label}\n`)
+  process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`)
+}
+
+function toEnvFile(body) {
+  return Object.entries(body)
+    .filter(([, value]) => value !== undefined && value !== null && String(value).trim())
+    .map(([key, value]) => `${key}=${String(value).replace(/\n/g, '\\n')}`)
+    .join('\n')
+}
+
+async function loadClient(args) {
+  if (args['client-id']) {
+    return await fetchSupabaseObject(`/rest/v1/clients?select=*&id=eq.${encodeURIComponent(args['client-id'])}`)
+  }
+
+  if (args['client-slug']) {
+    return await fetchSupabaseObject(`/rest/v1/clients?select=*&slug=eq.${encodeURIComponent(args['client-slug'])}`)
+  }
+
+  throw new Error('Provide --client-id or --client-slug.')
+}
+
+async function loadSignupForClient(clientId) {
+  const rows = await fetchSupabaseRows(
+    `/rest/v1/onboarding_signups?select=*&client_id=eq.${encodeURIComponent(clientId)}&order=created_at.desc&limit=1`,
+  )
+  return Array.isArray(rows) && rows.length ? rows[0] : null
+}
+
+async function loadRun(args, clientId) {
+  if (args['run-id']) {
+    return await fetchSupabaseObject(`/rest/v1/onboarding_provisioning_runs?select=*&id=eq.${encodeURIComponent(args['run-id'])}`)
+  }
+
+  const rows = await fetchSupabaseRows(
+    `/rest/v1/onboarding_provisioning_runs?select=*&client_id=eq.${encodeURIComponent(clientId)}&order=created_at.desc&limit=1`,
+  )
+  return Array.isArray(rows) && rows.length ? rows[0] : null
+}
+
+function buildPublicEnv(client, options = {}) {
+  const sharedMode = options.deploymentMode === 'shared-path'
+  return {
+    NEXT_PUBLIC_SUPABASE_URL: requiredValue(['NEXT_PUBLIC_SUPABASE_URL', 'VITE_SUPABASE_URL', 'SUPABASE_URL'], 'public Supabase URL', FALLBACK_SUPABASE_URL),
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: envValue(
+      ['NEXT_PUBLIC_SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY', 'SUPABASE_ANON_KEY'],
+      FALLBACK_SUPABASE_ANON_KEY,
+    ),
+    VITE_PORTAL_DISPLAY_NAME: sharedMode ? DEFAULT_PORTAL_LABEL : (client.business_name || DEFAULT_PORTAL_LABEL),
+    VITE_PORTAL_LABEL: DEFAULT_PORTAL_LABEL,
+    VITE_PORTAL_SUPPORT_EMAIL: sharedMode ? DEFAULT_SUPPORT_EMAIL : (client.support_email || DEFAULT_SUPPORT_EMAIL),
+    VITE_PORTAL_LOGO_URL: sharedMode ? '' : (client.logo_url || ''),
+    VITE_PORTAL_CANONICAL_HOST: sharedMode ? getSharedPortalHost() : (client.portal_domain || ''),
+    VITE_PORTAL_CANONICAL_PATH: sharedMode ? buildPortalPath(client) : '',
+    VITE_PORTAL_SHARED_PATH_PREFIX: getSharedPortalPathPrefix(),
+    VITE_PORTAL_ASSET_BASE: sharedMode ? './' : '/',
+    VITE_PORTAL_WORKER_NAME: sharedMode ? DEFAULT_SHARED_PORTAL_WORKER_NAME : (client.worker_name || ''),
+    VITE_PORTAL_BILLING_STATUS: sharedMode ? '' : (client.billing_status || ''),
+    VITE_N8N_BASE_URL: envValue(['VITE_N8N_BASE_URL', 'N8N_BASE_URL'], DEFAULT_N8N_BASE_URL),
+    VITE_CHATWOOT_APP_URL: envValue(['VITE_CHATWOOT_APP_URL', 'CHATWOOT_APP_URL'], DEFAULT_CHATWOOT_APP_URL),
+    VITE_GOOGLE_PICKER_API_KEY: envValue(['VITE_GOOGLE_PICKER_API_KEY', 'GOOGLE_PICKER_API_KEY']),
+    VITE_GOOGLE_PICKER_CLIENT_ID: envValue(['VITE_GOOGLE_PICKER_CLIENT_ID', 'GOOGLE_PICKER_CLIENT_ID']),
+    VITE_GOOGLE_PICKER_APP_ID: envValue(['VITE_GOOGLE_PICKER_APP_ID', 'GOOGLE_PICKER_APP_ID']),
+  }
+}
+
+function deploymentSecret(keys, label, options = {}) {
+  if (options.allowPlaceholders) {
+    return envValue(keys, `dry-run-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`)
+  }
+
+  return requiredValue(keys, label)
+}
+
+function buildSecretEnv(client, chatwootProvisioning = {}, options = {}) {
+  const sharedMode = options.deploymentMode === 'shared-path'
+  const chatwootWebhookSecret = envValue(
+    ['CHATWOOT_WEBHOOK_BRIDGE_SECRET'],
+    chatwootProvisioning.callbackSecret || secretValue(['CHATWOOT_WEBHOOK_BRIDGE_SECRET'], {
+      keychainServices: ['MAP_CHATWOOT_WEBHOOK_BRIDGE_SECRET', 'CHATWOOT_WEBHOOK_BRIDGE_SECRET'],
+    }) || '',
+  )
+
+  if (sharedMode && !options.allowPlaceholders && !chatwootWebhookSecret) {
+    throw new Error(
+      'CHATWOOT_WEBHOOK_BRIDGE_SECRET is required before deploying the shared-path Worker. ' +
+      'Do not deploy map-shared-portal with an empty or generated Chatwoot callback token.',
+    )
+  }
+
+  return {
+    SUPABASE_URL: requiredValue(['SUPABASE_URL'], 'SUPABASE_URL', FALLBACK_SUPABASE_URL),
+    SUPABASE_SERVICE_ROLE_KEY: requiredValue(['SUPABASE_SERVICE_ROLE_KEY'], 'SUPABASE_SERVICE_ROLE_KEY'),
+    SUPABASE_ANON_KEY: envValue(
+      ['SUPABASE_ANON_KEY', 'SUPABASE_PUBLISHABLE_KEY', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY'],
+      FALLBACK_SUPABASE_ANON_KEY,
+    ),
+    PORTAL_CLIENT_ID: sharedMode ? '' : client.id,
+    PORTAL_CANONICAL_HOST: sharedMode ? getSharedPortalHost() : (client.portal_domain || ''),
+    PORTAL_SHARED_PATH_PREFIX: getSharedPortalPathPrefix(),
+    N8N_BASE_URL: envValue(['N8N_BASE_URL'], DEFAULT_N8N_BASE_URL),
+    CHATWOOT_BASE_URL: envValue(['CHATWOOT_BASE_URL'], DEFAULT_CHATWOOT_BASE_URL),
+    CHATWOOT_ACCOUNT_ID: sharedMode ? '' : (chatwootProvisioning.accountId || envValue(['CHATWOOT_ACCOUNT_ID'], '1')),
+    CHATWOOT_API_ACCESS_TOKEN: options.allowDeploymentPlaceholders || options.allowPlaceholders
+      ? deploymentSecret(['CHATWOOT_API_ACCESS_TOKEN'], 'CHATWOOT_API_ACCESS_TOKEN', {
+          ...options,
+          allowPlaceholders: options.allowDeploymentPlaceholders || options.allowPlaceholders,
+        })
+      : requiredValue(
+          ['CHATWOOT_API_ACCESS_TOKEN'],
+          'CHATWOOT_API_ACCESS_TOKEN',
+          secretValue(['CHATWOOT_API_ACCESS_TOKEN'], {
+            keychainServices: ['MAP_CHATWOOT_API_ACCESS_TOKEN', 'CHATWOOT_API_ACCESS_TOKEN'],
+          }),
+        ),
+    CHATWOOT_SOCIAL_INBOX_ID: sharedMode ? '' : (chatwootProvisioning.socialInboxId || envValue(['CHATWOOT_SOCIAL_INBOX_ID'], '')),
+    CHATWOOT_WEBHOOK_BRIDGE_SECRET: chatwootWebhookSecret,
+    ZERNIO_API_BASE_URL: envValue(['ZERNIO_API_BASE_URL'], DEFAULT_ZERNIO_API_BASE_URL),
+    ZERNIO_API_KEY: envValue(
+      ['ZERNIO_API_KEY'],
+      secretValue(['ZERNIO_API_KEY'], {
+        keychainServices: ['MAP_ZERNIO_API_KEY', 'ZERNIO_API_KEY'],
+      }) || '',
+    ),
+    ZERNIO_INBOX_SEND_WEBHOOK_URL: envValue(['ZERNIO_INBOX_SEND_WEBHOOK_URL'], ''),
+    ZERNIO_INBOX_SEND_SECRET: envValue(
+      ['ZERNIO_INBOX_SEND_SECRET'],
+      secretValue(['ZERNIO_INBOX_SEND_SECRET'], {
+        keychainServices: ['MAP_ZERNIO_INBOX_SEND_SECRET', 'ZERNIO_INBOX_SEND_SECRET'],
+      }) || '',
+    ),
+    ZERNIO_WEBHOOK_SECRET: options.allowPlaceholders ? envValue(['ZERNIO_WEBHOOK_SECRET'], 'dry-run-zernio-webhook-secret') : requiredValue(
+      ['ZERNIO_WEBHOOK_SECRET'],
+      'ZERNIO_WEBHOOK_SECRET',
+      secretValue(['ZERNIO_WEBHOOK_SECRET'], {
+        keychainServices: ['MAP_ZERNIO_WEBHOOK_SECRET', 'ZERNIO_WEBHOOK_SECRET'],
+      }),
+    ),
+  }
+}
+
+function buildWranglerConfig(client, assetsDirectory, options = {}) {
+  const sharedMode = options.deploymentMode === 'shared-path'
+  const workerName = sharedMode ? DEFAULT_SHARED_PORTAL_WORKER_NAME : client.worker_name
+  const routePattern = sharedMode
+    ? `${getSharedPortalHost()}/${getSharedPortalPathPrefix()}/*`
+    : client.portal_domain
+
+  return [
+    `name = "${workerName}"`,
+    `main = "${join(PORTAL_ROOT, 'worker.js')}"`,
+    'compatibility_date = "2025-01-01"',
+    'workers_dev = true',
+    '',
+    '[[routes]]',
+    `pattern = "${routePattern}"`,
+    ...(sharedMode ? [`zone_name = "${getSharedPortalZoneName()}"`] : ['custom_domain = true']),
+    '',
+    '[assets]',
+    `directory = "${assetsDirectory}"`,
+    'binding = "ASSETS"',
+    'not_found_handling = "single-page-application"',
+    '',
+  ].join('\n')
+}
+
+async function configureZernioWebhook(secretEnv) {
+  const webhookSecret = String(secretEnv.ZERNIO_WEBHOOK_SECRET || '').trim()
+
+  const baseUrl = envValue(['PORTAL_WEBHOOK_BASE_URL'])
+  const portalWebhookBaseUrl = baseUrl
+    ? baseUrl.replace(/\/$/, '')
+    : `https://${getSharedPortalHost()}/${getSharedPortalPathPrefix()}/_zernio`
+  const webhookConfigs = [
+    {
+      key: 'accountEvents',
+      targetUrl: `${portalWebhookBaseUrl}/api/zernio/account-events`,
+      name: 'MAP Portal Account Events — central dispatcher',
+      events: ['account.connected', 'account.disconnected'],
+    },
+    {
+      key: 'inboxEvents',
+      targetUrl: `${portalWebhookBaseUrl}/api/zernio/inbox-events`,
+      name: 'MAP Portal Inbox Events',
+      events: ['message.received', 'comment.received', 'review.new'],
+    },
+  ]
+
+  const webhooks = {}
+
+  for (const config of webhookConfigs) {
+    const configured = await fetchJson(`${envValue(['N8N_BASE_URL'], DEFAULT_N8N_BASE_URL)}/webhook/zernio-configure-account-webhook`, {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        url: config.targetUrl,
+        secret: webhookSecret,
+        name: config.name,
+        events: config.events,
+      }),
+    })
+
+    const webhookId = configured?.webhook?._id || configured?._id || configured?.webhookId || ''
+    let tested = null
+
+    if (webhookId) {
+      tested = await fetchJson(`${envValue(['N8N_BASE_URL'], DEFAULT_N8N_BASE_URL)}/webhook/zernio-test-webhook-delivery`, {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({ webhookId }),
+      })
+    }
+
+    webhooks[config.key] = {
+      targetUrl: config.targetUrl,
+      webhookId: webhookId || null,
+      configureResult: configured,
+      testResult: tested,
+    }
+  }
+
+  return {
+    configured: true,
+    targetUrl: webhooks.accountEvents?.targetUrl || null,
+    webhookId: webhooks.accountEvents?.webhookId || null,
+    webhooks,
+  }
+}
+
+function summarizeChatwootProvisioning(result) {
+  if (!result) return null
+
+  return {
+    skipped: Boolean(result.skipped),
+    reason: result.reason || undefined,
+    accountId: result.accountId || undefined,
+    userId: result.userId || undefined,
+    userEmail: result.userEmail || undefined,
+    websiteInboxId: result.websiteInboxId || undefined,
+    socialInboxId: result.socialInboxId || undefined,
+    callbackWebhookVerified: Boolean(result.socialInbox?.callbackWebhookVerified),
+    contentPartnerThread: result.contentPartnerThread
+      ? {
+          contactId: result.contentPartnerThread.contactId,
+          conversationId: result.contentPartnerThread.conversationId,
+          created: Boolean(result.contentPartnerThread.created),
+          reopened: Boolean(result.contentPartnerThread.reopened),
+        }
+      : undefined,
+    websiteChatSettings: result.websiteChatSettings
+      ? {
+          tokenStored: Boolean(result.websiteChatSettings.websiteToken),
+          snippetConfigured: Boolean(result.websiteChatSettings.snippetConfigured),
+        }
+      : undefined,
+    callbackSecretConfigured: Boolean(result.callbackSecret),
+    passwordReset: result.passwordReset?.skipped
+      ? { sent: false, skipped: true, reason: result.passwordReset.reason }
+      : result.passwordReset?.error
+      ? { sent: false, error: result.passwordReset.error }
+      : { sent: !result.skipped },
+  }
+}
+
+async function syncDeploymentState({ client, signup, run, webhookResult, chatwootProvisioning, dryRun, deploymentMode }) {
+  if (dryRun || !run?.id || !signup?.id) {
+    return {
+      skipped: true,
+      reason: dryRun ? 'Dry run.' : 'Missing onboarding signup or provisioning run.',
+    }
+  }
+
+  if (run.run_status === 'completed' && run.current_stage === 'complete' && webhookResult?.skipped) {
+    return {
+      skipped: true,
+      reason: 'Provisioning run is already complete; skipped webhook configuration will not downgrade it.',
+      runStage: run.current_stage,
+      runStatus: run.run_status,
+      manualAttentionRequired: run.manual_attention_required === true,
+    }
+  }
+
+  const deploymentReady = webhookResult?.configured || webhookResult?.skipped
+  const runStage = deploymentReady && webhookResult?.configured ? 'complete' : 'portal_deployed'
+  const runStatus = deploymentReady && webhookResult?.configured ? 'completed' : 'attention_required'
+  const manualAttentionRequired = !(deploymentReady && webhookResult?.configured)
+  const now = new Date().toISOString()
+  const chatwootReady = chatwootProvisioning?.skipped
+    ? 'Chatwoot tenant provisioning skipped.'
+    : `Chatwoot account ${chatwootProvisioning?.accountId} and inboxes provisioned.`
+  const portalDeploymentLabel = deploymentMode === 'shared-path'
+    ? `Shared portal path ${buildPortalPath(client)} is active`
+    : 'Portal worker deployed and custom domain attached'
+  const stageNote = webhookResult?.configured
+    ? `${portalDeploymentLabel}, Zernio account webhook registered, and ${chatwootReady}`
+    : `${portalDeploymentLabel}; Zernio webhook setup still needs follow-up. ${chatwootReady}`
+
+  const advanced = await callSupabaseRpc('advance_onboarding_provisioning_run', {
+    p_run_id: run.id,
+    p_current_stage: runStage,
+    p_run_status: runStatus,
+    p_domain_status: deploymentMode === 'shared-path' ? 'shared_portal_path_live' : 'map_managed_domain_live',
+    p_deployment_status: 'live',
+    p_client_id: client.id,
+    p_client_slug: client.slug,
+    p_portal_subdomain: client.portal_subdomain,
+    p_portal_domain: client.portal_domain,
+    p_worker_name: client.worker_name,
+    p_manual_attention_required: manualAttentionRequired,
+    p_stage_note: stageNote,
+  })
+
+  const signupPatch = {
+    client_slug: client.slug,
+    portal_subdomain: client.portal_subdomain,
+    portal_domain: client.portal_domain,
+    worker_name: client.worker_name,
+    branding_status: 'ready',
+    provisioning_stage: runStage,
+    manual_attention_required: manualAttentionRequired,
+    last_error: null,
+    completed_at: runStage === 'complete' ? now : null,
+  }
+
+  const mirrored = await patchSupabase(
+    `/rest/v1/onboarding_signups?id=eq.${encodeURIComponent(signup.id)}`,
+    signupPatch,
+  )
+
+  return {
+    skipped: false,
+    runStage,
+    runStatus,
+    manualAttentionRequired,
+    advanced,
+    mirrored,
+  }
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2))
+  const dryRun = Boolean(args['dry-run'])
+  const skipWebhookConfig = Boolean(args['skip-webhook-config'])
+  const skipInitialRadar = Boolean(args['skip-initial-radar'])
+  const skipInitialSocialDrafts = Boolean(args['skip-initial-social-drafts'])
+  const skipChatwootProvisioning = Boolean(args['skip-chatwoot-provisioning'])
+  const skipChatwootPasswordReset = !Boolean(args['send-chatwoot-password-reset']) || Boolean(args['skip-chatwoot-password-reset'])
+  const skipZernioProfileProvisioning = Boolean(args['skip-zernio-profile-provisioning'])
+  const skipWorkerDeploy = Boolean(args['skip-worker-deploy'])
+  const client = await loadClient(args)
+  const deploymentMode = resolvePortalDeploymentMode(args, client)
+  const shouldDeployWorker = !skipWorkerDeploy && (deploymentMode === 'dedicated-domain' || Boolean(args['deploy-shared-worker']))
+
+  if (!client.portal_domain || !client.worker_name || !client.portal_subdomain) {
+    throw new Error('Client is missing portal runtime fields. Run derive-tenant-bootstrap first.')
+  }
+
+  const signup = await loadSignupForClient(client.id)
+  const run = await loadRun(args, client.id)
+  const cloudflareToken = shouldDeployWorker ? requiredValue(['CLOUDFLARE_API_TOKEN'], 'CLOUDFLARE_API_TOKEN') : ''
+  const accountId = shouldDeployWorker ? await resolveCloudflareAccountId(cloudflareToken) : ''
+  const chatwootProvisioning = await provisionChatwootTenant({
+    client,
+    dryRun,
+    skipChatwootProvisioning,
+    skipChatwootPasswordReset,
+    deploymentMode,
+  })
+  const zernioProfile = await ensureZernioCustomerProfile({
+    client,
+    dryRun,
+    skipZernioProfileProvisioning,
+  })
+  const publicEnv = buildPublicEnv(client, { deploymentMode })
+  const secretEnv = buildSecretEnv(client, chatwootProvisioning, {
+    allowPlaceholders: dryRun,
+    allowDeploymentPlaceholders: !shouldDeployWorker,
+    deploymentMode,
+  })
+  const tempDir = mkdtempSync(join(tmpdir(), 'map-portal-provision-'))
+  const distDir = join(tempDir, 'dist')
+
+  const configPath = join(tempDir, 'wrangler.auto.toml')
+  const secretsPath = join(tempDir, 'worker-secrets.env')
+
+  writeFileSync(configPath, buildWranglerConfig(client, distDir, { deploymentMode }))
+  writeFileSync(secretsPath, `${toEnvFile(secretEnv)}\n`)
+
+  let webhookResult = {
+    configured: false,
+    skipped: true,
+    reason: 'Webhook configuration was not attempted.',
+  }
+
+  try {
+    if (shouldDeployWorker) {
+      shell(['npx', 'vite', 'build', '--outDir', distDir, '--emptyOutDir'], {
+        cwd: PORTAL_ROOT,
+        env: publicEnv,
+        stdio: 'inherit',
+      })
+
+      shell([
+        'npx',
+        'wrangler',
+        'deploy',
+        '--config',
+        configPath,
+        '--keep-vars',
+        '--secrets-file',
+        secretsPath,
+        ...(dryRun ? ['--dry-run'] : []),
+      ], {
+        cwd: PORTAL_ROOT,
+        env: {
+          CLOUDFLARE_API_TOKEN: cloudflareToken,
+          CLOUDFLARE_ACCOUNT_ID: accountId,
+        },
+        stdio: 'inherit',
+      })
+    }
+
+    if (!dryRun && !skipWebhookConfig) {
+      webhookResult = await configureZernioWebhook(secretEnv)
+    } else if (skipWebhookConfig) {
+      webhookResult = {
+        configured: false,
+        skipped: true,
+        reason: 'Webhook configuration was skipped by flag.',
+      }
+    }
+
+    const deploymentState = await syncDeploymentState({
+      client,
+      signup,
+      run,
+      webhookResult,
+      chatwootProvisioning,
+      dryRun,
+      deploymentMode,
+    })
+    const initialOpportunityRadar = await runInitialOpportunityRadar({
+      client,
+      deploymentState,
+      dryRun,
+      skipInitialRadar,
+    })
+    const initialSocialDrafts = await seedInitialSocialDrafts({
+      client,
+      dryRun,
+      skipInitialSocialDrafts,
+    })
+    const provisioningSummary = await persistProvisioningSummary({
+      run,
+      webhookResult,
+      zernioProfile,
+      chatwootProvisioning,
+      initialOpportunityRadar,
+      initialSocialDrafts,
+      dryRun,
+    })
+    printSummary('Portal deployment summary', {
+      dryRun,
+      deploymentMode,
+      workerDeployment: shouldDeployWorker
+        ? { skipped: false, workerName: deploymentMode === 'shared-path' ? DEFAULT_SHARED_PORTAL_WORKER_NAME : client.worker_name }
+        : {
+            skipped: true,
+            reason: skipWorkerDeploy
+              ? 'Worker deployment skipped by flag.'
+              : 'Shared portal worker deployment is reused. Pass --deploy-shared-worker to rebuild it.',
+          },
+      clientId: client.id,
+      clientSlug: client.slug,
+      workerName: deploymentMode === 'shared-path' ? DEFAULT_SHARED_PORTAL_WORKER_NAME : client.worker_name,
+      portalDomain: deploymentMode === 'shared-path' ? getSharedPortalHost() : client.portal_domain,
+      portalPath: deploymentMode === 'shared-path' ? buildPortalPath(client) : undefined,
+      portalUrl: buildPortalUrl(client, { deploymentMode }),
+      cloudflareAccountId: accountId || undefined,
+      zernioProfile,
+      chatwootProvisioning: summarizeChatwootProvisioning(chatwootProvisioning),
+      webhookResult,
+      deploymentState,
+      initialOpportunityRadar,
+      initialSocialDrafts,
+      provisioningSummary,
+      readyEmail: {
+        skipped: true,
+        reason: 'Ready email now sends after the customer completes password setup.',
+      },
+    })
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true })
+  }
+}
+
+main().catch((error) => {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
+  process.exit(1)
+})

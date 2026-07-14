@@ -5,6 +5,62 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>map-portal</title>
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search)
+        if (params.get('theme') !== 'default') {
+          document.documentElement.dataset.portalTheme = 'map-dark'
+        }
+      })()
+    </script>
+    <script type="module">
+      (function () {
+        var canonicalHost = String(import.meta.env.VITE_PORTAL_CANONICAL_HOST || '').trim().toLowerCase()
+        if (!canonicalHost) return
+
+        var currentHost = String(window.location.hostname || '').trim().toLowerCase()
+        var isTechnicalHost =
+          currentHost.endsWith('.workers.dev') || currentHost.endsWith('.pages.dev')
+
+        if (!isTechnicalHost || currentHost === canonicalHost) return
+        if (window.location.pathname.startsWith('/api/')) return
+
+        var nextUrl =
+          'https://' +
+          canonicalHost +
+          window.location.pathname +
+          window.location.search +
+          window.location.hash
+
+        window.location.replace(nextUrl)
+      })()
+    </script>
+    <script>
+      (function () {
+        function showBootError(message) {
+          var root = document.getElementById('root')
+          if (root && root.childNodes.length > 0) return
+
+          document.body.innerHTML =
+            '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(circle at 50% -12%,rgba(112,228,255,.22),transparent 33rem),radial-gradient(circle at 85% 18%,rgba(56,189,248,.14),transparent 25rem),linear-gradient(180deg,#07090f 0%,#0b0e18 54%,#0f1320 100%);font-family:system-ui,sans-serif;color:#f5f7fb;">' +
+              '<div style="max-width:760px;width:100%;background:linear-gradient(145deg,rgba(255,255,255,.12),rgba(255,255,255,.04)),rgba(12,16,29,.86);border:1px solid rgba(255,255,255,.14);border-radius:24px;box-shadow:0 30px 90px rgba(0,0,0,.48),inset 0 1px 0 rgba(255,255,255,.1);padding:24px;">' +
+                '<p style="margin:0 0 12px;font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#70e4ff;">Portal Startup Error</p>' +
+                '<pre style="margin:0;white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.6;color:#dbe3f4;">' + String(message) + '</pre>' +
+              '</div>' +
+            '</div>'
+        }
+
+        window.addEventListener('error', function (event) {
+          if (event && event.message) showBootError(event.message)
+        })
+
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event && event.reason
+          var message = reason && reason.stack ? reason.stack : reason && reason.message ? reason.message : String(reason)
+          showBootError(message)
+        })
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
