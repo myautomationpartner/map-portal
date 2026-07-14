@@ -1322,6 +1322,7 @@ function MobilePublisherConversation({
   reviewComposer,
   reviewMessages,
   reviewPending,
+  reviewRevisionCount,
   onReviewComposerChange,
   onReviewRequest,
   onReviewPhotos,
@@ -1329,11 +1330,27 @@ function MobilePublisherConversation({
   isViewingPublishedPost,
   charOver,
 }) {
+  const reviewCardRef = useRef(null)
+  const [revisionHighlight, setRevisionHighlight] = useState(false)
   const draft = {
     previewUrl: imagePreview,
     caption: content,
     platforms: activePlatforms,
   }
+
+  useEffect(() => {
+    if (!reviewRevisionCount) return undefined
+    let timer
+    const frame = window.requestAnimationFrame(() => {
+      setRevisionHighlight(true)
+      reviewCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      timer = window.setTimeout(() => setRevisionHighlight(false), 2400)
+    })
+    return () => {
+      window.cancelAnimationFrame(frame)
+      if (timer) window.clearTimeout(timer)
+    }
+  }, [reviewRevisionCount])
 
   function handleDraftChange(nextDraft) {
     if (nextDraft.caption !== content) onCaptionChange(nextDraft.caption)
@@ -1358,15 +1375,19 @@ function MobilePublisherConversation({
         </div>
       </div>
 
+      <div className="mobile-publisher-updated-card" data-updated={revisionHighlight ? 'true' : undefined}>
       <GeneratedPostcard
+        cardRef={reviewCardRef}
         draft={draft}
         onChange={handleDraftChange}
         onReview={onReview}
         onReset={onBack}
         reviewLabel={timingMode === 'now' ? 'Final approval' : 'Review schedule'}
         resetLabel="Back to Post"
-        statusLabel="Final review"
+        statusLabel={reviewRevisionCount ? 'Updated' : 'Final review'}
       />
+      {reviewRevisionCount ? <p>Caption updated from your chat request.</p> : null}
+      </div>
 
       <div className="mobile-publisher-timing">
         <div>
@@ -1494,6 +1515,7 @@ export default function CreatePost() {
   const [reviewComposer, setReviewComposer] = useState('')
   const [reviewMessages, setReviewMessages] = useState([])
   const [reviewPending, setReviewPending] = useState(false)
+  const [reviewRevisionCount, setReviewRevisionCount] = useState(0)
   const [platformVariants, setPlatformVariants] = useState({})
   const [platformFormatStatus, setPlatformFormatStatus] = useState('')
   const [imageFormatState, setImageFormatState] = useState('idle')
@@ -2600,22 +2622,35 @@ export default function CreatePost() {
     }])
 
     try {
+      const requestedAction = /short|concise|trim|less word/i.test(request)
+        ? 'shorten'
+        : /call to action|\bcta\b|book|contact|click|visit/i.test(request)
+          ? 'cta'
+          : /engag|exciting|energy|friendl|fun|punch/i.test(request)
+            ? 'engaging'
+            : /option|version|variant|another caption/i.test(request)
+              ? 'variants'
+              : 'improve'
       const payload = await generatePublisherAssist({
         client_id: clientId,
-        action: 'improve',
+        action: requestedAction,
         caption: content,
         platforms: activePlatforms,
         max_chars: charLimit,
-        context: `Customer request during final review: ${request}\nApply this request to the current caption while preserving accurate business details. Return an updated draft only.`,
+        context: `Customer request during final review: ${request}\nApply this request to the current caption while preserving accurate business details. The revised caption must be materially different from the current caption. Return an updated draft only.`,
       })
       const suggestion = Array.isArray(payload?.suggestions) ? payload.suggestions[0] : null
       if (!suggestion?.caption) throw new Error('My Partner did not return an updated caption.')
+      if (suggestion.caption.trim() === content.trim()) {
+        throw new Error('My Partner returned the same caption, so I left your draft unchanged. Please try a more specific edit request.')
+      }
 
       applyAssistSuggestion(suggestion)
+      setReviewRevisionCount((current) => current + 1)
       setReviewMessages((current) => [...current, {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: 'Done — I updated the caption. Review the postcard above, or ask for another change.',
+        content: `Done — I updated the caption. It now starts: “${suggestion.caption.slice(0, 90)}${suggestion.caption.length > 90 ? '…' : ''}” I brought the revised postcard back into view.`,
       }])
     } catch (error) {
       setReviewComposer(request)
@@ -3513,6 +3548,7 @@ export default function CreatePost() {
             reviewComposer={reviewComposer}
             reviewMessages={reviewMessages}
             reviewPending={reviewPending}
+            reviewRevisionCount={reviewRevisionCount}
             onReviewComposerChange={setReviewComposer}
             onReviewRequest={handleReviewRequest}
             onReviewPhotos={(files) => addLocalMediaFiles(files, 'recent')}

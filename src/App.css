@@ -20955,6 +20955,30 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     scroll-margin-top: 7.8rem;
   }
 
+  .mobile-publisher-updated-card {
+    display: grid;
+    width: calc(100% - 2.8rem);
+    align-self: flex-end;
+    gap: 0.35rem;
+  }
+
+  .mobile-publisher-updated-card .mobile-partner-generated-postcard {
+    width: 100%;
+  }
+
+  .mobile-publisher-updated-card > p {
+    margin: 0;
+    color: #08747a;
+    font-size: 0.68rem;
+    font-weight: 720;
+    text-align: center;
+  }
+
+  .mobile-publisher-updated-card[data-updated="true"] .mobile-partner-generated-postcard {
+    border-color: rgba(169, 223, 56, 0.92);
+    box-shadow: 0 0 0 3px rgba(169, 223, 56, 0.2), 0 16px 34px rgba(16, 37, 53, 0.13);
+  }
+
   .mobile-publisher-timing {
     display: grid;
     gap: 0.7rem;
