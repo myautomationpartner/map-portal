@@ -24,6 +24,7 @@ import { inferPathTenant, portalPath } from './lib/portalPath'
 import { isInboxDemoCaptureEnabled } from './lib/inboxDemoCapture'
 import Login from './pages/Login'
 import Today from './pages/Today'
+import { isMobilePartnerRolloutTenant } from './lib/mobilePartnerRollout'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import Inbox from './pages/Inbox'
@@ -1002,7 +1003,10 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     location.pathname !== '/post' &&
     location.pathname !== '/inbox' &&
     location.pathname !== '/attention'
-  const suppressPartnerLauncher = ['/inbox', '/attention', '/post'].some((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
+  const suppressPartnerLauncher = (
+    (location.pathname === '/' && isMobilePartnerRolloutTenant(tenant)) ||
+    ['/inbox', '/attention', '/post'].some((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
+  )
 
   useEffect(() => {
     setBillingBannerDismissedToday(readDailyDismissal(billingBannerDismissKey))
@@ -1230,6 +1234,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
 
         {/* Mobile bottom nav */}
         <BottomNav
+          tenant={tenant}
           billingAccess={billingAccess}
           onBillingAction={handleBillingAction}
           billingActionPending={billingActionPending}

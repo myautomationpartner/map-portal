@@ -103,6 +103,18 @@ export function buildInboxDemoCaptureState(nowSeconds = DEMO_NOW_SECONDS) {
     conversations,
     messagesByConversationId,
     selectedConversationId: 8801,
+    replySuggestions: [
+      {
+        label: 'Friendly and direct',
+        caption: 'Absolutely — new families are welcome to stop in without registering first. I can also send the open-house details and class options if that would help.',
+        why: 'Answers the question clearly and offers the next useful step.',
+      },
+      {
+        label: 'Short option',
+        caption: 'Yes — new families can stop in without registering first. We would love to see you at the open house!',
+        why: 'Keeps the response fast and welcoming.',
+      },
+    ],
     websiteChat: {
       settings: {
         chatwoot_account_id: 91,

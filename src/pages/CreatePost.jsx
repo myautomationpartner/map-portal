@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useOutletContext, Link, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { CUSTOMER_VISIBLE_PUBLISHING_PLATFORMS } from '../lib/platformCatalog.jsx'
 import {
@@ -40,6 +40,9 @@ import {
 } from 'lucide-react'
 import { FaMicrosoft } from 'react-icons/fa'
 import { SiDropbox, SiGooglephotos, SiIcloud } from 'react-icons/si'
+import MobileVoiceComposer from '../components/MobileVoiceComposer'
+import MobilePartnerTopBar from '../components/MobilePartnerTopBar'
+import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 
@@ -1116,15 +1119,16 @@ function ReviewModal({
   platformImageVariants,
   mediaItems,
   activeMediaIndex,
+  platforms = PLATFORMS,
 }) {
   if (!open) return null
 
   const activePlatforms = Object.entries(selectedPlatforms)
-    .filter(([, enabled]) => enabled)
+    .filter(([platformId, enabled]) => enabled && platforms.some((platform) => platform.id === platformId))
     .map(([platformId]) => platformId)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(9,7,4,0.58)] p-3 md:items-center md:p-6">
+    <div className="create-post-review-modal fixed inset-0 z-50 flex items-end justify-center bg-[rgba(9,7,4,0.58)] p-3 md:items-center md:p-6">
       <div
         className="max-h-[92vh] w-full max-w-[980px] overflow-y-auto rounded-[34px] p-5 md:p-7"
         style={{ background: 'rgba(248,244,238,0.98)', border: '1px solid var(--portal-border)', boxShadow: '0 30px 80px rgba(16, 12, 7, 0.28)' }}
@@ -1159,7 +1163,7 @@ function ReviewModal({
                 Platforms
               </p>
               <div className="mt-3 space-y-2">
-                {PLATFORMS.map(({ id, label, Icon, accent, soft }) => {
+                {platforms.map(({ id, label, Icon, accent, soft }) => {
                   const active = selectedPlatforms[id]
                   return (
                     <button
@@ -1220,7 +1224,7 @@ function ReviewModal({
               <>
                 <div className="flex flex-wrap gap-2">
                   {activePlatforms.map((platformId) => {
-                    const platform = PLATFORMS.find((item) => item.id === platformId)
+                    const platform = platforms.find((item) => item.id === platformId)
                     if (!platform) return null
                     const Icon = platform.Icon
 
@@ -1297,9 +1301,12 @@ function ReviewModal({
 }
 
 export default function CreatePost() {
-  const { requireWriteAccess } = useOutletContext()
+  const outlet = useOutletContext() || {}
+  const { requireWriteAccess } = outlet
+  const mobilePartnerRollout = isMobilePartnerRolloutTenant(outlet.tenant)
 
   const queryClient = useQueryClient()
+  const location = useLocation()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const returnTo = searchParams.get('returnTo') || ''
@@ -1308,6 +1315,7 @@ export default function CreatePost() {
   const composerRef = useRef(null)
   const autosaveTimerRef = useRef(null)
   const hydratingDraftRef = useRef(false)
+  const recentPhotosHandledRef = useRef(false)
 
   const [content, setContent] = useState('')
   const [imageFile, setImageFile] = useState(null)
@@ -1321,12 +1329,12 @@ export default function CreatePost() {
   const [imageImproveMode, setImageImproveMode] = useState('')
   const [imageImproveError, setImageImproveError] = useState('')
   const [dropboxAttachments, setDropboxAttachments] = useState([])
-  const [timingMode, setTimingMode] = useState('slot')
+  const [timingMode, setTimingMode] = useState(mobilePartnerRollout ? 'now' : 'slot')
   const [selectedPlatforms, setSelectedPlatforms] = useState({
-    facebook: false,
-    instagram: false,
+    facebook: mobilePartnerRollout,
+    instagram: mobilePartnerRollout,
     tiktok: false,
-    twitter: false,
+    twitter: mobilePartnerRollout,
   })
   const [scheduledFor, setScheduledFor] = useState('')
   const [submitState, setSubmitState] = useState('idle')
@@ -1368,6 +1376,11 @@ export default function CreatePost() {
   })
 
   const clientId = profile?.client_id
+  const visiblePlatforms = mobilePartnerRollout
+    ? PLATFORMS
+      .filter((platform) => ['facebook', 'instagram', 'twitter'].includes(platform.id))
+      .map((platform) => platform.id === 'twitter' ? { ...platform, label: 'X' } : platform)
+    : PLATFORMS
   const draftTargetDate = searchParams.get('date') || ''
   const draftTargetSlot = searchParams.get('slot') || ''
   const draftTargetId = searchParams.get('draftId') || ''
@@ -2074,6 +2087,18 @@ export default function CreatePost() {
     event.target.value = ''
   }
 
+  function handleCaptionChange(nextContent) {
+    setContent(nextContent)
+    setPlatformVariants({})
+    setPlatformFormatStatus('Base caption changed. Run Partner Format to refresh platform captions.')
+    setErrorMsg('')
+    if (imageGenerateError) setImageGenerateError('')
+    if (!hydratingDraftRef.current && activeDraftId) {
+      setDraftDirty(true)
+      setDraftStatus('Saving caption edits…')
+    }
+  }
+
   async function addLocalMediaFiles(files, source = 'local') {
     const mediaFiles = files.filter((file) => isSupportedLocalMedia(file))
     if (!mediaFiles.length) {
@@ -2113,6 +2138,29 @@ export default function CreatePost() {
     setImageImproveError('')
     clearPlatformImageVariants('')
   }
+
+  useEffect(() => {
+    const recentPhotos = Array.isArray(location.state?.recentPhotos) ? location.state.recentPhotos : []
+    const preselectedPlatforms = Array.isArray(location.state?.preselectedPlatforms)
+      ? location.state.preselectedPlatforms
+      : []
+    if (recentPhotosHandledRef.current || (!recentPhotos.length && !preselectedPlatforms.length)) return
+
+    recentPhotosHandledRef.current = true
+    if (preselectedPlatforms.length) {
+      const selected = new Set(preselectedPlatforms)
+      setSelectedPlatforms((current) => ({
+        ...current,
+        facebook: selected.has('facebook'),
+        instagram: selected.has('instagram'),
+        twitter: selected.has('twitter'),
+      }))
+    }
+    if (recentPhotos.length) void addLocalMediaFiles(recentPhotos, 'recent')
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
+    // This one-time handoff intentionally consumes router state from the mobile photo picker.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, location.search, location.state, navigate])
 
   async function handleChooseGoogle() {
     if (!requireWriteAccess('choose Google media')) return
@@ -3194,7 +3242,8 @@ export default function CreatePost() {
 
   return (
     <>
-      <div className="portal-page create-post-page w-full max-w-none space-y-6 md:p-5 xl:p-6">
+      {mobilePartnerRollout ? <MobilePartnerTopBar activeMode="post" /> : null}
+      <div className={`portal-page create-post-page ${mobilePartnerRollout ? 'create-post-mobile-partner-rollout' : ''} w-full max-w-none space-y-6 md:p-5 xl:p-6`}>
         {(submitState === 'success' || errorMsg || draftError || draftStatus) && (
           <section className="space-y-3">
             {submitState === 'success' && (
@@ -3260,10 +3309,19 @@ export default function CreatePost() {
             </div>
             <div className="create-post-phone-body">
               <div className="create-post-identity-row">
-                <div className="create-post-avatar">D</div>
+                <div className="create-post-avatar">
+                  {(profile?.clients?.business_name || outlet.tenant?.displayName || 'M').trim().charAt(0).toUpperCase()}
+                </div>
                 <div>
                   <strong>{profile?.clients?.business_name || 'Dancescapes Performing Arts'}</strong>
-                  <span>{activePlatforms.length ? formatVisiblePlatformLabels(activePlatforms) : 'Choose platforms below'}</span>
+                  <span>
+                    {activePlatforms.length
+                      ? activePlatforms
+                        .map((platformId) => visiblePlatforms.find((platform) => platform.id === platformId)?.label)
+                        .filter(Boolean)
+                        .join(', ')
+                      : 'Choose platforms below'}
+                  </span>
                 </div>
               </div>
               <div className="create-post-compose-grid create-post-ticket-grid">
@@ -3398,19 +3456,22 @@ export default function CreatePost() {
                   </span>
                 </div>
 
+                {mobilePartnerRollout ? (
+                  <div className="create-post-mobile-voice">
+                    <MobileVoiceComposer
+                      value={content}
+                      onChange={handleCaptionChange}
+                      onPhotos={(files) => addLocalMediaFiles(files, 'recent')}
+                      placeholder="Speak or write your post…"
+                      disabled={isSubmitting || isViewingPublishedPost}
+                      showSend={false}
+                      submitOnEnter={false}
+                    />
+                  </div>
+                ) : null}
                 <textarea
                   value={content}
-                  onChange={(event) => {
-                    setContent(event.target.value)
-                    setPlatformVariants({})
-                    setPlatformFormatStatus('Base caption changed. Run Partner Format to refresh platform captions.')
-                    setErrorMsg('')
-                    if (imageGenerateError) setImageGenerateError('')
-                    if (!hydratingDraftRef.current && activeDraftId) {
-                      setDraftDirty(true)
-                      setDraftStatus('Saving caption edits…')
-                    }
-                  }}
+                  onChange={(event) => handleCaptionChange(event.target.value)}
                   placeholder="Select a draft-backed slot to prefill the caption…"
                   rows={7}
                   disabled={isSubmitting || isViewingPublishedPost}
@@ -3868,7 +3929,9 @@ export default function CreatePost() {
               </div>
               <div className="create-post-preview-actions">
                 <div className="create-post-preview-hint">
-                  Choose the channels you want to approve. Nothing is selected by default.
+                  {mobilePartnerRollout
+                    ? 'Facebook, Instagram, and X are ready. Tap any channel to remove it.'
+                    : 'Choose the channels you want to approve. Nothing is selected by default.'}
                 </div>
               </div>
             </div>
@@ -3879,7 +3942,7 @@ export default function CreatePost() {
             ) : null}
 
             <div className="create-post-mobile-platform-list mt-5" aria-label="Mobile platform selection">
-              {PLATFORMS.map(({ id, label, Icon, accent, soft }) => {
+              {visiblePlatforms.map(({ id, label, Icon, accent, soft }) => {
                 const active = selectedPlatforms[id]
                 const hasCrop = Boolean(platformImageVariants[id])
                 return (
@@ -3945,7 +4008,7 @@ export default function CreatePost() {
             </div>
 
             <div className="create-post-preview-grid mt-5">
-              {PLATFORMS.map(({ id, label, Icon, accent, soft }) => {
+              {visiblePlatforms.map(({ id, label, Icon, accent, soft }) => {
                 const active = selectedPlatforms[id]
                 return (
                   <article key={id} className="create-post-preview-shell" data-active={active}>
@@ -4369,6 +4432,7 @@ export default function CreatePost() {
         platformImageVariants={platformImageVariants}
         mediaItems={creativeItems}
         activeMediaIndex={activeCreativeIndex}
+        platforms={visiblePlatforms}
       />
     </>
   )

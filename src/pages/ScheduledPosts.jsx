@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useOutletContext } from 'react-router-dom'
 import { AlertCircle, ArrowLeft, CalendarDays, Clock3, Loader2, PencilLine, Trash2 } from 'lucide-react'
 import { deletePost, fetchProfile, fetchScheduledPosts, reconcileScheduledPosts } from '../lib/portalApi'
 import { CUSTOMER_VISIBLE_PUBLISHING_PLATFORMS } from '../lib/platformCatalog'
+import MobileScheduledPartner from '../components/MobileScheduledPartner'
+import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 
@@ -66,6 +68,8 @@ function formatVisiblePlatforms(platforms = []) {
 
 export default function ScheduledPosts() {
   const queryClient = useQueryClient()
+  const outlet = useOutletContext() || {}
+  const mobilePartnerRollout = isMobilePartnerRolloutTenant(outlet.tenant)
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile'],
     queryFn: fetchProfile,
@@ -147,6 +151,9 @@ export default function ScheduledPosts() {
   }
 
   if (profileLoading || postsLoading) {
+    if (mobilePartnerRollout) {
+      return <MobileScheduledPartner loading />
+    }
     return (
       <div className="portal-page flex min-h-[60vh] items-center justify-center">
         <div className="portal-surface rounded-[28px] p-6">
@@ -157,7 +164,16 @@ export default function ScheduledPosts() {
   }
 
   return (
-    <div className="portal-page w-full max-w-none space-y-6 md:p-5 xl:p-6">
+    <>
+      {mobilePartnerRollout ? (
+        <MobileScheduledPartner
+          posts={upcomingScheduledPosts}
+          deletingId={deleteBusyId}
+          onDelete={handleDeleteScheduledPost}
+          error={errorMsg}
+        />
+      ) : null}
+      <div className={`portal-page scheduled-posts-page ${mobilePartnerRollout ? 'scheduled-posts-rollout-desktop' : ''} w-full max-w-none space-y-6 md:p-5 xl:p-6`}>
       <div>
         <Link
           to="/post"
@@ -269,6 +285,7 @@ export default function ScheduledPosts() {
           </p>
         </section>
       )}
-    </div>
+      </div>
+    </>
   )
 }

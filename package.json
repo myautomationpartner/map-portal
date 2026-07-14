@@ -10,7 +10,7 @@
     "test:secure-vault": "node --test src/lib/secureVault.test.mjs",
     "preview": "vite preview",
     "provision:client": "node ./scripts/provision-client-portal.mjs",
-    "deploy:test-portal": "node ./scripts/deploy-portal-update.mjs --client-slug dancescapes-performing-arts",
+    "deploy:test-portal": "node ./scripts/deploy-portal-update.mjs --client-slug dancescapes-performing-arts-llc --allow-main-site-domain",
     "deploy:portal": "node ./scripts/deploy-portal-update.mjs",
     "deploy:all-portals": "node ./scripts/deploy-all-portal-updates.mjs",
     "rollback:portal": "node ./scripts/rollback-portal-update.mjs",
@@ -19,6 +19,7 @@
     "zernio:accounts": "zernio accounts:list --pretty"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "@supabase/supabase-js": "^2.103.0",
     "@tanstack/react-query": "^5.97.0",
     "lucide-react": "^0.475.0",

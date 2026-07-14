@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Bot,
@@ -29,6 +29,8 @@ import {
   upsertResearchProfile,
 } from '../lib/portalApi'
 import { portalPath } from '../lib/portalPath'
+import MobileVoiceComposer from './MobileVoiceComposer'
+import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
 
 const FLOW_CARDS = [
   {
@@ -314,6 +316,7 @@ export default function PortalPartner({ session, profile, tenant, billingAccess,
   const clientId = client?.id || ''
   const userId = profile?.id || ''
   const canWrite = !billingAccess?.readOnly
+  const mobilePartnerRollout = isMobilePartnerRolloutTenant(tenant)
 
   const title = useMemo(() => {
     if (tenant?.businessName) return `${tenant.businessName} Partner`
@@ -643,12 +646,25 @@ export default function PortalPartner({ session, profile, tenant, billingAccess,
     void sendMessage(prompt.buildPrompt ? prompt.buildPrompt() : prompt.prompt)
   }
 
+  useEffect(() => {
+    function handleOpenPartner(event) {
+      const message = String(event?.detail?.message || '').trim()
+      setOpen(true)
+      setMinimized(false)
+      if (message) void sendMessage(message)
+    }
+
+    window.addEventListener('map:open-portal-partner', handleOpenPartner)
+    return () => window.removeEventListener('map:open-portal-partner', handleOpenPartner)
+  })
+
   if (!session || !clientId) return null
 
   return (
     <div
       className={`portal-partner ${open ? 'is-open' : ''} ${minimized ? 'is-minimized' : ''}`}
       data-suppress-mobile-launcher={suppressMobileLauncher ? 'true' : undefined}
+      data-mobile-partner-rollout={mobilePartnerRollout ? 'true' : undefined}
       ref={panelRef}
     >
       {open && !minimized ? (
@@ -657,8 +673,8 @@ export default function PortalPartner({ session, profile, tenant, billingAccess,
             <div className="portal-partner-title">
               <span className="portal-partner-mark"><Bot className="h-4 w-4" /></span>
               <div>
-                <h2>{title}</h2>
-                <p>Guided help for this workspace</p>
+                <h2>{mobilePartnerRollout ? 'My Partner' : title}</h2>
+                <p>{mobilePartnerRollout ? 'Ask, speak, or choose a shortcut' : 'Guided help for this workspace'}</p>
               </div>
             </div>
             <div className="portal-partner-controls">
@@ -754,6 +770,19 @@ export default function PortalPartner({ session, profile, tenant, billingAccess,
             ) : null}
           </div>
 
+          {mobilePartnerRollout ? (
+            <div className="portal-partner-mobile-voice">
+              <MobileVoiceComposer
+                value={input}
+                onChange={setInput}
+                onSubmit={sendMessage}
+                onPhotos={(files) => navigate('/post?source=recent-photos', { state: { recentPhotos: files } })}
+                placeholder="Speak or ask My Partner…"
+                disabled={pending}
+                compact
+              />
+            </div>
+          ) : null}
           <form className="portal-partner-composer" onSubmit={handleSubmit}>
             <textarea
               value={input}

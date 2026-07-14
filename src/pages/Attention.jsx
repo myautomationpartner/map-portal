@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { portalPath } from '../lib/portalPath'
-import { fetchScheduledPosts, fetchSocialDrafts } from '../lib/portalApi'
+import { fetchScheduledPosts, fetchSocialDrafts, generateInboxReplyAssist } from '../lib/portalApi'
 import { splitMessageLinks } from '../lib/messageLinks'
 import { canHideInboxThread } from '../lib/inboxThreadActions'
 import { getOpenReviewDrafts, getPartnerHelpOptions, resolvePartnerHelpHref, selectNextReviewDraft } from '../lib/partnerHelpMenu'
@@ -30,9 +30,14 @@ import {
   selectPrivateMessageConversations,
 } from '../lib/inboxClassification'
 import { mobileInboxRouteState } from '../lib/mobileInboxRouting'
+import { buildInboxDemoCaptureState, isInboxDemoCaptureEnabled } from '../lib/inboxDemoCapture'
+import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
+import MobileVoiceComposer from '../components/MobileVoiceComposer'
+import MobilePartnerTopBar from '../components/MobilePartnerTopBar'
+import { Sparkle } from '@phosphor-icons/react'
 
 const FILTERS = [
-  { value: 'open', label: 'Open' },
+  { value: 'open', label: 'Needs reply' },
   { value: 'all', label: 'All' },
   { value: 'comments', label: 'Comments' },
   { value: 'dms', label: 'DMs' },
@@ -110,7 +115,7 @@ async function fetchAttentionConversations() {
 }
 
 async function fetchMessages({ queryKey }) {
-  const [, conversationId] = queryKey
+  const [, , conversationId] = queryKey
   if (!conversationId) return []
   const payload = await chatwootPortalFetch(`/conversations/${conversationId}/messages`)
   if (Array.isArray(payload?.payload)) return payload.payload
@@ -345,6 +350,11 @@ function buildConversationThread(conversation, inboxes) {
     badge: partner ? 'Partner' : 'DM',
     needsReply: conversation.status === 'open',
     conversation,
+    avatarUrl: firstString(
+      conversation?.meta?.sender?.thumbnail,
+      conversation?.meta?.sender?.avatar_url,
+      conversation?.additional_attributes?.contact_avatar_url,
+    ),
     sortTime: toDate(conversation.last_activity_at || conversation.updated_at)?.getTime() || 0,
   }
 }
@@ -500,7 +510,7 @@ function ThreadListItem({ thread, active, onSelect }) {
       onClick={onSelect}
     >
       <span className={`attention-avatar attention-avatar-${thread.kind}`}>
-        {thread.kind === 'partner' ? 'MP' : thread.kind === 'comments' ? platformLabel(thread.platform).slice(0, 2).toUpperCase() : 'DM'}
+        {thread.avatarUrl ? <img src={thread.avatarUrl} alt="" /> : thread.kind === 'partner' ? 'MP' : thread.kind === 'comments' ? platformLabel(thread.platform).slice(0, 2).toUpperCase() : 'DM'}
       </span>
       <span className="min-w-0 flex-1">
         <span className="attention-thread-title-line">
@@ -588,7 +598,7 @@ function ThreadHeader({ thread, onBack, onMarkHandled, markPending, onHideThread
         <ChevronLeft className="h-5 w-5" />
       </button>
       <span className={`attention-avatar attention-avatar-${thread.kind}`}>
-        {thread.kind === 'partner' ? 'MP' : thread.kind === 'comments' ? platformLabel(thread.platform).slice(0, 2).toUpperCase() : 'DM'}
+        {thread.avatarUrl ? <img src={thread.avatarUrl} alt="" /> : thread.kind === 'partner' ? 'MP' : thread.kind === 'comments' ? platformLabel(thread.platform).slice(0, 2).toUpperCase() : 'DM'}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-base font-black">{thread.title}</span>
@@ -627,6 +637,9 @@ export default function Attention() {
   const queryClient = useQueryClient()
   const outlet = useOutletContext() || {}
   const location = useLocation()
+  const demoCaptureState = useMemo(() => (
+    isInboxDemoCaptureEnabled(location.search) ? buildInboxDemoCaptureState() : null
+  ), [location.search])
   const routeState = useMemo(() => mobileInboxRouteState(location.search), [location.search])
   const clientId = outlet.profile?.client_id
   const [activeFilter, setActiveFilter] = useState(routeState.activeFilter)
@@ -635,24 +648,30 @@ export default function Attention() {
   const [composer, setComposer] = useState('')
   const [selectedCommentId, setSelectedCommentId] = useState('')
   const [partnerMenuOpen, setPartnerMenuOpen] = useState(false)
+  const [replySuggestionIndex, setReplySuggestionIndex] = useState(0)
   const threadEndRef = useRef(null)
 
   const inboxesQuery = useQuery({
-    queryKey: ['attention-inboxes'],
+    queryKey: ['attention-inboxes', demoCaptureState ? 'demo' : 'live'],
     queryFn: fetchInboxes,
+    enabled: !demoCaptureState,
+    initialData: demoCaptureState?.inboxes,
     staleTime: 5 * 60 * 1000,
   })
 
   const conversationsQuery = useQuery({
-    queryKey: ['attention-conversations'],
+    queryKey: ['attention-conversations', demoCaptureState ? 'demo' : 'live'],
     queryFn: fetchAttentionConversations,
-    refetchInterval: 25_000,
+    enabled: !demoCaptureState,
+    initialData: demoCaptureState?.conversations,
+    refetchInterval: demoCaptureState ? false : 25_000,
   })
 
   const commentPostsQuery = useQuery({
-    queryKey: ['attention-comment-posts'],
+    queryKey: ['attention-comment-posts', demoCaptureState ? 'demo' : 'live'],
     queryFn: fetchCommentPosts,
-    refetchInterval: 35_000,
+    enabled: !demoCaptureState,
+    refetchInterval: demoCaptureState ? false : 35_000,
   })
 
   const commentPosts = useMemo(() => (
@@ -666,7 +685,7 @@ export default function Attention() {
   const commentBundlesQuery = useQuery({
     queryKey: ['attention-comment-bundles', commentBundleKey],
     queryFn: () => fetchCommentBundles(commentPosts),
-    enabled: commentPosts.length > 0,
+    enabled: !demoCaptureState && commentPosts.length > 0,
     refetchInterval: 35_000,
   })
 
@@ -707,10 +726,13 @@ export default function Attention() {
   const selectedThread = filteredThreads.find((thread) => thread.id === selectedThreadId) || filteredThreads[0] || null
 
   const messagesQuery = useQuery({
-    queryKey: ['attention-messages', selectedThread?.conversation?.id],
+    queryKey: ['attention-messages', demoCaptureState ? 'demo' : 'live', selectedThread?.conversation?.id],
     queryFn: fetchMessages,
-    enabled: Boolean(selectedThread?.conversation?.id),
-    refetchInterval: selectedThread?.conversation?.id ? 20_000 : false,
+    enabled: Boolean(selectedThread?.conversation?.id && !demoCaptureState),
+    initialData: selectedThread?.conversation?.id
+      ? demoCaptureState?.messagesByConversationId?.[selectedThread.conversation.id]
+      : undefined,
+    refetchInterval: selectedThread?.conversation?.id && !demoCaptureState ? 20_000 : false,
   })
 
   const replyMutation = useMutation({
@@ -719,7 +741,9 @@ export default function Attention() {
       const conversationId = selectedThread?.conversation?.id
       setComposer('')
       if (conversationId) {
-        await queryClient.invalidateQueries({ queryKey: ['attention-messages', conversationId] })
+        await queryClient.invalidateQueries({
+          queryKey: ['attention-messages', demoCaptureState ? 'demo' : 'live', conversationId],
+        })
       }
       await queryClient.invalidateQueries({ queryKey: ['attention-conversations'] })
       await queryClient.invalidateQueries({ queryKey: ['inbox-notification-counts'] })
@@ -788,6 +812,53 @@ export default function Attention() {
     : (messagesQuery.data || []).length
   const selectedThreadKey = selectedThread?.id || ''
   const canHideSelectedThread = canHideInboxThread(selectedThread)
+  const mobilePartnerRollout = isMobilePartnerRolloutTenant(outlet.tenant)
+  const latestInboundMessage = useMemo(() => {
+    if (selectedThread?.kind === 'comments') return selectedComment ? getCommentText(selectedComment) : selectedThread?.preview || ''
+    const inbound = [...(messagesQuery.data || [])].reverse().find((message) => !isOutgoingMessage(message))
+    return inbound ? messageContent(inbound) : selectedThread?.preview || ''
+  }, [messagesQuery.data, selectedComment, selectedThread])
+  const replyAssistContext = useMemo(() => {
+    if (!selectedThread) return ''
+    if (selectedThread.kind === 'comments') {
+      return [
+        `Channel: public ${platformLabel(selectedThread.platform)} comment`,
+        `Customer: ${selectedComment ? getCommentAuthor(selectedComment, selectedThread.platform) : 'Social customer'}`,
+        `Post: ${firstString(selectedThread.post?.content, selectedThread.title)}`,
+      ].join('\n')
+    }
+    const recentMessages = (messagesQuery.data || []).slice(-6).map((message) => (
+      `${isOutgoingMessage(message) ? 'Business' : 'Customer'}: ${messageContent(message)}`
+    ))
+    return [
+      `Channel: ${selectedThread.subtitle}`,
+      `Customer: ${selectedThread.title}`,
+      ...recentMessages,
+    ].join('\n')
+  }, [messagesQuery.data, selectedComment, selectedThread])
+  const replyAssistQuery = useQuery({
+    queryKey: ['attention-reply-assist', clientId, selectedThread?.id, latestInboundMessage],
+    queryFn: () => generateInboxReplyAssist({
+      client_id: clientId,
+      message: latestInboundMessage,
+      platforms: selectedThread?.platform ? [selectedThread.platform] : [],
+      max_chars: 700,
+      context: replyAssistContext,
+    }),
+    enabled: Boolean(
+      clientId &&
+      selectedThread?.needsReply &&
+      selectedThread?.kind !== 'partner' &&
+      latestInboundMessage &&
+      !outlet.billingAccess?.readOnly
+    ),
+    staleTime: 5 * 60 * 1000,
+    retry: 0,
+  })
+  const replySuggestions = demoCaptureState?.replySuggestions || (
+    Array.isArray(replyAssistQuery.data?.suggestions) ? replyAssistQuery.data.suggestions : []
+  )
+  const activeReplySuggestion = replySuggestions[replySuggestionIndex] || replySuggestions[0] || null
 
   useEffect(() => {
     if (!selectedThreadKey || !mobileThreadOpen) return undefined
@@ -801,6 +872,7 @@ export default function Attention() {
     setSelectedThreadId(thread.id)
     setMobileThreadOpen(true)
     setComposer('')
+    setReplySuggestionIndex(0)
   }
 
   function handleFilterChange(filter) {
@@ -824,9 +896,9 @@ export default function Attention() {
     partnerMutation.mutate()
   }
 
-  function handleSubmit(event) {
+  function handleSubmit(event, contentOverride = '') {
     event.preventDefault()
-    const content = composer.trim()
+    const content = String(contentOverride || composer).trim()
     if (!content || !selectedThread) return
 
     if (selectedThread.kind === 'comments') {
@@ -848,7 +920,13 @@ export default function Attention() {
   }
 
   return (
-    <div className="attention-page">
+    <div className={`attention-page ${mobilePartnerRollout ? 'attention-mobile-partner-rollout' : ''}`}>
+      {mobilePartnerRollout ? (
+        <MobilePartnerTopBar
+          activeMode="inbox"
+          notificationCount={threads.filter((thread) => thread.needsReply).length}
+        />
+      ) : null}
       <div className="attention-mobile-shell">
         <section className={`attention-list-pane ${mobileThreadOpen ? 'attention-mobile-hidden' : ''}`}>
           <header className="attention-topbar">
@@ -988,6 +1066,39 @@ export default function Attention() {
               </main>
 
               <form className="attention-composer" onSubmit={handleSubmit}>
+                {selectedThread.needsReply && selectedThread.kind !== 'partner' ? (
+                  <section className="attention-reply-assist" aria-label="Suggested reply">
+                    <div className="attention-reply-assist-heading">
+                      <span><Sparkle size={17} weight="fill" />Suggested reply</span>
+                      {replyAssistQuery.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    </div>
+                    {outlet.billingAccess?.readOnly && !demoCaptureState ? (
+                      <p className="attention-reply-assist-note">Reply suggestions will be available when this workspace can make changes.</p>
+                    ) : replyAssistQuery.isError ? (
+                      <div className="attention-reply-assist-error">
+                        <span>{replyAssistQuery.error?.message || 'Could not suggest a reply.'}</span>
+                        <button type="button" onClick={() => replyAssistQuery.refetch()}>Try again</button>
+                      </div>
+                    ) : activeReplySuggestion ? (
+                      <>
+                        <p>{activeReplySuggestion.caption}</p>
+                        <div className="attention-reply-assist-actions">
+                          <button type="button" onClick={() => setComposer(activeReplySuggestion.caption)}>Use and edit</button>
+                          {replySuggestions.length > 1 ? (
+                            <button
+                              type="button"
+                              onClick={() => setReplySuggestionIndex((current) => (current + 1) % replySuggestions.length)}
+                            >
+                              Another option
+                            </button>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="attention-reply-assist-note">Preparing a safe reply you can edit before sending…</p>
+                    )}
+                  </section>
+                ) : null}
                 <div className="attention-composer-context">
                   {selectedThread.kind === 'comments' ? (
                     <span>
@@ -1019,6 +1130,16 @@ export default function Attention() {
                       <Send className="h-5 w-5" />
                     )}
                   </button>
+                </div>
+                <div className="attention-mobile-voice-composer">
+                  <MobileVoiceComposer
+                    value={composer}
+                    onChange={setComposer}
+                    onSubmit={(content) => handleSubmit({ preventDefault() {} }, content)}
+                    placeholder={selectedThread.kind === 'comments' ? 'Speak or write a public reply…' : 'Speak or write a reply…'}
+                    disabled={replyMutation.isPending || commentReplyMutation.isPending}
+                    compact
+                  />
                 </div>
                 {(replyMutation.error || commentReplyMutation.error || markHandledMutation.error || hideThreadMutation.error) ? (
                   <p className="attention-form-error">

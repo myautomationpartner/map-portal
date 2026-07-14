@@ -1354,6 +1354,13 @@ export async function generatePublisherAssist(input) {
   return callEdgeFunction('portal-ai-assist', input)
 }
 
+export async function generateInboxReplyAssist(input) {
+  return callEdgeFunction('portal-ai-assist', {
+    ...input,
+    action: 'reply',
+  })
+}
+
 export async function startOpportunityRadar(input) {
   return callEdgeFunction('opportunity-radar-run', input)
 }

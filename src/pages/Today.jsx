@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -36,6 +36,8 @@ import {
   saveTodayQueueState,
 } from '../lib/portalApi'
 import { businessNameCandidates } from '../lib/inboxClassification'
+import MobilePartnerHome from '../components/MobilePartnerHome'
+import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
 
 const sourceLinks = {
   Inbox: '/inbox',
@@ -228,6 +230,7 @@ function SuggestedMovePanel({ item, busy, snoozed, onDoIt, onComplete, onSnooze 
 
 export default function Today() {
   const navigate = useNavigate()
+  const outlet = useOutletContext() || {}
   const queryClient = useQueryClient()
   const [selectedId, setSelectedId] = useState('mary')
   const [activeFilter, setActiveFilter] = useState('priority')
@@ -350,6 +353,7 @@ export default function Today() {
     [activeFilter, queue],
   )
   const summary = useMemo(() => summarizeTodayPriorityQueue(queue), [queue])
+  const mobilePartnerRollout = isMobilePartnerRolloutTenant(outlet.tenant)
   const selectedItem = filteredQueue.find((item) => item.id === selectedId) || filteredQueue[0] || null
   const selectedSnoozed = Boolean(selectedItem?.snoozed)
   const saveStateMutation = useMutation({
@@ -395,7 +399,18 @@ export default function Today() {
   }
 
   return (
-    <div className="today-page portal-page">
+    <>
+      {mobilePartnerRollout ? (
+        <MobilePartnerHome
+          tenant={outlet.tenant}
+          queue={queue}
+          summary={summary}
+          calendarPosts={calendarPosts}
+          onComplete={handleComplete}
+          savePending={saveStateMutation.isPending}
+        />
+      ) : null}
+      <div className={`today-page portal-page ${mobilePartnerRollout ? 'today-rollout-desktop' : ''}`}>
       <section className="today-context-strip portal-surface">
         <div className="today-context-title">
           <h1 className="font-display">Today</h1>
@@ -490,7 +505,8 @@ export default function Today() {
         />
       </div>
 
-      {toast ? <div className="today-toast">{toast}</div> : null}
-    </div>
+        {toast ? <div className="today-toast">{toast}</div> : null}
+      </div>
+    </>
   )
 }

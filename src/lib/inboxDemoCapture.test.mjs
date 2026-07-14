@@ -18,5 +18,7 @@ test('builds a populated message workflow for screenshot capture', () => {
   assert.equal(selected.meta.sender.name, 'Sarah Lee')
   assert.equal(state.messagesByConversationId[state.selectedConversationId].length, 4)
   assert.match(state.messagesByConversationId[state.selectedConversationId][0].content, /promote the June 1 open house/)
+  assert.equal(state.replySuggestions.length, 2)
+  assert.match(state.replySuggestions[0].caption, /without registering first/)
   assert.equal(state.websiteChat.settings.install_status, 'detected')
 })
