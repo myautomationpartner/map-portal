@@ -93,6 +93,11 @@ test('mobile Partner chat stays inline, supports multiline drafts, and opts into
   assert.match(mobileChatSource, /sendPortalPartnerMessage/)
   assert.match(mobileChatSource, /submitOnEnter=\{false\}/)
   assert.match(voiceComposerSource, /textarea\.scrollHeight/)
+  assert.match(voiceComposerSource, /defaultValue=\{value\}/)
+  assert.match(voiceComposerSource, /onInput=\{\(event\)/)
+  assert.match(voiceComposerSource, /lastInputValueRef\.current = nextValue/)
+  assert.match(voiceComposerSource, /textareaRef\.current\?\.value \?\? value/)
+  assert.doesNotMatch(voiceComposerSource, /value=\{value\}[\s\S]{0,80}onChange=/)
   assert.match(appHtmlSource, /viewport-fit=cover/)
 })
 

@@ -11,6 +11,15 @@ function getSpeechRecognition() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null
 }
 
+function resizeTextarea(textarea) {
+  if (!textarea) return
+  textarea.style.height = 'auto'
+  const maxHeight = Number.parseFloat(window.getComputedStyle(textarea).maxHeight) || 112
+  const nextHeight = Math.min(textarea.scrollHeight, maxHeight)
+  textarea.style.height = `${nextHeight}px`
+  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
+}
+
 export default function MobileVoiceComposer({
   value,
   onChange,
@@ -25,6 +34,7 @@ export default function MobileVoiceComposer({
   const recognitionRef = useRef(null)
   const photoInputRef = useRef(null)
   const textareaRef = useRef(null)
+  const lastInputValueRef = useRef(String(value || ''))
   const voiceBaseRef = useRef('')
   const [listening, setListening] = useState(false)
   const [speechSupported, setSpeechSupported] = useState(() => (
@@ -38,12 +48,12 @@ export default function MobileVoiceComposer({
   useLayoutEffect(() => {
     const textarea = textareaRef.current
     if (!textarea) return
-
-    textarea.style.height = 'auto'
-    const maxHeight = Number.parseFloat(window.getComputedStyle(textarea).maxHeight) || 112
-    const nextHeight = Math.min(textarea.scrollHeight, maxHeight)
-    textarea.style.height = `${nextHeight}px`
-    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
+    const nextValue = String(value || '')
+    if (lastInputValueRef.current !== nextValue && textarea.value !== nextValue) {
+      textarea.value = nextValue
+    }
+    lastInputValueRef.current = nextValue
+    resizeTextarea(textarea)
   }, [value])
 
   function toggleListening() {
@@ -63,7 +73,7 @@ export default function MobileVoiceComposer({
     recognition.lang = 'en-US'
     recognition.continuous = true
     recognition.interimResults = true
-    voiceBaseRef.current = String(value || '').trim()
+    voiceBaseRef.current = String(textareaRef.current?.value ?? value).trim()
 
     recognition.onresult = (event) => {
       let transcript = ''
@@ -82,7 +92,7 @@ export default function MobileVoiceComposer({
 
   function handleSubmit(event) {
     event?.preventDefault?.()
-    const cleanValue = String(value || '').trim()
+    const cleanValue = String(textareaRef.current?.value ?? value).trim()
     if (!showSend || !cleanValue || disabled) return
     onSubmit?.(cleanValue)
   }
@@ -117,8 +127,13 @@ export default function MobileVoiceComposer({
       ) : null}
       <textarea
         ref={textareaRef}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        defaultValue={value}
+        onInput={(event) => {
+          const nextValue = event.currentTarget.value
+          lastInputValueRef.current = nextValue
+          resizeTextarea(event.currentTarget)
+          onChange(nextValue)
+        }}
         placeholder={placeholder}
         rows={1}
         onKeyDown={(event) => {
