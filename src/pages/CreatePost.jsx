@@ -42,6 +42,7 @@ import { FaMicrosoft } from 'react-icons/fa'
 import { SiDropbox, SiGooglephotos, SiIcloud } from 'react-icons/si'
 import MobileVoiceComposer from '../components/MobileVoiceComposer'
 import MobilePartnerTopBar from '../components/MobilePartnerTopBar'
+import { GeneratedPostcard } from '../components/MobilePartnerChat'
 import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
@@ -1120,6 +1121,7 @@ function ReviewModal({
   mediaItems,
   activeMediaIndex,
   platforms = PLATFORMS,
+  mobilePartnerRollout = false,
 }) {
   if (!open) return null
 
@@ -1128,12 +1130,12 @@ function ReviewModal({
     .map(([platformId]) => platformId)
 
   return (
-    <div className="create-post-review-modal fixed inset-0 z-50 flex items-end justify-center bg-[rgba(9,7,4,0.58)] p-3 md:items-center md:p-6">
+    <div className={`create-post-review-modal ${mobilePartnerRollout ? 'create-post-review-modal-partner' : ''} fixed inset-0 z-50 flex items-end justify-center bg-[rgba(9,7,4,0.58)] p-3 md:items-center md:p-6`}>
       <div
-        className="max-h-[92vh] w-full max-w-[980px] overflow-y-auto rounded-[34px] p-5 md:p-7"
+        className="create-post-review-sheet max-h-[92vh] w-full max-w-[980px] overflow-y-auto rounded-[34px] p-5 md:p-7"
         style={{ background: 'rgba(248,244,238,0.98)', border: '1px solid var(--portal-border)', boxShadow: '0 30px 80px rgba(16, 12, 7, 0.28)' }}
       >
-        <div className="flex items-start justify-between gap-4">
+        <div className="create-post-review-head flex items-start justify-between gap-4">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--portal-text-soft)' }}>
               Final approval
@@ -1156,9 +1158,9 @@ function ReviewModal({
           </button>
         </div>
 
-        <div className="mt-6 grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="create-post-review-layout mt-6 grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
           <div className="space-y-4">
-            <div className="rounded-[28px] p-4" style={{ background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}>
+            <div className="create-post-review-platforms rounded-[28px] p-4" style={{ background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}>
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
                 Platforms
               </p>
@@ -1204,7 +1206,7 @@ function ReviewModal({
               </div>
             </div>
 
-            <div className="rounded-[28px] p-4" style={{ background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}>
+            <div className="create-post-review-timing rounded-[28px] p-4" style={{ background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}>
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--portal-text-soft)' }}>
                 Timing
               </p>
@@ -1265,7 +1267,7 @@ function ReviewModal({
           </div>
         </div>
 
-        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <div className="create-post-review-actions mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={onClose}
@@ -1297,6 +1299,99 @@ function ReviewModal({
         </div>
       </div>
     </div>
+  )
+}
+
+function MobilePublisherConversation({
+  businessName,
+  content,
+  imagePreview,
+  activePlatforms,
+  selectedPlatforms,
+  setSelectedPlatforms,
+  platforms,
+  timingMode,
+  scheduledFor,
+  minScheduleValue,
+  onCaptionChange,
+  onChooseNow,
+  onChooseCustom,
+  onScheduledForChange,
+  onReview,
+  onBack,
+  isSubmitting,
+  isViewingPublishedPost,
+  charOver,
+}) {
+  const draft = {
+    previewUrl: imagePreview,
+    caption: content,
+    platforms: activePlatforms,
+  }
+
+  function handleDraftChange(nextDraft) {
+    if (nextDraft.caption !== content) onCaptionChange(nextDraft.caption)
+
+    const nextSelected = { ...selectedPlatforms }
+    platforms.forEach(({ id }) => {
+      nextSelected[id] = nextDraft.platforms.includes(id)
+    })
+    setSelectedPlatforms(nextSelected)
+  }
+
+  return (
+    <section className="mobile-publisher-conversation" aria-label="Final social post review">
+      <div className="mobile-partner-message assistant">
+        <span className="mobile-partner-message-avatar">
+          <img src="/assets/map-option-b-mark.png" alt="" />
+          <i aria-hidden="true" />
+        </span>
+        <div className="mobile-partner-message-bubble">
+          <strong>One last check, {businessName}.</strong>
+          <p>Confirm the photo, caption, platforms, and timing below. Nothing posts until you approve it.</p>
+        </div>
+      </div>
+
+      <GeneratedPostcard
+        draft={draft}
+        onChange={handleDraftChange}
+        onReview={onReview}
+        onReset={onBack}
+        reviewLabel={timingMode === 'now' ? 'Final approval' : 'Review schedule'}
+        resetLabel="Back to Post"
+        statusLabel="Final review"
+      />
+
+      <div className="mobile-publisher-timing">
+        <div>
+          <strong>When should this go out?</strong>
+          <span>{timingMode === 'now' ? 'Ready to publish now' : scheduledFor ? formatDetailedLocalDateTime(scheduledFor) : 'Choose a date and time'}</span>
+        </div>
+        <div className="mobile-publisher-timing-actions">
+          <button type="button" onClick={onChooseNow} data-active={timingMode === 'now'}>Post now</button>
+          <button type="button" onClick={onChooseCustom} data-active={timingMode !== 'now'}>Schedule</button>
+        </div>
+        {timingMode !== 'now' ? (
+          <input
+            type="datetime-local"
+            value={scheduledFor}
+            min={minScheduleValue}
+            onChange={(event) => onScheduledForChange(event.target.value)}
+            aria-label="Schedule date and time"
+          />
+        ) : null}
+      </div>
+
+      <p className="mobile-publisher-safety-note">
+        {isViewingPublishedPost
+          ? 'This post has already been published.'
+          : charOver
+            ? 'Shorten the caption before final approval.'
+            : isSubmitting
+              ? 'Preparing your final approval…'
+              : 'Final approval opens one last confirmation. It does not publish by itself.'}
+      </p>
+    </section>
   )
 }
 
@@ -3308,6 +3403,33 @@ export default function CreatePost() {
           </section>
         )}
 
+        {mobilePartnerRollout ? (
+          <MobilePublisherConversation
+            businessName={profile?.clients?.business_name || 'My Automation Partner'}
+            content={content}
+            imagePreview={mediaPreviewSource}
+            activePlatforms={activePlatforms}
+            selectedPlatforms={selectedPlatforms}
+            setSelectedPlatforms={setSelectedPlatforms}
+            platforms={visiblePlatforms}
+            timingMode={timingMode}
+            scheduledFor={scheduledFor}
+            minScheduleValue={minScheduleValue}
+            onCaptionChange={handleCaptionChange}
+            onChooseNow={chooseNow}
+            onChooseCustom={() => chooseCustomTime(selectedDay)}
+            onScheduledForChange={(value) => {
+              setScheduledFor(value)
+              setTimingMode('custom')
+            }}
+            onReview={openReview}
+            onBack={() => navigate('/partner?mode=post')}
+            isSubmitting={isSubmitting}
+            isViewingPublishedPost={isViewingPublishedPost}
+            charOver={charOver}
+          />
+        ) : null}
+
         <div className="space-y-5 create-post-ticket-layout">
           <article className="create-post-ticket-card" ref={composerRef}>
             <div className="create-post-phone-bar">
@@ -4445,6 +4567,7 @@ export default function CreatePost() {
         mediaItems={creativeItems}
         activeMediaIndex={activeCreativeIndex}
         platforms={visiblePlatforms}
+        mobilePartnerRollout={mobilePartnerRollout}
       />
     </>
   )

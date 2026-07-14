@@ -5,6 +5,7 @@
   - `/Users/kennymonico/Library/Application Support/CleanShot/media/media_3NThuYm3S5/CleanShot 2026-07-14 at 09.49.40@2x.png`
   - `/Users/kennymonico/Library/Application Support/CleanShot/media/media_DWvMIKVLlB/CleanShot 2026-07-14 at 09.49.50@2x.png`
 - Live implementation: `/Users/kennymonico/Documents/MyAutomationPartner/smoke-agent/reports/mobile-my-partner-evidence/smoke_20260714_postcard_native_chooser_v6/03-ai-postcard-with-photo.png`
+- Physical iPhone evidence: `/Users/kennymonico/Documents/MyAutomationPartner/map-portal/portal-app/physical-iphone-photo-postcard-2026-07-14.png`
 - Side-by-side comparison: `/Users/kennymonico/Documents/MyAutomationPartner/map-portal/portal-app/design-qa-postcard-comparison.png`
 - Production viewport: emulated iPhone 14, 390 x 664 CSS pixels
 - State: authenticated MAP Post conversation after selecting one image and asking AI to create a post
@@ -31,6 +32,7 @@ The focused inspection confirms that the selected original image remains the pos
 3. The first postcard pass still left an older approval card in the conversation and used a tall media treatment. The old content is now hidden for this state and the hero image uses a compact 16:9 crop.
 4. Two live QA passes found low-contrast caption text inherited from the legacy dark theme. A scoped postcard override corrected it to `rgb(19, 32, 42)`.
 5. Final production run `smoke_20260714_postcard_native_chooser_v6` passed 24/24 with no console, page, or HTTP failures.
+6. Physical-iPhone acceptance then staged an operator-selected photo with a typed prompt and returned the correct original-image postcard in the installed MAP app. The caption, Facebook/Instagram/X controls, Edit, and Review & post rendered above the persistent composer. Nothing was published.
 
 ## Primary interactions tested
 

@@ -20908,3 +20908,206 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     -webkit-text-fill-color: #13202a !important;
   }
 }
+
+/* Keep MAP mobile final review inside the same conversational product language. */
+.mobile-publisher-conversation {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .create-post-mobile-partner-rollout .create-post-ticket-layout {
+    display: none !important;
+  }
+
+  .create-post-mobile-partner-rollout {
+    min-height: calc(100dvh - 7.6rem) !important;
+    padding: 0 !important;
+    padding-bottom: 1rem !important;
+  }
+
+  .mobile-publisher-conversation {
+    display: flex;
+    width: 100%;
+    max-width: 32rem;
+    flex-direction: column;
+    gap: 0.8rem;
+    margin: 0 auto;
+    padding: 0.8rem 0.85rem 1.2rem;
+  }
+
+  .mobile-publisher-conversation .mobile-partner-message {
+    padding: 0;
+  }
+
+  .mobile-publisher-conversation .mobile-partner-message-bubble {
+    max-width: calc(100% - 2.8rem);
+  }
+
+  .mobile-publisher-conversation .mobile-partner-generated-postcard {
+    width: calc(100% - 2.8rem);
+    max-width: none;
+    align-self: flex-end;
+    margin: 0;
+    scroll-margin-top: 7.8rem;
+  }
+
+  .mobile-publisher-timing {
+    display: grid;
+    gap: 0.7rem;
+    width: calc(100% - 2.8rem);
+    align-self: flex-end;
+    border: 1px solid var(--pulse-line);
+    border-radius: 1.15rem;
+    background: #ffffff;
+    padding: 0.85rem;
+    box-shadow: 0 10px 24px rgba(16, 37, 53, 0.07);
+  }
+
+  .mobile-publisher-timing > div:first-child {
+    display: grid;
+    gap: 0.18rem;
+  }
+
+  .mobile-publisher-timing strong {
+    color: var(--pulse-text);
+    font-size: 0.86rem;
+    font-weight: 850;
+  }
+
+  .mobile-publisher-timing span {
+    color: var(--pulse-muted);
+    font-size: 0.72rem;
+    font-weight: 650;
+  }
+
+  .mobile-publisher-timing-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+  }
+
+  .mobile-publisher-timing-actions button {
+    min-height: 2.5rem;
+    border: 1px solid var(--pulse-line);
+    border-radius: 999px;
+    background: #eef3f4;
+    color: var(--pulse-muted);
+    font-size: 0.76rem;
+    font-weight: 800;
+  }
+
+  .mobile-publisher-timing-actions button[data-active="true"] {
+    border-color: var(--pulse-aqua);
+    background: var(--pulse-aqua-soft);
+    color: #08747a;
+  }
+
+  .mobile-publisher-timing input {
+    width: 100%;
+    min-height: 2.8rem;
+    border: 1px solid var(--pulse-line);
+    border-radius: 0.8rem;
+    background: #f8fafb;
+    color: var(--pulse-text);
+    padding: 0.55rem 0.7rem;
+    font: inherit;
+    font-size: 0.78rem;
+  }
+
+  .mobile-publisher-safety-note {
+    width: calc(100% - 2.8rem);
+    align-self: flex-end;
+    margin: -0.2rem 0 0;
+    color: var(--pulse-muted);
+    font-size: 0.68rem;
+    line-height: 1.45;
+    text-align: center;
+  }
+
+  .create-post-review-modal-partner {
+    --portal-text: var(--pulse-text);
+    --portal-text-muted: var(--pulse-muted);
+    --portal-text-soft: #7e8a92;
+    --portal-border: var(--pulse-line);
+    --portal-border-strong: rgba(0, 174, 182, 0.42);
+    --portal-primary: var(--pulse-aqua);
+    --portal-cyan: var(--pulse-aqua);
+    padding: 0.5rem !important;
+    background: rgba(7, 21, 33, 0.68) !important;
+  }
+
+  .create-post-review-modal-partner .create-post-review-sheet {
+    max-height: calc(100dvh - 1rem) !important;
+    border-color: var(--pulse-line) !important;
+    border-radius: 1.5rem !important;
+    background: var(--pulse-bg) !important;
+    padding: 1rem !important;
+  }
+
+  .create-post-review-modal-partner .create-post-review-head h2 {
+    margin-top: 0.25rem !important;
+    color: var(--pulse-text) !important;
+    font-size: 1.15rem !important;
+  }
+
+  .create-post-review-modal-partner .create-post-review-head p {
+    color: var(--pulse-muted) !important;
+  }
+
+  .create-post-review-modal-partner .create-post-review-layout {
+    gap: 0.75rem !important;
+    margin-top: 0.85rem !important;
+  }
+
+  .create-post-review-modal-partner .create-post-review-platforms,
+  .create-post-review-modal-partner .create-post-review-timing {
+    border-color: var(--pulse-line) !important;
+    border-radius: 1rem !important;
+    background: #ffffff !important;
+    padding: 0.75rem !important;
+  }
+
+  .create-post-review-modal-partner .create-post-review-platforms > div {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.4rem;
+  }
+
+  .create-post-review-modal-partner .create-post-review-platforms button {
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.55rem 0.25rem !important;
+    text-align: center;
+  }
+
+  .create-post-review-modal-partner .create-post-review-platforms button > span {
+    font-size: 0.68rem;
+  }
+
+  .create-post-review-modal-partner .create-post-review-platforms button > div:last-child {
+    display: none;
+  }
+
+  .create-post-review-modal-partner .create-post-review-actions {
+    position: sticky;
+    bottom: 0;
+    margin: 0.85rem -0.2rem -0.2rem !important;
+    border-top: 1px solid var(--pulse-line);
+    background: rgba(244, 247, 248, 0.96);
+    padding: 0.75rem 0.2rem 0.2rem;
+  }
+
+  .create-post-review-modal-partner .create-post-review-actions button:last-child {
+    min-height: 3rem;
+    border-radius: 999px !important;
+    background: var(--pulse-aqua) !important;
+    color: var(--pulse-ink) !important;
+  }
+
+  html[data-portal-theme="map-dark"] body .create-post-mobile-partner-rollout .mobile-publisher-conversation,
+  html[data-portal-theme="map-dark"] body .create-post-mobile-partner-rollout .mobile-publisher-timing,
+  html[data-portal-theme="map-dark"] body .create-post-review-modal-partner .create-post-review-sheet {
+    color: var(--pulse-text) !important;
+  }
+}

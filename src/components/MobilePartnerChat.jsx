@@ -62,7 +62,16 @@ const POSTCARD_PLATFORMS = [
   { id: 'twitter', label: 'X', Icon: XLogo },
 ]
 
-function GeneratedPostcard({ cardRef, draft, onChange, onReview, onReset }) {
+export function GeneratedPostcard({
+  cardRef,
+  draft,
+  onChange,
+  onReview,
+  onReset,
+  reviewLabel = 'Review & post',
+  resetLabel = 'Try another photo',
+  statusLabel = 'Ready to review',
+}) {
   const [editing, setEditing] = useState(false)
 
   function togglePlatform(platformId) {
@@ -77,7 +86,7 @@ function GeneratedPostcard({ cardRef, draft, onChange, onReview, onReset }) {
       {draft.previewUrl ? <img src={draft.previewUrl} alt="Selected post creative" /> : null}
       <div className="mobile-partner-generated-brandbar">
         <strong>My Automation Partner</strong>
-        <span><i aria-hidden="true" />Ready to review</span>
+        <span><i aria-hidden="true" />{statusLabel}</span>
       </div>
       <div className="mobile-partner-generated-caption">
         {editing ? (
@@ -113,7 +122,7 @@ function GeneratedPostcard({ cardRef, draft, onChange, onReview, onReset }) {
           onClick={() => onReview(draft)}
         >
           <CheckCircle size={19} weight="fill" />
-          Review &amp; post
+          {reviewLabel}
         </button>
         <button type="button" onClick={() => setEditing((current) => !current)}>
           <PencilSimple size={17} />
@@ -121,7 +130,7 @@ function GeneratedPostcard({ cardRef, draft, onChange, onReview, onReset }) {
         </button>
       </div>
       <button type="button" className="mobile-partner-generated-reset" onClick={onReset}>
-        Try another photo
+        {resetLabel}
       </button>
     </article>
   )
