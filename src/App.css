@@ -20903,7 +20903,8 @@ html[data-portal-theme="map-dark"] .boost-post-error {
 }
 
 @media (max-width: 767px) {
-  html[data-portal-theme="map-dark"] .mobile-partner-home .mobile-partner-generated-caption p {
+  html[data-portal-theme="map-dark"] body .mobile-partner-home.mobile-partner-home .mobile-partner-generated-postcard.mobile-partner-generated-postcard .mobile-partner-generated-caption p {
     color: #13202a !important;
+    -webkit-text-fill-color: #13202a !important;
   }
 }
