@@ -60,7 +60,7 @@ export default function MobileVoiceComposer({
 
   useLayoutEffect(() => {
     if (!sendButtonRef.current) return
-    sendButtonRef.current.disabled = disabled || !String(textareaRef.current?.value || '').trim()
+    sendButtonRef.current.disabled = disabled || (!stableTyping && !String(textareaRef.current?.value || '').trim())
   })
 
   function applyLocalValue(nextValue, { notify = true } = {}) {
@@ -149,14 +149,14 @@ export default function MobileVoiceComposer({
       <textarea
         ref={textareaRef}
         defaultValue={value}
-        onInput={(event) => {
+        onInput={stableTyping ? undefined : (event) => {
           const nextValue = event.currentTarget.value
           lastInputValueRef.current = nextValue
           resizeTextarea(event.currentTarget)
           if (sendButtonRef.current) {
             sendButtonRef.current.disabled = disabled || !nextValue.trim()
           }
-          if (!stableTyping) onChange(nextValue)
+          onChange(nextValue)
         }}
         placeholder={placeholder}
         rows={1}
