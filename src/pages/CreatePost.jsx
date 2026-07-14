@@ -1319,6 +1319,12 @@ function MobilePublisherConversation({
   onScheduledForChange,
   onReview,
   onBack,
+  reviewComposer,
+  reviewMessages,
+  reviewPending,
+  onReviewComposerChange,
+  onReviewRequest,
+  onReviewPhotos,
   isSubmitting,
   isViewingPublishedPost,
   charOver,
@@ -1368,6 +1374,7 @@ function MobilePublisherConversation({
           <span>{timingMode === 'now' ? 'Ready to publish now' : scheduledFor ? formatDetailedLocalDateTime(scheduledFor) : 'Choose a date and time'}</span>
         </div>
         <div className="mobile-publisher-timing-actions">
+          <button type="button" onClick={onBack}>Cancel</button>
           <button type="button" onClick={onChooseNow} data-active={timingMode === 'now'}>Post now</button>
           <button type="button" onClick={onChooseCustom} data-active={timingMode !== 'now'}>Schedule</button>
         </div>
@@ -1391,6 +1398,31 @@ function MobilePublisherConversation({
               ? 'Preparing your final approval…'
               : 'Final approval opens one last confirmation. It does not publish by itself.'}
       </p>
+
+      {reviewMessages.map((message) => (
+        <div key={message.id} className={`mobile-partner-inline-message ${message.role}`}>
+          {message.role === 'assistant' ? (
+            <span className="mobile-partner-message-avatar">
+              <img src="/assets/map-option-b-mark.png" alt="" />
+              <i aria-hidden="true" />
+            </span>
+          ) : null}
+          <div className="mobile-partner-inline-bubble"><p>{message.content}</p></div>
+        </div>
+      ))}
+
+      <div className="mobile-publisher-chat-composer">
+        <MobileVoiceComposer
+          value={reviewComposer}
+          onChange={onReviewComposerChange}
+          onSubmit={onReviewRequest}
+          onPhotos={onReviewPhotos}
+          placeholder="Ask for changes before approval…"
+          disabled={reviewPending || isSubmitting || isViewingPublishedPost}
+          submitOnEnter={false}
+        />
+        <p>Type or speak an edit. My Partner will revise this draft, not publish it.</p>
+      </div>
     </section>
   )
 }
@@ -1459,6 +1491,9 @@ export default function CreatePost() {
   const [assistAction, setAssistAction] = useState('')
   const [assistError, setAssistError] = useState('')
   const [assistSuggestions, setAssistSuggestions] = useState([])
+  const [reviewComposer, setReviewComposer] = useState('')
+  const [reviewMessages, setReviewMessages] = useState([])
+  const [reviewPending, setReviewPending] = useState(false)
   const [platformVariants, setPlatformVariants] = useState({})
   const [platformFormatStatus, setPlatformFormatStatus] = useState('')
   const [imageFormatState, setImageFormatState] = useState('idle')
@@ -2543,6 +2578,57 @@ export default function CreatePost() {
     }
   }
 
+  async function handleReviewRequest(text) {
+    const request = String(text || '').trim()
+    if (!request || reviewPending) return
+    if (!requireWriteAccess('revise this post with My Partner')) return
+    if (!clientId || !content.trim()) {
+      setReviewMessages((current) => [...current, {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: 'The draft is still loading. Try that request again in a moment.',
+      }])
+      return
+    }
+
+    setReviewComposer('')
+    setReviewPending(true)
+    setReviewMessages((current) => [...current, {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: request,
+    }])
+
+    try {
+      const payload = await generatePublisherAssist({
+        client_id: clientId,
+        action: 'improve',
+        caption: content,
+        platforms: activePlatforms,
+        max_chars: charLimit,
+        context: `Customer request during final review: ${request}\nApply this request to the current caption while preserving accurate business details. Return an updated draft only.`,
+      })
+      const suggestion = Array.isArray(payload?.suggestions) ? payload.suggestions[0] : null
+      if (!suggestion?.caption) throw new Error('My Partner did not return an updated caption.')
+
+      applyAssistSuggestion(suggestion)
+      setReviewMessages((current) => [...current, {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: 'Done — I updated the caption. Review the postcard above, or ask for another change.',
+      }])
+    } catch (error) {
+      setReviewComposer(request)
+      setReviewMessages((current) => [...current, {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: error.message || 'I could not revise that draft right now. Your original is still safe.',
+      }])
+    } finally {
+      setReviewPending(false)
+    }
+  }
+
   function getResolvedPlatformVariants(platformIds = activePlatforms) {
     return buildPlatformVariants(platformIds, content, profile, platformVariants)
   }
@@ -3349,8 +3435,8 @@ export default function CreatePost() {
 
   return (
     <>
-      {mobilePartnerRollout ? <MobilePartnerTopBar activeMode="post" /> : null}
       <div className={`portal-page create-post-page ${mobilePartnerRollout ? 'create-post-mobile-partner-rollout' : ''} w-full max-w-none space-y-6 md:p-5 xl:p-6`}>
+        {mobilePartnerRollout ? <MobilePartnerTopBar activeMode="post" /> : null}
         {(submitState === 'success' || errorMsg || draftError || draftStatus) && (
           <section className="space-y-3">
             {submitState === 'success' && (
@@ -3424,6 +3510,12 @@ export default function CreatePost() {
             }}
             onReview={openReview}
             onBack={() => navigate('/partner?mode=post')}
+            reviewComposer={reviewComposer}
+            reviewMessages={reviewMessages}
+            reviewPending={reviewPending}
+            onReviewComposerChange={setReviewComposer}
+            onReviewRequest={handleReviewRequest}
+            onReviewPhotos={(files) => addLocalMediaFiles(files, 'recent')}
             isSubmitting={isSubmitting}
             isViewingPublishedPost={isViewingPublishedPost}
             charOver={charOver}

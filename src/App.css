@@ -20935,6 +20935,10 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     padding: 0.8rem 0.85rem 1.2rem;
   }
 
+  .create-post-mobile-partner-rollout > .mobile-publisher-conversation {
+    margin-top: 0 !important;
+  }
+
   .mobile-publisher-conversation .mobile-partner-message {
     padding: 0;
   }
@@ -20982,24 +20986,32 @@ html[data-portal-theme="map-dark"] .boost-post-error {
 
   .mobile-publisher-timing-actions {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.45rem;
   }
 
   .mobile-publisher-timing-actions button {
-    min-height: 2.5rem;
+    min-height: 2.55rem;
     border: 1px solid var(--pulse-line);
-    border-radius: 999px;
-    background: #eef3f4;
-    color: var(--pulse-muted);
-    font-size: 0.76rem;
-    font-weight: 800;
+    border-radius: 0.72rem;
+    background: #f7f9fa;
+    color: #44545f;
+    padding: 0.55rem 0.5rem;
+    font-size: 0.73rem;
+    font-weight: 720;
+    box-shadow: 0 1px 2px rgba(16, 37, 53, 0.04);
   }
 
   .mobile-publisher-timing-actions button[data-active="true"] {
-    border-color: var(--pulse-aqua);
-    background: var(--pulse-aqua-soft);
-    color: #08747a;
+    border-color: rgba(0, 174, 182, 0.5);
+    background: #e9f8f8;
+    color: #075f64;
+    box-shadow: 0 0 0 1px rgba(0, 174, 182, 0.08) inset;
+  }
+
+  .mobile-publisher-timing-actions button:first-child {
+    background: #ffffff;
+    color: var(--pulse-muted);
   }
 
   .mobile-publisher-timing input {
@@ -21022,6 +21034,41 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     font-size: 0.68rem;
     line-height: 1.45;
     text-align: center;
+  }
+
+  .mobile-publisher-conversation .mobile-partner-generated-platforms button,
+  .mobile-publisher-conversation .mobile-partner-generated-actions button {
+    border-radius: 0.72rem;
+  }
+
+  .mobile-publisher-conversation .mobile-partner-generated-reset {
+    border-radius: 0.7rem;
+  }
+
+  .mobile-publisher-chat-composer {
+    position: sticky;
+    bottom: 0.35rem;
+    z-index: 8;
+    width: 100%;
+    border-top: 1px solid rgba(219, 229, 232, 0.78);
+    background: linear-gradient(180deg, rgba(244, 247, 248, 0), rgba(244, 247, 248, 0.98) 20%);
+    padding: 1rem 0 0.2rem;
+  }
+
+  .mobile-publisher-chat-composer .mobile-voice-composer {
+    border-radius: 1.05rem;
+  }
+
+  .mobile-publisher-chat-composer > p {
+    margin: 0.35rem 0 0;
+    color: var(--pulse-muted);
+    font-size: 0.65rem;
+    line-height: 1.4;
+    text-align: center;
+  }
+
+  .mobile-publisher-conversation > .mobile-partner-inline-message {
+    padding-inline: 0;
   }
 
   .create-post-review-modal-partner {
