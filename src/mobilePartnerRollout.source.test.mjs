@@ -73,6 +73,8 @@ test('voice and recent-photo controls are present throughout the mobile core flo
   assert.match(mobileChatSource, /generatePublisherAssist\(/)
   assert.match(mobileChatSource, /action: 'creative_chat'/)
   assert.match(mobileChatSource, /improvePublisherImage\(/)
+  assert.match(mobileChatSource, /File as FileIcon/)
+  assert.match(mobileChatSource, /new globalThis\.File\(/)
   assert.match(mobileChatSource, /instruction: decision\.imageInstruction/)
   assert.match(mobileChatSource, /setGeneratedPost\(\(current\)/)
   assert.match(mobileChatSource, /image_data_urls: imageDataUrls/)

@@ -4,7 +4,7 @@ import {
   CheckCircle,
   CircleNotch,
   FacebookLogo,
-  File,
+  File as FileIcon,
   InstagramLogo,
   PencilSimple,
   X,
@@ -51,7 +51,7 @@ function base64ToImageFile(base64, mimeType = 'image/png', filename = 'partner-e
   const binary = window.atob(base64)
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
-  return new File([bytes], filename, { type: mimeType })
+  return new globalThis.File([bytes], filename, { type: mimeType })
 }
 
 function AssistantAvatar() {
@@ -339,7 +339,7 @@ export default function MobilePartnerChat({
                   {message.attachments.map((attachment) => (
                     attachment.previewUrl
                       ? <img key={attachment.id} src={attachment.previewUrl} alt={attachment.name} />
-                      : <span key={attachment.id}><File size={18} />{attachment.name}</span>
+                      : <span key={attachment.id}><FileIcon size={18} />{attachment.name}</span>
                   ))}
                 </div>
               ) : null}
@@ -397,7 +397,7 @@ export default function MobilePartnerChat({
               <div key={attachment.id} className="mobile-partner-composer-attachment">
                 {attachment.previewUrl
                   ? <img src={attachment.previewUrl} alt="" />
-                  : <File size={22} weight="duotone" />}
+                  : <FileIcon size={22} weight="duotone" />}
                 <span>{attachment.name}</span>
                 <button type="button" onClick={() => removeAttachment(attachment.id)} aria-label={`Remove ${attachment.name}`}>
                   <X size={14} weight="bold" />
