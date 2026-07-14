@@ -88,7 +88,7 @@ export default function MobilePartnerHome({
     navigate('/post?source=recent-photos', {
       state: {
         recentPhotos: files,
-        preselectedPlatforms: selectedPlatforms,
+        preselectedPlatforms: options.platforms || selectedPlatforms,
         initialCaption: options.caption || '',
         partnerPrompt: options.prompt || '',
         imageCountAnalyzed: Number(options.imageCountAnalyzed || 0),

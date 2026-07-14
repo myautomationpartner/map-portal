@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CircleNotch, File, X } from '@phosphor-icons/react'
+import {
+  CheckCircle,
+  CircleNotch,
+  FacebookLogo,
+  File,
+  InstagramLogo,
+  PencilSimple,
+  X,
+  XLogo,
+} from '@phosphor-icons/react'
 import { createVisionImageDataUrls } from '../lib/imageAssist'
 import { generatePublisherAssist, sendPortalPartnerMessage } from '../lib/portalApi'
 import MobileVoiceComposer from './MobileVoiceComposer'
@@ -47,6 +56,77 @@ function AssistantAvatar() {
   )
 }
 
+const POSTCARD_PLATFORMS = [
+  { id: 'facebook', label: 'Facebook', Icon: FacebookLogo },
+  { id: 'instagram', label: 'Instagram', Icon: InstagramLogo },
+  { id: 'twitter', label: 'X', Icon: XLogo },
+]
+
+function GeneratedPostcard({ cardRef, draft, onChange, onReview, onReset }) {
+  const [editing, setEditing] = useState(false)
+
+  function togglePlatform(platformId) {
+    const nextPlatforms = draft.platforms.includes(platformId)
+      ? draft.platforms.filter((item) => item !== platformId)
+      : [...draft.platforms, platformId]
+    onChange({ ...draft, platforms: nextPlatforms })
+  }
+
+  return (
+    <article ref={cardRef} className="mobile-partner-generated-postcard" aria-label="Ready-to-review social post">
+      {draft.previewUrl ? <img src={draft.previewUrl} alt="Selected post creative" /> : null}
+      <div className="mobile-partner-generated-brandbar">
+        <strong>My Automation Partner</strong>
+        <span><i aria-hidden="true" />Ready to review</span>
+      </div>
+      <div className="mobile-partner-generated-caption">
+        {editing ? (
+          <textarea
+            value={draft.caption}
+            onChange={(event) => onChange({ ...draft, caption: event.target.value })}
+            aria-label="Edit post caption"
+            rows={6}
+          />
+        ) : (
+          <p>{draft.caption}</p>
+        )}
+      </div>
+      <div className="mobile-partner-generated-platforms" aria-label="Choose social platforms">
+        {POSTCARD_PLATFORMS.map(({ id, label, Icon }) => (
+          <button
+            type="button"
+            key={id}
+            data-selected={draft.platforms.includes(id) ? 'true' : undefined}
+            aria-pressed={draft.platforms.includes(id)}
+            onClick={() => togglePlatform(id)}
+          >
+            <Icon size={16} weight="fill" />
+            <span>{label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="mobile-partner-generated-actions">
+        <button
+          type="button"
+          className="mobile-partner-primary"
+          disabled={!draft.platforms.length || !draft.caption.trim()}
+          onClick={() => onReview(draft)}
+        >
+          <CheckCircle size={19} weight="fill" />
+          Review &amp; post
+        </button>
+        <button type="button" onClick={() => setEditing((current) => !current)}>
+          <PencilSimple size={17} />
+          {editing ? 'Done' : 'Edit'}
+        </button>
+      </div>
+      <button type="button" className="mobile-partner-generated-reset" onClick={onReset}>
+        Try another photo
+      </button>
+    </article>
+  )
+}
+
 export default function MobilePartnerChat({
   children,
   contextPath,
@@ -62,12 +142,23 @@ export default function MobilePartnerChat({
   const [messages, setMessages] = useState([])
   const [pending, setPending] = useState(false)
   const [attachments, setAttachments] = useState([])
+  const [generatedPost, setGeneratedPost] = useState(null)
   const attachmentUrlsRef = useRef(new Set())
+  const generatedPostRef = useRef(null)
+  const generatedPostPrompt = generatedPost?.prompt || ''
 
   useEffect(() => () => {
     attachmentUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
     attachmentUrlsRef.current.clear()
   }, [])
+
+  useEffect(() => {
+    if (!generatedPostPrompt) return undefined
+    const frame = window.requestAnimationFrame(() => {
+      generatedPostRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [generatedPostPrompt])
 
   function stageAttachments(files) {
     const nextFiles = Array.from(files || []).slice(0, 4)
@@ -113,11 +204,19 @@ export default function MobilePartnerChat({
         const caption = payload?.suggestions?.[0]?.caption
         if (!caption) throw new Error('My Partner could not create a caption from that request.')
 
-        onPhotos(pendingAttachments.map((attachment) => attachment.file), {
+        setGeneratedPost({
+          files: pendingAttachments.map((attachment) => attachment.file),
           caption,
           prompt: cleanText,
           imageCountAnalyzed: imageDataUrls.length,
+          previewUrl: pendingAttachments.find((attachment) => attachment.previewUrl)?.previewUrl || '',
+          platforms: [...platforms],
         })
+        setAttachments([])
+        setMessages((current) => [
+          ...current,
+          createChatMessage('assistant', 'I built a ready-to-review post from your photo and instructions.'),
+        ])
         return
       }
 
@@ -191,6 +290,21 @@ export default function MobilePartnerChat({
               <span>Thinking…</span>
             </div>
           </div>
+        ) : null}
+
+        {generatedPost ? (
+          <GeneratedPostcard
+            cardRef={generatedPostRef}
+            draft={generatedPost}
+            onChange={setGeneratedPost}
+            onReset={() => setGeneratedPost(null)}
+            onReview={(draft) => onPhotos(draft.files, {
+              caption: draft.caption,
+              prompt: draft.prompt,
+              imageCountAnalyzed: draft.imageCountAnalyzed,
+              platforms: draft.platforms,
+            })}
+          />
         ) : null}
       </main>
 

@@ -1,8 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
-  Camera,
-  FolderOpen,
-  Images,
   PaperPlaneRight,
   Plus,
   StopCircle,
@@ -27,13 +24,9 @@ export default function MobileVoiceComposer({
 }) {
   const recognitionRef = useRef(null)
   const photoInputRef = useRef(null)
-  const cameraInputRef = useRef(null)
-  const fileInputRef = useRef(null)
-  const attachmentMenuRef = useRef(null)
   const textareaRef = useRef(null)
   const voiceBaseRef = useRef('')
   const [listening, setListening] = useState(false)
-  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false)
   const [speechSupported, setSpeechSupported] = useState(() => (
     typeof window === 'undefined' ? true : Boolean(getSpeechRecognition())
   ))
@@ -41,25 +34,6 @@ export default function MobileVoiceComposer({
   useEffect(() => {
     return () => recognitionRef.current?.abort?.()
   }, [])
-
-  useEffect(() => {
-    if (!attachmentMenuOpen) return undefined
-
-    function closeOnOutsidePress(event) {
-      if (!attachmentMenuRef.current?.contains(event.target)) setAttachmentMenuOpen(false)
-    }
-
-    function closeOnEscape(event) {
-      if (event.key === 'Escape') setAttachmentMenuOpen(false)
-    }
-
-    document.addEventListener('pointerdown', closeOnOutsidePress)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('pointerdown', closeOnOutsidePress)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [attachmentMenuOpen])
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current
@@ -119,15 +93,10 @@ export default function MobileVoiceComposer({
     event.target.value = ''
   }
 
-  function openAttachmentPicker(inputRef) {
-    setAttachmentMenuOpen(false)
-    window.requestAnimationFrame(() => inputRef.current?.click())
-  }
-
   return (
     <div className={`mobile-voice-composer ${compact ? 'is-compact' : ''} ${onPhotos ? 'has-photos' : ''} ${showSend ? '' : 'no-send'}`}>
       {onPhotos ? (
-        <div className="mobile-voice-composer-attachment" ref={attachmentMenuRef}>
+        <div className="mobile-voice-composer-attachment">
           <input
             ref={photoInputRef}
             type="file"
@@ -136,48 +105,14 @@ export default function MobileVoiceComposer({
             className="sr-only"
             onChange={handleAttachmentSelection}
           />
-          <input
-            ref={cameraInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="sr-only"
-            onChange={handleAttachmentSelection}
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,video/*"
-            multiple
-            className="sr-only"
-            onChange={handleAttachmentSelection}
-          />
           <button
             type="button"
-            className={`mobile-voice-composer-action is-attachment ${attachmentMenuOpen ? 'is-open' : ''}`}
-            onClick={() => setAttachmentMenuOpen((open) => !open)}
+            className="mobile-voice-composer-action is-attachment"
+            onClick={() => photoInputRef.current?.click()}
             aria-label="Add a photo or file"
-            aria-haspopup="menu"
-            aria-expanded={attachmentMenuOpen}
           >
             <Plus size={22} weight="bold" />
           </button>
-          {attachmentMenuOpen ? (
-            <div className="mobile-voice-attachment-menu" role="menu" aria-label="Add to post">
-              <button type="button" role="menuitem" onClick={() => openAttachmentPicker(cameraInputRef)}>
-                <Camera size={20} weight="regular" />
-                <span>Take Photo</span>
-              </button>
-              <button type="button" role="menuitem" onClick={() => openAttachmentPicker(photoInputRef)}>
-                <Images size={20} weight="regular" />
-                <span>Photo Library</span>
-              </button>
-              <button type="button" role="menuitem" onClick={() => openAttachmentPicker(fileInputRef)}>
-                <FolderOpen size={20} weight="regular" />
-                <span>Choose File</span>
-              </button>
-            </div>
-          ) : null}
         </div>
       ) : null}
       <textarea
