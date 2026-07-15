@@ -31,6 +31,7 @@ export default function MobileVoiceComposer({
   showSend = true,
   submitOnEnter = true,
   stableTyping = false,
+  inputRef,
 }) {
   const recognitionRef = useRef(null)
   const photoInputRef = useRef(null)
@@ -147,7 +148,10 @@ export default function MobileVoiceComposer({
         </div>
       ) : null}
       <textarea
-        ref={textareaRef}
+        ref={(node) => {
+          textareaRef.current = node
+          if (inputRef) inputRef.current = node
+        }}
         defaultValue={value}
         onInput={stableTyping ? undefined : (event) => {
           const nextValue = event.currentTarget.value

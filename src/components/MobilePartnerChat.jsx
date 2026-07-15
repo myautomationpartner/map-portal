@@ -5,12 +5,14 @@ import {
   CircleNotch,
   FacebookLogo,
   File as FileIcon,
+  ImagesSquare,
   InstagramLogo,
-  PencilSimple,
+  MagicWand,
   X,
   XLogo,
 } from '@phosphor-icons/react'
-import { createVisionImageDataUrl, createVisionImageDataUrls, isLogoOverlayOnlyRequest, stampBrandLogo } from '../lib/imageAssist'
+import { createVisionImageDataUrl, createVisionImageDataUrls, isBrandLogoRequest, isLogoOverlayOnlyRequest, resolveCreativeEditTargets, stampBrandLogo } from '../lib/imageAssist'
+import { resolveAttachmentMediaAction, shouldTransformAttachment } from '../lib/mobilePartnerMedia'
 import { isPromotionalDesignRequest, isPromotionalDesignRevision, readImageFileDataUrl, renderPromotionalGraphic } from '../lib/promoGraphic'
 import { generatePublisherAssist, generatePublisherImage, improvePublisherImage, sendPortalPartnerMessage } from '../lib/portalApi'
 import MobileVoiceComposer from './MobileVoiceComposer'
@@ -76,11 +78,13 @@ export function GeneratedPostcard({
   onChange,
   onReview,
   onReset,
+  onEdit,
   reviewLabel = 'Review & post',
   resetLabel = 'Try another photo',
   statusLabel = 'Ready to review',
 }) {
-  const [editing, setEditing] = useState(false)
+  const mediaCount = draft.files.filter((file) => /^(image|video)\//i.test(String(file?.type || ''))).length
+  const displayMediaCount = mediaCount || (draft.previewUrl ? 1 : 0)
 
   function togglePlatform(platformId) {
     const nextPlatforms = draft.platforms.includes(platformId)
@@ -102,17 +106,13 @@ export function GeneratedPostcard({
         <strong>My Automation Partner</strong>
         <span><i aria-hidden="true" />{statusLabel}</span>
       </div>
+      <div className="mobile-partner-generated-media-status">
+        <ImagesSquare size={17} weight="duotone" />
+        <strong>{displayMediaCount} {displayMediaCount === 1 ? 'photo' : 'media items'} ready</strong>
+        <span>Use + below to add or replace</span>
+      </div>
       <div className="mobile-partner-generated-caption">
-        {editing ? (
-          <textarea
-            value={draft.caption}
-            onChange={(event) => onChange({ ...draft, caption: event.target.value })}
-            aria-label="Edit post caption"
-            rows={6}
-          />
-        ) : (
-          <p>{draft.caption}</p>
-        )}
+        <p>{draft.caption}</p>
       </div>
       <div className="mobile-partner-generated-platforms" aria-label="Choose social platforms">
         {POSTCARD_PLATFORMS.map(({ id, label, Icon }) => (
@@ -138,9 +138,9 @@ export function GeneratedPostcard({
           <CheckCircle size={19} weight="fill" />
           {reviewLabel}
         </button>
-        <button type="button" onClick={() => setEditing((current) => !current)}>
-          <PencilSimple size={17} />
-          {editing ? 'Done' : 'Edit'}
+        <button type="button" onClick={onEdit}>
+          <MagicWand size={17} weight="duotone" />
+          Edit with AI
         </button>
       </div>
       <button type="button" className="mobile-partner-generated-reset" onClick={onReset}>
@@ -167,8 +167,10 @@ export default function MobilePartnerChat({
   const [pending, setPending] = useState(false)
   const [attachments, setAttachments] = useState([])
   const [generatedPost, setGeneratedPost] = useState(null)
+  const [editingPost, setEditingPost] = useState(false)
   const attachmentUrlsRef = useRef(new Set())
   const generatedPostRef = useRef(null)
+  const composerInputRef = useRef(null)
   const generatedPostPrompt = generatedPost?.prompt || ''
 
   useEffect(() => () => {
@@ -193,6 +195,8 @@ export default function MobilePartnerChat({
       }
     })
     setAttachments(nextFiles.map((file, index) => createPendingAttachment(file, index, attachmentUrlsRef.current)))
+    setEditingPost(Boolean(generatedPost))
+    composerInputRef.current?.focus()
   }
 
   function removeAttachment(id) {
@@ -215,6 +219,9 @@ export default function MobilePartnerChat({
 
     try {
       if (generatedPost) {
+        const pendingImageAttachments = pendingAttachments.filter((attachment) => attachment.isImage)
+        const attachmentImageDataUrls = await createVisionImageDataUrls(pendingImageAttachments.map((attachment) => attachment.file))
+        const attachmentAction = resolveAttachmentMediaAction(cleanText, pendingImageAttachments.length)
         if (generatedPost.promoDesign && isPromotionalDesignRevision(cleanText)) {
           const payload = await generatePublisherAssist({
             action: 'promo_brief',
@@ -250,6 +257,7 @@ export default function MobilePartnerChat({
             ...current,
             createChatMessage('assistant', 'Done — I rebuilt the promotional graphic with the exact requested details.'),
           ])
+          setAttachments([])
           return
         }
 
@@ -265,16 +273,26 @@ export default function MobilePartnerChat({
           context: [
             `Latest customer request: ${cleanText}`,
             `A postcard image is currently ${generatedPost.previewUrl ? 'attached' : 'not attached'}.`,
+            pendingImageAttachments.length
+              ? `The customer attached ${pendingImageAttachments.length} new image${pendingImageAttachments.length === 1 ? '' : 's'} to this request. Treat the attachment as part of the requested post edit.`
+              : '',
             recentConversation ? `Recent conversation:\n${recentConversation}` : '',
           ].filter(Boolean).join('\n'),
+          image_data_urls: attachmentImageDataUrls,
         })
         let decision = payload?.creative_decision
         if (!decision?.intent) throw new Error('My Partner could not understand that request.')
 
-        let changesCaption = ['caption_edit', 'caption_and_image'].includes(decision.intent)
-        let changesImage = ['image_edit', 'caption_and_image'].includes(decision.intent)
+        const brandLogoRequested = isBrandLogoRequest(cleanText)
+        let { changesCaption, changesImage } = resolveCreativeEditTargets({
+          request: cleanText,
+          intent: decision.intent,
+          hasImage: Boolean(generatedPost.previewUrl),
+          hasImageAttachments: pendingImageAttachments.length > 0,
+        })
         let nextFiles = generatedPost.files
         let nextPreviewUrl = generatedPost.previewUrl
+        let mediaUpdate = ''
 
         if (changesCaption && decision.caption?.trim() === generatedPost.caption.trim()) {
           const retryPayload = await generatePublisherAssist({
@@ -290,8 +308,12 @@ export default function MobilePartnerChat({
           const retryDecision = retryPayload?.creative_decision
           if (retryDecision?.intent) {
             decision = retryDecision
-            changesCaption = ['caption_edit', 'caption_and_image'].includes(decision.intent)
-            changesImage = ['image_edit', 'caption_and_image'].includes(decision.intent)
+            ;({ changesCaption, changesImage } = resolveCreativeEditTargets({
+              request: cleanText,
+              intent: decision.intent,
+              hasImage: Boolean(generatedPost.previewUrl),
+              hasImageAttachments: pendingImageAttachments.length > 0,
+            }))
           }
         }
 
@@ -321,50 +343,123 @@ export default function MobilePartnerChat({
             throw new Error(`I made a revision, but could not verify it matched your request. Your original is still safe. ${verificationPayload?.verification?.summary || ''}`.trim())
           }
         }
-        if (changesImage) {
-          const sourceFile = generatedPost.files.find((file) => String(file?.type || '').toLowerCase().startsWith('image/'))
+        if (changesImage && attachmentAction === 'add') {
+          nextFiles = [...generatedPost.files, ...pendingAttachments.map((attachment) => attachment.file)]
+          mediaUpdate = `added ${pendingAttachments.length} ${pendingAttachments.length === 1 ? 'media item' : 'media items'}`
+        } else if (changesImage) {
+          const currentSourceFile = generatedPost.files.find((file) => String(file?.type || '').toLowerCase().startsWith('image/'))
+          const replacementAttachment = pendingImageAttachments[0] || null
+          const sourceFile = replacementAttachment?.file || currentSourceFile
           if (!sourceFile) throw new Error('Add a photo first, then ask me to change the image.')
-          const imageDataUrl = await createVisionImageDataUrl(sourceFile, { maxDimension: 1536, quality: 0.86 })
-          if (!imageDataUrl) throw new Error('That photo could not be prepared for editing.')
-          const imagePayload = await improvePublisherImage({
-            caption: changesCaption ? decision.caption : generatedPost.caption,
-            platforms: generatedPost.platforms,
-            mode: 'custom',
-            instruction: decision.imageInstruction,
-            use_brand_logo: decision.useBrandLogo === true,
-            logo_overlay_only: isLogoOverlayOnlyRequest(cleanText, decision.useBrandLogo === true),
-            quality: 'low',
-            image_data_url: imageDataUrl,
-          })
-          let finalImageBase64 = imagePayload.image_base64
-          let mimeType = imagePayload.mime_type || 'image/png'
-          if (decision.useBrandLogo === true) {
-            const stamped = await stampBrandLogo({
-              imageBase64: finalImageBase64,
-              imageMimeType: mimeType,
-              logoBase64: imagePayload.brand_logo_base64,
-              logoMimeType: imagePayload.brand_logo_mime_type || 'image/png',
+          const transformReplacement = !replacementAttachment
+            || shouldTransformAttachment(cleanText)
+            || brandLogoRequested
+
+          if (replacementAttachment && !transformReplacement) {
+            nextFiles = [
+              replacementAttachment.file,
+              ...pendingAttachments
+                .filter((attachment) => attachment !== replacementAttachment)
+                .map((attachment) => attachment.file),
+              ...generatedPost.files.filter((file) => file !== currentSourceFile),
+            ]
+            nextPreviewUrl = replacementAttachment.previewUrl
+            mediaUpdate = 'replaced the post image'
+          } else {
+            const imageDataUrl = await createVisionImageDataUrl(sourceFile, { maxDimension: 1536, quality: 0.86 })
+            if (!imageDataUrl) throw new Error('That photo could not be prepared for editing.')
+            const imagePayload = await improvePublisherImage({
+              caption: changesCaption ? decision.caption : generatedPost.caption,
+              platforms: generatedPost.platforms,
+              mode: 'custom',
+              instruction: decision.imageInstruction || cleanText,
+              use_brand_logo: brandLogoRequested || decision.useBrandLogo === true,
+              logo_overlay_only: isLogoOverlayOnlyRequest(cleanText, brandLogoRequested || decision.useBrandLogo === true),
+              quality: 'low',
+              image_data_url: imageDataUrl,
             })
-            finalImageBase64 = stamped.imageBase64
-            mimeType = stamped.mimeType
+            let finalImageBase64 = imagePayload.image_base64
+            let mimeType = imagePayload.mime_type || 'image/png'
+            if (brandLogoRequested || decision.useBrandLogo === true) {
+              const stamped = await stampBrandLogo({
+                imageBase64: finalImageBase64,
+                imageMimeType: mimeType,
+                logoBase64: imagePayload.brand_logo_base64,
+                logoMimeType: imagePayload.brand_logo_mime_type || 'image/png',
+              })
+              finalImageBase64 = stamped.imageBase64
+              mimeType = stamped.mimeType
+              mediaUpdate = 'placed the MAP logo clearly on the image'
+            }
+            let editedFile = base64ToImageFile(finalImageBase64, mimeType)
+            let verificationImage = await createVisionImageDataUrl(editedFile, { maxDimension: 960, quality: 0.82 })
+            let verificationPayload = await generatePublisherAssist({
+              action: 'verify_image_edit',
+              caption: decision.imageInstruction || cleanText,
+              platforms: generatedPost.platforms,
+              max_chars: 700,
+              context: [
+                `Customer request: ${cleanText}`,
+              ].filter(Boolean).join('\n'),
+              image_data_urls: verificationImage ? [verificationImage] : [],
+            })
+            if (verificationPayload?.verification?.passed !== true) {
+              const retryInstruction = [
+                decision.imageInstruction || cleanText,
+                `The first edit was rejected because: ${verificationPayload?.verification?.summary || 'the requested visual change was not obvious enough'}.`,
+                'Try again from the original image. Make the requested change clearly visible while preserving unrelated details.',
+              ].join('\n')
+              const retryImagePayload = await improvePublisherImage({
+                caption: changesCaption ? decision.caption : generatedPost.caption,
+                platforms: generatedPost.platforms,
+                mode: 'custom',
+                instruction: retryInstruction,
+                use_brand_logo: brandLogoRequested || decision.useBrandLogo === true,
+                logo_overlay_only: isLogoOverlayOnlyRequest(cleanText, brandLogoRequested || decision.useBrandLogo === true),
+                quality: 'medium',
+                image_data_url: imageDataUrl,
+              })
+              finalImageBase64 = retryImagePayload.image_base64
+              mimeType = retryImagePayload.mime_type || 'image/png'
+              if (brandLogoRequested || decision.useBrandLogo === true) {
+                const retryStamped = await stampBrandLogo({
+                  imageBase64: finalImageBase64,
+                  imageMimeType: mimeType,
+                  logoBase64: retryImagePayload.brand_logo_base64,
+                  logoMimeType: retryImagePayload.brand_logo_mime_type || 'image/png',
+                })
+                finalImageBase64 = retryStamped.imageBase64
+                mimeType = retryStamped.mimeType
+              }
+              editedFile = base64ToImageFile(finalImageBase64, mimeType)
+              verificationImage = await createVisionImageDataUrl(editedFile, { maxDimension: 960, quality: 0.82 })
+              verificationPayload = await generatePublisherAssist({
+                action: 'verify_image_edit',
+                caption: decision.imageInstruction || cleanText,
+                platforms: generatedPost.platforms,
+                max_chars: 700,
+                context: [
+                  `Customer request: ${cleanText}`,
+                  'This is the automatic second attempt after the first image edit was too subtle.',
+                ].join('\n'),
+                image_data_urls: verificationImage ? [verificationImage] : [],
+              })
+            }
+            if (verificationPayload?.verification?.passed !== true) {
+              throw new Error(`I generated an image, but could not verify it matched your request. Your original is still safe. ${verificationPayload?.verification?.summary || ''}`.trim())
+            }
+            nextFiles = [
+              editedFile,
+              ...pendingAttachments
+                .filter((attachment) => attachment !== replacementAttachment)
+                .map((attachment) => attachment.file),
+              ...generatedPost.files.filter((file) => file !== currentSourceFile),
+            ]
+            nextPreviewUrl = `data:${mimeType};base64,${finalImageBase64}`
+            if (!mediaUpdate) {
+              mediaUpdate = replacementAttachment ? 'replaced and edited the post image' : 'updated the post image'
+            }
           }
-          const editedFile = base64ToImageFile(finalImageBase64, mimeType)
-          const verificationImage = await createVisionImageDataUrl(editedFile, { maxDimension: 960, quality: 0.82 })
-          const verificationPayload = await generatePublisherAssist({
-            action: 'verify_image_edit',
-            caption: decision.imageInstruction,
-            platforms: generatedPost.platforms,
-            max_chars: 700,
-            context: [
-              `Customer request: ${cleanText}`,
-            ].filter(Boolean).join('\n'),
-            image_data_urls: verificationImage ? [verificationImage] : [],
-          })
-          if (verificationPayload?.verification?.passed !== true) {
-            throw new Error(`I generated an image, but could not verify it matched your request. Your original is still safe. ${verificationPayload?.verification?.summary || ''}`.trim())
-          }
-          nextFiles = [editedFile, ...generatedPost.files.filter((file) => file !== sourceFile)]
-          nextPreviewUrl = `data:${mimeType};base64,${finalImageBase64}`
         }
 
         if (changesCaption || changesImage) {
@@ -374,6 +469,7 @@ export default function MobilePartnerChat({
             previewUrl: nextPreviewUrl,
             caption: changesCaption ? decision.caption : current.caption,
           }))
+          setAttachments([])
         }
         setMessages((current) => [
           ...current,
@@ -383,8 +479,8 @@ export default function MobilePartnerChat({
               ? 'Done — I verified and updated the caption.'
               : changesImage
                 ? changesCaption
-                  ? 'Done — I verified and updated the caption and image.'
-                  : 'Done — I verified and updated the image.'
+                  ? `Done — I verified the caption and ${mediaUpdate || 'updated the image'}.`
+                  : `Done — I ${mediaUpdate || 'verified and updated the image'}.`
                 : decision.assistantMessage || 'Tell me what you would like to change next.',
           ),
         ])
@@ -537,6 +633,17 @@ export default function MobilePartnerChat({
     }
   }
 
+  function beginPostEdit() {
+    if (!editingPost) {
+      setMessages((current) => [
+        ...current,
+        createChatMessage('assistant', 'Tell me what to change in the image or caption. Tap + to add or replace a photo.'),
+      ])
+    }
+    setEditingPost(true)
+    composerInputRef.current?.focus()
+  }
+
   return (
     <>
       <main className={conversationClassName}>
@@ -587,7 +694,12 @@ export default function MobilePartnerChat({
             cardRef={generatedPostRef}
             draft={generatedPost}
             onChange={setGeneratedPost}
-            onReset={() => setGeneratedPost(null)}
+            onEdit={beginPostEdit}
+            onReset={() => {
+              setGeneratedPost(null)
+              setEditingPost(false)
+              setAttachments([])
+            }}
             onReview={(draft) => onPhotos(draft.files, {
               caption: draft.caption,
               prompt: draft.prompt,
@@ -629,12 +741,13 @@ export default function MobilePartnerChat({
           onChange={setComposer}
           onSubmit={sendMessage}
           onPhotos={onPhotos ? stageAttachments : undefined}
-          placeholder={placeholder}
+          placeholder={editingPost ? 'Describe an image or caption change' : placeholder}
           disabled={pending}
           submitOnEnter={false}
           stableTyping
+          inputRef={composerInputRef}
         />
-        <p>{note}</p>
+        <p>{editingPost ? 'Attach a photo or describe any change. Nothing posts without review.' : note}</p>
       </div>
     </>
   )

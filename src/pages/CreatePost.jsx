@@ -44,7 +44,7 @@ import MobileVoiceComposer from '../components/MobileVoiceComposer'
 import MobilePartnerTopBar from '../components/MobilePartnerTopBar'
 import { GeneratedPostcard } from '../components/MobilePartnerChat'
 import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
-import { createVisionImageDataUrl, isLogoOverlayOnlyRequest, stampBrandLogo } from '../lib/imageAssist'
+import { createVisionImageDataUrl, isBrandLogoRequest, isLogoOverlayOnlyRequest, resolveCreativeEditTargets, stampBrandLogo } from '../lib/imageAssist'
 import { isPromotionalDesignRevision, renderPromotionalGraphic } from '../lib/promoGraphic'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
@@ -2590,7 +2590,7 @@ export default function CreatePost() {
         instruction: options.instruction || '',
         use_brand_logo: options.useBrandLogo === true,
         logo_overlay_only: options.logoOverlayOnly === true,
-        quality: 'low',
+        quality: options.quality || 'low',
         ...imageInput,
       })
       let finalImageBase64 = payload.image_base64
@@ -2761,8 +2761,12 @@ export default function CreatePost() {
       let decision = payload?.creative_decision
       if (!decision?.intent) throw new Error('My Partner could not understand that request.')
 
-      let changesCaption = ['caption_edit', 'caption_and_image'].includes(decision.intent)
-      let changesImage = ['image_edit', 'caption_and_image'].includes(decision.intent)
+      const brandLogoRequested = isBrandLogoRequest(request)
+      let { changesCaption, changesImage } = resolveCreativeEditTargets({
+        request,
+        intent: decision.intent,
+        hasImage: Boolean(imagePreview),
+      })
 
       if (changesCaption && decision.caption?.trim() === content.trim()) {
         const retryPayload = await generatePublisherAssist({
@@ -2779,8 +2783,11 @@ export default function CreatePost() {
         const retryDecision = retryPayload?.creative_decision
         if (retryDecision?.intent) {
           decision = retryDecision
-          changesCaption = ['caption_edit', 'caption_and_image'].includes(decision.intent)
-          changesImage = ['image_edit', 'caption_and_image'].includes(decision.intent)
+          ;({ changesCaption, changesImage } = resolveCreativeEditTargets({
+            request,
+            intent: decision.intent,
+            hasImage: Boolean(imagePreview),
+          }))
         }
       }
 
@@ -2812,20 +2819,20 @@ export default function CreatePost() {
       }
 
       if (changesImage) {
-        const improved = await handleImproveImage('custom', activeCreativeItem, {
-          instruction: decision.imageInstruction,
-          useBrandLogo: decision.useBrandLogo === true,
-          logoOverlayOnly: isLogoOverlayOnlyRequest(request, decision.useBrandLogo === true),
+        let improved = await handleImproveImage('custom', activeCreativeItem, {
+          instruction: decision.imageInstruction || request,
+          useBrandLogo: brandLogoRequested || decision.useBrandLogo === true,
+          logoOverlayOnly: isLogoOverlayOnlyRequest(request, brandLogoRequested || decision.useBrandLogo === true),
           captionOverride: changesCaption ? decision.caption : content,
           throwOnError: true,
           deferAttach: true,
         })
         if (!improved?.file) throw new Error('The updated image could not be prepared for verification.')
-        const verificationImage = await createVisionImageDataUrl(improved.file, { maxDimension: 960, quality: 0.82 })
-        const verificationPayload = await generatePublisherAssist({
+        let verificationImage = await createVisionImageDataUrl(improved.file, { maxDimension: 960, quality: 0.82 })
+        let verificationPayload = await generatePublisherAssist({
           client_id: clientId,
           action: 'verify_image_edit',
-          caption: decision.imageInstruction,
+          caption: decision.imageInstruction || request,
           platforms: activePlatforms,
           max_chars: 700,
           context: [
@@ -2833,6 +2840,36 @@ export default function CreatePost() {
           ].filter(Boolean).join('\n'),
           image_data_urls: verificationImage ? [verificationImage] : [],
         })
+        if (verificationPayload?.verification?.passed !== true) {
+          const retryInstruction = [
+            decision.imageInstruction || request,
+            `The first edit was rejected because: ${verificationPayload?.verification?.summary || 'the requested visual change was not obvious enough'}.`,
+            'Try again from the original image. Make the requested change clearly visible while preserving unrelated details.',
+          ].join('\n')
+          improved = await handleImproveImage('custom', activeCreativeItem, {
+            instruction: retryInstruction,
+            useBrandLogo: brandLogoRequested || decision.useBrandLogo === true,
+            logoOverlayOnly: isLogoOverlayOnlyRequest(request, brandLogoRequested || decision.useBrandLogo === true),
+            captionOverride: changesCaption ? decision.caption : content,
+            throwOnError: true,
+            deferAttach: true,
+            quality: 'medium',
+          })
+          if (!improved?.file) throw new Error('The second image edit could not be prepared for verification.')
+          verificationImage = await createVisionImageDataUrl(improved.file, { maxDimension: 960, quality: 0.82 })
+          verificationPayload = await generatePublisherAssist({
+            client_id: clientId,
+            action: 'verify_image_edit',
+            caption: decision.imageInstruction || request,
+            platforms: activePlatforms,
+            max_chars: 700,
+            context: [
+              `Customer request: ${request}`,
+              'This is the automatic second attempt after the first image edit was too subtle.',
+            ].join('\n'),
+            image_data_urls: verificationImage ? [verificationImage] : [],
+          })
+        }
         if (verificationPayload?.verification?.passed !== true) {
           throw new Error(`I generated an image, but could not verify it matched your request. Your original is still safe. ${verificationPayload?.verification?.summary || ''}`.trim())
         }
@@ -2855,10 +2892,15 @@ export default function CreatePost() {
         setReviewRevisionCount((current) => current + 1)
       }
 
+      const logoWasRequested = changesImage && (brandLogoRequested || decision.useBrandLogo === true)
       const defaultResponse = changesCaption && changesImage
-        ? 'Done — I verified and updated the caption and image.'
+        ? logoWasRequested
+          ? 'Done — I verified the caption and placed the MAP logo clearly on the image.'
+          : 'Done — I verified and updated the caption and image.'
         : changesImage
-          ? 'Done — I verified and updated the image.'
+          ? logoWasRequested
+            ? 'Done — I placed the MAP logo clearly on the image.'
+            : 'Done — I verified and updated the image.'
           : changesCaption
             ? 'Done — I verified and updated the caption.'
             : 'Tell me what you would like to change next.'

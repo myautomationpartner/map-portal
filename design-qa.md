@@ -46,6 +46,31 @@ The focused inspection confirms that the selected original image remains the pos
 
 final result: passed
 
+# Natural-Language Image Editing and Visible Logo QA
+
+- Physical iPhone logo result: `/Users/kennymonico/Documents/MyAutomationPartner/map-portal/portal-app/physical-iphone-visible-map-logo-2026-07-14.png`
+- Physical iPhone non-logo result: `/Users/kennymonico/Documents/MyAutomationPartner/map-portal/portal-app/physical-iphone-general-image-edit-2026-07-14.png`
+- Live Worker: `map-shared-portal@92e62c5b-6d93-431b-b598-87e9217f8902`
+- Rollback Worker: `map-shared-portal@4b20c18d-73f5-48da-b692-a941f46d1f5e`
+- State: installed MAP phone app with a real selected photo, generated caption, and Facebook/Instagram/X review controls
+
+## Result
+
+The post editor now treats the AI decision as the primary natural-language plan while retaining deterministic safety cues for direct visual and caption requests. This preserves open-ended requests instead of reducing the product to a fixed button or command list. Brand-logo language additionally resolves the tenant's verified saved logo and stamps it inside the visible 16:9 postcard crop so the exact mark cannot be omitted or hidden by the image model.
+
+The physical iPhone passed two independent edits. `Add map logo to image` returned the original photo with a large readable MAP mark on a dark, lime-outlined badge. `Make the image black and white` returned a visibly monochrome version and preserved the same caption, platforms, and review boundary. The first `Brighten the image` result was correctly rejected as too subtle; the live flow now retries once from the original image using the verifier's feedback and medium-quality rendering before asking the customer to try again.
+
+## Validation
+
+- 14/14 focused natural-language, attachment, and mobile rollout tests passed.
+- Portal lint passed.
+- Production build passed.
+- Existing shared portal Worker and routes were updated in place; no parallel infrastructure was created.
+- No schema, migration, RLS, Auth, Storage, Edge Function, provider connection, or automation change was required.
+- Nothing was published, scheduled, or sent to a customer during phone QA.
+
+final result: passed
+
 # Text-only Promotional Request Routing QA
 
 - Source visual truth: `/tmp/codex-remote-attachments/019f5c30-2be0-7783-8de8-46b192e1f273/A7AA138A-7B3D-4E3F-9B33-C5D03B8A734E/1-Pasted-Image-1.jpg`
