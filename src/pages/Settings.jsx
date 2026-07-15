@@ -5,10 +5,18 @@ import { supabase } from '../lib/supabase'
 import { buildTenantConfig } from '../lib/tenantConfig'
 import { buildSharedPortalPath, portalPath } from '../lib/portalPath'
 import { DASHBOARD_PLATFORMS } from '../lib/platformCatalog'
-import { fetchTeamAccessUsers, inviteTeamAccessUser, updateTeamAccessUser } from '../lib/portalApi'
+import {
+  fetchTeamAccessUsers,
+  fetchWorkspacePreferences,
+  inviteTeamAccessUser,
+  saveNotificationPreferences,
+  updateTeamAccessUser,
+} from '../lib/portalApi'
+import { normalizeNotificationPreferences } from '../lib/notificationPreferences'
 import {
   getCurrentPushSubscription,
   getPushNotificationStatus,
+  sendPortalPushTest,
   subscribeToPortalPush,
   unsubscribeFromPortalPush,
 } from '../lib/pushNotifications'
@@ -1443,7 +1451,8 @@ function WebsiteChatSection({ client, requireWriteAccess, billingAccess, tenant 
   )
 }
 
-function PhoneNotificationsSection({ billingAccess }) {
+function PhoneNotificationsSection({ billingAccess, profile }) {
+  const queryClient = useQueryClient()
   const [support, setSupport] = useState(() => ({
     supported: false,
     permission: 'default',
@@ -1454,6 +1463,22 @@ function PhoneNotificationsSection({ billingAccess }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState(null)
+  const [preferences, setPreferences] = useState(() => normalizeNotificationPreferences())
+  const [savingPreferences, setSavingPreferences] = useState(false)
+  const [sendingTest, setSendingTest] = useState(false)
+  const preferencesQuery = useQuery({
+    queryKey: ['workspace-preferences', profile?.client_id, profile?.id],
+    queryFn: () => fetchWorkspacePreferences(profile.client_id, profile.id),
+    enabled: Boolean(profile?.client_id && profile?.id),
+  })
+
+  useEffect(() => {
+    if (preferencesQuery.isLoading) return
+    setPreferences(normalizeNotificationPreferences(
+      preferencesQuery.data?.notification_preferences_json,
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    ))
+  }, [preferencesQuery.data, preferencesQuery.isLoading])
 
   const refreshState = useCallback(async () => {
     const nextSupport = getPushNotificationStatus()
@@ -1498,6 +1523,42 @@ function PhoneNotificationsSection({ billingAccess }) {
       setStatus({ type: 'error', message: error.message || 'Could not turn off phone notifications.' })
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleSavePreferences() {
+    setSavingPreferences(true)
+    setStatus(null)
+    try {
+      const normalized = normalizeNotificationPreferences(
+        preferences,
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
+      )
+      await saveNotificationPreferences({
+        clientId: profile.client_id,
+        userId: profile.id,
+        notificationPreferences: normalized,
+      })
+      setPreferences(normalized)
+      await queryClient.invalidateQueries({ queryKey: ['workspace-preferences', profile.client_id, profile.id] })
+      setStatus({ type: 'success', message: 'Notification choices saved.' })
+    } catch (error) {
+      setStatus({ type: 'error', message: error.message || 'Could not save notification choices.' })
+    } finally {
+      setSavingPreferences(false)
+    }
+  }
+
+  async function handleSendTest() {
+    setSendingTest(true)
+    setStatus(null)
+    try {
+      await sendPortalPushTest()
+      setStatus({ type: 'success', message: 'Test alert sent. It should appear on this phone in a moment.' })
+    } catch (error) {
+      setStatus({ type: 'error', message: error.message || 'Could not send a test alert.' })
+    } finally {
+      setSendingTest(false)
     }
   }
 
@@ -1552,6 +1613,93 @@ function PhoneNotificationsSection({ billingAccess }) {
             </button>
           )}
         </div>
+
+        {subscribed ? (
+          <div className="space-y-4 rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid var(--portal-border)' }}>
+            <div>
+              <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Alert me about</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-soft)' }}>Keep the important work immediate without filling your lock screen.</p>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              {[
+                ['messageAlerts', 'Customer messages'],
+                ['commentAlerts', 'Comments and reviews'],
+                ['postReadyReminders', 'Posts ready to review'],
+                ['publishFailureAlerts', 'Publishing problems'],
+              ].map(([key, label]) => (
+                <label key={key} className="flex cursor-pointer items-center justify-between gap-3 rounded-xl px-3 py-3" style={{ background: 'rgba(255,255,255,0.035)' }}>
+                  <span className="text-sm font-medium" style={{ color: 'var(--portal-text)' }}>{label}</span>
+                  <input
+                    type="checkbox"
+                    checked={preferences[key]}
+                    onChange={(event) => setPreferences((current) => ({ ...current, [key]: event.target.checked }))}
+                    className="h-5 w-5 accent-cyan-400"
+                    disabled={billingAccess?.readOnly}
+                  />
+                </label>
+              ))}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-semibold" style={{ color: 'var(--portal-text-muted)' }}>
+                Morning reminder
+                <input
+                  type="time"
+                  value={preferences.reminderTimes[0] || '09:00'}
+                  onChange={(event) => setPreferences((current) => ({ ...current, reminderTimes: [event.target.value, current.reminderTimes[1] || '15:00'] }))}
+                  className="mt-2 w-full rounded-xl px-3 py-2.5 text-sm"
+                  style={{ background: 'rgba(0,0,0,0.22)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+                />
+              </label>
+              <label className="text-xs font-semibold" style={{ color: 'var(--portal-text-muted)' }}>
+                Afternoon reminder
+                <input
+                  type="time"
+                  value={preferences.reminderTimes[1] || '15:00'}
+                  onChange={(event) => setPreferences((current) => ({ ...current, reminderTimes: [current.reminderTimes[0] || '09:00', event.target.value] }))}
+                  className="mt-2 w-full rounded-xl px-3 py-2.5 text-sm"
+                  style={{ background: 'rgba(0,0,0,0.22)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+                />
+              </label>
+            </div>
+
+            <label className="block text-xs font-semibold" style={{ color: 'var(--portal-text-muted)' }}>
+              Lock-screen detail
+              <select
+                value={preferences.privacyLevel}
+                onChange={(event) => setPreferences((current) => ({ ...current, privacyLevel: event.target.value }))}
+                className="mt-2 w-full rounded-xl px-3 py-2.5 text-sm"
+                style={{ background: 'rgba(0,0,0,0.22)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+              >
+                <option value="private">Private: action only</option>
+                <option value="sender_platform">Recommended: sender and platform</option>
+                <option value="full_preview">Full message preview</option>
+              </select>
+            </label>
+
+            <button
+              type="button"
+              onClick={handleSavePreferences}
+              disabled={savingPreferences || billingAccess?.readOnly}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))', color: 'var(--portal-dark)' }}
+            >
+              {savingPreferences ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save alert choices
+            </button>
+            <button
+              type="button"
+              onClick={handleSendTest}
+              disabled={sendingTest}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--portal-border)', color: 'var(--portal-text)' }}
+            >
+              {sendingTest ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
+              Send a test alert
+            </button>
+          </div>
+        ) : null}
 
         {status && <StatusBadge status={status.type} message={status.message} />}
       </div>
@@ -1736,7 +1884,7 @@ export default function Settings() {
           description="Phone setup and Inbox alerts"
           icon={Bell}
         >
-          <PhoneNotificationsSection billingAccess={billingAccess} />
+          <PhoneNotificationsSection billingAccess={billingAccess} profile={profile} />
         </SettingsCategory>
 
         <SettingsCategory

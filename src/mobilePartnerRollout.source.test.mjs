@@ -160,7 +160,7 @@ test('installed phone portals refresh onto the current release instead of keepin
   assert.match(pwaSource, /controllerchange/)
   assert.match(pwaSource, /window\.location\.pathname/)
   assert.match(pwaSource, /window\.location\.reload\(\)/)
-  assert.match(serviceWorkerSource, /map-portal-shell-v2/)
+  assert.match(serviceWorkerSource, /map-portal-shell-v3/)
   assert.match(workerSource, /assetNormalized\.url\.pathname !== '\/service-worker\.js'/)
   assert.match(workerSource, /headers\.set\('cache-control', 'no-store, max-age=0'\)/)
   assert.match(deploySource, /'run_worker_first = true'/)

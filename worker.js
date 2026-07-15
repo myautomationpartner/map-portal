@@ -612,6 +612,108 @@ function base64UrlDecodeBytes(value) {
   return output
 }
 
+function concatBytes(...parts) {
+  const arrays = parts.map((part) => part instanceof Uint8Array ? part : new Uint8Array(part))
+  const output = new Uint8Array(arrays.reduce((total, part) => total + part.length, 0))
+  let offset = 0
+  arrays.forEach((part) => {
+    output.set(part, offset)
+    offset += part.length
+  })
+  return output
+}
+
+async function hmacSha256(keyBytes, valueBytes) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, valueBytes))
+}
+
+async function hkdfExpand(prk, info, length) {
+  const chunks = []
+  let previous = new Uint8Array(0)
+  let counter = 1
+  while (chunks.reduce((total, chunk) => total + chunk.length, 0) < length) {
+    previous = await hmacSha256(prk, concatBytes(previous, info, new Uint8Array([counter])))
+    chunks.push(previous)
+    counter += 1
+  }
+  return concatBytes(...chunks).slice(0, length)
+}
+
+async function encryptWebPushPayload(subscription, payload, options = {}) {
+  const userPublicKey = base64UrlDecodeBytes(subscription?.p256dh)
+  const authSecret = base64UrlDecodeBytes(subscription?.auth)
+  if (userPublicKey.length !== 65 || userPublicKey[0] !== 4 || !authSecret.length) {
+    throw new Error('Push subscription encryption keys are invalid.')
+  }
+
+  const applicationServerKeyPair = options.applicationServerKeyPair || await crypto.subtle.generateKey(
+    { name: 'ECDH', namedCurve: 'P-256' },
+    true,
+    ['deriveBits'],
+  )
+  const applicationServerPublicKey = new Uint8Array(
+    await crypto.subtle.exportKey('raw', applicationServerKeyPair.publicKey),
+  )
+  const importedUserPublicKey = await crypto.subtle.importKey(
+    'raw',
+    userPublicKey,
+    { name: 'ECDH', namedCurve: 'P-256' },
+    false,
+    [],
+  )
+  const sharedSecret = new Uint8Array(await crypto.subtle.deriveBits(
+    { name: 'ECDH', public: importedUserPublicKey },
+    applicationServerKeyPair.privateKey,
+    256,
+  ))
+  const authPrk = await hmacSha256(authSecret, sharedSecret)
+  const keyInfo = concatBytes(
+    new TextEncoder().encode('WebPush: info\0'),
+    userPublicKey,
+    applicationServerPublicKey,
+  )
+  const inputKeyMaterial = await hkdfExpand(authPrk, keyInfo, 32)
+  const salt = options.salt || crypto.getRandomValues(new Uint8Array(16))
+  const contentPrk = await hmacSha256(salt, inputKeyMaterial)
+  const contentEncryptionKey = await hkdfExpand(
+    contentPrk,
+    new TextEncoder().encode('Content-Encoding: aes128gcm\0'),
+    16,
+  )
+  const nonce = await hkdfExpand(
+    contentPrk,
+    new TextEncoder().encode('Content-Encoding: nonce\0'),
+    12,
+  )
+  const plaintext = concatBytes(
+    new TextEncoder().encode(JSON.stringify(payload || {})),
+    new Uint8Array([2]),
+  )
+  const key = await crypto.subtle.importKey('raw', contentEncryptionKey, 'AES-GCM', false, ['encrypt'])
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: nonce, tagLength: 128 },
+    key,
+    plaintext,
+  ))
+  const recordSize = new Uint8Array(4)
+  new DataView(recordSize.buffer).setUint32(0, 4096)
+
+  return concatBytes(
+    salt,
+    recordSize,
+    new Uint8Array([applicationServerPublicKey.length]),
+    applicationServerPublicKey,
+    ciphertext,
+  )
+}
+
 async function buildVapidJwt(endpoint, config, now = new Date()) {
   const publicBytes = base64UrlDecodeBytes(config.publicKey)
   if (publicBytes.length !== 65 || publicBytes[0] !== 4) {
@@ -678,6 +780,48 @@ async function sendNoPayloadWebPush(subscription, config) {
   }
 }
 
+async function sendEncryptedWebPush(subscription, config, payload) {
+  const endpoint = firstString(subscription?.endpoint)
+  if (!endpoint) return { ok: false, expired: true, status: 0, error: 'Missing push endpoint.' }
+
+  const body = await encryptWebPushPayload(subscription, payload)
+  const jwt = await buildVapidJwt(endpoint, config)
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      TTL: '900',
+      Urgency: payload?.urgency || 'high',
+      Authorization: `vapid t=${jwt}, k=${config.publicKey}`,
+      'Content-Encoding': 'aes128gcm',
+      'Content-Type': 'application/octet-stream',
+    },
+    body,
+  })
+
+  if (response.ok || response.status === 201 || response.status === 202) {
+    return { ok: true, status: response.status, rich: true }
+  }
+
+  return {
+    ok: false,
+    expired: response.status === 404 || response.status === 410,
+    status: response.status,
+    error: await response.text().catch(() => ''),
+  }
+}
+
+async function sendPortalWebPush(subscription, config, payload) {
+  if (payload && subscription?.p256dh && subscription?.auth) {
+    try {
+      const richResult = await sendEncryptedWebPush(subscription, config, payload)
+      if (richResult.ok || richResult.expired) return richResult
+    } catch {
+      // Keep the established generic no-payload alert as a compatibility fallback.
+    }
+  }
+  return sendNoPayloadWebPush(subscription, config)
+}
+
 async function markPortalPushSubscriptionSent(envConfig, id) {
   if (!id) return
   await supabaseRest(envConfig, `/rest/v1/portal_push_subscriptions?id=eq.${encodeURIComponent(id)}`, {
@@ -705,7 +849,7 @@ async function markPortalPushSubscriptionFailed(envConfig, id, result) {
 
 async function loadPortalPushSubscriptions(envConfig) {
   const params = new URLSearchParams({
-    select: 'id,endpoint',
+    select: 'id,user_id,endpoint,p256dh,auth',
     client_id: `eq.${envConfig.clientId}`,
     enabled: 'eq.true',
     order: 'last_seen_at.desc',
@@ -716,30 +860,360 @@ async function loadPortalPushSubscriptions(envConfig) {
   return Array.isArray(rows) ? rows : []
 }
 
-async function notifyPortalPushSubscribers(env, envConfig) {
+const DEFAULT_PORTAL_NOTIFICATION_PREFERENCES = Object.freeze({
+  messageAlerts: true,
+  commentAlerts: true,
+  postReadyReminders: true,
+  publishFailureAlerts: true,
+  boostAlerts: true,
+  reminderTimes: ['09:00', '15:00'],
+  quietHours: { enabled: true, start: '20:00', end: '08:00' },
+  privacyLevel: 'sender_platform',
+  timezone: 'America/New_York',
+})
+
+function platformLabelForNotification(value) {
+  const platform = normalizePlatform(value)
+  return {
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+    twitter: 'X',
+    linkedin: 'LinkedIn',
+    tiktok: 'TikTok',
+  }[platform] || 'social media'
+}
+
+function normalizePortalNotificationPreferences(value = {}, fallbackTimezone = '') {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  const quiet = input.quietHours && typeof input.quietHours === 'object' && !Array.isArray(input.quietHours)
+    ? input.quietHours
+    : {}
+  const validTimes = Array.isArray(input.reminderTimes)
+    ? [...new Set(input.reminderTimes.map((item) => firstString(item)).filter((item) => /^([01]\d|2[0-3]):[0-5]\d$/.test(item)))].slice(0, 4)
+    : DEFAULT_PORTAL_NOTIFICATION_PREFERENCES.reminderTimes
+  const privacyLevel = ['private', 'sender_platform', 'full_preview'].includes(input.privacyLevel)
+    ? input.privacyLevel
+    : DEFAULT_PORTAL_NOTIFICATION_PREFERENCES.privacyLevel
+
+  return {
+    messageAlerts: input.messageAlerts !== false,
+    commentAlerts: input.commentAlerts !== false,
+    postReadyReminders: input.postReadyReminders !== false,
+    publishFailureAlerts: input.publishFailureAlerts !== false,
+    boostAlerts: input.boostAlerts !== false,
+    reminderTimes: validTimes.length ? validTimes : DEFAULT_PORTAL_NOTIFICATION_PREFERENCES.reminderTimes,
+    quietHours: {
+      enabled: quiet.enabled !== false,
+      start: /^([01]\d|2[0-3]):[0-5]\d$/.test(firstString(quiet.start)) ? quiet.start : '20:00',
+      end: /^([01]\d|2[0-3]):[0-5]\d$/.test(firstString(quiet.end)) ? quiet.end : '08:00',
+    },
+    privacyLevel,
+    timezone: firstString(input.timezone, fallbackTimezone, DEFAULT_PORTAL_NOTIFICATION_PREFERENCES.timezone),
+  }
+}
+
+function portalNotificationEnabled(preferences, eventType) {
+  if (eventType === 'message') return preferences.messageAlerts
+  if (eventType === 'comment' || eventType === 'review') return preferences.commentAlerts
+  if (eventType === 'post_ready' || eventType === 'missed_post') return preferences.postReadyReminders
+  if (eventType === 'publish_failed') return preferences.publishFailureAlerts
+  if (eventType === 'boost_active') return preferences.boostAlerts
+  return true
+}
+
+function buildPortalNotificationPayload(event, preferences) {
+  const privacyLevel = preferences.privacyLevel
+  const genericTitle = firstString(event?.genericTitle, 'My Partner needs you')
+  const genericBody = firstString(event?.genericBody, 'Open My Partner to take the next step.')
+  const senderTitle = firstString(event?.title, genericTitle)
+  const senderBody = firstString(event?.body, genericBody)
+  const previewBody = firstString(event?.preview, senderBody)
+
+  return {
+    title: privacyLevel === 'private' ? genericTitle : senderTitle,
+    body: privacyLevel === 'full_preview' ? previewBody : (privacyLevel === 'private' ? genericBody : senderBody),
+    url: firstString(event?.url, 'inbox'),
+    tag: firstString(event?.tag, `map-${event?.type || 'attention'}`),
+    eventKey: firstString(event?.key),
+    eventType: firstString(event?.type, 'attention'),
+    urgency: firstString(event?.urgency, 'high'),
+  }
+}
+
+async function loadPortalNotificationPreferences(envConfig, userIds) {
+  if (!userIds.length) return new Map()
+  const params = new URLSearchParams({
+    select: 'id,user_id,notification_preferences_json,notification_state_json',
+    client_id: `eq.${envConfig.clientId}`,
+    user_id: `in.(${userIds.map((id) => encodeURIComponent(id)).join(',')})`,
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/portal_workspace_preferences?${params.toString()}`)
+  const rows = await response.json().catch(() => [])
+  return new Map((Array.isArray(rows) ? rows : []).map((row) => [row.user_id, row]))
+}
+
+async function savePortalNotificationState(envConfig, userId, preferenceRow, state) {
+  const body = JSON.stringify({
+    notification_state_json: state,
+    ...(preferenceRow ? {} : {
+      client_id: envConfig.clientId,
+      user_id: userId,
+      workspace_tools_json: [],
+    }),
+  })
+  if (preferenceRow?.id) {
+    await supabaseRest(envConfig, `/rest/v1/portal_workspace_preferences?id=eq.${encodeURIComponent(preferenceRow.id)}`, {
+      method: 'PATCH',
+      body,
+    })
+    return
+  }
+  await supabaseRest(envConfig, '/rest/v1/portal_workspace_preferences?on_conflict=client_id,user_id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify([JSON.parse(body)]),
+  })
+}
+
+async function savePortalNotificationTimezone(envConfig, userId, timezone) {
+  const normalizedTimezone = firstString(timezone).slice(0, 100)
+  if (!normalizedTimezone) return
+  const rows = await loadPortalNotificationPreferences(envConfig, [userId])
+  const existing = rows.get(userId) || null
+  const preferences = normalizePortalNotificationPreferences(existing?.notification_preferences_json, normalizedTimezone)
+  preferences.timezone = normalizedTimezone
+  const payload = {
+    notification_preferences_json: preferences,
+    ...(existing ? {} : {
+      client_id: envConfig.clientId,
+      user_id: userId,
+      workspace_tools_json: [],
+    }),
+  }
+  if (existing?.id) {
+    await supabaseRest(envConfig, `/rest/v1/portal_workspace_preferences?id=eq.${encodeURIComponent(existing.id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+    return
+  }
+  await supabaseRest(envConfig, '/rest/v1/portal_workspace_preferences?on_conflict=client_id,user_id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify([payload]),
+  })
+}
+
+async function notifyPortalPushSubscribers(env, envConfig, event = {}) {
   const config = getPortalPushConfig(env)
   if (!config.configured || !envConfig?.clientId) {
     return { attempted: 0, sent: 0, skipped: true, reason: 'portal_push_not_configured' }
   }
 
-  const subscriptions = await loadPortalPushSubscriptions(envConfig).catch(() => [])
+  const subscriptions = (await loadPortalPushSubscriptions(envConfig).catch(() => []))
+    .filter((subscription) => !event?.userId || subscription.user_id === event.userId)
+  const subscriptionsByUser = new Map()
+  subscriptions.forEach((subscription) => {
+    if (!subscription.user_id) return
+    if (!subscriptionsByUser.has(subscription.user_id)) subscriptionsByUser.set(subscription.user_id, [])
+    subscriptionsByUser.get(subscription.user_id).push(subscription)
+  })
+  const preferencesByUser = await loadPortalNotificationPreferences(
+    envConfig,
+    [...subscriptionsByUser.keys()],
+  ).catch(() => new Map())
   let sent = 0
-  const results = await Promise.allSettled(subscriptions.map(async (subscription) => {
-    const result = await sendNoPayloadWebPush(subscription, config)
-    if (result.ok) {
-      sent += 1
-      await markPortalPushSubscriptionSent(envConfig, subscription.id)
-    } else {
-      await markPortalPushSubscriptionFailed(envConfig, subscription.id, result)
+  let skipped = 0
+  const userResults = await Promise.allSettled([...subscriptionsByUser.entries()].map(async ([userId, userSubscriptions]) => {
+    const preferenceRow = preferencesByUser.get(userId) || null
+    const preferences = normalizePortalNotificationPreferences(preferenceRow?.notification_preferences_json)
+    const eventType = firstString(event?.type, 'attention')
+    const eventKey = firstString(event?.key)
+    const previousState = preferenceRow?.notification_state_json && typeof preferenceRow.notification_state_json === 'object'
+      ? preferenceRow.notification_state_json
+      : {}
+    const recentEventKeys = Array.isArray(previousState.recentEventKeys) ? previousState.recentEventKeys : []
+    if (!portalNotificationEnabled(preferences, eventType) || (eventKey && recentEventKeys.includes(eventKey))) {
+      skipped += userSubscriptions.length
+      return { skipped: true }
     }
-    return result
+    const payload = buildPortalNotificationPayload(event, preferences)
+    const deviceResults = await Promise.all(userSubscriptions.map(async (subscription) => {
+      const result = await sendPortalWebPush(subscription, config, payload)
+      if (result.ok) {
+        sent += 1
+        await markPortalPushSubscriptionSent(envConfig, subscription.id)
+      } else {
+        await markPortalPushSubscriptionFailed(envConfig, subscription.id, result)
+      }
+      return result
+    }))
+    if (eventKey && deviceResults.some((result) => result.ok)) {
+      await savePortalNotificationState(envConfig, userId, preferenceRow, {
+        ...previousState,
+        recentEventKeys: [...recentEventKeys.filter((key) => key !== eventKey), eventKey].slice(-30),
+        lastSentAt: new Date().toISOString(),
+        lastEventKey: eventKey,
+        lastEventType: eventType,
+        lastUrl: payload.url,
+      }).catch(() => undefined)
+    }
+    return { deviceResults }
   }))
 
   return {
     attempted: subscriptions.length,
     sent,
-    failed: results.filter((result) => result.status === 'rejected' || result.value?.ok === false).length,
+    skipped,
+    failed: userResults.reduce((count, result) => {
+      if (result.status === 'rejected') return count + 1
+      return count + (result.value?.deviceResults || []).filter((deviceResult) => !deviceResult.ok).length
+    }, 0),
   }
+}
+
+function notificationZonedParts(date, timezone) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date).reduce((result, part) => ({ ...result, [part.type]: part.value }), {})
+    return {
+      date: `${parts.year}-${parts.month}-${parts.day}`,
+      time: `${parts.hour}:${parts.minute}`,
+      minutes: (Number(parts.hour) * 60) + Number(parts.minute),
+    }
+  } catch {
+    return notificationZonedParts(date, DEFAULT_PORTAL_NOTIFICATION_PREFERENCES.timezone)
+  }
+}
+
+function notificationTimeInWindow(value, start, end) {
+  const toMinutes = (time) => {
+    const [hours, minutes] = String(time || '').split(':').map(Number)
+    return (hours * 60) + minutes
+  }
+  const current = toMinutes(value)
+  const startMinutes = toMinutes(start)
+  const endMinutes = toMinutes(end)
+  return startMinutes <= endMinutes
+    ? current >= startMinutes && current < endMinutes
+    : current >= startMinutes || current < endMinutes
+}
+
+function notificationReminderDue(preferences, parts) {
+  if (preferences.quietHours.enabled && notificationTimeInWindow(
+    parts.time,
+    preferences.quietHours.start,
+    preferences.quietHours.end,
+  )) return false
+  return preferences.reminderTimes.some((time) => {
+    const [hours, minutes] = time.split(':').map(Number)
+    const target = (hours * 60) + minutes
+    return parts.minutes >= target && parts.minutes < target + 15
+  })
+}
+
+async function loadPortalNotificationRecipients(envConfig) {
+  const params = new URLSearchParams({
+    select: 'client_id,user_id',
+    enabled: 'eq.true',
+    order: 'last_seen_at.desc',
+    limit: '500',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/portal_push_subscriptions?${params.toString()}`)
+  const rows = await response.json().catch(() => [])
+  const unique = new Map()
+  ;(Array.isArray(rows) ? rows : []).forEach((row) => {
+    if (row.client_id && row.user_id) unique.set(`${row.client_id}:${row.user_id}`, row)
+  })
+  return [...unique.values()]
+}
+
+async function loadFirstReadySocialDraft(envConfig, clientId) {
+  const params = new URLSearchParams({
+    select: 'id,draft_title,slot_date_local,scheduled_for,review_state',
+    client_id: `eq.${clientId}`,
+    review_state: 'not.in.(published,published_manually,archived,superseded)',
+    order: 'scheduled_for.asc.nullslast',
+    limit: '1',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/social_drafts?${params.toString()}`)
+  const rows = await response.json().catch(() => [])
+  return Array.isArray(rows) ? rows[0] || null : null
+}
+
+async function loadRecentFailedPosts(envConfig, clientId) {
+  const since = new Date(Date.now() - (48 * 60 * 60 * 1000)).toISOString()
+  const params = new URLSearchParams({
+    select: 'id,platforms,created_at',
+    client_id: `eq.${clientId}`,
+    status: 'eq.failed',
+    created_at: `gte.${since}`,
+    order: 'created_at.desc',
+    limit: '10',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/posts?${params.toString()}`)
+  const rows = await response.json().catch(() => [])
+  return Array.isArray(rows) ? rows : []
+}
+
+async function runPortalNotificationReminders(env) {
+  const envConfig = getPortalAuthConfig(env)
+  const recipients = await loadPortalNotificationRecipients(envConfig)
+  const results = { recipients: recipients.length, attempted: 0, sent: 0, failed: 0 }
+  for (const recipient of recipients) {
+    const tenantConfig = { ...envConfig, clientId: recipient.client_id }
+    const preferenceRows = await loadPortalNotificationPreferences(tenantConfig, [recipient.user_id]).catch(() => new Map())
+    const preferenceRow = preferenceRows.get(recipient.user_id) || null
+    const preferences = normalizePortalNotificationPreferences(preferenceRow?.notification_preferences_json)
+    const parts = notificationZonedParts(new Date(), preferences.timezone)
+
+    if (preferences.postReadyReminders && notificationReminderDue(preferences, parts)) {
+      const draft = await loadFirstReadySocialDraft(tenantConfig, recipient.client_id).catch(() => null)
+      if (draft) {
+        const push = await notifyPortalPushSubscribers(env, tenantConfig, {
+          userId: recipient.user_id,
+          key: `post-ready:${draft.id}:${parts.date}:${Math.floor(parts.minutes / 15)}`,
+          type: 'post_ready',
+          title: 'A post is ready for review',
+          body: 'One quick review keeps your social plan moving.',
+          url: `post?draftId=${encodeURIComponent(draft.id)}${draft.slot_date_local ? `&date=${encodeURIComponent(draft.slot_date_local)}` : ''}`,
+          tag: `map-post-ready-${draft.id}`,
+          urgency: 'normal',
+        })
+        results.attempted += push.attempted || 0
+        results.sent += push.sent || 0
+        results.failed += push.failed || 0
+      }
+    }
+
+    if (preferences.publishFailureAlerts) {
+      const failedPosts = await loadRecentFailedPosts(tenantConfig, recipient.client_id).catch(() => [])
+      for (const post of failedPosts) {
+        const platforms = Array.isArray(post.platforms) ? post.platforms.map(platformLabelForNotification).join(', ') : ''
+        const push = await notifyPortalPushSubscribers(env, tenantConfig, {
+          userId: recipient.user_id,
+          key: `publish-failed:${post.id}`,
+          type: 'publish_failed',
+          title: 'A post needs your help',
+          body: platforms ? `Publishing to ${platforms} did not finish.` : 'Publishing did not finish.',
+          genericBody: 'A publishing task needs your attention in My Partner.',
+          url: `post?editPost=${encodeURIComponent(post.id)}`,
+          tag: `map-publish-failed-${post.id}`,
+        })
+        results.attempted += push.attempted || 0
+        results.sent += push.sent || 0
+        results.failed += push.failed || 0
+      }
+    }
+  }
+  return results
 }
 
 async function handlePortalPushPublicKey(request, env) {
@@ -812,8 +1286,55 @@ async function handlePortalPushSubscriptions(request, env) {
   })
   const rows = await response.json().catch(() => [])
   const row = Array.isArray(rows) ? rows[0] : null
+  await savePortalNotificationTimezone(auth.envConfig, auth.user.id, body?.timezone).catch(() => undefined)
 
   return json({ success: true, subscribed: true, id: row?.id || null })
+}
+
+async function handlePortalPushOpened(request, env) {
+  if (!['POST', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'POST, OPTIONS' } })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+  const body = await request.json().catch(() => ({}))
+  const eventKey = firstString(body?.eventKey).slice(0, 240)
+  if (!eventKey) return json({ error: 'Notification event key is required.' }, { status: 400 })
+
+  const rows = await loadPortalNotificationPreferences(auth.envConfig, [auth.user.id])
+  const preferenceRow = rows.get(auth.user.id) || null
+  const previousState = preferenceRow?.notification_state_json && typeof preferenceRow.notification_state_json === 'object'
+    ? preferenceRow.notification_state_json
+    : {}
+  await savePortalNotificationState(auth.envConfig, auth.user.id, preferenceRow, {
+    ...previousState,
+    lastOpenedAt: new Date().toISOString(),
+    lastOpenedEventKey: eventKey,
+  })
+  return json({ success: true })
+}
+
+async function handlePortalPushTest(request, env) {
+  if (!['POST', 'OPTIONS'].includes(request.method)) {
+    return json({ error: 'Method not allowed.' }, { status: 405 })
+  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: { allow: 'POST, OPTIONS' } })
+
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+  const result = await notifyPortalPushSubscribers(env, auth.envConfig, {
+    userId: auth.user.id,
+    key: `test:${auth.user.id}:${Date.now()}`,
+    type: 'test',
+    title: 'My Partner alerts are ready',
+    body: 'Tap to open the work that needs your attention.',
+    genericBody: 'Your My Partner test alert is ready.',
+    url: 'inbox?filter=open',
+    tag: 'map-notification-test',
+  })
+  return json({ success: result.sent > 0, ...result }, { status: result.sent > 0 ? 200 : 409 })
 }
 
 async function authorizePortalUser(request, env) {
@@ -2912,7 +3433,15 @@ async function syncPostBoostStatuses(env) {
     }
 
     if (shouldNotifyActive) {
-      const pushResult = await notifyPortalPushSubscribers(env, { ...envConfig, clientId: boost.client_id })
+      const pushResult = await notifyPortalPushSubscribers(env, { ...envConfig, clientId: boost.client_id }, {
+        key: `boost-active:${boost.id}`,
+        type: 'boost_active',
+        title: 'Your promotion is live',
+        body: `${platformLabelForNotification(platform)} is now promoting your post.`,
+        genericBody: 'A promotion update is ready in My Partner.',
+        url: boost.post_id ? `post?viewPost=${encodeURIComponent(boost.post_id)}` : 'post/scheduled',
+        tag: `map-boost-${boost.id}`,
+      })
       notifications.attempted += pushResult.attempted || 0
       notifications.sent += pushResult.sent || 0
       notifications.failed += pushResult.failed || 0
@@ -6178,7 +6707,33 @@ async function handleZernioInboxWebhook(request, env) {
         },
       }),
     })
-    const portalPush = await notifyPortalPushSubscribers(env, tenantEnvConfig).catch((error) => ({
+    const commentPostId = eventName === 'comment.received'
+      ? zernioCommentPostIdFromIds(message.id, message.conversationId)
+      : ''
+    const notificationUrl = eventName === 'comment.received'
+      ? (commentPostId
+          ? `inbox?section=comments&post=${encodeURIComponent(`${connectedAccount.id}:${commentPostId}`)}`
+          : 'inbox?filter=comments')
+      : `inbox?section=messages&conversation=${encodeURIComponent(conversationId)}`
+    const notificationType = eventName === 'comment.received'
+      ? 'comment'
+      : (eventName === 'review.new' ? 'review' : 'message')
+    const portalPush = await notifyPortalPushSubscribers(env, tenantEnvConfig, {
+      key: `zernio:${eventName}:${firstString(message.id, `${message.conversationId}:${message.timestamp}`)}`,
+      type: notificationType,
+      title: eventName === 'comment.received'
+        ? `New ${platformLabelForNotification(connectedAccount.platform)} comment`
+        : `${message.senderName} messaged you`,
+      body: eventName === 'comment.received'
+        ? `${message.senderName} commented on your post.`
+        : `New ${platformLabelForNotification(connectedAccount.platform)} customer message.`,
+      preview: firstString(message.content, 'A customer sent an attachment.'),
+      genericBody: 'A customer needs your attention in My Partner.',
+      url: notificationUrl,
+      tag: eventName === 'comment.received'
+        ? `map-comment-${firstString(commentPostId, message.conversationId)}`
+        : `map-message-${conversationId}`,
+    }).catch((error) => ({
       attempted: 0,
       sent: 0,
       error: sanitizePortalCustomerError(error?.message || 'Portal push notification failed.'),
@@ -6360,6 +6915,7 @@ async function handleChatwootMessageWebhook(request, env, ctx = null) {
   }
 
   const isOutgoing = String(message.message_type || '').toLowerCase() === 'outgoing' || Number(message.message_type) === 1
+  const isIncoming = String(message.message_type || '').toLowerCase() === 'incoming' || Number(message.message_type) === 0
   const alreadyBridged = Boolean(message.content_attributes?.zernio_bridge_sent)
   const isContentPartnerMessage = shouldProcessContentPartnerWebhookMessage(message, conversation)
 
@@ -6402,6 +6958,32 @@ async function handleChatwootMessageWebhook(request, env, ctx = null) {
       return json({
         error: sanitizeChatwootError(error?.message || 'Could not create Content Partner draft.'),
       }, { status: error?.status || 502 })
+    }
+  }
+
+  if (isIncoming && !message.private && !message.content_attributes?.zernio_event) {
+    try {
+      const envConfig = await getPortalWebhookConfig(request, env)
+      const conversationId = firstString(conversation.id, conversation.display_id, message.conversation_id)
+      const senderName = firstString(
+        message.sender?.name,
+        conversation.meta?.sender?.name,
+        conversation.contact?.name,
+        'Website visitor',
+      )
+      const portalPush = await notifyPortalPushSubscribers(env, envConfig, {
+        key: `chatwoot-message:${firstString(message.id, `${conversationId}:${message.created_at}`)}`,
+        type: 'message',
+        title: `${senderName} messaged you`,
+        body: 'New website customer message.',
+        preview: firstString(message.content, 'A customer sent an attachment.'),
+        genericBody: 'A customer needs your attention in My Partner.',
+        url: conversationId ? `inbox?section=messages&conversation=${encodeURIComponent(conversationId)}` : 'inbox?filter=dms',
+        tag: `map-message-${firstString(conversationId, message.id, 'website')}`,
+      })
+      return json({ success: true, event: eventName || 'message_created', portalPush })
+    } catch (error) {
+      return json({ error: sanitizePortalCustomerError(error?.message || 'Portal push notification failed.') }, { status: error?.status || 502 })
     }
   }
 
@@ -7461,6 +8043,7 @@ async function purgeExpiredSecureVaultArchive(env) {
 
 export {
   buildVapidJwt,
+  buildPortalNotificationPayload,
   buildContentPartnerCommandReply,
   buildRemoteCalendarPostDeletePayload,
   buildWebsiteChatPreChatFormOptions,
@@ -7468,15 +8051,22 @@ export {
   canDeleteCalendarPost,
   getIsoWeekFolder,
   isVisibleContentDraft,
+  encryptWebPushPayload,
+  normalizePortalNotificationPreferences,
+  notificationReminderDue,
+  notificationZonedParts,
   shouldRemoveLocalCalendarPostAfterRemoteDeleteError,
   selectContentPartnerReviewDraft,
   sanitizePortalCustomerError,
 }
 
 export default {
-  async scheduled(_controller, env, ctx) {
-    ctx.waitUntil(purgeExpiredSecureVaultArchive(env))
+  async scheduled(controller, env, ctx) {
+    if (controller?.cron === '17 8 * * *') {
+      ctx.waitUntil(purgeExpiredSecureVaultArchive(env))
+    }
     ctx.waitUntil(syncPostBoostStatuses(env))
+    ctx.waitUntil(runPortalNotificationReminders(env))
   },
 
   async fetch(request, env, ctx) {
@@ -7573,6 +8163,14 @@ export default {
 
     if (url.pathname === '/api/portal-push/subscriptions') {
       return handlePortalPushSubscriptions(request, env)
+    }
+
+    if (url.pathname === '/api/portal-push/opened') {
+      return handlePortalPushOpened(request, env)
+    }
+
+    if (url.pathname === '/api/portal-push/test') {
+      return handlePortalPushTest(request, env)
     }
 
     if (url.pathname === '/api/zernio/comments') {

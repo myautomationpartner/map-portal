@@ -149,7 +149,7 @@ export async function fetchWorkspacePreferences(clientId, userId) {
 
   const { data, error } = await supabase
     .from('portal_workspace_preferences')
-    .select('id, client_id, user_id, workspace_tools_json, today_queue_state_json, updated_at')
+    .select('id, client_id, user_id, workspace_tools_json, today_queue_state_json, notification_preferences_json, notification_state_json, updated_at')
     .eq('client_id', clientId)
     .eq('user_id', userId)
     .maybeSingle()
@@ -158,7 +158,7 @@ export async function fetchWorkspacePreferences(clientId, userId) {
   return data ?? null
 }
 
-const WORKSPACE_PREFERENCE_SELECT = 'id, client_id, user_id, workspace_tools_json, today_queue_state_json, updated_at'
+const WORKSPACE_PREFERENCE_SELECT = 'id, client_id, user_id, workspace_tools_json, today_queue_state_json, notification_preferences_json, notification_state_json, updated_at'
 
 export async function fetchSocialConnections(clientId) {
   if (!clientId) return []
@@ -558,6 +558,31 @@ export async function saveTodayQueueState({ clientId, userId, todayQueueState })
       user_id: userId,
       workspace_tools_json: [],
       today_queue_state_json: payload,
+    })
+    .select(WORKSPACE_PREFERENCE_SELECT)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function saveNotificationPreferences({ clientId, userId, notificationPreferences }) {
+  if (!clientId || !userId) {
+    throw new Error('Client and user are required to save notification preferences.')
+  }
+
+  const payload = notificationPreferences && typeof notificationPreferences === 'object' && !Array.isArray(notificationPreferences)
+    ? notificationPreferences
+    : {}
+
+  const { data, error } = await supabase
+    .from('portal_workspace_preferences')
+    .upsert({
+      client_id: clientId,
+      user_id: userId,
+      notification_preferences_json: payload,
+    }, {
+      onConflict: 'client_id,user_id',
     })
     .select(WORKSPACE_PREFERENCE_SELECT)
     .single()

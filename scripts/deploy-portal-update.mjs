@@ -205,7 +205,7 @@ function buildWranglerConfig(client, assetsDirectory) {
     ...(sharedMode ? [
       '',
       '[triggers]',
-      'crons = ["17 8 * * *"]',
+      'crons = ["17 8 * * *", "*/15 * * * *"]',
       '',
     ] : ['']),
     '',

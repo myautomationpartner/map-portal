@@ -30,8 +30,8 @@ export default function MobilePartnerTopBar({ activeMode, notificationCount = 0 
         <button
           type="button"
           className="mobile-partner-alerts"
-          onClick={() => navigate('/settings')}
-          aria-label={count ? `${count} notifications. Open mobile notification settings.` : 'Open mobile notification settings'}
+          onClick={() => navigate('/inbox?filter=open')}
+          aria-label={count ? `${count} items need attention. Open Inbox.` : 'Open Inbox alerts'}
         >
           <Bell size={23} weight="regular" />
           {count ? <span>{count > 9 ? '9+' : count}</span> : null}

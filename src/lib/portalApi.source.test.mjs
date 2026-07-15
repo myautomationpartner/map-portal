@@ -20,8 +20,9 @@ test('workspace preferences persist today queue state without replacing workspac
   assert.match(source, /today_queue_state_json/)
   assert.match(source, /export async function saveTodayQueueState/)
   assert.match(source, /workspace_tools_json:\s*\[\]/)
-  assert.match(source, /WORKSPACE_PREFERENCE_SELECT = 'id, client_id, user_id, workspace_tools_json, today_queue_state_json, updated_at'/)
+  assert.match(source, /WORKSPACE_PREFERENCE_SELECT = 'id, client_id, user_id, workspace_tools_json, today_queue_state_json, notification_preferences_json, notification_state_json, updated_at'/)
   assert.match(source, /select\(WORKSPACE_PREFERENCE_SELECT\)/)
+  assert.match(source, /export async function saveNotificationPreferences/)
 })
 
 test('Inbox notification counts honor locally dismissed comments and cleared threads', () => {

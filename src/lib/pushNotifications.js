@@ -103,7 +103,38 @@ export async function subscribeToPortalPush({ deviceLabel = '' } = {}) {
       subscription: subscription.toJSON(),
       deviceLabel,
       userAgent: window.navigator.userAgent || '',
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
     }),
+  })
+}
+
+export async function refreshPortalPushSubscription() {
+  const subscription = await getCurrentPushSubscription()
+  if (!subscription) return { success: true, subscribed: false }
+
+  return portalPushFetch('/api/portal-push/subscriptions', {
+    method: 'POST',
+    body: JSON.stringify({
+      subscription: subscription.toJSON(),
+      userAgent: window.navigator.userAgent || '',
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+    }),
+  })
+}
+
+export async function markPortalPushOpened(eventKey) {
+  const normalizedEventKey = String(eventKey || '').trim()
+  if (!normalizedEventKey) return { success: false }
+  return portalPushFetch('/api/portal-push/opened', {
+    method: 'POST',
+    body: JSON.stringify({ eventKey: normalizedEventKey }),
+  })
+}
+
+export async function sendPortalPushTest() {
+  return portalPushFetch('/api/portal-push/test', {
+    method: 'POST',
+    body: JSON.stringify({}),
   })
 }
 

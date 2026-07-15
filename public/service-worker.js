@@ -1,4 +1,4 @@
-const CACHE_NAME = 'map-portal-shell-v2'
+const CACHE_NAME = 'map-portal-shell-v3'
 const SHELL_ASSETS = [
   '/',
   '/assets/map-option-b-mark.png',
@@ -22,7 +22,20 @@ self.addEventListener('activate', (event) => {
           .filter((key) => key !== CACHE_NAME)
           .map((key) => caches.delete(key)),
       ))
-      .then(() => self.clients.claim()),
+      .then(() => self.clients.claim())
+      .then(async () => {
+        const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+        await Promise.all(clientList.map((client) => {
+          try {
+            const clientUrl = new URL(client.url)
+            if (clientUrl.searchParams.get('pwaRelease') === CACHE_NAME) return undefined
+            clientUrl.searchParams.set('pwaRelease', CACHE_NAME)
+            return client.navigate(clientUrl.href)
+          } catch {
+            return undefined
+          }
+        }))
+      }),
   )
 })
 
@@ -47,9 +60,14 @@ self.addEventListener('fetch', (event) => {
 
 function resolveNotificationUrl(value) {
   try {
-    return new URL(value || 'attention', self.registration.scope).href
+    const scope = new URL(self.registration.scope)
+    const target = new URL(value || 'inbox', self.registration.scope)
+    if (target.origin !== scope.origin || !target.pathname.startsWith(scope.pathname)) {
+      return new URL('inbox', self.registration.scope).href
+    }
+    return target.href
   } catch {
-    return new URL('attention', self.registration.scope).href
+    return new URL('inbox', self.registration.scope).href
   }
 }
 
@@ -69,14 +87,17 @@ self.addEventListener('push', (event) => {
       badge: './assets/map-option-b-mark.png',
       tag: payload.tag || 'map-inbox',
       renotify: true,
-      data: { url },
+      data: { url, eventKey: payload.eventKey || '' },
     })
   })())
 })
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const targetUrl = resolveNotificationUrl(event.notification?.data?.url)
+  const target = new URL(resolveNotificationUrl(event.notification?.data?.url))
+  const eventKey = event.notification?.data?.eventKey
+  if (eventKey) target.searchParams.set('pushEvent', eventKey)
+  const targetUrl = target.href
 
   event.waitUntil((async () => {
     const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })

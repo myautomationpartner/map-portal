@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 
 import {
   buildDashboardSocialPlatformSummary,
+  buildPortalNotificationPayload,
   buildZernioOutboundReplyRequest,
   buildZernioScopedSearchParams,
   buildVapidJwt,
@@ -14,8 +15,10 @@ import {
   canDeleteCalendarPost,
   selectContentPartnerReviewDraft,
   getUserPermissions,
+  encryptWebPushPayload,
   isVisibleContentDraft,
   normalizeZernioPostAnalytics,
+  normalizePortalNotificationPreferences,
   normalizeZernioAdAccounts,
   normalizeZernioCommentPost,
   normalizeBoostAdAccountId,
@@ -24,11 +27,37 @@ import {
   normalizeZernioInboxComment,
   normalizeZernioMessage,
   pickBoostAdAccountId,
+  notificationReminderDue,
   sanitizePortalCustomerError,
   shouldRemoveLocalCalendarPostAfterRemoteDeleteError,
   validateBoostAdAccountId,
   validateBoostTargeting,
 } from './worker.js'
+
+function concatTestBytes(...parts) {
+  const output = new Uint8Array(parts.reduce((total, part) => total + part.length, 0))
+  let offset = 0
+  parts.forEach((part) => {
+    output.set(part, offset)
+    offset += part.length
+  })
+  return output
+}
+
+async function testHmac(keyBytes, valueBytes) {
+  const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, valueBytes))
+}
+
+async function testExpand(prk, info, length) {
+  let previous = new Uint8Array(0)
+  const chunks = []
+  for (let counter = 1; chunks.reduce((total, chunk) => total + chunk.length, 0) < length; counter += 1) {
+    previous = await testHmac(prk, concatTestBytes(previous, info, new Uint8Array([counter])))
+    chunks.push(previous)
+  }
+  return concatTestBytes(...chunks).slice(0, length)
+}
 
 test('builds VAPID JWTs scoped to the push endpoint origin', async () => {
   const pair = await crypto.subtle.generateKey(
@@ -56,6 +85,57 @@ test('builds VAPID JWTs scoped to the push endpoint origin', async () => {
   assert.equal(parsed.aud, 'https://updates.push.services.mozilla.com')
   assert.equal(parsed.sub, 'mailto:info@myautomationpartner.com')
   assert.equal(parsed.exp, 1779753600)
+})
+
+test('encrypts rich Web Push payloads using the aes128gcm record format', async () => {
+  const userKeyPair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])
+  const userPublicKey = new Uint8Array(await crypto.subtle.exportKey('raw', userKeyPair.publicKey))
+  const authSecret = crypto.getRandomValues(new Uint8Array(16))
+  const payload = { title: 'New Instagram message', url: 'inbox?section=messages&conversation=41' }
+  const encrypted = await encryptWebPushPayload({
+    p256dh: Buffer.from(userPublicKey).toString('base64url'),
+    auth: Buffer.from(authSecret).toString('base64url'),
+  }, payload)
+
+  const salt = encrypted.slice(0, 16)
+  assert.equal(new DataView(encrypted.buffer, encrypted.byteOffset + 16, 4).getUint32(0), 4096)
+  const publicKeyLength = encrypted[20]
+  assert.equal(publicKeyLength, 65)
+  const serverPublicKey = encrypted.slice(21, 21 + publicKeyLength)
+  const ciphertext = encrypted.slice(21 + publicKeyLength)
+  const importedServerPublicKey = await crypto.subtle.importKey('raw', serverPublicKey, { name: 'ECDH', namedCurve: 'P-256' }, false, [])
+  const sharedSecret = new Uint8Array(await crypto.subtle.deriveBits(
+    { name: 'ECDH', public: importedServerPublicKey },
+    userKeyPair.privateKey,
+    256,
+  ))
+  const authPrk = await testHmac(authSecret, sharedSecret)
+  const info = concatTestBytes(new TextEncoder().encode('WebPush: info\0'), userPublicKey, serverPublicKey)
+  const inputKeyMaterial = await testExpand(authPrk, info, 32)
+  const contentPrk = await testHmac(salt, inputKeyMaterial)
+  const contentEncryptionKey = await testExpand(contentPrk, new TextEncoder().encode('Content-Encoding: aes128gcm\0'), 16)
+  const nonce = await testExpand(contentPrk, new TextEncoder().encode('Content-Encoding: nonce\0'), 12)
+  const key = await crypto.subtle.importKey('raw', contentEncryptionKey, 'AES-GCM', false, ['decrypt'])
+  const plaintext = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, key, ciphertext))
+
+  assert.equal(plaintext.at(-1), 2)
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(plaintext.slice(0, -1))), payload)
+})
+
+test('normalizes notification privacy and reminder settings safely', () => {
+  const preferences = normalizePortalNotificationPreferences({
+    messageAlerts: false,
+    reminderTimes: ['09:00', 'bad', '15:00'],
+    privacyLevel: 'full_preview',
+    quietHours: { enabled: true, start: '20:00', end: '08:00' },
+  }, 'America/Chicago')
+  assert.equal(preferences.messageAlerts, false)
+  assert.deepEqual(preferences.reminderTimes, ['09:00', '15:00'])
+  assert.equal(preferences.privacyLevel, 'full_preview')
+  assert.equal(preferences.timezone, 'America/Chicago')
+  assert.equal(notificationReminderDue(preferences, { time: '09:04', minutes: 544 }), true)
+  assert.equal(notificationReminderDue(preferences, { time: '21:00', minutes: 1260 }), false)
+  assert.equal(buildPortalNotificationPayload({ title: 'A', body: 'B', preview: 'C' }, preferences).body, 'C')
 })
 
 test('treats legacy admin users without explicit portal permissions as full admins', () => {
@@ -297,7 +377,7 @@ test('exposes boost targeting search and scheduled active-status notifications',
   assert.match(workerSource, /\/api\/boost-targeting-search/)
   assert.match(workerSource, /\/ads\/targeting\/search\?/)
   assert.match(workerSource, /async function syncPostBoostStatuses/)
-  assert.match(workerSource, /notifyPortalPushSubscribers\(env, \{ \.\.\.envConfig, clientId: boost\.client_id \}\)/)
+  assert.match(workerSource, /notifyPortalPushSubscribers\(env, \{ \.\.\.envConfig, clientId: boost\.client_id \}, \{/)
   assert.match(workerSource, /ctx\.waitUntil\(syncPostBoostStatuses\(env\)\)/)
 })
 

@@ -1,4 +1,5 @@
 import { inferPathTenant } from './portalPath'
+import { markPortalPushOpened, refreshPortalPushSubscription } from './pushNotifications'
 
 const PORTAL_RELEASE = String(import.meta.env.VITE_PORTAL_RELEASE || 'development')
 
@@ -61,6 +62,12 @@ export function registerPortalPwa() {
   const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' })
   const manifestUrl = URL.createObjectURL(manifestBlob)
 
+  const currentReleaseUrl = new URL(window.location.href)
+  if (currentReleaseUrl.searchParams.has('pwaRelease')) {
+    currentReleaseUrl.searchParams.delete('pwaRelease')
+    window.history.replaceState(window.history.state, '', `${currentReleaseUrl.pathname}${currentReleaseUrl.search}${currentReleaseUrl.hash}`)
+  }
+
   let link = document.querySelector('link[rel="manifest"]')
   if (!link) {
     link = document.createElement('link')
@@ -91,7 +98,19 @@ export function registerPortalPwa() {
           scope: manifest.scope,
           updateViaCache: 'none',
         },
-      ).then((registration) => registration.update()).catch((error) => {
+      ).then(async (registration) => {
+        await registration.update()
+        await refreshPortalPushSubscription().catch(() => undefined)
+        const currentUrl = new URL(window.location.href)
+        const pushEvent = currentUrl.searchParams.get('pushEvent')
+        if (pushEvent) {
+          const marked = await markPortalPushOpened(pushEvent).then(() => true).catch(() => false)
+          if (marked) {
+            currentUrl.searchParams.delete('pushEvent')
+            window.history.replaceState(window.history.state, '', `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`)
+          }
+        }
+      }).catch((error) => {
         console.warn('MAP portal service worker registration skipped.', error)
       })
     }, { once: true })
