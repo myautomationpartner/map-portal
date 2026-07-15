@@ -50,6 +50,7 @@ final result: passed
 
 - Source visual truth: `/tmp/codex-remote-attachments/019f5c30-2be0-7783-8de8-46b192e1f273/A7AA138A-7B3D-4E3F-9B33-C5D03B8A734E/1-Pasted-Image-1.jpg`
 - Implementation screenshot: `/Users/kennymonico/Documents/MyAutomationPartner/smoke-agent/reports/mobile-my-partner-evidence/smoke_20260714_text_only_promo_fix/07-promotional-designer.png`
+- Physical iPhone result: `/Users/kennymonico/Documents/MyAutomationPartner/map-portal/portal-app/physical-iphone-text-only-promo-2026-07-14.png`
 - Full-view comparison: `/Users/kennymonico/Documents/MyAutomationPartner/map-portal/portal-app/design-qa-artifacts/text-only-promo-route-comparison.png`
 - Viewport: 390 x 664 CSS pixels in the live production portal
 - State: promotional request sent without an attached photo
@@ -72,7 +73,7 @@ final result: passed
 2. The routing condition was moved ahead of the general Partner-help fallback and no longer depends on a pending attachment.
 3. When no photo is attached, the existing `portal-generate-image` service now creates a background-only source; attached photos still take priority when present.
 4. Live production run `smoke_20260714_text_only_promo_fix` passed 32/32 with `blockDeploy=false`, including the general image editor, text-only promotional generation, natural-language promo revision, Publisher review revision, and no console/page/HTTP errors.
-5. iPhone Mirroring could not recapture the corrected physical screen because the phone was in use and Mirroring had disconnected. The operator's screenshot remains the physical bug evidence; the corrected implementation is verified against the same live PWA bundle at phone width.
+5. The installed MAP app was then fully closed and reopened through iPhone Mirroring. The operator manually entered the exact Pool Opening request, and the physical iPhone returned the corrected 4:5 promotional draft with `July 18 at 10 AM`, `Water test $25`, `Pool opening $199`, `Weekly care $89`, `Book today`, the MAP identity, Facebook/Instagram/X controls, Edit, and Review & post. Nothing was published or scheduled.
 
 final result: passed
 
