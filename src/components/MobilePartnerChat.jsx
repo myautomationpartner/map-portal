@@ -79,11 +79,13 @@ export function GeneratedPostcard({
   onReview,
   onReset,
   onEdit,
+  onPreview,
   reviewLabel = 'Review & post',
   resetLabel = 'Try another photo',
   statusLabel = 'Ready to review',
 }) {
-  const mediaCount = draft.files.filter((file) => /^(image|video)\//i.test(String(file?.type || ''))).length
+  const files = Array.isArray(draft.files) ? draft.files : []
+  const mediaCount = files.filter((file) => /^(image|video)\//i.test(String(file?.type || ''))).length
   const displayMediaCount = mediaCount || (draft.previewUrl ? 1 : 0)
 
   function togglePlatform(platformId) {
@@ -96,11 +98,15 @@ export function GeneratedPostcard({
   return (
     <article ref={cardRef} className="mobile-partner-generated-postcard" aria-label="Ready-to-review social post">
       {draft.previewUrl ? (
-        <img
-          src={draft.previewUrl}
-          alt="Selected post creative"
-          className={draft.promoDesign ? 'is-promotional' : undefined}
-        />
+        <button
+          type="button"
+          className={`mobile-partner-generated-preview-trigger${draft.promoDesign ? ' is-promotional' : ''}`}
+          onClick={() => onPreview?.(draft)}
+          aria-label="Open full post preview"
+        >
+          <img src={draft.previewUrl} alt="Selected post creative" />
+          <span><ImagesSquare size={16} weight="duotone" />View full post</span>
+        </button>
       ) : null}
       <div className="mobile-partner-generated-brandbar">
         <strong>My Automation Partner</strong>
@@ -150,6 +156,62 @@ export function GeneratedPostcard({
   )
 }
 
+export function PostcardPreviewDialog({ draft, onClose }) {
+  useEffect(() => {
+    if (!draft) return undefined
+    const previousOverflow = document.body.style.overflow
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [draft, onClose])
+
+  if (!draft?.previewUrl) return null
+  const selectedPlatforms = POSTCARD_PLATFORMS.filter(({ id }) => draft.platforms?.includes(id))
+
+  return (
+    <div className="mobile-post-preview" role="dialog" aria-modal="true" aria-label="Full post preview">
+      <header>
+        <div>
+          <span>Post preview</span>
+          <strong>See the complete draft</strong>
+        </div>
+        <button type="button" onClick={onClose} aria-label="Close full post preview">
+          Done
+        </button>
+      </header>
+      <div className="mobile-post-preview-scroll">
+        <article className="mobile-post-preview-card">
+          <div className={`mobile-post-preview-media${draft.promoDesign ? ' is-promotional' : ''}`}>
+            <img src={draft.previewUrl} alt="Complete post creative" />
+          </div>
+          <div className="mobile-post-preview-copy">
+            <div className="mobile-post-preview-identity">
+              <img src="/assets/map-option-b-mark.png" alt="" />
+              <div>
+                <strong>My Automation Partner</strong>
+                <span>Draft preview</span>
+              </div>
+            </div>
+            <p>{draft.caption}</p>
+          </div>
+          <div className="mobile-post-preview-platforms" aria-label="Selected social platforms">
+            {selectedPlatforms.map(({ id, label, Icon }) => (
+              <span key={id}><Icon size={16} weight="fill" />{label}</span>
+            ))}
+          </div>
+        </article>
+        <p className="mobile-post-preview-note">This is only a preview. Nothing posts until you approve it.</p>
+      </div>
+    </div>
+  )
+}
+
 export default function MobilePartnerChat({
   children,
   contextPath,
@@ -168,6 +230,7 @@ export default function MobilePartnerChat({
   const [attachments, setAttachments] = useState([])
   const [generatedPost, setGeneratedPost] = useState(null)
   const [editingPost, setEditingPost] = useState(false)
+  const [previewDraft, setPreviewDraft] = useState(null)
   const attachmentUrlsRef = useRef(new Set())
   const generatedPostRef = useRef(null)
   const composerInputRef = useRef(null)
@@ -695,6 +758,7 @@ export default function MobilePartnerChat({
             draft={generatedPost}
             onChange={setGeneratedPost}
             onEdit={beginPostEdit}
+            onPreview={setPreviewDraft}
             onReset={() => {
               setGeneratedPost(null)
               setEditingPost(false)
@@ -749,6 +813,7 @@ export default function MobilePartnerChat({
         />
         <p>{editingPost ? 'Attach a photo or describe any change. Nothing posts without review.' : note}</p>
       </div>
+      <PostcardPreviewDialog draft={previewDraft} onClose={() => setPreviewDraft(null)} />
     </>
   )
 }

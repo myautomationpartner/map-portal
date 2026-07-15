@@ -42,7 +42,7 @@ import { FaMicrosoft } from 'react-icons/fa'
 import { SiDropbox, SiGooglephotos, SiIcloud } from 'react-icons/si'
 import MobileVoiceComposer from '../components/MobileVoiceComposer'
 import MobilePartnerTopBar from '../components/MobilePartnerTopBar'
-import { GeneratedPostcard } from '../components/MobilePartnerChat'
+import { GeneratedPostcard, PostcardPreviewDialog } from '../components/MobilePartnerChat'
 import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
 import { createVisionImageDataUrl, isBrandLogoRequest, isLogoOverlayOnlyRequest, resolveCreativeEditTargets, stampBrandLogo } from '../lib/imageAssist'
 import { isPromotionalDesignRevision, renderPromotionalGraphic } from '../lib/promoGraphic'
@@ -1336,11 +1336,13 @@ function MobilePublisherConversation({
 }) {
   const reviewCardRef = useRef(null)
   const [revisionHighlight, setRevisionHighlight] = useState(false)
+  const [postPreviewOpen, setPostPreviewOpen] = useState(false)
   const draft = {
     previewUrl: imagePreview,
     caption: content,
     platforms: activePlatforms,
     promoDesign,
+    files: [],
   }
 
   useEffect(() => {
@@ -1387,6 +1389,7 @@ function MobilePublisherConversation({
         onChange={handleDraftChange}
         onReview={onReview}
         onReset={onBack}
+        onPreview={() => setPostPreviewOpen(true)}
         reviewLabel={timingMode === 'now' ? 'Final approval' : 'Review schedule'}
         resetLabel="Back to Post"
         statusLabel={reviewRevisionCount ? 'Updated' : 'Final review'}
@@ -1471,6 +1474,7 @@ function MobilePublisherConversation({
         />
         <p>Type or speak an edit. My Partner will revise this draft, not publish it.</p>
       </div>
+      <PostcardPreviewDialog draft={postPreviewOpen ? draft : null} onClose={() => setPostPreviewOpen(false)} />
     </section>
   )
 }

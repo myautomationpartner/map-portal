@@ -46,6 +46,28 @@ The focused inspection confirms that the selected original image remains the pos
 
 final result: passed
 
+# Full Post Preview and Review Handoff QA
+
+- Physical iPhone final-review evidence: `/Users/kennymonico/Documents/MyAutomationPartner/map-portal/portal-app/physical-iphone-full-post-review-2026-07-14.png`
+- Physical iPhone full-preview evidence: `/Users/kennymonico/Documents/MyAutomationPartner/map-portal/portal-app/physical-iphone-full-post-preview-2026-07-14.png`
+- Live Worker: `map-shared-portal@eb4fee88-726d-4497-a4ce-b445ee58c710`
+- Rollback Worker: `map-shared-portal@92e62c5b-6d93-431b-b598-87e9217f8902`
+
+## Result
+
+The postcard image is now a clear tap target with a compact `View full post` affordance. Tapping it opens a dedicated full-screen preview that uses `object-fit: contain`, shows the complete uncropped creative, renders the full caption without line clamping, displays the selected Facebook/Instagram/X destinations, and keeps a visible `Done` control. The same preview is available both in the Post conversation and in final review.
+
+The final-review startup failure caused by a draft without a `files` array was also corrected. The postcard now treats missing media arrays safely, and the Publisher handoff explicitly supplies an empty array when only a resolved preview URL exists.
+
+## Validation
+
+- Physical iPhone passed: create photo post, open full preview, return with Done, open Review & post, and reopen full preview from final review.
+- 14/14 focused tests passed.
+- Portal lint and production build passed.
+- Nothing was published or scheduled.
+
+final result: passed
+
 # Natural-Language Image Editing and Visible Logo QA
 
 - Physical iPhone logo result: `/Users/kennymonico/Documents/MyAutomationPartner/map-portal/portal-app/physical-iphone-visible-map-logo-2026-07-14.png`
