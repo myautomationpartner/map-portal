@@ -46,6 +46,36 @@ The focused inspection confirms that the selected original image remains the pos
 
 final result: passed
 
+# Text-only Promotional Request Routing QA
+
+- Source visual truth: `/tmp/codex-remote-attachments/019f5c30-2be0-7783-8de8-46b192e1f273/A7AA138A-7B3D-4E3F-9B33-C5D03B8A734E/1-Pasted-Image-1.jpg`
+- Implementation screenshot: `/Users/kennymonico/Documents/MyAutomationPartner/smoke-agent/reports/mobile-my-partner-evidence/smoke_20260714_text_only_promo_fix/07-promotional-designer.png`
+- Full-view comparison: `/Users/kennymonico/Documents/MyAutomationPartner/map-portal/portal-app/design-qa-artifacts/text-only-promo-route-comparison.png`
+- Viewport: 390 x 664 CSS pixels in the live production portal
+- State: promotional request sent without an attached photo
+
+## Findings
+
+- The source screenshot showed a P0 routing failure: a clear promotional-graphic request fell through to the legacy support menu and returned unrelated guided buttons.
+- The corrected production state routes the same class of text-only request into the promotional designer, generates a supporting background through the existing image generator, adds exact structured copy and the verified saved business logo, and returns the 4:5 draft inside the conversation.
+- The live card retains the Post composer, Facebook/Instagram/X review controls, and explicit approval boundary. Nothing publishes automatically.
+- Typography: the headline, event timing, prices, CTA, and review state are legible at phone size with no clipping or low-contrast legacy response card.
+- Spacing: the full 4:5 design fits the conversation width and keeps the persistent composer reachable.
+- Colors: the existing navy, aqua, lime, and white MAP tokens remain unchanged.
+- Image quality: the generated background is a real image asset from the existing authenticated image-generation service; exact text and logo are applied afterward so factual details are not left to image-model spelling.
+- Copy: the comparison uses different smoke content from the operator's Pool Opening prompt, but it exercises the same no-attachment promotional route and exact-field rendering state.
+- Focused-region comparison was not needed because the route failure and corrected complete-card state are both fully visible in the normalized full-view comparison.
+
+## Comparison history
+
+1. The operator's physical-phone screenshot showed the promo prompt followed by the old low-contrast support/action card.
+2. The routing condition was moved ahead of the general Partner-help fallback and no longer depends on a pending attachment.
+3. When no photo is attached, the existing `portal-generate-image` service now creates a background-only source; attached photos still take priority when present.
+4. Live production run `smoke_20260714_text_only_promo_fix` passed 32/32 with `blockDeploy=false`, including the general image editor, text-only promotional generation, natural-language promo revision, Publisher review revision, and no console/page/HTTP errors.
+5. iPhone Mirroring could not recapture the corrected physical screen because the phone was in use and Mirroring had disconnected. The operator's screenshot remains the physical bug evidence; the corrected implementation is verified against the same live PWA bundle at phone width.
+
+final result: passed
+
 # MAP Conversational Promotional Graphic Designer QA
 
 - Source visual truth: `/Users/kennymonico/Library/Application Support/CleanShot/media/media_Ws91FsGMiN/CleanShot 2026-07-14 at 12.36.28@2x.png`

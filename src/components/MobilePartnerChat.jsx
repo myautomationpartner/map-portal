@@ -12,7 +12,7 @@ import {
 } from '@phosphor-icons/react'
 import { createVisionImageDataUrl, createVisionImageDataUrls, isLogoOverlayOnlyRequest, stampBrandLogo } from '../lib/imageAssist'
 import { isPromotionalDesignRequest, isPromotionalDesignRevision, readImageFileDataUrl, renderPromotionalGraphic } from '../lib/promoGraphic'
-import { generatePublisherAssist, improvePublisherImage, sendPortalPartnerMessage } from '../lib/portalApi'
+import { generatePublisherAssist, generatePublisherImage, improvePublisherImage, sendPortalPartnerMessage } from '../lib/portalApi'
 import MobileVoiceComposer from './MobileVoiceComposer'
 
 const ACTION_DESTINATIONS = {
@@ -157,6 +157,7 @@ export default function MobilePartnerChat({
   note,
   onPhotos,
   platforms = [],
+  businessName = '',
   readOnly = false,
   conversationClassName = 'mobile-partner-conversation',
 }) {
@@ -390,67 +391,98 @@ export default function MobilePartnerChat({
         return
       }
 
+      if (isPromotionalDesignRequest(cleanText) && onPhotos) {
+        if (readOnly) throw new Error('This portal is read-only right now, so it cannot create a new post draft.')
+        const imageDataUrls = await createVisionImageDataUrls(pendingAttachments.map((attachment) => attachment.file))
+        const sourceAttachment = pendingAttachments.find((attachment) => attachment.isImage)
+        let sourceFile = sourceAttachment?.file || null
+        let sourceImageDataUrl = imageDataUrls[0] || await readImageFileDataUrl(sourceFile)
+
+        const payload = await generatePublisherAssist({
+          action: 'promo_brief',
+          caption: cleanText,
+          platforms,
+          max_chars: 2200,
+          context: sourceImageDataUrl
+            ? 'Create a phone-readable 4:5 promotional graphic brief from the exact customer facts and attached photo. Keep it as a draft for review.'
+            : 'Create a phone-readable 4:5 promotional graphic brief from the exact customer facts. A supporting background will be generated separately. Keep it as a draft for review.',
+          image_data_urls: sourceImageDataUrl ? [sourceImageDataUrl] : [],
+        })
+        const promoDesign = payload?.promo_design
+        if (!promoDesign?.headline || !promoDesign?.caption) {
+          throw new Error('My Partner could not create a complete promotional graphic brief.')
+        }
+
+        const generatedBackground = !sourceImageDataUrl
+        if (generatedBackground) {
+          const generatedImage = await generatePublisherImage({
+            business_name: businessName,
+            prompt: [
+              `Create a realistic supporting background image for this promotion: ${promoDesign.headline}.`,
+              promoDesign.subheadline ? `Theme: ${promoDesign.subheadline}.` : '',
+              'Do not include words, prices, dates, logos, signs, or poster typography. The portal will add all exact text and branding afterward.',
+            ].filter(Boolean).join(' '),
+            caption: promoDesign.caption,
+            image_mode: 'social_photo',
+            platforms,
+            brand_context: 'Background-only asset for a structured promotional design. Leave useful open space around the center and lower third for exact overlay copy.',
+            size: '1024x1024',
+            quality: 'low',
+          })
+          const generatedMimeType = generatedImage.mime_type || 'image/png'
+          sourceFile = base64ToImageFile(generatedImage.image_base64, generatedMimeType, 'map-generated-promo-background.png')
+          sourceImageDataUrl = `data:${generatedMimeType};base64,${generatedImage.image_base64}`
+        }
+
+        const imagePayload = await improvePublisherImage({
+          caption: promoDesign.caption,
+          platforms,
+          mode: 'custom',
+          instruction: 'Return the source unchanged and provide the exact saved business logo for the promotional layout.',
+          use_brand_logo: true,
+          logo_overlay_only: true,
+          quality: 'low',
+          image_data_url: sourceImageDataUrl,
+        })
+        const rendered = await renderPromotionalGraphic({
+          sourceFile,
+          sourceImageBase64: imagePayload.image_base64,
+          sourceImageMimeType: imagePayload.mime_type || 'image/jpeg',
+          logoBase64: imagePayload.brand_logo_base64,
+          logoMimeType: imagePayload.brand_logo_mime_type || 'image/png',
+          brief: promoDesign,
+        })
+
+        setGeneratedPost({
+          files: [rendered.file, ...pendingAttachments.filter((attachment) => attachment !== sourceAttachment).map((attachment) => attachment.file)],
+          caption: promoDesign.caption,
+          prompt: cleanText,
+          imageCountAnalyzed: imageDataUrls.length,
+          previewUrl: rendered.previewUrl,
+          platforms: [...platforms],
+          promoDesign,
+          promoSourceFile: sourceFile,
+          promoSourceImageBase64: imagePayload.image_base64,
+          promoSourceImageMimeType: imagePayload.mime_type || 'image/jpeg',
+          promoLogoBase64: imagePayload.brand_logo_base64,
+          promoLogoMimeType: imagePayload.brand_logo_mime_type || 'image/png',
+        })
+        setAttachments([])
+        setMessages((current) => [
+          ...current,
+          createChatMessage(
+            'assistant',
+            generatedBackground
+              ? 'I created a supporting image and designed a ready-to-review promotional graphic with your exact offer details.'
+              : 'I designed a ready-to-review promotional graphic from your photo and exact offer details.',
+          ),
+        ])
+        return
+      }
+
       if (pendingAttachments.length && onPhotos) {
         if (readOnly) throw new Error('This portal is read-only right now, so it cannot create a new post draft.')
         const imageDataUrls = await createVisionImageDataUrls(pendingAttachments.map((attachment) => attachment.file))
-        if (isPromotionalDesignRequest(cleanText)) {
-          const sourceAttachment = pendingAttachments.find((attachment) => attachment.isImage)
-          const sourceImageDataUrl = imageDataUrls[0] || await readImageFileDataUrl(sourceAttachment?.file)
-          if (!sourceAttachment || !sourceImageDataUrl) {
-            throw new Error('Add a photo before asking My Partner to design a promotional graphic.')
-          }
-          const payload = await generatePublisherAssist({
-            action: 'promo_brief',
-            caption: cleanText,
-            platforms,
-            max_chars: 2200,
-            context: 'Create a phone-readable 4:5 promotional graphic brief from the exact customer facts and attached photo. Keep it as a draft for review.',
-            image_data_urls: [sourceImageDataUrl],
-          })
-          const promoDesign = payload?.promo_design
-          if (!promoDesign?.headline || !promoDesign?.caption) {
-            throw new Error('My Partner could not create a complete promotional graphic brief.')
-          }
-          const imagePayload = await improvePublisherImage({
-            caption: promoDesign.caption,
-            platforms,
-            mode: 'custom',
-            instruction: 'Return the source unchanged and provide the exact saved business logo for the promotional layout.',
-            use_brand_logo: true,
-            logo_overlay_only: true,
-            quality: 'low',
-            image_data_url: sourceImageDataUrl,
-          })
-          const rendered = await renderPromotionalGraphic({
-            sourceFile: sourceAttachment.file,
-            sourceImageBase64: imagePayload.image_base64,
-            sourceImageMimeType: imagePayload.mime_type || 'image/jpeg',
-            logoBase64: imagePayload.brand_logo_base64,
-            logoMimeType: imagePayload.brand_logo_mime_type || 'image/png',
-            brief: promoDesign,
-          })
-
-          setGeneratedPost({
-            files: [rendered.file, ...pendingAttachments.filter((attachment) => attachment !== sourceAttachment).map((attachment) => attachment.file)],
-            caption: promoDesign.caption,
-            prompt: cleanText,
-            imageCountAnalyzed: imageDataUrls.length,
-            previewUrl: rendered.previewUrl,
-            platforms: [...platforms],
-            promoDesign,
-            promoSourceFile: sourceAttachment.file,
-            promoSourceImageBase64: imagePayload.image_base64,
-            promoSourceImageMimeType: imagePayload.mime_type || 'image/jpeg',
-            promoLogoBase64: imagePayload.brand_logo_base64,
-            promoLogoMimeType: imagePayload.brand_logo_mime_type || 'image/png',
-          })
-          setAttachments([])
-          setMessages((current) => [
-            ...current,
-            createChatMessage('assistant', 'I designed a ready-to-review promotional graphic from your photo and exact offer details.'),
-          ])
-          return
-        }
         const payload = await generatePublisherAssist({
           action: 'create',
           caption: cleanText,

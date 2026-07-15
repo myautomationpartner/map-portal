@@ -170,6 +170,11 @@ test('mobile Publisher defaults to the three first-pass platforms and still requ
 test('promotional graphics use structured exact copy and remain editable in both chat stages', () => {
   assert.match(mobileChatSource, /isPromotionalDesignRequest/)
   assert.match(mobileChatSource, /action: 'promo_brief'/)
+  assert.match(mobileChatSource, /generatePublisherImage/)
+  assert.match(mobileChatSource, /image_mode: 'social_photo'/)
+  assert.match(mobileChatSource, /Do not include words, prices, dates, logos/)
+  assert.match(mobileChatSource, /I created a supporting image and designed a ready-to-review promotional graphic/)
+  assert.match(homeSource, /businessName=\{businessName\}/)
   assert.match(mobileChatSource, /renderPromotionalGraphic/)
   assert.match(mobileChatSource, /promoSourceImageBase64/)
   assert.match(mobileChatSource, /promoLogoBase64/)

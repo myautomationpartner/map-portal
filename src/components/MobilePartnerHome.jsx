@@ -127,6 +127,7 @@ export default function MobilePartnerHome({
         note="Voice and photos work here. Nothing posts without review."
         onPhotos={handlePhotos}
         platforms={selectedPlatforms}
+        businessName={businessName}
         readOnly={readOnly}
       >
         <PartnerMessage>
