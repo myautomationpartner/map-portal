@@ -85,6 +85,7 @@ final result: passed
 - Live conversational revision evidence: `/Users/kennymonico/Documents/MyAutomationPartner/smoke-agent/reports/mobile-my-partner-evidence/smoke_20260714_promotional_designer_v3/08-promotional-revision.png`
 - Live Publisher review revision evidence: `/Users/kennymonico/Documents/MyAutomationPartner/smoke-agent/reports/mobile-my-partner-evidence/smoke_20260714_promotional_designer_v3/09-promotional-review-revision.png`
 - Existing image-editor evidence: `/Users/kennymonico/Documents/MyAutomationPartner/smoke-agent/reports/mobile-my-partner-evidence/smoke_20260714_promotional_designer_v3/04-verified-logo-image-edit.png`
+- Physical iPhone image-editor evidence: `/Users/kennymonico/Documents/MyAutomationPartner/map-portal/portal-app/physical-iphone-conversational-logo-edit-2026-07-14.png`
 - Production viewport: 390 x 664 CSS pixels
 
 ## Result
@@ -100,6 +101,7 @@ The production result keeps the reference post's useful visual hierarchy—large
 - Natural-language revisions rebuild the same source design, including price, headline, date, color, and call-to-action changes.
 - Review & post keeps the conversational composer available so the customer can ask for more changes before posting or scheduling.
 - The existing general photo editor still supports natural-language edits such as adding the verified MAP logo.
+- Physical-iPhone evidence confirms that the general editor returned the edited photo with the MAP identity visible, kept the caption and platform controls intact, and still required Review & post.
 
 ## QA history
 
