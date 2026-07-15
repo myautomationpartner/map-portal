@@ -11,6 +11,7 @@ const homeSource = await readFile(new URL('./components/MobilePartnerHome.jsx', 
 const navSource = await readFile(new URL('./components/BottomNav.jsx', import.meta.url), 'utf8')
 const topBarSource = await readFile(new URL('./components/MobilePartnerTopBar.jsx', import.meta.url), 'utf8')
 const scheduledSource = await readFile(new URL('./components/MobileScheduledPartner.jsx', import.meta.url), 'utf8')
+const scheduledPageSource = await readFile(new URL('./pages/ScheduledPosts.jsx', import.meta.url), 'utf8')
 const partnerSource = await readFile(new URL('./components/PortalPartner.jsx', import.meta.url), 'utf8')
 const createSource = await readFile(new URL('./pages/CreatePost.jsx', import.meta.url), 'utf8')
 const attentionSource = await readFile(new URL('./pages/Attention.jsx', import.meta.url), 'utf8')
@@ -57,6 +58,17 @@ test('rollout navigation uses the three approved top-level conversation modes', 
   assert.match(homeSource, /<MobilePartnerTopBar activeMode="post"/)
   assert.match(scheduledSource, /<MobilePartnerTopBar activeMode="scheduled"/)
   assert.match(navSource, /if \(partnerRollout\) return null/)
+})
+
+test('mobile Scheduled separates queued posts from drafts that still need review', () => {
+  assert.match(scheduledPageSource, /fetchSocialDrafts/)
+  assert.match(scheduledPageSource, /CLOSED_SOCIAL_DRAFT_STATES/)
+  assert.match(scheduledPageSource, /drafts=\{draftsToReview\}/)
+  assert.match(scheduledSource, /Scheduled to publish/)
+  assert.match(scheduledSource, /Drafts to review/)
+  assert.match(scheduledSource, /Nothing queued yet/)
+  assert.match(scheduledSource, /Review draft/)
+  assert.match(scheduledSource, /drafts\.slice\(0, 4\)/)
 })
 
 test('voice and recent-photo controls are present throughout the mobile core flow', () => {

@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useOutletContext } from 'react-router-dom'
 import { AlertCircle, ArrowLeft, CalendarDays, Clock3, Loader2, PencilLine, Trash2 } from 'lucide-react'
-import { deletePost, fetchProfile, fetchScheduledPosts, reconcileScheduledPosts } from '../lib/portalApi'
+import { deletePost, fetchProfile, fetchScheduledPosts, fetchSocialDrafts, reconcileScheduledPosts } from '../lib/portalApi'
 import { CUSTOMER_VISIBLE_PUBLISHING_PLATFORMS } from '../lib/platformCatalog'
 import MobileScheduledPartner from '../components/MobileScheduledPartner'
 import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
+const CLOSED_SOCIAL_DRAFT_STATES = new Set(['published', 'published_manually', 'archived', 'superseded'])
 
 function isMissingRemoteDelete(payload, raw) {
   const message = [
@@ -80,13 +81,19 @@ export default function ScheduledPosts() {
   const [deleteBusyId, setDeleteBusyId] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
 
-  const { data: scheduledPosts = [], isLoading: postsLoading } = useQuery({
+  const { data: scheduledPosts = [], isLoading: postsLoading, error: postsQueryError } = useQuery({
     queryKey: ['calendar-posts', clientId],
     queryFn: async () => {
       await reconcileScheduledPosts(clientId)
       return fetchScheduledPosts(clientId)
     },
     enabled: !!clientId,
+  })
+
+  const { data: socialDrafts = [], isLoading: draftsLoading, error: draftsQueryError } = useQuery({
+    queryKey: ['social-drafts', clientId],
+    queryFn: () => fetchSocialDrafts(clientId),
+    enabled: Boolean(clientId && mobilePartnerRollout),
   })
 
   const upcomingScheduledPosts = useMemo(() => (
@@ -106,6 +113,20 @@ export default function ScheduledPosts() {
         }
       })
   ), [scheduledPosts, timezone])
+
+  const draftsToReview = useMemo(() => {
+    const now = Date.now()
+    return socialDrafts
+      .filter((draft) => !CLOSED_SOCIAL_DRAFT_STATES.has(String(draft?.review_state || '').trim().toLowerCase()))
+      .sort((left, right) => {
+        const leftTime = new Date(left?.scheduled_for || left?.created_at || 0).getTime()
+        const rightTime = new Date(right?.scheduled_for || right?.created_at || 0).getTime()
+        const leftUpcoming = Number.isFinite(leftTime) && leftTime >= now
+        const rightUpcoming = Number.isFinite(rightTime) && rightTime >= now
+        if (leftUpcoming !== rightUpcoming) return leftUpcoming ? -1 : 1
+        return leftUpcoming ? leftTime - rightTime : rightTime - leftTime
+      })
+  }, [socialDrafts])
 
   async function handleDeleteScheduledPost(post) {
     if (!post?.id) return
@@ -150,7 +171,7 @@ export default function ScheduledPosts() {
     }
   }
 
-  if (profileLoading || postsLoading) {
+  if (profileLoading || postsLoading || (mobilePartnerRollout && draftsLoading)) {
     if (mobilePartnerRollout) {
       return <MobileScheduledPartner loading readOnly={Boolean(outlet.billingAccess?.readOnly)} />
     }
@@ -168,9 +189,10 @@ export default function ScheduledPosts() {
       {mobilePartnerRollout ? (
         <MobileScheduledPartner
           posts={upcomingScheduledPosts}
+          drafts={draftsToReview}
           deletingId={deleteBusyId}
           onDelete={handleDeleteScheduledPost}
-          error={errorMsg}
+          error={errorMsg || postsQueryError?.message || draftsQueryError?.message || ''}
           readOnly={Boolean(outlet.billingAccess?.readOnly)}
         />
       ) : null}
