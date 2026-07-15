@@ -59,8 +59,7 @@ export function registerPortalPwa() {
   const tenant = inferPathTenant()
   const base = tenant.basename || ''
   const manifest = buildManifest()
-  const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' })
-  const manifestUrl = URL.createObjectURL(manifestBlob)
+  const manifestUrl = base ? `${base}/manifest.webmanifest` : '/manifest.webmanifest'
 
   const currentReleaseUrl = new URL(window.location.href)
   if (currentReleaseUrl.searchParams.has('pwaRelease')) {

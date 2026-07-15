@@ -82,6 +82,35 @@ function extractTenantSlugFromPath(pathname, env) {
   return ''
 }
 
+function buildSharedPortalManifest(tenantSlug, env) {
+  const prefix = getSharedPortalPathPrefix(env)
+  const base = `/${prefix}/${encodeURIComponent(tenantSlug)}`
+  const icon = `${base}/assets/map-option-b-mark.png`
+
+  return new Response(JSON.stringify({
+    id: `${base}/`,
+    name: 'My Automation Partner',
+    short_name: 'MAP',
+    description: 'Mobile portal for customer attention, publishing, and MAP Partner help.',
+    start_url: `${base}/attention`,
+    scope: `${base}/`,
+    display: 'standalone',
+    display_override: ['standalone', 'minimal-ui'],
+    background_color: '#000000',
+    theme_color: '#000000',
+    orientation: 'portrait-primary',
+    icons: [
+      { src: icon, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: icon, sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+    ],
+  }), {
+    headers: {
+      'content-type': 'application/manifest+json; charset=utf-8',
+      'cache-control': 'no-store, max-age=0',
+    },
+  })
+}
+
 function normalizeSharedPortalRequest(request, env) {
   const url = new URL(request.url)
   const segments = url.pathname.split('/').filter(Boolean)
@@ -8083,6 +8112,10 @@ export default {
     const normalized = normalizeSharedPortalRequest(request, env)
     request = normalized.request
     const url = normalized.url
+
+    if (url.pathname === '/manifest.webmanifest' && normalized.tenantSlug) {
+      return buildSharedPortalManifest(normalized.tenantSlug, env)
+    }
 
     if (url.pathname === '/api/n8n/zernio-connect-url') {
       return proxyN8nWebhook(request, env, 'zernio-connect-url')

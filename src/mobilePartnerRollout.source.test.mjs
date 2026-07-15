@@ -54,6 +54,8 @@ test('rollout navigation uses the three approved top-level conversation modes', 
   assert.match(topBarSource, /label: 'Post', to: '\/'/)
   assert.match(topBarSource, /label: 'Scheduled', to: '\/post\/scheduled'/)
   assert.match(topBarSource, /aria-label="My Partner workspaces"/)
+  assert.match(topBarSource, /aria-label="Open Settings"/)
+  assert.match(topBarSource, /navigate\('\/settings'\)/)
   assert.match(topBarSource, /resetWorkspaceScroll/)
   assert.match(homeSource, /<MobilePartnerTopBar activeMode="post"/)
   assert.match(scheduledSource, /<MobilePartnerTopBar activeMode="scheduled"/)
@@ -160,10 +162,19 @@ test('installed phone portals refresh onto the current release instead of keepin
   assert.match(pwaSource, /controllerchange/)
   assert.match(pwaSource, /window\.location\.pathname/)
   assert.match(pwaSource, /window\.location\.reload\(\)/)
-  assert.match(serviceWorkerSource, /map-portal-shell-v3/)
+  assert.match(serviceWorkerSource, /map-portal-shell-v4/)
   assert.match(workerSource, /assetNormalized\.url\.pathname !== '\/service-worker\.js'/)
   assert.match(workerSource, /headers\.set\('cache-control', 'no-store, max-age=0'\)/)
   assert.match(deploySource, /'run_worker_first = true'/)
+})
+
+test('installed phone portals use a tenant-scoped HTTP manifest and launch back into the portal', () => {
+  assert.match(appHtmlSource, /rel="manifest" href="manifest\.webmanifest"/)
+  assert.match(pwaSource, /const manifestUrl = base \? `\$\{base\}\/manifest\.webmanifest`/)
+  assert.doesNotMatch(pwaSource, /URL\.createObjectURL\(manifestBlob\)/)
+  assert.match(workerSource, /buildSharedPortalManifest/)
+  assert.match(workerSource, /start_url: `\$\{base\}\/attention`/)
+  assert.match(workerSource, /scope: `\$\{base\}\/`/)
 })
 
 test('mobile Publisher defaults to the three first-pass platforms and still requires final approval', () => {

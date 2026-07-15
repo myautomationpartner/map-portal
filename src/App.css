@@ -70,10 +70,17 @@
   }
 
   .mobile-partner-topbar-brand {
+    appearance: none;
     display: flex;
     min-width: 0;
     align-items: center;
     gap: 0.68rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
   }
 
   .mobile-partner-topbar-brand img {

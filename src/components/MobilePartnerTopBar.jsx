@@ -19,13 +19,18 @@ export default function MobilePartnerTopBar({ activeMode, notificationCount = 0 
   return (
     <header className="mobile-partner-topbar">
       <div className="mobile-partner-topbar-row">
-        <div className="mobile-partner-topbar-brand">
+        <button
+          type="button"
+          className="mobile-partner-topbar-brand"
+          onClick={() => navigate('/settings')}
+          aria-label="Open Settings"
+        >
           <img src="/assets/map-option-b-mark.png" alt="My Automation Partner" />
           <div>
             <span className="mobile-partner-topbar-title">My Partner</span>
             <span className="mobile-partner-live"><i aria-hidden="true" />Live</span>
           </div>
-        </div>
+        </button>
 
         <button
           type="button"
