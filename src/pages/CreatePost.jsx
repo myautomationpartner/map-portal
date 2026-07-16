@@ -45,7 +45,7 @@ import MobilePartnerTopBar from '../components/MobilePartnerTopBar'
 import { GeneratedPostcard, PostcardPreviewDialog } from '../components/MobilePartnerChat'
 import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
 import { createVisionImageDataUrl, isBrandLogoRequest, isLogoOverlayOnlyRequest, resolveCreativeEditTargets, stampBrandLogo } from '../lib/imageAssist'
-import { isPromotionalDesignRevision, renderPromotionalGraphic } from '../lib/promoGraphic'
+import { isPromotionalDesignRequest, isPromotionalDesignRevision, renderPromotionalGraphic } from '../lib/promoGraphic'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 
@@ -2742,6 +2742,116 @@ export default function CreatePost() {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
           content: 'Done — I rebuilt the promotional graphic with the exact requested details.',
+        }])
+        return
+      }
+
+      if (!promoDesign && isPromotionalDesignRequest(request)) {
+        const sourceItem = activeCreativeIsVideo ? null : activeCreativeItem
+        const hasSelectedImage = !activeCreativeIsVideo && Boolean(
+          sourceItem || imagePreview || existingMediaUrl || dropboxPreviewSource,
+        )
+        let sourceFile = isReadableFileBlob(sourceItem?.file)
+          ? sourceItem.file
+          : (isReadableFileBlob(imageFile) ? imageFile : null)
+        let imageInput = hasSelectedImage ? await getImageImproveInput(sourceItem) : null
+        let sourceImageDataUrl = imageInput?.image_data_url || ''
+
+        const payload = await generatePublisherAssist({
+          client_id: clientId,
+          action: 'promo_brief',
+          caption: request,
+          platforms: activePlatforms,
+          max_chars: charLimit,
+          context: [
+            'Convert the current draft into a polished, phone-readable 4:5 promotional poster.',
+            `Current draft caption: ${content.trim()}`,
+            `Latest customer request: ${request}`,
+            hasSelectedImage
+              ? 'Use the customer-selected image as the poster hero. Preserve the recognizable subject and add structured design around it.'
+              : 'No image is selected. Create the brief first; a supporting background will be generated separately.',
+            'Do not invent prices, dates, offers, locations, product names, or claims. Preserve every exact fact from the current draft and request.',
+          ].join('\n'),
+          image_data_urls: sourceImageDataUrl ? [sourceImageDataUrl] : [],
+        })
+        const nextPromoDesign = payload?.promo_design
+        if (!nextPromoDesign?.headline || !nextPromoDesign?.caption) {
+          throw new Error('My Partner could not create a complete promotional poster brief.')
+        }
+
+        let generatedBackground = false
+        if (!hasSelectedImage) {
+          const generatedImage = await generatePublisherImage({
+            client_id: clientId,
+            business_name: profile?.clients?.business_name || '',
+            prompt: [
+              `Create a realistic supporting background image for this promotion: ${nextPromoDesign.headline}.`,
+              nextPromoDesign.subheadline ? `Theme: ${nextPromoDesign.subheadline}.` : '',
+              'Do not include words, prices, dates, logos, signs, or poster typography. The portal will add all exact text and branding afterward.',
+            ].filter(Boolean).join(' '),
+            caption: nextPromoDesign.caption,
+            image_mode: 'social_photo',
+            platforms: activePlatforms,
+            brand_context: 'Background-only asset for a structured promotional poster. Leave useful open space around the center and lower third for exact overlay copy.',
+            size: '1024x1024',
+            quality: 'low',
+          })
+          const generatedMimeType = generatedImage.mime_type || 'image/png'
+          sourceFile = base64ToImageFile(generatedImage.image_base64, generatedMimeType, 'map-generated-poster-background.png')
+          sourceImageDataUrl = `data:${generatedMimeType};base64,${generatedImage.image_base64}`
+          imageInput = { image_data_url: sourceImageDataUrl }
+          generatedBackground = true
+        }
+
+        const imagePayload = await improvePublisherImage({
+          client_id: clientId,
+          business_name: profile?.clients?.business_name || '',
+          caption: nextPromoDesign.caption,
+          platforms: activePlatforms,
+          mode: 'custom',
+          instruction: 'Return the selected source image unchanged and provide the exact saved business logo for the promotional poster layout.',
+          use_brand_logo: true,
+          logo_overlay_only: true,
+          quality: 'low',
+          ...imageInput,
+        })
+        const rendered = await renderPromotionalGraphic({
+          sourceFile,
+          sourceImageBase64: imagePayload.image_base64,
+          sourceImageMimeType: imagePayload.mime_type || 'image/jpeg',
+          logoBase64: imagePayload.brand_logo_base64,
+          logoMimeType: imagePayload.brand_logo_mime_type || 'image/png',
+          brief: nextPromoDesign,
+        })
+
+        attachImprovedImage({
+          file: rendered.file,
+          previewUrl: rendered.previewUrl,
+          mode: 'promo',
+          sourceItem,
+        })
+        clearPlatformImageVariants('')
+        setPromoDesign(nextPromoDesign)
+        setPromoRenderAssets({
+          sourceFile,
+          sourceImageBase64: imagePayload.image_base64,
+          sourceImageMimeType: imagePayload.mime_type || 'image/jpeg',
+          logoBase64: imagePayload.brand_logo_base64,
+          logoMimeType: imagePayload.brand_logo_mime_type || 'image/png',
+        })
+        setContent(nextPromoDesign.caption)
+        setGeneratedCaption(nextPromoDesign.caption)
+        setPlatformVariants({})
+        setDraftDirty(Boolean(activeDraftId))
+        setDraftStatus('Promotional poster created from this draft. Review it before approving the post.')
+        setReviewLastChange('caption_and_image')
+        setReviewRevisionCount((current) => current + 1)
+        setReviewMessages((current) => [...current, {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: generatedBackground
+            ? 'Done — I created a supporting image and converted this draft into a ready-to-review poster.'
+            : 'Done — I used your selected image and converted this draft into a ready-to-review poster.',
         }])
         return
       }
