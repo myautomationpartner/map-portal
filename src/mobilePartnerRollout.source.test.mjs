@@ -96,12 +96,18 @@ test('mobile Post stays focused while customer alerts and long message lists rem
 
 test('mobile Scheduled separates queued posts from drafts that still need review', () => {
   assert.match(scheduledPageSource, /fetchSocialDrafts/)
+  assert.match(scheduledPageSource, /getSecureVaultDocumentUrl/)
   assert.match(scheduledPageSource, /CLOSED_SOCIAL_DRAFT_STATES/)
+  assert.match(scheduledPageSource, /scheduled-draft-media-previews/)
   assert.match(scheduledPageSource, /drafts=\{draftsToReview\}/)
+  assert.match(scheduledPageSource, /draftMediaPreviews=\{draftMediaPreviews\}/)
   assert.match(scheduledSource, /Scheduled to publish/)
   assert.match(scheduledSource, /Drafts to review/)
   assert.match(scheduledSource, /Nothing queued yet/)
   assert.match(scheduledSource, /Review draft/)
+  assert.match(scheduledSource, /Image not created yet/)
+  assert.match(scheduledSource, /Add or create image/)
+  assert.match(scheduledSource, /data-media-status=\{media\.status\}/)
   assert.match(scheduledSource, /drafts\.slice\(0, 4\)/)
   assert.match(scheduledSource, /Next to publish/)
   assert.match(scheduledSource, /laterPostGroups/)

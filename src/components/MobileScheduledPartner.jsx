@@ -7,7 +7,6 @@ import {
   DotsThree,
   FacebookLogo,
   InstagramLogo,
-  NotePencil,
   Trash,
   XLogo,
 } from '@phosphor-icons/react'
@@ -64,9 +63,19 @@ function postMedia(post) {
   return post?.media_url || post?.image_url || post?.thumbnail_url || ''
 }
 
-function draftMedia(draft) {
-  const media = getDraftMediaRefs(draft).find((ref) => ref.thumbnail || ref.url)
-  return media?.thumbnail || media?.url || ''
+function draftPath(draft) {
+  return `/post?draftId=${draft.id}${draft.slot_date_local ? `&date=${draft.slot_date_local}` : ''}`
+}
+
+function draftMediaState(draft, previews, previewsLoading) {
+  const ref = getDraftMediaRefs(draft).find((candidate) => candidate.url || candidate.thumbnail || candidate.documentId)
+  const preview = previews?.[draft.id]
+  const url = preview?.url || ref?.thumbnail || ref?.url || ''
+
+  if (url) return { url, status: 'ready', label: 'Needs review' }
+  if (ref?.documentId && previewsLoading) return { url: '', status: 'loading', label: 'Loading image' }
+  if (ref) return { url: '', status: 'unavailable', label: 'Image unavailable' }
+  return { url: '', status: 'missing', label: 'Image not created yet' }
 }
 
 function editPostPath(post) {
@@ -92,12 +101,13 @@ function PlatformIcons({ platforms = [] }) {
   )
 }
 
-function MediaThumbnail({ src, alt, className = '' }) {
+function MediaThumbnail({ src, alt, className = '', placeholderLabel = 'No image added yet' }) {
   if (src) return <img className={className} src={src} alt={alt} />
 
   return (
-    <span className={`${className} mobile-scheduled-media-placeholder`} aria-label="No image added yet">
+    <span className={`${className} mobile-scheduled-media-placeholder`} aria-label={placeholderLabel}>
       <img src="/assets/map-option-b-mark.png" alt="" />
+      <small>{placeholderLabel}</small>
     </span>
   )
 }
@@ -128,6 +138,8 @@ function PostOverflowMenu({ post, isOpen, deletingId, onToggle, onDelete }) {
 export default function MobileScheduledPartner({
   posts = [],
   drafts = [],
+  draftMediaPreviews = {},
+  draftMediaPreviewsLoading = false,
   loading = false,
   deletingId = '',
   onDelete,
@@ -298,20 +310,24 @@ export default function MobileScheduledPartner({
                   <div id="mobile-scheduled-drafts-list">
                     <div className="mobile-scheduled-draft-list">
                       {visibleDrafts.map((draft) => {
-                        const media = draftMedia(draft)
+                        const media = draftMediaState(draft, draftMediaPreviews, draftMediaPreviewsLoading)
                         return (
                           <article key={draft.id} className="mobile-scheduled-draft">
-                            <MediaThumbnail className="mobile-scheduled-draft-media" src={media} alt="Media selected for this social draft" />
-                            {!media ? <NotePencil className="mobile-scheduled-draft-note" size={20} weight="duotone" aria-hidden="true" /> : null}
+                            <MediaThumbnail
+                              className="mobile-scheduled-draft-media"
+                              src={media.url}
+                              alt="Media selected for this social draft"
+                              placeholderLabel={media.label}
+                            />
                             <div>
                               <div className="mobile-scheduled-draft-meta">
-                                <span><i aria-hidden="true" />Needs review</span>
+                                <span data-media-status={media.status}><i aria-hidden="true" />{media.label}</span>
                                 <small>{formatScheduleDay(draft.scheduled_for)}</small>
                               </div>
                               <h3>{draftTitle(draft)}</h3>
                               <p>{draftCaption(draft)}</p>
-                              <Link to={`/post?draftId=${draft.id}${draft.slot_date_local ? `&date=${draft.slot_date_local}` : ''}`}>
-                                Review draft
+                              <Link to={draftPath(draft)}>
+                                {media.status === 'missing' ? 'Add or create image' : 'Review draft'}
                               </Link>
                             </div>
                           </article>

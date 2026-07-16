@@ -2,10 +2,18 @@ import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useOutletContext } from 'react-router-dom'
 import { AlertCircle, ArrowLeft, CalendarDays, Clock3, Loader2, PencilLine, Trash2 } from 'lucide-react'
-import { deletePost, fetchProfile, fetchScheduledPosts, fetchSocialDrafts, reconcileScheduledPosts } from '../lib/portalApi'
+import {
+  deletePost,
+  fetchProfile,
+  fetchScheduledPosts,
+  fetchSocialDrafts,
+  getSecureVaultDocumentUrl,
+  reconcileScheduledPosts,
+} from '../lib/portalApi'
 import { CUSTOMER_VISIBLE_PUBLISHING_PLATFORMS } from '../lib/platformCatalog'
 import MobileScheduledPartner from '../components/MobileScheduledPartner'
 import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
+import { getDraftMediaRefs } from '../lib/campaignDraftAssets'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 const CLOSED_SOCIAL_DRAFT_STATES = new Set(['published', 'published_manually', 'archived', 'superseded'])
@@ -128,6 +136,55 @@ export default function ScheduledPosts() {
       })
   }, [socialDrafts])
 
+  const draftMediaRefs = useMemo(() => (
+    draftsToReview.flatMap((draft) => {
+      const ref = getDraftMediaRefs(draft).find((candidate) => candidate.url || candidate.thumbnail || candidate.documentId)
+      return ref ? [[draft.id, ref]] : []
+    })
+  ), [draftsToReview])
+
+  const draftMediaRefKey = useMemo(() => (
+    draftMediaRefs
+      .map(([draftId, ref]) => [draftId, ref.documentId || '', ref.thumbnail || '', ref.url || ''].join(':'))
+      .join('|')
+  ), [draftMediaRefs])
+
+  const { data: draftMediaPreviews = {}, isLoading: draftMediaPreviewsLoading } = useQuery({
+    queryKey: ['scheduled-draft-media-previews', clientId, draftMediaRefKey],
+    queryFn: async () => {
+      const entries = await Promise.all(draftMediaRefs.map(async ([draftId, ref]) => {
+        if (ref.url || ref.thumbnail) {
+          return [draftId, {
+            url: ref.thumbnail || ref.url,
+            mediaType: ref.mediaType || 'image',
+            source: ref.source || 'draft_media',
+          }]
+        }
+
+        try {
+          const payload = await getSecureVaultDocumentUrl(ref.documentId, 'view')
+          return [draftId, {
+            url: payload.signed_url || '',
+            mediaType: ref.mediaType || (String(payload.mime_type || '').startsWith('video/') ? 'video' : 'image'),
+            source: ref.source || 'campaign_partner',
+          }]
+        } catch {
+          return [draftId, {
+            url: '',
+            mediaType: ref.mediaType || 'image',
+            source: ref.source || 'campaign_partner',
+            unavailable: true,
+          }]
+        }
+      }))
+
+      return Object.fromEntries(entries)
+    },
+    enabled: Boolean(clientId && mobilePartnerRollout && draftMediaRefs.length),
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  })
+
   async function handleDeleteScheduledPost(post) {
     if (!post?.id) return
     if (!window.confirm('Delete this scheduled post? This will also try to cancel it in the publisher workflow.')) return
@@ -196,6 +253,8 @@ export default function ScheduledPosts() {
         <MobileScheduledPartner
           posts={upcomingScheduledPosts}
           drafts={draftsToReview}
+          draftMediaPreviews={draftMediaPreviews}
+          draftMediaPreviewsLoading={draftMediaPreviewsLoading}
           deletingId={deleteBusyId}
           onDelete={handleDeleteScheduledPost}
           error={errorMsg || postsQueryError?.message || draftsQueryError?.message || ''}
