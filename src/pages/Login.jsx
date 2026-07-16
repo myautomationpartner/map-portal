@@ -60,14 +60,14 @@ export default function Login() {
   return (
     <div className="relative min-h-[100svh] overflow-x-hidden bg-[#05070c] text-[#f7f9ff]">
       <div
-        className="pointer-events-none absolute inset-0"
+        className="pointer-events-none absolute inset-0 hidden sm:block"
         style={{
           background:
             'radial-gradient(circle at 56% 20%, rgba(29,155,240,0.13), transparent 32%), radial-gradient(circle at 88% 30%, rgba(185,255,104,0.12), transparent 26%), linear-gradient(180deg, #071018 0%, #05070c 50%, #05070c 100%)',
         }}
       />
       <div
-        className="pointer-events-none absolute inset-0 opacity-[0.18]"
+        className="pointer-events-none absolute inset-0 hidden opacity-[0.18] sm:block"
         style={{
           backgroundImage:
             'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)',
@@ -132,7 +132,7 @@ export default function Login() {
               Sign in and pick up right where you left off.
             </p>
 
-          <form onSubmit={handleLogin} className="mt-7 space-y-5 sm:mt-8">
+          <form onSubmit={handleLogin} className="relative z-10 mt-7 space-y-5 sm:mt-8">
             {setupMessage && (
               <div className="rounded-2xl border border-[#00ba7c]/30 bg-[#00ba7c]/12 px-4 py-3 text-sm font-medium text-[#dff9ec]">
                 {setupMessage}
@@ -140,33 +140,38 @@ export default function Login() {
             )}
 
             <div>
-              <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-[#c7cfdd]">
+              <label htmlFor="portal-login-email" className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-[#c7cfdd]">
                 Email
               </label>
               <input
+                id="portal-login-email"
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
                 placeholder="you@yourbusiness.com"
                 autoComplete="email"
-                className="h-[58px] w-full rounded-[18px] border border-white/10 bg-white/[0.08] px-5 text-base font-medium text-white outline-none transition placeholder:text-[#8b98a5] focus:border-[#76d7ee]/60 focus:bg-white/[0.1] focus:ring-4 focus:ring-[#76d7ee]/15"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck="false"
+                className="relative z-10 h-[58px] w-full touch-manipulation select-text rounded-[18px] border border-white/10 bg-white/[0.08] px-5 text-base font-medium text-white outline-none transition placeholder:text-[#8b98a5] focus:border-[#76d7ee]/60 focus:bg-white/[0.1] focus:ring-4 focus:ring-[#76d7ee]/15"
               />
             </div>
 
             <div>
-              <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-[#c7cfdd]">
+              <label htmlFor="portal-login-password" className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-[#c7cfdd]">
                 Password
               </label>
               <div className="relative">
                 <input
+                  id="portal-login-password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   required
                   placeholder="Enter your password"
                   autoComplete="current-password"
-                  className="h-[58px] w-full rounded-[18px] border border-white/10 bg-white/[0.08] px-5 pr-13 text-base font-medium text-white outline-none transition placeholder:text-[#8b98a5] focus:border-[#76d7ee]/60 focus:bg-white/[0.1] focus:ring-4 focus:ring-[#76d7ee]/15"
+                  className="relative z-10 h-[58px] w-full touch-manipulation select-text rounded-[18px] border border-white/10 bg-white/[0.08] px-5 pr-13 text-base font-medium text-white outline-none transition placeholder:text-[#8b98a5] focus:border-[#76d7ee]/60 focus:bg-white/[0.1] focus:ring-4 focus:ring-[#76d7ee]/15"
                 />
                 <button
                   type="button"
