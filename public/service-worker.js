@@ -1,14 +1,43 @@
-const CACHE_NAME = 'map-portal-shell-v4'
+const registrationScope = new URL(self.registration.scope)
+const releaseToken = new URL(self.location.href).searchParams.get('release') || 'development'
+const safeReleaseToken = releaseToken.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 80)
+const CACHE_NAME = `map-portal-shell-v5-${safeReleaseToken}`
 const SHELL_ASSETS = [
-  '/',
-  '/assets/map-option-b-mark.png',
-  '/favicon.svg',
+  new URL('./', registrationScope).href,
+  new URL('attention', registrationScope).href,
+  new URL('assets/map-option-b-mark.png', registrationScope).href,
+  new URL('favicon.svg', registrationScope).href,
 ]
+const NAVIGATION_NETWORK_BUDGET_MS = 1_500
+
+async function cacheSuccessfulResponse(cache, request, response) {
+  if (!response || response.status !== 200 || response.type === 'opaque') return response
+  await cache.put(request, response.clone()).catch(() => undefined)
+  return response
+}
+
+async function fetchWithBudget(request, timeoutMs = NAVIGATION_NETWORK_BUDGET_MS) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(request, { signal: controller.signal })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function cachedPortalShell(cache, request) {
+  return (
+    await cache.match(request, { ignoreSearch: true }) ||
+    await cache.match(new URL('attention', registrationScope).href, { ignoreSearch: true }) ||
+    await cache.match(registrationScope.href, { ignoreSearch: true })
+  )
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(SHELL_ASSETS))
+      .then((cache) => Promise.allSettled(SHELL_ASSETS.map((asset) => cache.add(asset))))
       .catch(() => undefined),
   )
   self.skipWaiting()
@@ -23,19 +52,7 @@ self.addEventListener('activate', (event) => {
           .map((key) => caches.delete(key)),
       ))
       .then(() => self.clients.claim())
-      .then(async () => {
-        const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-        await Promise.all(clientList.map((client) => {
-          try {
-            const clientUrl = new URL(client.url)
-            if (clientUrl.searchParams.get('pwaRelease') === CACHE_NAME) return undefined
-            clientUrl.searchParams.set('pwaRelease', CACHE_NAME)
-            return client.navigate(clientUrl.href)
-          } catch {
-            return undefined
-          }
-        }))
-      }),
+      .catch(() => undefined),
   )
 })
 
@@ -46,15 +63,35 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url)
   if (url.pathname.startsWith('/api/') || url.pathname.includes('/functions/v1/')) return
 
+  if (request.mode === 'navigate') {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME)
+      try {
+        const response = await fetchWithBudget(request)
+        return cacheSuccessfulResponse(cache, request, response)
+      } catch {
+        const cached = await cachedPortalShell(cache, request)
+        if (cached) return cached
+        return new Response('My Automation Partner is temporarily offline. Reopen the app when a connection is available.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        })
+      }
+    })())
+    return
+  }
+
   event.respondWith(
-    fetch(request)
-      .then((response) => {
-        if (!response || response.status !== 200 || response.type === 'opaque') return response
-        const copy = response.clone()
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => undefined)
-        return response
-      })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match('/'))),
+    caches.open(CACHE_NAME).then(async (cache) => {
+      const cached = await cache.match(request, { ignoreSearch: false })
+      if (cached) return cached
+      try {
+        const response = await fetch(request)
+        return cacheSuccessfulResponse(cache, request, response)
+      } catch {
+        return caches.match(request)
+      }
+    }),
   )
 })
 
