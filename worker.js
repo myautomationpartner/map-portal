@@ -7449,6 +7449,75 @@ async function removeSocialConnection(envConfig, { platform, accountId }) {
   )
 }
 
+async function ignoreCompletedSocialConnectionAttempts(envConfig, platform) {
+  if (!envConfig?.clientId || !platform) return
+  const filters = new URLSearchParams({
+    client_id: `eq.${envConfig.clientId}`,
+    platform: `eq.${platform}`,
+    status: 'eq.completed',
+  })
+  await supabaseRest(envConfig, `/rest/v1/social_connection_attempts?${filters.toString()}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      status: 'ignored',
+      metadata: {
+        source: 'portal-manual-disconnect',
+        reason: 'customer_disconnected_intentionally',
+      },
+    }),
+  })
+}
+
+async function loadSocialConnectionHealth(envConfig) {
+  const connectionParams = new URLSearchParams({
+    select: 'platform,username,connected_at',
+    client_id: `eq.${envConfig.clientId}`,
+  })
+  const attemptParams = new URLSearchParams({
+    select: 'platform,username,zernio_account_id,completed_at,created_at',
+    client_id: `eq.${envConfig.clientId}`,
+    status: 'eq.completed',
+    order: 'completed_at.desc.nullslast,created_at.desc',
+    limit: '100',
+  })
+  const [connectionsResponse, attemptsResponse] = await Promise.all([
+    supabaseRest(envConfig, `/rest/v1/social_connections?${connectionParams.toString()}`),
+    supabaseRest(envConfig, `/rest/v1/social_connection_attempts?${attemptParams.toString()}`),
+  ])
+  const connections = await connectionsResponse.json().catch(() => [])
+  const attempts = await attemptsResponse.json().catch(() => [])
+  const connectedPlatforms = new Set((Array.isArray(connections) ? connections : []).map((row) => normalizePlatform(row.platform)))
+  const previousByPlatform = new Map()
+  ;(Array.isArray(attempts) ? attempts : []).forEach((attempt) => {
+    const platform = normalizePlatform(attempt.platform)
+    if (platform && !previousByPlatform.has(platform)) previousByPlatform.set(platform, attempt)
+  })
+  const missing = [...previousByPlatform.entries()]
+    .filter(([platform]) => !connectedPlatforms.has(platform))
+    .map(([platform, attempt]) => ({
+      platform,
+      label: platformLabelForNotification(platform),
+      username: firstString(attempt.username),
+      lastConnectedAt: attempt.completed_at || attempt.created_at || null,
+    }))
+
+  return {
+    connected: Array.isArray(connections) ? connections : [],
+    missing,
+  }
+}
+
+async function handleSocialConnectionHealth(request, env) {
+  if (request.method !== 'GET') {
+    return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'GET' } })
+  }
+  const auth = await authorizePortalUser(request, env)
+  if (auth.error) return auth.error
+  const health = await loadSocialConnectionHealth(auth.envConfig)
+  return json({ success: true, ...health })
+}
+
 async function handleSocialConnectionDisconnect(request, env) {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: 'POST' } })
@@ -7467,6 +7536,7 @@ async function handleSocialConnectionDisconnect(request, env) {
   }
 
   await removeSocialConnection(auth.envConfig, { platform })
+  await ignoreCompletedSocialConnectionAttempts(auth.envConfig, platform)
   return json({
     success: true,
     platform,
@@ -7649,6 +7719,18 @@ async function handleZernioAccountWebhook(request, env) {
       }
 
       await removeSocialConnection({ ...envConfig, clientId: existingConnection.client_id }, { platform, accountId })
+      const portalPush = await notifyPortalPushSubscribers(env, {
+        ...envConfig,
+        clientId: existingConnection.client_id,
+      }, {
+        key: `social-connection-down:${platform}:${accountId}`,
+        type: 'social_connection_down',
+        title: `${platformLabelForNotification(platform)} disconnected`,
+        body: 'Reconnect it to keep publishing, metrics, and social messages working.',
+        genericBody: 'A connected account needs your attention in My Partner.',
+        url: `notifications?connection=${encodeURIComponent(platform)}`,
+        tag: `map-social-connection-${platform}`,
+      })
       return json({
         success: true,
         event: eventName,
@@ -7657,6 +7739,7 @@ async function handleZernioAccountWebhook(request, env) {
         profileId: account.profileId || null,
         disconnectionType: payload.disconnectionType || null,
         action: 'removed',
+        portalPush,
       })
     }
   } catch (error) {
@@ -8205,6 +8288,10 @@ export default {
       return handleSocialConnectionsRefresh(request, env)
     }
 
+    if (url.pathname === '/api/social-connections/health') {
+      return handleSocialConnectionHealth(request, env)
+    }
+
     if (url.pathname === '/api/team-access/users') {
       return handleTeamAccessUsers(request, env)
     }
@@ -8386,7 +8473,10 @@ export default {
 
     const assetNormalized = normalizeNestedSpaAssetRequest(request, url)
     const assetResponse = await env.ASSETS.fetch(assetNormalized.request)
-    if (assetNormalized.url.pathname !== '/' && assetNormalized.url.pathname !== '/service-worker.js') {
+    const assetContentType = String(assetResponse.headers.get('content-type') || '').toLowerCase()
+    const isPortalHtml = assetContentType.includes('text/html')
+    const isServiceWorker = assetNormalized.url.pathname === '/service-worker.js'
+    if (!isPortalHtml && !isServiceWorker) {
       return assetResponse
     }
 

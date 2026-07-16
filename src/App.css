@@ -14735,6 +14735,70 @@ html:not([data-portal-theme="map-dark"]) .portal-notification-badge {
   box-shadow: 0 18px 50px rgba(0,0,0,.14);
 }
 
+.mobile-notification-card.is-connection-alert {
+  border-color: color-mix(in srgb, #f59e0b 42%, var(--portal-line));
+  background: linear-gradient(145deg, rgba(245, 158, 11, 0.12), rgba(255, 255, 255, 0.035));
+}
+
+.mobile-notification-card button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.mobile-notification-error {
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 16px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #fecaca;
+  padding: 12px 14px;
+  font-size: 0.86rem;
+}
+
+.settings-mobile-return {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .settings-page {
+    padding: 0 0.75rem calc(1.5rem + env(safe-area-inset-bottom));
+  }
+
+  .settings-mobile-return {
+    position: sticky;
+    z-index: 35;
+    top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 0 -0.75rem;
+    padding: calc(0.65rem + env(safe-area-inset-top)) 0.85rem 0.65rem;
+    border-bottom: 1px solid var(--portal-line);
+    background: color-mix(in srgb, var(--portal-dark) 92%, transparent);
+    backdrop-filter: blur(18px);
+  }
+
+  .settings-mobile-return button {
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.42rem;
+    border: 1px solid var(--portal-line);
+    border-radius: 999px;
+    background: var(--portal-surface-raised);
+    color: var(--portal-text);
+    padding: 0.65rem 0.9rem;
+    font-size: 0.82rem;
+    font-weight: 750;
+  }
+
+  .settings-page > .portal-surface {
+    margin-top: 0.75rem;
+    border-radius: 24px;
+  }
+}
+
 .mobile-notification-card-meta {
   justify-content: space-between;
   color: var(--portal-text-soft);

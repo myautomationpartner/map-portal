@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useOutletContext, useSearchParams } from 'react-router-dom'
+import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { buildTenantConfig } from '../lib/tenantConfig'
 import { buildSharedPortalPath, portalPath } from '../lib/portalPath'
@@ -23,7 +23,7 @@ import {
 import {
   User, Lock, Building2, CheckCircle2, Loader2, AlertCircle,
   Link2, ExternalLink, Wifi, WifiOff, MessageCircle, Copy, RefreshCw, Mail, Save, Unlink2,
-  UserPlus, ShieldCheck, Ban, CreditCard, ChevronDown, Bell, BellOff
+  UserPlus, ShieldCheck, Ban, CreditCard, ChevronDown, Bell, BellOff, ArrowLeft, House
 } from 'lucide-react'
 
 const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
@@ -1711,6 +1711,7 @@ function PhoneNotificationsSection({ billingAccess, profile }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Settings() {
+  const navigate = useNavigate()
   const { session, requireWriteAccess, billingAccess, onBillingAction, billingActionPending } = useOutletContext()
   const [searchParams, setSearchParams] = useSearchParams()
   const returnedPlatform = searchParams.get('connected') || null
@@ -1784,6 +1785,14 @@ export default function Settings() {
 
   return (
     <div className="portal-page settings-page w-full max-w-none space-y-6 md:p-5 xl:p-6">
+      <div className="settings-mobile-return" role="navigation" aria-label="Settings navigation">
+        <button type="button" onClick={() => navigate(-1)} aria-label="Go back">
+          <ArrowLeft size={19} /> Back
+        </button>
+        <button type="button" onClick={() => navigate('/')} aria-label="Return to My Partner">
+          <House size={19} /> My Partner
+        </button>
+      </div>
       <section className="portal-surface rounded-[36px] p-5 md:p-7">
         <div className="portal-page-header">
           <div>

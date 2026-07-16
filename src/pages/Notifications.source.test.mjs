@@ -11,7 +11,7 @@ const appSource = fs.readFileSync(new URL('../App.jsx', import.meta.url), 'utf8'
 test('content opportunities persist in the mobile notification center after a push is ignored', () => {
   assert.match(topBarSource, /navigate\('\/notifications'\)/)
   assert.match(notificationsSource, /fetchOpportunityRadar\(clientId\)/)
-  assert.match(notificationsSource, /These stay here if you dismiss the phone alert/)
+  assert.match(notificationsSource, /Content ideas stay review-only until you approve them/)
   assert.match(notificationsSource, /Create this post/)
   assert.match(appSource, /'\/notifications'/)
 })
@@ -24,4 +24,14 @@ test('content opportunity push taps create the complete review-first post', () =
   assert.match(createPostSource, /fetchOpportunityRadar\(clientId\)/)
   assert.match(createPostSource, /void handleGenerateImage\(\{ prompt: imagePrompt, caption, platforms: selected \}\)/)
   assert.match(createPostSource, /Nothing will post until you approve it/)
+})
+
+test('social connection loss stays visible and reconnects in the same mobile window', () => {
+  assert.match(workerSource, /\/api\/social-connections\/health/)
+  assert.match(workerSource, /type: 'social_connection_down'/)
+  assert.match(workerSource, /social-connection-down:/)
+  assert.match(notificationsSource, /fetchSocialConnectionHealth/)
+  assert.match(notificationsSource, /Connection needs attention/)
+  assert.match(notificationsSource, /window\.location\.assign\(result\.authUrl\)/)
+  assert.match(notificationsSource, /Reconnect \{connection\.label\}/)
 })
