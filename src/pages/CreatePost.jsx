@@ -42,7 +42,7 @@ import { FaMicrosoft } from 'react-icons/fa'
 import { SiDropbox, SiGooglephotos, SiIcloud } from 'react-icons/si'
 import MobileVoiceComposer from '../components/MobileVoiceComposer'
 import MobilePartnerTopBar from '../components/MobilePartnerTopBar'
-import { GeneratedPostcard, PostcardPreviewDialog } from '../components/MobilePartnerChat'
+import { DraftDiscardDialog, GeneratedPostcard, PostcardPreviewDialog } from '../components/MobilePartnerChat'
 import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
 import { createVisionImageDataUrl, isBrandLogoRequest, isLogoOverlayOnlyRequest, resolveCreativeEditTargets, stampBrandLogo } from '../lib/imageAssist'
 import { isPromotionalDesignRequest, isPromotionalDesignRevision, renderPromotionalGraphic } from '../lib/promoGraphic'
@@ -1320,7 +1320,7 @@ function MobilePublisherConversation({
   onChooseCustom,
   onScheduledForChange,
   onReview,
-  onBack,
+  onDiscard,
   reviewComposer,
   reviewMessages,
   reviewPending,
@@ -1337,6 +1337,7 @@ function MobilePublisherConversation({
   const reviewCardRef = useRef(null)
   const [revisionHighlight, setRevisionHighlight] = useState(false)
   const [postPreviewOpen, setPostPreviewOpen] = useState(false)
+  const [discardDraftOpen, setDiscardDraftOpen] = useState(false)
   const draft = {
     previewUrl: imagePreview,
     caption: content,
@@ -1388,10 +1389,9 @@ function MobilePublisherConversation({
         draft={draft}
         onChange={handleDraftChange}
         onReview={onReview}
-        onReset={onBack}
         onPreview={() => setPostPreviewOpen(true)}
         reviewLabel={timingMode === 'now' ? 'Final approval' : 'Review schedule'}
-        resetLabel="Back to Post"
+        resetLabel=""
         statusLabel={reviewRevisionCount ? 'Updated' : 'Final review'}
       />
       {reviewRevisionCount ? (
@@ -1411,7 +1411,6 @@ function MobilePublisherConversation({
           <span>{timingMode === 'now' ? 'Ready to publish now' : scheduledFor ? formatDetailedLocalDateTime(scheduledFor) : 'Choose a date and time'}</span>
         </div>
         <div className="mobile-publisher-timing-actions">
-          <button type="button" onClick={onBack}>Cancel</button>
           <button type="button" onClick={onChooseNow} data-active={timingMode === 'now'}>Post now</button>
           <button type="button" onClick={onChooseCustom} data-active={timingMode !== 'now'}>Schedule</button>
         </div>
@@ -1424,6 +1423,7 @@ function MobilePublisherConversation({
             aria-label="Schedule date and time"
           />
         ) : null}
+        <button type="button" className="mobile-publisher-cancel-draft" onClick={() => setDiscardDraftOpen(true)}>Cancel draft</button>
       </div>
 
       <p className="mobile-publisher-safety-note">
@@ -1475,6 +1475,14 @@ function MobilePublisherConversation({
         <p>Type or speak an edit. My Partner will revise this draft, not publish it.</p>
       </div>
       <PostcardPreviewDialog draft={postPreviewOpen ? draft : null} onClose={() => setPostPreviewOpen(false)} />
+      <DraftDiscardDialog
+        open={discardDraftOpen}
+        title="Cancel this draft?"
+        description="Keep editing preserves the image, caption, platforms, and timing. Discard returns you to Post and removes this unsaved draft."
+        discardLabel="Discard draft"
+        onKeepEditing={() => setDiscardDraftOpen(false)}
+        onDiscard={onDiscard}
+      />
     </section>
   )
 }
@@ -3915,7 +3923,7 @@ export default function CreatePost() {
               setTimingMode('custom')
             }}
             onReview={openReview}
-            onBack={() => navigate('/partner?mode=post')}
+            onDiscard={() => navigate('/partner?mode=post')}
             reviewComposer={reviewComposer}
             reviewMessages={reviewMessages}
             reviewPending={reviewPending}

@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  ArrowCounterClockwise,
   CheckCircle,
   CircleNotch,
   FacebookLogo,
   File as FileIcon,
   ImagesSquare,
   InstagramLogo,
-  MagicWand,
+  Trash,
   X,
   XLogo,
 } from '@phosphor-icons/react'
@@ -79,10 +80,9 @@ export function GeneratedPostcard({
   onChange,
   onReview,
   onReset,
-  onEdit,
   onPreview,
   reviewLabel = 'Review & post',
-  resetLabel = 'Try another photo',
+  resetLabel = 'Start over',
   statusLabel = 'Ready to review',
 }) {
   const files = Array.isArray(draft.files) ? draft.files : []
@@ -109,14 +109,9 @@ export function GeneratedPostcard({
           <span><ImagesSquare size={16} weight="duotone" />View full post</span>
         </button>
       ) : null}
-      <div className="mobile-partner-generated-brandbar">
-        <strong>My Automation Partner</strong>
-        <span><i aria-hidden="true" />{statusLabel}</span>
-      </div>
-      <div className="mobile-partner-generated-media-status">
-        <ImagesSquare size={17} weight="duotone" />
-        <strong>{displayMediaCount} {displayMediaCount === 1 ? 'photo' : 'media items'} ready</strong>
-        <span>Use + below to add or replace</span>
+      <div className="mobile-partner-generated-meta">
+        <span className="mobile-partner-generated-status"><i aria-hidden="true" />{statusLabel}</span>
+        <span>{displayMediaCount ? `${displayMediaCount} ${displayMediaCount === 1 ? 'image' : 'media items'}` : 'Text post'}</span>
       </div>
       <div className="mobile-partner-generated-caption">
         <p>{draft.caption}</p>
@@ -145,15 +140,55 @@ export function GeneratedPostcard({
           <CheckCircle size={19} weight="fill" />
           {reviewLabel}
         </button>
-        <button type="button" onClick={onEdit}>
-          <MagicWand size={17} weight="duotone" />
-          Edit with AI
-        </button>
       </div>
-      <button type="button" className="mobile-partner-generated-reset" onClick={onReset}>
-        {resetLabel}
-      </button>
+      <div className="mobile-partner-generated-chat-hint">
+        <span>Ask below to change the image, caption, or platforms.</span>
+        {resetLabel && onReset ? (
+          <button type="button" className="mobile-partner-generated-reset" onClick={onReset}>
+            <ArrowCounterClockwise size={15} weight="bold" />
+            {resetLabel}
+          </button>
+        ) : null}
+      </div>
     </article>
+  )
+}
+
+export function DraftDiscardDialog({
+  open,
+  onKeepEditing,
+  onDiscard,
+  title = 'Start over with a new post?',
+  description = 'Your current image, caption, and platform choices will be removed.',
+  discardLabel = 'Discard & start over',
+}) {
+  useEffect(() => {
+    if (!open) return undefined
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onKeepEditing()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [open, onKeepEditing])
+
+  if (!open) return null
+
+  return (
+    <div className="mobile-draft-discard" role="dialog" aria-modal="true" aria-labelledby="mobile-draft-discard-title">
+      <button type="button" className="mobile-draft-discard-backdrop" onClick={onKeepEditing} aria-label="Close confirmation" />
+      <section className="mobile-draft-discard-sheet">
+        <div className="mobile-draft-discard-handle" aria-hidden="true" />
+        <h2 id="mobile-draft-discard-title">{title}</h2>
+        <p>{description}</p>
+        <div className="mobile-draft-discard-actions">
+          <button type="button" className="mobile-draft-discard-keep" onClick={onKeepEditing}>Keep editing</button>
+          <button type="button" className="mobile-draft-discard-delete" onClick={onDiscard}>
+            <Trash size={18} weight="bold" />
+            {discardLabel}
+          </button>
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -231,7 +266,7 @@ export default function MobilePartnerChat({
   const [pendingLabel, setPendingLabel] = useState('Thinking…')
   const [attachments, setAttachments] = useState([])
   const [generatedPost, setGeneratedPost] = useState(null)
-  const [editingPost, setEditingPost] = useState(false)
+  const [discardDraftOpen, setDiscardDraftOpen] = useState(false)
   const [previewDraft, setPreviewDraft] = useState(null)
   const attachmentUrlsRef = useRef(new Set())
   const generatedPostRef = useRef(null)
@@ -260,7 +295,6 @@ export default function MobilePartnerChat({
       }
     })
     setAttachments(nextFiles.map((file, index) => createPendingAttachment(file, index, attachmentUrlsRef.current)))
-    setEditingPost(Boolean(generatedPost))
     composerInputRef.current?.focus()
   }
 
@@ -788,17 +822,6 @@ export default function MobilePartnerChat({
     }
   }
 
-  function beginPostEdit() {
-    if (!editingPost) {
-      setMessages((current) => [
-        ...current,
-        createChatMessage('assistant', 'Tell me what to change in the image or caption. Tap + to add or replace a photo.'),
-      ])
-    }
-    setEditingPost(true)
-    composerInputRef.current?.focus()
-  }
-
   return (
     <>
       <main className={conversationClassName}>
@@ -849,13 +872,8 @@ export default function MobilePartnerChat({
             cardRef={generatedPostRef}
             draft={generatedPost}
             onChange={setGeneratedPost}
-            onEdit={beginPostEdit}
             onPreview={setPreviewDraft}
-            onReset={() => {
-              setGeneratedPost(null)
-              setEditingPost(false)
-              setAttachments([])
-            }}
+            onReset={() => setDiscardDraftOpen(true)}
             onReview={(draft) => onPhotos(draft.files, {
               caption: draft.caption,
               prompt: draft.prompt,
@@ -897,15 +915,32 @@ export default function MobilePartnerChat({
           onChange={setComposer}
           onSubmit={sendMessage}
           onPhotos={onPhotos ? stageAttachments : undefined}
-          placeholder={editingPost ? 'Describe an image or caption change' : placeholder}
+          placeholder={generatedPost ? 'Ask for changes to this post' : placeholder}
           disabled={pending}
           submitOnEnter={false}
           stableTyping
           inputRef={composerInputRef}
         />
-        <p>{editingPost ? 'Attach a photo or describe any change. Nothing posts without review.' : note}</p>
+        <p>{generatedPost ? 'Attach a photo or ask for any change. Nothing posts without review.' : note}</p>
       </div>
       <PostcardPreviewDialog draft={previewDraft} onClose={() => setPreviewDraft(null)} />
+      <DraftDiscardDialog
+        open={discardDraftOpen}
+        onKeepEditing={() => {
+          setDiscardDraftOpen(false)
+          window.requestAnimationFrame(() => composerInputRef.current?.focus())
+        }}
+        onDiscard={() => {
+          setGeneratedPost(null)
+          setAttachments([])
+          setDiscardDraftOpen(false)
+          setMessages((current) => [
+            ...current,
+            createChatMessage('assistant', 'Draft discarded. Tell me what you would like to create next.'),
+          ])
+          window.requestAnimationFrame(() => composerInputRef.current?.focus())
+        }}
+      />
     </>
   )
 }
