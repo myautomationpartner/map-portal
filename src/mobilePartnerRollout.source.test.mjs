@@ -42,6 +42,13 @@ test('mobile Partner rollout is limited to the two approved first customers', ()
   assert.equal(isMobilePartnerRolloutTenant({ clientSlug: 'another-customer' }), false)
 })
 
+test('Inbox reply assist stays message-specific and varies natural drafts', () => {
+  assert.match(assistFunctionSource, /Directly address the concrete subject, question, or request in inboundMessage/)
+  assert.match(assistFunctionSource, /Return exactly three useful draft replies/)
+  assert.match(assistFunctionSource, /Do not copy their opening phrase or repeat a canned pattern/)
+  assert.match(assistFunctionSource, /temperature: input\.action === 'reply' \? 0\.68 : 0\.42/)
+})
+
 test('mobile home reuses Publisher and carries Facebook, Instagram, and X choices forward', () => {
   assert.match(homeSource, /useState\(\['facebook', 'instagram', 'twitter'\]\)/)
   assert.match(homeSource, /recentPhotos: files/)

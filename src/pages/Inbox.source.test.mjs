@@ -45,6 +45,14 @@ test('mobile Inbox honors Today deep links for comments and DMs', () => {
   assert.match(appSource, /<Attention key=\{location\.search\} \/>/)
 })
 
+test('mobile Inbox reply suggestions use ordered message context and refresh per conversation state', () => {
+  assert.match(attentionSource, /prepareReplyAssistMessages\(messagesQuery\.data \|\| \[\]\)/)
+  assert.match(attentionSource, /preparedReplyMessages\.latestInboundMessage/)
+  assert.match(attentionSource, /preparedReplyMessages\.recentContextLines/)
+  assert.match(attentionSource, /preparedReplyMessages\.contextKey/)
+  assert.match(attentionSource, /Customer comment:/)
+})
+
 test('desktop dark Inbox uses the same restrained surface system as Documents', () => {
   assert.match(appStyles, /body:has\(\.inbox-page\) aside nav a\.active-nav/)
   assert.match(appStyles, /\.inbox-partner-nav\[data-active="true"\][\s\S]{0,220}rgba\(231, 233, 234, 0\.075\)/)

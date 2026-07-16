@@ -21,6 +21,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { portalPath } from '../lib/portalPath'
 import { fetchScheduledPosts, fetchSocialDrafts, generateInboxReplyAssist } from '../lib/portalApi'
+import { isOutgoingMessage, messageContent, prepareReplyAssistMessages } from '../lib/inboxReplyAssist'
 import { splitMessageLinks } from '../lib/messageLinks'
 import { canHideInboxThread } from '../lib/inboxThreadActions'
 import { getOpenReviewDrafts, getPartnerHelpOptions, resolvePartnerHelpHref, selectNextReviewDraft } from '../lib/partnerHelpMenu'
@@ -281,14 +282,6 @@ function getCommentText(comment) {
 
 function getReplyText(reply) {
   return firstString(reply?.text, reply?.message, reply?.content, reply?.body)
-}
-
-function isOutgoingMessage(message) {
-  return message?.message_type === 1 || message?.message_type === 'outgoing'
-}
-
-function messageContent(message) {
-  return firstString(message?.content, '[Attachment or system message]')
 }
 
 function LinkedMessageText({ children }) {
@@ -813,31 +806,44 @@ export default function Attention() {
   const selectedThreadKey = selectedThread?.id || ''
   const canHideSelectedThread = canHideInboxThread(selectedThread)
   const mobilePartnerRollout = isMobilePartnerRolloutTenant(outlet.tenant)
+  const preparedReplyMessages = useMemo(
+    () => prepareReplyAssistMessages(messagesQuery.data || []),
+    [messagesQuery.data],
+  )
   const latestInboundMessage = useMemo(() => {
     if (selectedThread?.kind === 'comments') return selectedComment ? getCommentText(selectedComment) : selectedThread?.preview || ''
-    const inbound = [...(messagesQuery.data || [])].reverse().find((message) => !isOutgoingMessage(message))
-    return inbound ? messageContent(inbound) : selectedThread?.preview || ''
-  }, [messagesQuery.data, selectedComment, selectedThread])
+    return preparedReplyMessages.latestInboundMessage || selectedThread?.preview || ''
+  }, [preparedReplyMessages.latestInboundMessage, selectedComment, selectedThread])
   const replyAssistContext = useMemo(() => {
     if (!selectedThread) return ''
     if (selectedThread.kind === 'comments') {
+      const recentBusinessReplies = (selectedComment?.replies || [])
+        .map((reply) => getReplyText(reply))
+        .filter(Boolean)
+        .slice(-3)
+        .map((reply) => `Business: ${reply}`)
       return [
         `Channel: public ${platformLabel(selectedThread.platform)} comment`,
         `Customer: ${selectedComment ? getCommentAuthor(selectedComment, selectedThread.platform) : 'Social customer'}`,
+        `Customer comment: ${selectedComment ? getCommentText(selectedComment) : selectedThread.preview || ''}`,
         `Post: ${firstString(selectedThread.post?.content, selectedThread.title)}`,
+        ...recentBusinessReplies,
       ].join('\n')
     }
-    const recentMessages = (messagesQuery.data || []).slice(-6).map((message) => (
-      `${isOutgoingMessage(message) ? 'Business' : 'Customer'}: ${messageContent(message)}`
-    ))
     return [
       `Channel: ${selectedThread.subtitle}`,
       `Customer: ${selectedThread.title}`,
-      ...recentMessages,
+      ...preparedReplyMessages.recentContextLines,
     ].join('\n')
-  }, [messagesQuery.data, selectedComment, selectedThread])
+  }, [preparedReplyMessages.recentContextLines, selectedComment, selectedThread])
   const replyAssistQuery = useQuery({
-    queryKey: ['attention-reply-assist', clientId, selectedThread?.id, latestInboundMessage],
+    queryKey: [
+      'attention-reply-assist',
+      clientId,
+      selectedThread?.id,
+      latestInboundMessage,
+      selectedThread?.kind === 'comments' ? replyAssistContext : preparedReplyMessages.contextKey,
+    ],
     queryFn: () => generateInboxReplyAssist({
       client_id: clientId,
       message: latestInboundMessage,
