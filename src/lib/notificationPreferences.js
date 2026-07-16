@@ -4,6 +4,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES = Object.freeze({
   postReadyReminders: true,
   publishFailureAlerts: true,
   boostAlerts: true,
+  contentOpportunityAlerts: true,
   reminderTimes: ['09:00', '15:00'],
   quietHours: { enabled: true, start: '20:00', end: '08:00' },
   privacyLevel: 'sender_platform',
@@ -33,6 +34,7 @@ export function normalizeNotificationPreferences(value = {}, fallbackTimezone = 
     postReadyReminders: input.postReadyReminders !== false,
     publishFailureAlerts: input.publishFailureAlerts !== false,
     boostAlerts: input.boostAlerts !== false,
+    contentOpportunityAlerts: input.contentOpportunityAlerts !== false,
     reminderTimes: reminderTimes.length ? reminderTimes : DEFAULT_NOTIFICATION_PREFERENCES.reminderTimes,
     quietHours: {
       enabled: quietInput.enabled !== false,

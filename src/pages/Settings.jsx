@@ -1626,6 +1626,7 @@ function PhoneNotificationsSection({ billingAccess, profile }) {
                 ['messageAlerts', 'Customer messages'],
                 ['commentAlerts', 'Comments and reviews'],
                 ['postReadyReminders', 'Posts ready to review'],
+                ['contentOpportunityAlerts', 'New post opportunities'],
                 ['publishFailureAlerts', 'Publishing problems'],
               ].map(([key, label]) => (
                 <label key={key} className="flex cursor-pointer items-center justify-between gap-3 rounded-xl px-3 py-3" style={{ background: 'rgba(255,255,255,0.035)' }}>

@@ -29,6 +29,7 @@ import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import Inbox from './pages/Inbox'
 import Attention from './pages/Attention'
+import Notifications from './pages/Notifications'
 import CreatePost from './pages/CreatePost'
 import PostHistory from './pages/PostHistory'
 import ScheduledPosts from './pages/ScheduledPosts'
@@ -1006,7 +1007,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
   const mobilePartnerRollout = isMobilePartnerRolloutTenant(tenant)
   const suppressPartnerLauncher = (
     (location.pathname === '/' && isMobilePartnerRolloutTenant(tenant)) ||
-    ['/inbox', '/attention', '/post'].some((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
+    ['/inbox', '/attention', '/notifications', '/post'].some((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
   )
 
   useEffect(() => {
@@ -1291,6 +1292,7 @@ export default function App() {
                 <Route path="/secure-vault" element={<Navigate to="/documents" replace />} />
                 <Route path="/opportunities" element={<OpportunityRadar />} />
                 <Route path="/attention" element={<Attention />} />
+                <Route path="/notifications" element={<Notifications />} />
                 <Route path="/inbox" element={<ResponsiveInboxRoute />} />
                 <Route path="/post" element={<CreatePost />} />
                 <Route path="/post/scheduled" element={<ScheduledPosts />} />

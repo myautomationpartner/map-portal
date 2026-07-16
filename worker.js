@@ -895,6 +895,7 @@ const DEFAULT_PORTAL_NOTIFICATION_PREFERENCES = Object.freeze({
   postReadyReminders: true,
   publishFailureAlerts: true,
   boostAlerts: true,
+  contentOpportunityAlerts: true,
   reminderTimes: ['09:00', '15:00'],
   quietHours: { enabled: true, start: '20:00', end: '08:00' },
   privacyLevel: 'sender_platform',
@@ -930,6 +931,7 @@ function normalizePortalNotificationPreferences(value = {}, fallbackTimezone = '
     postReadyReminders: input.postReadyReminders !== false,
     publishFailureAlerts: input.publishFailureAlerts !== false,
     boostAlerts: input.boostAlerts !== false,
+    contentOpportunityAlerts: input.contentOpportunityAlerts !== false,
     reminderTimes: validTimes.length ? validTimes : DEFAULT_PORTAL_NOTIFICATION_PREFERENCES.reminderTimes,
     quietHours: {
       enabled: quiet.enabled !== false,
@@ -947,6 +949,7 @@ function portalNotificationEnabled(preferences, eventType) {
   if (eventType === 'post_ready' || eventType === 'missed_post') return preferences.postReadyReminders
   if (eventType === 'publish_failed') return preferences.publishFailureAlerts
   if (eventType === 'boost_active') return preferences.boostAlerts
+  if (eventType === 'content_opportunity') return preferences.contentOpportunityAlerts
   return true
 }
 
@@ -1192,6 +1195,35 @@ async function loadRecentFailedPosts(envConfig, clientId) {
   return Array.isArray(rows) ? rows : []
 }
 
+async function loadBestContentOpportunity(envConfig, clientId) {
+  const now = new Date().toISOString()
+  const params = new URLSearchParams({
+    select: 'id,title,caption_starter,creative_direction,recommended_platforms,recommended_publish_at,review_state,converted_draft_id,client_local_opportunities!inner(id,title,summary,why_it_matters,confidence_score,urgency_score,expires_at,review_state)',
+    client_id: `eq.${clientId}`,
+    review_state: 'eq.suggested',
+    converted_draft_id: 'is.null',
+    'client_local_opportunities.review_state': 'not.in.(archived,dismissed)',
+    order: 'recommended_publish_at.asc.nullslast,created_at.desc',
+    limit: '12',
+  })
+  const response = await supabaseRest(envConfig, `/rest/v1/client_opportunity_suggestions?${params.toString()}`)
+  const rows = await response.json().catch(() => [])
+  return (Array.isArray(rows) ? rows : [])
+    .map((suggestion) => {
+      const opportunity = Array.isArray(suggestion.client_local_opportunities)
+        ? suggestion.client_local_opportunities[0]
+        : suggestion.client_local_opportunities
+      const confidence = Number(opportunity?.confidence_score || 0)
+      const urgency = Number(opportunity?.urgency_score || 0)
+      const normalizedConfidence = confidence > 1 ? confidence / 100 : confidence
+      const normalizedUrgency = urgency > 1 ? urgency / 100 : urgency
+      const expired = opportunity?.expires_at && new Date(opportunity.expires_at).getTime() < new Date(now).getTime()
+      return { suggestion, opportunity, expired, score: (normalizedConfidence * 0.65) + (normalizedUrgency * 0.35) }
+    })
+    .filter((item) => item.opportunity && !item.expired && item.score >= 0.58)
+    .sort((a, b) => b.score - a.score)[0] || null
+}
+
 async function runPortalNotificationReminders(env) {
   const envConfig = getPortalAuthConfig(env)
   const recipients = await loadPortalNotificationRecipients(envConfig)
@@ -1202,6 +1234,28 @@ async function runPortalNotificationReminders(env) {
     const preferenceRow = preferenceRows.get(recipient.user_id) || null
     const preferences = normalizePortalNotificationPreferences(preferenceRow?.notification_preferences_json)
     const parts = notificationZonedParts(new Date(), preferences.timezone)
+
+    if (preferences.contentOpportunityAlerts && notificationReminderDue(preferences, parts)) {
+      const contentOpportunity = await loadBestContentOpportunity(tenantConfig, recipient.client_id).catch(() => null)
+      if (contentOpportunity) {
+        const { suggestion, opportunity } = contentOpportunity
+        const push = await notifyPortalPushSubscribers(env, tenantConfig, {
+          userId: recipient.user_id,
+          key: `content-opportunity:${suggestion.id}`,
+          type: 'content_opportunity',
+          title: 'I found a timely post idea',
+          body: firstString(suggestion.title, opportunity.title, 'Want me to create it for you?'),
+          genericBody: 'My Partner found a timely post idea for your business.',
+          preview: firstString(suggestion.caption_starter, opportunity.summary, opportunity.why_it_matters),
+          url: `post?opportunityId=${encodeURIComponent(opportunity.id)}&suggestionId=${encodeURIComponent(suggestion.id)}&create=1`,
+          tag: `map-content-opportunity-${suggestion.id}`,
+          urgency: 'normal',
+        })
+        results.attempted += push.attempted || 0
+        results.sent += push.sent || 0
+        results.failed += push.failed || 0
+      }
+    }
 
     if (preferences.postReadyReminders && notificationReminderDue(preferences, parts)) {
       const draft = await loadFirstReadySocialDraft(tenantConfig, recipient.client_id).catch(() => null)

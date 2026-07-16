@@ -8,6 +8,7 @@ import {
   deleteSocialDraft,
   fetchPostById,
   fetchProfile,
+  fetchOpportunityRadar,
   recordPlannerFeedbackEvent,
   reconcileScheduledPosts,
   fetchScheduledPosts,
@@ -1503,6 +1504,7 @@ export default function CreatePost() {
   const autosaveTimerRef = useRef(null)
   const hydratingDraftRef = useRef(false)
   const recentPhotosHandledRef = useRef(false)
+  const opportunityHandledRef = useRef('')
 
   const [content, setContent] = useState('')
   const [imageFile, setImageFile] = useState(null)
@@ -1580,6 +1582,9 @@ export default function CreatePost() {
   const draftTargetId = searchParams.get('draftId') || ''
   const editTargetPostId = searchParams.get('editPost') || ''
   const viewTargetPostId = searchParams.get('viewPost') || ''
+  const opportunityTargetId = searchParams.get('opportunityId') || ''
+  const suggestionTargetId = searchParams.get('suggestionId') || ''
+  const createOpportunityTarget = searchParams.get('create') === '1'
   const targetPostId = viewTargetPostId || editTargetPostId
 
   const { data: scheduledPosts = [], isLoading: postsLoading } = useQuery({
@@ -1601,6 +1606,12 @@ export default function CreatePost() {
     queryKey: ['social-connections', clientId],
     queryFn: () => fetchConnections(clientId),
     enabled: !!clientId,
+  })
+
+  const { data: opportunityRows = [] } = useQuery({
+    queryKey: ['opportunity-radar', clientId],
+    queryFn: () => fetchOpportunityRadar(clientId),
+    enabled: Boolean(clientId && opportunityTargetId && suggestionTargetId),
   })
 
   const calendar = useMemo(() => {
@@ -2395,6 +2406,50 @@ export default function CreatePost() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, location.search, location.state, navigate])
 
+  useEffect(() => {
+    if (!createOpportunityTarget || !opportunityTargetId || !suggestionTargetId || !opportunityRows.length) return
+    const handoffKey = `${opportunityTargetId}:${suggestionTargetId}`
+    if (opportunityHandledRef.current === handoffKey) return
+    const opportunity = opportunityRows.find((item) => item.id === opportunityTargetId)
+    const suggestion = opportunity?.client_opportunity_suggestions?.find((item) => item.id === suggestionTargetId)
+    if (!opportunity || !suggestion) return
+
+    opportunityHandledRef.current = handoffKey
+    const brief = suggestion.ad_brief_json && typeof suggestion.ad_brief_json === 'object'
+      ? suggestion.ad_brief_json
+      : {}
+    const callToAction = String(brief.call_to_action || brief.cta || '').trim()
+    const caption = [suggestion.caption_starter, callToAction].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
+    const imagePrompt = String(
+      brief.suggested_image || suggestion.creative_direction || opportunity.local_context || opportunity.why_it_matters || opportunity.summary || suggestion.title,
+    ).trim()
+    const platforms = (suggestion.recommended_platforms || [])
+      .map((value) => value === 'x' ? 'twitter' : value)
+      .filter((value) => ['facebook', 'instagram', 'twitter'].includes(value))
+    const selected = platforms.length ? platforms : ['facebook', 'instagram', 'twitter']
+
+    setContent(caption)
+    setGeneratedCaption(caption)
+    setMediaSuggestion(imagePrompt)
+    setSelectedPlatforms({
+      facebook: selected.includes('facebook'),
+      instagram: selected.includes('instagram'),
+      tiktok: false,
+      twitter: selected.includes('twitter'),
+    })
+    setReviewMessages([
+      {
+        id: `opportunity-${suggestion.id}`,
+        role: 'assistant',
+        content: `I found a timely idea: ${suggestion.title || opportunity.title}. I’m creating the caption and image now. Nothing will post until you approve it.`,
+      },
+    ])
+    setDraftStatus('My Partner is turning this opportunity into a complete post for your review.')
+    void handleGenerateImage({ prompt: imagePrompt, caption, platforms: selected })
+    // The target IDs make this a one-time notification handoff; image generation uses the captured idea values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createOpportunityTarget, opportunityRows, opportunityTargetId, suggestionTargetId])
+
   async function handleChooseGoogle() {
     if (!requireWriteAccess('choose Google media')) return
     if (isSubmitting) return
@@ -2449,13 +2504,18 @@ export default function CreatePost() {
     }
   }
 
-  async function handleGenerateImage() {
+  async function handleGenerateImage(overrides = {}) {
     if (!requireWriteAccess('generate images for posts')) return
     if (!clientId) {
       setImageGenerateError('Client profile is still loading. Try again in a moment.')
       return
     }
-    if (!imageGenerationPrompt) {
+    const generationPrompt = String(overrides.prompt || imageGenerationPrompt || '').trim()
+    const generationCaption = String(overrides.caption || content || '').trim()
+    const generationPlatforms = Array.isArray(overrides.platforms) && overrides.platforms.length
+      ? overrides.platforms
+      : activePlatforms
+    if (!generationPrompt) {
       setImageGenerateError('Write a caption or load a Radar draft before generating an image.')
       return
     }
@@ -2468,15 +2528,15 @@ export default function CreatePost() {
       const payload = await generatePublisherImage({
         client_id: clientId,
         business_name: profile?.clients?.business_name || '',
-        prompt: imageGenerationPrompt,
-        caption: content,
+        prompt: generationPrompt,
+        caption: generationCaption,
         image_mode: imageGenerationMode,
-        platforms: activePlatforms,
+        platforms: generationPlatforms,
         brand_context: buildImageGenerationBrandContext({
           profile,
           slot: activeSlot,
           draft: activeDraft,
-          mediaSuggestion: imageGenerationPrompt,
+          mediaSuggestion: generationPrompt,
           mode: imageGenerationMode,
         }),
         size: '1024x1024',
