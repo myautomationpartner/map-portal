@@ -13,6 +13,7 @@ import {
 } from '@phosphor-icons/react'
 import { createVisionImageDataUrl, createVisionImageDataUrls, isBrandLogoRequest, isLogoOverlayOnlyRequest, resolveCreativeEditTargets, stampBrandLogo } from '../lib/imageAssist'
 import { resolveAttachmentMediaAction, shouldTransformAttachment } from '../lib/mobilePartnerMedia'
+import { isExplicitNewPostRequest, resolveGeneratedPostImageMode, wantsGeneratedPostImage } from '../lib/mobilePartnerIntent'
 import { isPromotionalDesignRequest, isPromotionalDesignRevision, readImageFileDataUrl, renderPromotionalGraphic } from '../lib/promoGraphic'
 import { generatePublisherAssist, generatePublisherImage, improvePublisherImage, sendPortalPartnerMessage } from '../lib/portalApi'
 import MobileVoiceComposer from './MobileVoiceComposer'
@@ -227,6 +228,7 @@ export default function MobilePartnerChat({
   const [composer, setComposer] = useState('')
   const [messages, setMessages] = useState([])
   const [pending, setPending] = useState(false)
+  const [pendingLabel, setPendingLabel] = useState('Thinking…')
   const [attachments, setAttachments] = useState([])
   const [generatedPost, setGeneratedPost] = useState(null)
   const [editingPost, setEditingPost] = useState(false)
@@ -278,6 +280,7 @@ export default function MobilePartnerChat({
     const pendingAttachments = [...attachments]
     setMessages((current) => [...current, createChatMessage('user', cleanText, [], pendingAttachments)])
     setComposer('')
+    setPendingLabel('Thinking…')
     setPending(true)
 
     try {
@@ -669,6 +672,95 @@ export default function MobilePartnerChat({
         return
       }
 
+      if (onPhotos) {
+        const explicitPostRequest = isExplicitNewPostRequest(cleanText)
+        let postIntent = null
+
+        if (!explicitPostRequest) {
+          setPendingLabel('Understanding your request…')
+          try {
+            const intentPayload = await generatePublisherAssist({
+              action: 'post_intent',
+              caption: cleanText,
+              platforms,
+              max_chars: 900,
+              context: 'Decide whether this message should create a new social post draft. Draft general ideas immediately. Ask one concise question only when a missing factual detail is essential to avoid inventing a price, date, time, location, offer, or regulated claim.',
+            })
+            postIntent = intentPayload?.post_intent || null
+          } catch {
+            postIntent = null
+          }
+          if (postIntent?.needsClarification) {
+            setMessages((current) => [
+              ...current,
+              createChatMessage('assistant', postIntent.clarifyingQuestion || 'What important detail should I include?'),
+            ])
+            return
+          }
+        }
+
+        if (explicitPostRequest || postIntent?.intent === 'create_post') {
+          if (readOnly) throw new Error('This portal is read-only right now, so it cannot create a new post draft.')
+          const wantsImage = explicitPostRequest
+            ? wantsGeneratedPostImage(cleanText)
+            : postIntent?.wantsImage === true
+          const imageMode = explicitPostRequest
+            ? resolveGeneratedPostImageMode(cleanText)
+            : postIntent?.imageMode || 'branded_post'
+
+          setPendingLabel('Writing your post…')
+          const payload = await generatePublisherAssist({
+            action: 'create',
+            caption: cleanText,
+            platforms,
+            max_chars: 2200,
+            context: 'Create a new social post from the customer request and stored business context. Do not invent prices, dates, times, discounts, locations, or claims. The result must remain a draft until the customer reviews and approves it.',
+          })
+          const caption = payload?.suggestions?.[0]?.caption
+          if (!caption) throw new Error('My Partner could not create a caption from that request.')
+
+          let generatedFile = null
+          let previewUrl = ''
+          if (wantsImage) {
+            setPendingLabel('Creating your image…')
+            const generatedImage = await generatePublisherImage({
+              business_name: businessName,
+              prompt: cleanText,
+              caption,
+              image_mode: imageMode,
+              platforms,
+              brand_context: 'Create a polished, distinctive, mobile-readable social visual that fits the stored business brand. Avoid unsupported factual text. Keep the composition useful for Facebook, Instagram, and X.',
+              size: '1024x1024',
+              quality: imageMode === 'social_photo' ? 'low' : 'medium',
+            })
+            const mimeType = generatedImage.mime_type || 'image/png'
+            generatedFile = base64ToImageFile(generatedImage.image_base64, mimeType, 'map-generated-social-post.png')
+            previewUrl = `data:${mimeType};base64,${generatedImage.image_base64}`
+          }
+
+          setPendingLabel('Building your preview…')
+          setGeneratedPost({
+            files: generatedFile ? [generatedFile] : [],
+            caption,
+            prompt: cleanText,
+            imageCountAnalyzed: 0,
+            previewUrl,
+            platforms: [...platforms],
+          })
+          setAttachments([])
+          setMessages((current) => [
+            ...current,
+            createChatMessage(
+              'assistant',
+              wantsImage
+                ? 'I created a caption and branded image for you to review. Nothing has been posted.'
+                : 'I created a ready-to-review post draft. Nothing has been posted.',
+            ),
+          ])
+          return
+        }
+      }
+
       const payload = await sendPortalPartnerMessage({
         message: cleanText,
         currentPath: contextPath,
@@ -747,7 +839,7 @@ export default function MobilePartnerChat({
             <AssistantAvatar />
             <div className="mobile-partner-inline-bubble is-pending">
               <CircleNotch size={18} weight="bold" className="mobile-partner-inline-spinner" />
-              <span>Thinking…</span>
+              <span>{pendingLabel}</span>
             </div>
           </div>
         ) : null}
