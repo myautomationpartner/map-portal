@@ -1863,7 +1863,7 @@ export default function Inbox() {
           }
         />
 
-        <div className="flex min-h-[calc(100vh-150px)]">
+        <div className="flex h-[calc(100dvh-150px)] min-h-0 overflow-hidden">
           <InboxSectionNav
             activeSection={activeSection}
             partnerActive={showPartnerHub}
@@ -1875,9 +1875,9 @@ export default function Inbox() {
           />
 
           {activeSection === 'messages' ? (
-        <div className={`inbox-workspace-grid grid min-h-[calc(100vh-150px)] flex-1 ${showPartnerHub ? 'lg:grid-cols-[minmax(0,1fr)]' : 'lg:grid-cols-[324px_minmax(0,1fr)]'}`}>
+        <div className={`inbox-workspace-grid grid h-full min-h-0 flex-1 ${showPartnerHub ? 'lg:grid-cols-[minmax(0,1fr)]' : 'lg:grid-cols-[324px_minmax(0,1fr)]'}`}>
           {!showPartnerHub && (
-          <aside className={`inbox-conversation-list ${mobileThreadOpen ? 'hidden lg:flex' : 'flex'} min-h-[calc(100vh-150px)] flex-col border-r bg-white`} style={{ borderColor: 'var(--portal-border)' }}>
+          <aside className={`inbox-conversation-list ${mobileThreadOpen ? 'hidden lg:flex' : 'flex'} h-full min-h-0 flex-col overflow-hidden border-r bg-white`} style={{ borderColor: 'var(--portal-border)' }}>
             <div className="border-b px-3 py-3" style={{ borderColor: 'var(--portal-border)' }}>
               <div className="relative mb-3 sm:hidden">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--portal-text-soft)' }} />
@@ -1983,7 +1983,7 @@ export default function Inbox() {
           </aside>
           )}
 
-          <main className={`inbox-thread-panel ${showPartnerHub || mobileThreadOpen ? 'flex' : 'hidden lg:flex'} min-h-[calc(100vh-150px)] min-w-0 flex-col`} style={{ background: 'var(--portal-inbox-thread-bg, #f9fbfe)' }}>
+          <main className={`inbox-thread-panel ${showPartnerHub || mobileThreadOpen ? 'flex' : 'hidden lg:flex'} h-full min-h-0 min-w-0 flex-col overflow-hidden`} style={{ background: 'var(--portal-inbox-thread-bg, #f9fbfe)' }}>
             {showPartnerHub ? (
               <PartnerTaskHub
                 onBack={() => {
@@ -2048,7 +2048,7 @@ export default function Inbox() {
                 </div>
                 <ErrorBanner message={statusMutation.error?.message} />
 
-                <div className="inbox-message-scroll portal-scroll flex-1 overflow-y-auto px-3 py-4 md:px-6">
+                <div className="inbox-message-scroll portal-scroll min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-6">
                   {!demoCapture && messagesQuery.isLoading ? (
                     <div className="flex h-full items-center justify-center">
                       <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} />

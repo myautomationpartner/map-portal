@@ -404,7 +404,7 @@ export default function Today() {
         <MobilePartnerHome
           tenant={outlet.tenant}
           queue={queue}
-          summary={summary}
+          inboxUnreadCount={outlet.inboxNotificationCount}
           calendarPosts={calendarPosts}
           onComplete={handleComplete}
           savePending={saveStateMutation.isPending}

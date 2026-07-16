@@ -58,6 +58,7 @@ export default function MobileScheduledPartner({
   onDelete,
   error = '',
   readOnly = false,
+  inboxUnreadCount = 0,
 }) {
   const navigate = useNavigate()
   const [showAllDrafts, setShowAllDrafts] = useState(false)
@@ -68,7 +69,7 @@ export default function MobileScheduledPartner({
 
   return (
     <div className="mobile-scheduled-partner">
-      <MobilePartnerTopBar activeMode="scheduled" />
+      <MobilePartnerTopBar activeMode="scheduled" inboxUnreadCount={inboxUnreadCount} />
 
       <MobilePartnerChat
         contextPath="/post/scheduled"

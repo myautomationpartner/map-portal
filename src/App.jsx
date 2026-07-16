@@ -1195,6 +1195,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
               billingAccess,
               onBillingAction: handleBillingAction,
               billingActionPending,
+              inboxNotificationCount: inboxNotificationCounts?.total || 0,
               requireWriteAccess: requirePortalAccess,
               hasPortalPermission: (permission) => hasPortalPermission(profile, permission),
             }}

@@ -184,6 +184,7 @@
   }
 
   .mobile-partner-mode-link {
+    position: relative;
     display: inline-flex;
     min-width: 0;
     min-height: 2.38rem;
@@ -196,6 +197,30 @@
     font-weight: 700;
     text-decoration: none;
     transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+  }
+
+  .mobile-partner-mode-badge {
+    position: absolute;
+    top: 0.2rem;
+    right: 0.35rem;
+    display: inline-flex;
+    min-width: 1.12rem;
+    height: 1.12rem;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--pulse-ink-soft);
+    border-radius: 999px;
+    background: #e5484d;
+    color: #ffffff;
+    padding: 0 0.22rem;
+    font-size: 0.56rem;
+    font-weight: 850;
+    line-height: 1;
+    box-shadow: 0 2px 7px rgba(0, 0, 0, 0.24);
+  }
+
+  .mobile-partner-mode-link[data-active="true"] .mobile-partner-mode-badge {
+    border-color: var(--pulse-aqua);
   }
 
   .mobile-partner-mode-link[data-active="true"] {
@@ -21537,6 +21562,20 @@ html[data-portal-theme="map-dark"] .boost-post-error {
   .attention-mobile-partner-rollout .attention-mobile-shell {
     height: calc(100dvh - var(--mobile-partner-topbar-space)) !important;
     margin-top: var(--mobile-partner-topbar-space);
+  }
+
+  .attention-mobile-partner-rollout .attention-list-pane,
+  .attention-mobile-partner-rollout .attention-thread-pane {
+    height: 100%;
+    min-height: 0 !important;
+    overflow: hidden;
+  }
+
+  .attention-mobile-partner-rollout .attention-thread-list,
+  .attention-mobile-partner-rollout .attention-thread-body {
+    min-height: 0;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .attention-mobile-partner-rollout .attention-thread-pane.attention-mobile-open {

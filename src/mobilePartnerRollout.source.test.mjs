@@ -15,6 +15,8 @@ const scheduledPageSource = await readFile(new URL('./pages/ScheduledPosts.jsx',
 const partnerSource = await readFile(new URL('./components/PortalPartner.jsx', import.meta.url), 'utf8')
 const createSource = await readFile(new URL('./pages/CreatePost.jsx', import.meta.url), 'utf8')
 const attentionSource = await readFile(new URL('./pages/Attention.jsx', import.meta.url), 'utf8')
+const inboxSource = await readFile(new URL('./pages/Inbox.jsx', import.meta.url), 'utf8')
+const appCssSource = await readFile(new URL('./App.css', import.meta.url), 'utf8')
 const portalApiSource = await readFile(new URL('./lib/portalApi.js', import.meta.url), 'utf8')
 const voiceComposerSource = await readFile(new URL('./components/MobileVoiceComposer.jsx', import.meta.url), 'utf8')
 const mobileChatSource = await readFile(new URL('./components/MobilePartnerChat.jsx', import.meta.url), 'utf8')
@@ -46,7 +48,6 @@ test('mobile home reuses Publisher and carries Facebook, Instagram, and X choice
   assert.match(homeSource, /preselectedPlatforms: selectedPlatforms/)
   assert.match(homeSource, /initialCaption: options\.caption/)
   assert.match(homeSource, /partnerConversation: Array\.isArray\(options\.conversation\)/)
-  assert.match(homeSource, /navigate\('\/post', \{ state: \{ preselectedPlatforms: selectedPlatforms \} \}\)/)
   assert.match(homeSource, /Nothing posts without review\./)
 })
 
@@ -58,9 +59,25 @@ test('rollout navigation uses the three approved top-level conversation modes', 
   assert.match(topBarSource, /aria-label="Open Settings"/)
   assert.match(topBarSource, /navigate\('\/settings'\)/)
   assert.match(topBarSource, /resetWorkspaceScroll/)
+  assert.match(topBarSource, /inboxUnreadCount = 0/)
+  assert.match(topBarSource, /mobile-partner-mode-badge/)
+  assert.match(topBarSource, /aria-describedby=\{id === 'inbox' && unreadCount/)
+  assert.match(topBarSource, /\$\{unreadCount\} unread messages/)
   assert.match(homeSource, /<MobilePartnerTopBar activeMode="post"/)
   assert.match(scheduledSource, /<MobilePartnerTopBar activeMode="scheduled"/)
   assert.match(navSource, /if \(partnerRollout\) return null/)
+})
+
+test('mobile Post stays focused while customer alerts and long message lists remain in Inbox', () => {
+  assert.match(homeSource, /What would you like to post\?/)
+  assert.match(homeSource, /Describe it, speak it, or add photos\./)
+  assert.doesNotMatch(homeSource, /New customer message/)
+  assert.doesNotMatch(homeSource, /mobile-partner-inbox-nudge/)
+  assert.match(appCssSource, /\.mobile-partner-mode-badge/)
+  assert.match(appCssSource, /\.attention-mobile-partner-rollout \.attention-list-pane,[\s\S]{0,220}height: 100%/)
+  assert.match(appCssSource, /\.attention-mobile-partner-rollout \.attention-thread-list,[\s\S]{0,240}overscroll-behavior: contain/)
+  assert.match(inboxSource, /h-\[calc\(100dvh-150px\)\] min-h-0 overflow-hidden/)
+  assert.match(inboxSource, /inbox-message-scroll portal-scroll min-h-0 flex-1 overflow-y-auto/)
 })
 
 test('mobile Scheduled separates queued posts from drafts that still need review', () => {

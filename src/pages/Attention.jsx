@@ -924,7 +924,7 @@ export default function Attention() {
       {mobilePartnerRollout ? (
         <MobilePartnerTopBar
           activeMode="inbox"
-          notificationCount={threads.filter((thread) => thread.needsReply).length}
+          inboxUnreadCount={outlet.inboxNotificationCount}
         />
       ) : null}
       <div className="attention-mobile-shell">

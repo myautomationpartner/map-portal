@@ -7,9 +7,10 @@ const MODES = [
   { id: 'scheduled', label: 'Scheduled', to: '/post/scheduled', Icon: CalendarBlank },
 ]
 
-export default function MobilePartnerTopBar({ activeMode, notificationCount = 0 }) {
+export default function MobilePartnerTopBar({ activeMode, notificationCount = 0, inboxUnreadCount = 0 }) {
   const navigate = useNavigate()
   const count = Math.max(0, Number(notificationCount || 0))
+  const unreadCount = Math.max(0, Number(inboxUnreadCount || 0))
 
   function resetWorkspaceScroll() {
     document.querySelector('.portal-shell-mobile-partner > div > main')?.scrollTo({ top: 0, behavior: 'auto' })
@@ -52,10 +53,21 @@ export default function MobilePartnerTopBar({ activeMode, notificationCount = 0 
             className="mobile-partner-mode-link"
             data-active={activeMode === id ? 'true' : undefined}
             aria-current={activeMode === id ? 'page' : undefined}
+            aria-label={label}
+            aria-describedby={id === 'inbox' && unreadCount ? 'mobile-partner-inbox-count' : undefined}
             onClick={resetWorkspaceScroll}
           >
             <Icon size={17} weight={activeMode === id ? 'fill' : 'regular'} />
             <span>{label}</span>
+            {id === 'inbox' && unreadCount ? (
+              <span
+                id="mobile-partner-inbox-count"
+                className="mobile-partner-mode-badge"
+                aria-label={`${unreadCount} unread messages`}
+              >
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            ) : null}
           </NavLink>
         ))}
       </nav>

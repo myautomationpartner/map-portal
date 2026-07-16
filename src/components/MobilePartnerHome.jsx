@@ -66,7 +66,7 @@ function PartnerMessage({ children, compact = false }) {
 export default function MobilePartnerHome({
   tenant,
   queue,
-  summary,
+  inboxUnreadCount = 0,
   calendarPosts,
   onComplete,
   savePending = false,
@@ -76,7 +76,6 @@ export default function MobilePartnerHome({
   const [selectedPlatforms, setSelectedPlatforms] = useState(['facebook', 'instagram', 'twitter'])
   const activeItems = useMemo(() => queue.filter((item) => !item.completed && !item.snoozed), [queue])
   const contentItem = activeItems.find((item) => CONTENT_SOURCES.has(item.source)) || null
-  const inboxItem = activeItems.find((item) => item.source === 'Inbox' || item.source === 'Reviews') || null
   const previewPost = useMemo(() => {
     if (!contentItem?.id?.startsWith('post:')) return null
     const postId = contentItem.id.slice('post:'.length)
@@ -119,7 +118,7 @@ export default function MobilePartnerHome({
 
   return (
     <div className="mobile-partner-home">
-      <MobilePartnerTopBar activeMode="post" notificationCount={summary?.needsHuman || 0} />
+      <MobilePartnerTopBar activeMode="post" inboxUnreadCount={inboxUnreadCount} />
 
       <MobilePartnerChat
         contextPath="/"
@@ -131,11 +130,15 @@ export default function MobilePartnerHome({
         readOnly={readOnly}
       >
         <PartnerMessage>
-          <p>{contentItem ? 'I found the strongest post to lead with.' : 'Tell me what you want to promote, or choose a recent photo.'}</p>
+          <p>
+            {contentItem
+              ? 'I found a post ready for review.'
+              : 'What would you like to post?'}
+          </p>
           <strong>
             {contentItem
-              ? `It is ready for ${businessName}. You can review it before anything goes live.`
-              : `I will turn it into a ready-to-review post for ${businessName}.`}
+              ? 'Check the caption and platforms before it goes live.'
+              : 'Describe it, speak it, or add photos.'}
           </strong>
         </PartnerMessage>
 
@@ -170,27 +173,6 @@ export default function MobilePartnerHome({
               <button type="button" disabled={savePending} onClick={() => onComplete(contentItem.id)}>Done for now</button>
             </div>
           </article>
-        ) : (
-          <button
-            type="button"
-            className="mobile-partner-empty-post"
-            onClick={() => navigate('/post', { state: { preselectedPlatforms: selectedPlatforms } })}
-          >
-            <span>Create a post</span>
-            <small>Start with a thought, voice note, or recent photo.</small>
-          </button>
-        )}
-
-        <PartnerMessage compact>
-          <p>{contentItem ? 'Say the word and I will build the rest of your week.' : 'You stay in control. Nothing posts without your approval.'}</p>
-        </PartnerMessage>
-
-        {inboxItem ? (
-          <button type="button" className="mobile-partner-inbox-nudge" onClick={() => navigate(inboxItem.targetHref || '/inbox')}>
-            <span><i aria-hidden="true" />New customer message</span>
-            <strong>{inboxItem.title}</strong>
-            <small>Open Inbox for a suggested reply</small>
-          </button>
         ) : null}
       </MobilePartnerChat>
     </div>

@@ -3940,7 +3940,9 @@ export default function CreatePost() {
   return (
     <>
       <div className={`portal-page create-post-page ${mobilePartnerRollout ? 'create-post-mobile-partner-rollout' : ''} w-full max-w-none space-y-6 md:p-5 xl:p-6`}>
-        {mobilePartnerRollout ? <MobilePartnerTopBar activeMode="post" /> : null}
+        {mobilePartnerRollout ? (
+          <MobilePartnerTopBar activeMode="post" inboxUnreadCount={outlet.inboxNotificationCount} />
+        ) : null}
         {(submitState === 'success' || errorMsg || draftError || draftStatus) && (
           <section className="space-y-3">
             {submitState === 'success' && (
