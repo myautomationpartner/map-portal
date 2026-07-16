@@ -1407,16 +1407,31 @@ async function handlePortalPushTest(request, env) {
 
   const auth = await authorizePortalUser(request, env)
   if (auth.error) return auth.error
-  const result = await notifyPortalPushSubscribers(env, auth.envConfig, {
-    userId: auth.user.id,
-    key: `test:${auth.user.id}:${Date.now()}`,
-    type: 'test',
-    title: 'My Partner alerts are ready',
-    body: 'Tap to open the work that needs your attention.',
-    genericBody: 'Your My Partner test alert is ready.',
-    url: 'inbox?filter=open',
-    tag: 'map-notification-test',
-  })
+  const contentOpportunity = await loadBestContentOpportunity(auth.envConfig, auth.envConfig.clientId).catch(() => null)
+  const event = contentOpportunity
+    ? {
+        userId: auth.user.id,
+        key: `test-content-opportunity:${contentOpportunity.suggestion.id}:${Date.now()}`,
+        type: 'content_opportunity',
+        title: 'I found a timely post idea',
+        body: firstString(contentOpportunity.suggestion.title, contentOpportunity.opportunity.title, 'Want me to create it for you?'),
+        genericBody: 'My Partner found a timely post idea for your business.',
+        preview: firstString(contentOpportunity.suggestion.caption_starter, contentOpportunity.opportunity.summary),
+        url: `post?opportunityId=${encodeURIComponent(contentOpportunity.opportunity.id)}&suggestionId=${encodeURIComponent(contentOpportunity.suggestion.id)}&create=1`,
+        tag: `map-content-opportunity-test-${contentOpportunity.suggestion.id}`,
+        urgency: 'normal',
+      }
+    : {
+        userId: auth.user.id,
+        key: `test:${auth.user.id}:${Date.now()}`,
+        type: 'test',
+        title: 'My Partner alerts are ready',
+        body: 'Tap to open the work that needs your attention.',
+        genericBody: 'Your My Partner test alert is ready.',
+        url: 'notifications',
+        tag: 'map-notification-test',
+      }
+  const result = await notifyPortalPushSubscribers(env, auth.envConfig, event)
   return json({ success: result.sent > 0, ...result }, { status: result.sent > 0 ? 200 : 409 })
 }
 

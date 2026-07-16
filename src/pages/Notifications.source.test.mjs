@@ -20,6 +20,7 @@ test('content opportunity push taps create the complete review-first post', () =
   assert.match(workerSource, /type: 'content_opportunity'/)
   assert.match(workerSource, /content-opportunity:\$\{suggestion\.id\}/)
   assert.match(workerSource, /post\?opportunityId=.*suggestionId=.*create=1/)
+  assert.match(workerSource, /test-content-opportunity:\$\{contentOpportunity\.suggestion\.id\}/)
   assert.match(createPostSource, /fetchOpportunityRadar\(clientId\)/)
   assert.match(createPostSource, /void handleGenerateImage\(\{ prompt: imagePrompt, caption, platforms: selected \}\)/)
   assert.match(createPostSource, /Nothing will post until you approve it/)
