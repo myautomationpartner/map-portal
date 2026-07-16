@@ -503,6 +503,96 @@
     outline-offset: -3px;
   }
 
+  .mobile-partner-generated-media-manager {
+    display: grid;
+    gap: 0.5rem;
+    border-top: 1px solid var(--pulse-line);
+    border-bottom: 1px solid var(--pulse-line);
+    background: #f8fafb;
+    padding: 0.58rem 0.7rem;
+  }
+
+  .mobile-partner-generated-thumbnails,
+  .mobile-post-preview-thumbnails {
+    display: flex;
+    overflow-x: auto;
+    gap: 0.42rem;
+    scrollbar-width: none;
+  }
+
+  .mobile-partner-generated-thumbnails::-webkit-scrollbar,
+  .mobile-post-preview-thumbnails::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-partner-generated-thumbnails button {
+    position: relative;
+    overflow: hidden;
+    width: 2.9rem;
+    height: 2.9rem;
+    flex: 0 0 auto;
+    border: 2px solid transparent;
+    border-radius: 0.75rem;
+    background: #e8eef0;
+    padding: 0;
+  }
+
+  .mobile-partner-generated-thumbnails button[data-active="true"] {
+    border-color: var(--pulse-aqua);
+    box-shadow: 0 0 0 2px rgba(0, 174, 182, 0.14);
+  }
+
+  .mobile-partner-generated-thumbnails img,
+  .mobile-post-preview-thumbnails img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .mobile-partner-generated-thumbnails span {
+    position: absolute;
+    right: 0.18rem;
+    bottom: 0.18rem;
+    display: grid;
+    width: 1rem;
+    height: 1rem;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(5, 18, 28, 0.86);
+    color: #ffffff;
+    font-size: 0.5rem;
+    font-weight: 800;
+  }
+
+  .mobile-partner-generated-media-actions {
+    display: flex;
+    gap: 0.35rem;
+  }
+
+  .mobile-partner-generated-media-actions button {
+    display: inline-flex;
+    min-height: 2rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    border: 1px solid var(--pulse-line);
+    border-radius: 999px;
+    background: #ffffff;
+    color: var(--pulse-muted);
+    padding: 0 0.55rem;
+    font-size: 0.6rem;
+    font-weight: 720;
+  }
+
+  .mobile-partner-generated-media-actions button:last-child {
+    margin-left: auto;
+    color: #934545;
+  }
+
+  .mobile-partner-generated-media-actions button:disabled {
+    opacity: 0.35;
+  }
+
   .mobile-post-preview {
     position: fixed;
     inset: 0;
@@ -571,11 +661,67 @@
   }
 
   .mobile-post-preview-media {
+    position: relative;
     display: grid;
     min-height: 12rem;
     max-height: 62dvh;
     place-items: center;
     background: var(--pulse-ink);
+  }
+
+  .mobile-post-preview-carousel-controls {
+    position: absolute;
+    right: 0.65rem;
+    bottom: 0.65rem;
+    left: 0.65rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: 999px;
+    background: rgba(5, 18, 28, 0.86);
+    color: #ffffff;
+    padding: 0.3rem;
+    backdrop-filter: blur(10px);
+  }
+
+  .mobile-post-preview-carousel-controls button {
+    display: grid;
+    width: 2.35rem;
+    height: 2.35rem;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+  }
+
+  .mobile-post-preview-carousel-controls button:disabled {
+    opacity: 0.3;
+  }
+
+  .mobile-post-preview-carousel-controls span {
+    font-size: 0.7rem;
+    font-weight: 780;
+  }
+
+  .mobile-post-preview-thumbnails {
+    border-bottom: 1px solid var(--pulse-line);
+    padding: 0.65rem;
+  }
+
+  .mobile-post-preview-thumbnails button {
+    overflow: hidden;
+    width: 3.15rem;
+    height: 3.15rem;
+    flex: 0 0 auto;
+    border: 2px solid transparent;
+    border-radius: 0.75rem;
+    background: #e8eef0;
+    padding: 0;
+  }
+
+  .mobile-post-preview-thumbnails button[data-active="true"] {
+    border-color: var(--pulse-aqua);
   }
 
   .mobile-post-preview-media img {
@@ -735,6 +881,17 @@
     border-color: var(--pulse-ink);
     background: var(--pulse-ink);
     color: #ffffff;
+  }
+
+  .mobile-partner-generated-platform-notice {
+    margin: -0.25rem 0.82rem 0.75rem;
+    border-radius: 0.85rem;
+    background: #fff8e8;
+    color: #765416 !important;
+    padding: 0.55rem 0.65rem;
+    font-size: 0.61rem;
+    font-weight: 650;
+    line-height: 1.4;
   }
 
   .mobile-partner-generated-actions {

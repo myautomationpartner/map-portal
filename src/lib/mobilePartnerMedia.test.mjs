@@ -2,9 +2,22 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  getPlatformImageLimit,
+  getPlatformMediaNotice,
+  MAX_POST_MEDIA,
   resolveAttachmentMediaAction,
   shouldTransformAttachment,
 } from './mobilePartnerMedia.js'
+
+test('mobile post media supports ten photos and explains smaller platform limits', () => {
+  assert.equal(MAX_POST_MEDIA, 10)
+  assert.equal(getPlatformImageLimit('facebook'), 10)
+  assert.equal(getPlatformImageLimit('instagram'), 10)
+  assert.equal(getPlatformImageLimit('twitter'), 4)
+  assert.equal(getPlatformMediaNotice(4, ['facebook', 'instagram', 'twitter']), '')
+  assert.match(getPlatformMediaNotice(10, ['facebook', 'instagram', 'twitter']), /X will use the first 4/)
+  assert.match(getPlatformMediaNotice(10, ['facebook', 'instagram', 'twitter']), /keep all 10/)
+})
 
 test('attached images can be added or replaced with natural language', () => {
   assert.equal(resolveAttachmentMediaAction('Add this photo too', 1), 'add')

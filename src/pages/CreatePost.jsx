@@ -47,6 +47,7 @@ import { DraftDiscardDialog, GeneratedPostcard, PostcardPreviewDialog } from '..
 import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
 import { createVisionImageDataUrl, isBrandLogoRequest, isLogoOverlayOnlyRequest, resolveCreativeEditTargets, stampBrandLogo } from '../lib/imageAssist'
 import { isPromotionalDesignRequest, isPromotionalDesignRevision, renderPromotionalGraphic } from '../lib/promoGraphic'
+import { MAX_POST_MEDIA } from '../lib/mobilePartnerMedia'
 
 const N8N_BASE = import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.myautomationpartner.com'
 
@@ -1309,6 +1310,8 @@ function MobilePublisherConversation({
   businessName,
   content,
   imagePreview,
+  mediaItems,
+  onMediaItemsChange,
   activePlatforms,
   selectedPlatforms,
   setSelectedPlatforms,
@@ -1341,10 +1344,11 @@ function MobilePublisherConversation({
   const [discardDraftOpen, setDiscardDraftOpen] = useState(false)
   const draft = {
     previewUrl: imagePreview,
+    previewUrls: mediaItems.length ? mediaItems.map((item) => item.previewUrl).filter(Boolean) : (imagePreview ? [imagePreview] : []),
     caption: content,
     platforms: activePlatforms,
     promoDesign,
-    files: [],
+    files: mediaItems.map((item) => item.file).filter(Boolean),
   }
 
   useEffect(() => {
@@ -1369,6 +1373,14 @@ function MobilePublisherConversation({
       nextSelected[id] = nextDraft.platforms.includes(id)
     })
     setSelectedPlatforms(nextSelected)
+
+    if (mediaItems.length && Array.isArray(nextDraft.previewUrls)) {
+      const itemsByPreview = new Map(mediaItems.map((item) => [item.previewUrl, item]))
+      const nextItems = nextDraft.previewUrls.map((url) => itemsByPreview.get(url)).filter(Boolean)
+      if (nextItems.length !== mediaItems.length || nextItems.some((item, index) => item !== mediaItems[index])) {
+        onMediaItemsChange(nextItems)
+      }
+    }
   }
 
   return (
@@ -2288,7 +2300,7 @@ export default function CreatePost() {
   async function handleFileChange(event) {
     const files = Array.from(event.target.files || [])
     if (!files.length) return
-    await addLocalMediaFiles(files)
+    await addLocalMediaFiles(files, 'local', { append: true })
     event.target.value = ''
   }
 
@@ -2304,14 +2316,21 @@ export default function CreatePost() {
     }
   }
 
-  async function addLocalMediaFiles(files, source = 'local') {
-    const mediaFiles = files.filter((file) => isSupportedLocalMedia(file))
+  async function addLocalMediaFiles(files, source = 'local', options = {}) {
+    const append = options.append === true
+    const availableSlots = append ? Math.max(0, MAX_POST_MEDIA - localImageItems.length) : MAX_POST_MEDIA
+    const supportedFiles = files.filter((file) => isSupportedLocalMedia(file))
+    const mediaFiles = supportedFiles.slice(0, availableSlots)
     if (!mediaFiles.length) {
-      setErrorMsg('Choose an image or video file for post creative.')
+      setErrorMsg(availableSlots === 0
+        ? `This post already has the maximum of ${MAX_POST_MEDIA} photos.`
+        : 'Choose an image or video file for post creative.')
       return
     }
 
-    if (mediaFiles.length !== files.length) {
+    if (supportedFiles.length > availableSlots) {
+      setErrorMsg(`This post can include up to ${MAX_POST_MEDIA} photos. The extra files were not added.`)
+    } else if (mediaFiles.length !== files.length) {
       setErrorMsg('Some files were skipped because they were not supported image or video files.')
     } else {
       setErrorMsg('')
@@ -2331,9 +2350,10 @@ export default function CreatePost() {
       }
     }))
 
-    setLocalImageItems(items)
-    setImageFile(items[0]?.file || null)
-    setImagePreview(items[0]?.previewUrl || null)
+    const nextItems = append ? [...localImageItems, ...items].slice(0, MAX_POST_MEDIA) : items
+    setLocalImageItems(nextItems)
+    setImageFile(nextItems[0]?.file || null)
+    setImagePreview(nextItems[0]?.previewUrl || null)
     setExistingMediaUrl('')
     setMediaSlideIndex(0)
     setImageGenerateState('idle')
@@ -3516,6 +3536,16 @@ export default function CreatePost() {
     if (connectedActivePlatforms.length === 0) {
       return 'Connect at least one social account in Settings before publishing.'
     }
+    const creativeMediaTypes = new Set(creativeItems.map((item) => inferMediaType(item)))
+    if (creativeMediaTypes.size > 1) {
+      return 'Use photos or one video in this post, not both. Social platforms do not reliably accept mixed photo and video carousels.'
+    }
+    if (creativeMediaTypes.has('video') && creativeItems.length > 1) {
+      return 'Choose one video for this post. Create a separate post for the other media.'
+    }
+    if (creativeMediaTypes.has('image') && creativeItems.length > MAX_POST_MEDIA) {
+      return `Choose up to ${MAX_POST_MEDIA} photos for one post.`
+    }
     const overLimitPlatform = activePlatforms.find((platformId) => {
       const rules = PLATFORM_FORMAT_RULES[platformId]
       const caption = platformCaptions[platformId] || ''
@@ -3968,6 +3998,14 @@ export default function CreatePost() {
             businessName={profile?.clients?.business_name || 'My Automation Partner'}
             content={content}
             imagePreview={mediaPreviewSource}
+            mediaItems={localImageItems}
+            onMediaItemsChange={(items) => {
+              setLocalImageItems(items)
+              setImageFile(items[0]?.file || null)
+              setImagePreview(items[0]?.previewUrl || null)
+              setMediaSlideIndex(0)
+              clearPlatformImageVariants('Photo order changed. Review platform formatting before approval.')
+            }}
             activePlatforms={activePlatforms}
             selectedPlatforms={selectedPlatforms}
             setSelectedPlatforms={setSelectedPlatforms}

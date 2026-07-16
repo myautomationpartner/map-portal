@@ -39,7 +39,7 @@ export async function createVisionImageDataUrl(file, options = {}) {
   }
 }
 
-export async function createVisionImageDataUrls(files, limit = 3) {
+export async function createVisionImageDataUrls(files, limit = 10) {
   const images = Array.from(files || [])
     .filter((file) => String(file?.type || '').toLowerCase().startsWith('image/'))
     .slice(0, Math.max(1, limit))

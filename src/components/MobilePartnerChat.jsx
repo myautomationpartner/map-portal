@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowCounterClockwise,
+  CaretLeft,
+  CaretRight,
   CheckCircle,
   CircleNotch,
   FacebookLogo,
@@ -13,7 +15,7 @@ import {
   XLogo,
 } from '@phosphor-icons/react'
 import { createVisionImageDataUrl, createVisionImageDataUrls, isBrandLogoRequest, isLogoOverlayOnlyRequest, resolveCreativeEditTargets, stampBrandLogo } from '../lib/imageAssist'
-import { resolveAttachmentMediaAction, shouldTransformAttachment } from '../lib/mobilePartnerMedia'
+import { getPlatformMediaNotice, MAX_POST_MEDIA, resolveAttachmentMediaAction, shouldTransformAttachment } from '../lib/mobilePartnerMedia'
 import { isExplicitNewPostRequest, resolveGeneratedPostImageMode, wantsGeneratedPostImage } from '../lib/mobilePartnerIntent'
 import { isPromotionalDesignRequest, isPromotionalDesignRevision, readImageFileDataUrl, renderPromotionalGraphic } from '../lib/promoGraphic'
 import { generatePublisherAssist, generatePublisherImage, improvePublisherImage, sendPortalPartnerMessage } from '../lib/portalApi'
@@ -74,6 +76,19 @@ const POSTCARD_PLATFORMS = [
   { id: 'twitter', label: 'X', Icon: XLogo },
 ]
 
+function getDraftMediaUrls(draft) {
+  const urls = Array.isArray(draft?.previewUrls) ? draft.previewUrls.filter(Boolean) : []
+  if (urls.length) return urls
+  return draft?.previewUrl ? [draft.previewUrl] : []
+}
+
+function moveArrayItem(items, fromIndex, toIndex) {
+  const next = [...items]
+  const [item] = next.splice(fromIndex, 1)
+  next.splice(toIndex, 0, item)
+  return next
+}
+
 export function GeneratedPostcard({
   cardRef,
   draft,
@@ -85,9 +100,14 @@ export function GeneratedPostcard({
   resetLabel = 'Start over',
   statusLabel = 'Ready to review',
 }) {
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0)
   const files = Array.isArray(draft.files) ? draft.files : []
+  const mediaUrls = getDraftMediaUrls(draft)
   const mediaCount = files.filter((file) => /^(image|video)\//i.test(String(file?.type || ''))).length
-  const displayMediaCount = mediaCount || (draft.previewUrl ? 1 : 0)
+  const displayMediaCount = Math.max(mediaCount, mediaUrls.length)
+  const currentMediaIndex = Math.min(activeMediaIndex, Math.max(0, mediaUrls.length - 1))
+  const currentMediaUrl = mediaUrls[currentMediaIndex] || draft.previewUrl || ''
+  const platformNotice = getPlatformMediaNotice(displayMediaCount, draft.platforms)
 
   function togglePlatform(platformId) {
     const nextPlatforms = draft.platforms.includes(platformId)
@@ -96,18 +116,63 @@ export function GeneratedPostcard({
     onChange({ ...draft, platforms: nextPlatforms })
   }
 
+  function reorderMedia(toIndex) {
+    if (toIndex < 0 || toIndex >= mediaUrls.length || toIndex === currentMediaIndex) return
+    const nextUrls = moveArrayItem(mediaUrls, currentMediaIndex, toIndex)
+    const nextFiles = files.length === mediaUrls.length ? moveArrayItem(files, currentMediaIndex, toIndex) : files
+    onChange({ ...draft, files: nextFiles, previewUrls: nextUrls, previewUrl: nextUrls[0] || '' })
+    setActiveMediaIndex(toIndex)
+  }
+
+  function removeMedia() {
+    if (!mediaUrls.length) return
+    const nextUrls = mediaUrls.filter((_, index) => index !== currentMediaIndex)
+    const nextFiles = files.length === mediaUrls.length
+      ? files.filter((_, index) => index !== currentMediaIndex)
+      : files
+    onChange({ ...draft, files: nextFiles, previewUrls: nextUrls, previewUrl: nextUrls[0] || '' })
+    setActiveMediaIndex(Math.min(currentMediaIndex, Math.max(0, nextUrls.length - 1)))
+  }
+
   return (
     <article ref={cardRef} className="mobile-partner-generated-postcard" aria-label="Ready-to-review social post">
-      {draft.previewUrl ? (
+      {currentMediaUrl ? (
         <button
           type="button"
           className={`mobile-partner-generated-preview-trigger${draft.promoDesign ? ' is-promotional' : ''}`}
-          onClick={() => onPreview?.(draft)}
+          onClick={() => onPreview?.({ ...draft, initialMediaIndex: currentMediaIndex })}
           aria-label="Open full post preview"
         >
-          <img src={draft.previewUrl} alt="Selected post creative" />
-          <span><ImagesSquare size={16} weight="duotone" />View full post</span>
+          <img src={currentMediaUrl} alt={`Selected post creative ${currentMediaIndex + 1} of ${displayMediaCount}`} />
+          <span><ImagesSquare size={16} weight="duotone" />{displayMediaCount > 1 ? `${currentMediaIndex + 1} of ${displayMediaCount}` : 'View full post'}</span>
         </button>
+      ) : null}
+      {mediaUrls.length > 1 ? (
+        <div className="mobile-partner-generated-media-manager">
+          <div className="mobile-partner-generated-thumbnails" aria-label="Post photo order">
+            {mediaUrls.map((url, index) => (
+              <button
+                type="button"
+                key={`${url}-${index}`}
+                data-active={index === currentMediaIndex ? 'true' : undefined}
+                onClick={() => setActiveMediaIndex(index)}
+                aria-label={`View photo ${index + 1} of ${mediaUrls.length}`}
+              >
+                <img src={url} alt="" />
+                <span>{index + 1}</span>
+              </button>
+            ))}
+          </div>
+          <div className="mobile-partner-generated-media-actions">
+            <button type="button" disabled={currentMediaIndex === 0} onClick={() => reorderMedia(currentMediaIndex - 1)}>
+              <CaretLeft size={14} weight="bold" />Earlier
+            </button>
+            <button type="button" disabled={currentMediaIndex === mediaUrls.length - 1} onClick={() => reorderMedia(currentMediaIndex + 1)}>
+              Later<CaretRight size={14} weight="bold" />
+            </button>
+            <button type="button" onClick={removeMedia}><Trash size={14} weight="bold" />Remove</button>
+          </div>
+        </div>
       ) : null}
       <div className="mobile-partner-generated-meta">
         <span className="mobile-partner-generated-status"><i aria-hidden="true" />{statusLabel}</span>
@@ -130,6 +195,7 @@ export function GeneratedPostcard({
           </button>
         ))}
       </div>
+      {platformNotice ? <p className="mobile-partner-generated-platform-notice">{platformNotice}</p> : null}
       <div className="mobile-partner-generated-actions">
         <button
           type="button"
@@ -193,6 +259,10 @@ export function DraftDiscardDialog({
 }
 
 export function PostcardPreviewDialog({ draft, onClose }) {
+  const [mediaIndex, setMediaIndex] = useState(() => Number(draft?.initialMediaIndex) || 0)
+  const mediaUrls = getDraftMediaUrls(draft)
+  const currentMediaIndex = Math.min(mediaIndex, Math.max(0, mediaUrls.length - 1))
+
   useEffect(() => {
     if (!draft) return undefined
     const previousOverflow = document.body.style.overflow
@@ -207,7 +277,7 @@ export function PostcardPreviewDialog({ draft, onClose }) {
     }
   }, [draft, onClose])
 
-  if (!draft?.previewUrl) return null
+  if (!mediaUrls.length) return null
   const selectedPlatforms = POSTCARD_PLATFORMS.filter(({ id }) => draft.platforms?.includes(id))
 
   return (
@@ -224,8 +294,24 @@ export function PostcardPreviewDialog({ draft, onClose }) {
       <div className="mobile-post-preview-scroll">
         <article className="mobile-post-preview-card">
           <div className={`mobile-post-preview-media${draft.promoDesign ? ' is-promotional' : ''}`}>
-            <img src={draft.previewUrl} alt="Complete post creative" />
+            <img src={mediaUrls[currentMediaIndex]} alt={`Complete post creative ${currentMediaIndex + 1} of ${mediaUrls.length}`} />
+            {mediaUrls.length > 1 ? (
+              <div className="mobile-post-preview-carousel-controls">
+                <button type="button" disabled={currentMediaIndex === 0} onClick={() => setMediaIndex(currentMediaIndex - 1)} aria-label="Previous photo"><CaretLeft size={20} weight="bold" /></button>
+                <span>{currentMediaIndex + 1} of {mediaUrls.length}</span>
+                <button type="button" disabled={currentMediaIndex === mediaUrls.length - 1} onClick={() => setMediaIndex(currentMediaIndex + 1)} aria-label="Next photo"><CaretRight size={20} weight="bold" /></button>
+              </div>
+            ) : null}
           </div>
+          {mediaUrls.length > 1 ? (
+            <div className="mobile-post-preview-thumbnails" aria-label="Post photo gallery">
+              {mediaUrls.map((url, index) => (
+                <button type="button" key={`${url}-${index}`} data-active={index === currentMediaIndex ? 'true' : undefined} onClick={() => setMediaIndex(index)} aria-label={`Show photo ${index + 1}`}>
+                  <img src={url} alt="" />
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="mobile-post-preview-copy">
             <div className="mobile-post-preview-identity">
               <img src="/assets/map-option-b-mark.png" alt="" />
@@ -287,14 +373,12 @@ export default function MobilePartnerChat({
   }, [generatedPostPrompt])
 
   function stageAttachments(files) {
-    const nextFiles = Array.from(files || []).slice(0, 4)
-    attachments.forEach((attachment) => {
-      if (attachment.previewUrl) {
-        URL.revokeObjectURL(attachment.previewUrl)
-        attachmentUrlsRef.current.delete(attachment.previewUrl)
-      }
-    })
-    setAttachments(nextFiles.map((file, index) => createPendingAttachment(file, index, attachmentUrlsRef.current)))
+    const availableSlots = Math.max(0, MAX_POST_MEDIA - attachments.length)
+    const nextFiles = Array.from(files || []).slice(0, availableSlots)
+    setAttachments((current) => [
+      ...current,
+      ...nextFiles.map((file, index) => createPendingAttachment(file, current.length + index, attachmentUrlsRef.current)),
+    ])
     composerInputRef.current?.focus()
   }
 
@@ -350,6 +434,7 @@ export default function MobilePartnerChat({
             ...current,
             files: [rendered.file, ...current.files.slice(1)],
             previewUrl: rendered.previewUrl,
+            previewUrls: [rendered.previewUrl, ...getDraftMediaUrls(current).slice(1)],
             caption: promoDesign.caption,
             promoDesign,
           }))
@@ -392,6 +477,7 @@ export default function MobilePartnerChat({
         })
         let nextFiles = generatedPost.files
         let nextPreviewUrl = generatedPost.previewUrl
+        let nextPreviewUrls = getDraftMediaUrls(generatedPost)
         let mediaUpdate = ''
 
         if (changesCaption && decision.caption?.trim() === generatedPost.caption.trim()) {
@@ -444,7 +530,9 @@ export default function MobilePartnerChat({
           }
         }
         if (changesImage && attachmentAction === 'add') {
-          nextFiles = [...generatedPost.files, ...pendingAttachments.map((attachment) => attachment.file)]
+          nextFiles = [...generatedPost.files, ...pendingAttachments.map((attachment) => attachment.file)].slice(0, MAX_POST_MEDIA)
+          nextPreviewUrls = [...nextPreviewUrls, ...pendingAttachments.map((attachment) => attachment.previewUrl).filter(Boolean)].slice(0, MAX_POST_MEDIA)
+          nextPreviewUrl = nextPreviewUrls[0] || nextPreviewUrl
           mediaUpdate = `added ${pendingAttachments.length} ${pendingAttachments.length === 1 ? 'media item' : 'media items'}`
         } else if (changesImage) {
           const currentSourceFile = generatedPost.files.find((file) => String(file?.type || '').toLowerCase().startsWith('image/'))
@@ -464,6 +552,14 @@ export default function MobilePartnerChat({
               ...generatedPost.files.filter((file) => file !== currentSourceFile),
             ]
             nextPreviewUrl = replacementAttachment.previewUrl
+            nextPreviewUrls = [
+              replacementAttachment.previewUrl,
+              ...pendingAttachments
+                .filter((attachment) => attachment !== replacementAttachment)
+                .map((attachment) => attachment.previewUrl)
+                .filter(Boolean),
+              ...nextPreviewUrls.slice(1),
+            ].slice(0, MAX_POST_MEDIA)
             mediaUpdate = 'replaced the post image'
           } else {
             const imageDataUrl = await createVisionImageDataUrl(sourceFile, { maxDimension: 1536, quality: 0.86 })
@@ -556,6 +652,14 @@ export default function MobilePartnerChat({
               ...generatedPost.files.filter((file) => file !== currentSourceFile),
             ]
             nextPreviewUrl = `data:${mimeType};base64,${finalImageBase64}`
+            nextPreviewUrls = [
+              nextPreviewUrl,
+              ...pendingAttachments
+                .filter((attachment) => attachment !== replacementAttachment)
+                .map((attachment) => attachment.previewUrl)
+                .filter(Boolean),
+              ...getDraftMediaUrls(generatedPost).slice(1),
+            ].slice(0, MAX_POST_MEDIA)
             if (!mediaUpdate) {
               mediaUpdate = replacementAttachment ? 'replaced and edited the post image' : 'updated the post image'
             }
@@ -567,6 +671,7 @@ export default function MobilePartnerChat({
             ...current,
             files: nextFiles,
             previewUrl: nextPreviewUrl,
+            previewUrls: nextPreviewUrls,
             caption: changesCaption ? decision.caption : current.caption,
           }))
           setAttachments([])
@@ -655,6 +760,13 @@ export default function MobilePartnerChat({
           prompt: cleanText,
           imageCountAnalyzed: imageDataUrls.length,
           previewUrl: rendered.previewUrl,
+          previewUrls: [
+            rendered.previewUrl,
+            ...pendingAttachments
+              .filter((attachment) => attachment !== sourceAttachment)
+              .map((attachment) => attachment.previewUrl)
+              .filter(Boolean),
+          ].slice(0, MAX_POST_MEDIA),
           platforms: [...platforms],
           promoDesign,
           promoSourceFile: sourceFile,
@@ -696,6 +808,7 @@ export default function MobilePartnerChat({
           prompt: cleanText,
           imageCountAnalyzed: imageDataUrls.length,
           previewUrl: pendingAttachments.find((attachment) => attachment.previewUrl)?.previewUrl || '',
+          previewUrls: pendingAttachments.map((attachment) => attachment.previewUrl).filter(Boolean),
           platforms: [...platforms],
         })
         setAttachments([])
@@ -779,6 +892,7 @@ export default function MobilePartnerChat({
             prompt: cleanText,
             imageCountAnalyzed: 0,
             previewUrl,
+            previewUrls: previewUrl ? [previewUrl] : [],
             platforms: [...platforms],
           })
           setAttachments([])

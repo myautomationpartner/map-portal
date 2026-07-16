@@ -82,7 +82,7 @@ test('portal billing banner can be dismissed for the current local day', () => {
 test('portal shell suppresses floating Partner launcher on post workflows', () => {
   assert.match(appSource, /const suppressPartnerLauncher = \(/)
   assert.match(appSource, /location\.pathname === '\/' && isMobilePartnerRolloutTenant\(tenant\)/)
-  assert.match(appSource, /\['\/inbox', '\/attention', '\/post'\]\.some/)
+  assert.match(appSource, /\['\/inbox', '\/attention', '\/notifications', '\/post'\]\.some/)
   assert.match(appSource, /suppressMobileLauncher=\{suppressPartnerLauncher\}/)
   assert.match(css, /\.portal-partner\[data-suppress-mobile-launcher="true"\] \.portal-partner-launcher \{\s*display: none;\s*\}/)
 })
