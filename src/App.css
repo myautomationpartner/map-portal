@@ -18371,6 +18371,8 @@ html[data-portal-theme="map-dark"] .attention-composer-shell button {
   .mobile-voice-composer-send {
     background: var(--mobile-partner-gold, var(--portal-primary));
     color: #fffdf9;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 
   .portal-bottom-nav.mobile-partner-bottom-nav {

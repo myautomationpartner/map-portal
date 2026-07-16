@@ -1403,7 +1403,10 @@ function MobilePublisherConversation({
         onChange={handleDraftChange}
         onReview={onReview}
         onPreview={() => setPostPreviewOpen(true)}
-        reviewLabel={timingMode === 'now' ? 'Final approval' : 'Review schedule'}
+        reviewLabel={isSubmitting
+          ? timingMode === 'now' ? 'Publishing…' : 'Scheduling…'
+          : timingMode === 'now' ? 'Approve & publish' : 'Approve & schedule'}
+        reviewDisabled={isSubmitting || isViewingPublishedPost || charOver}
         resetLabel=""
         statusLabel={reviewRevisionCount ? 'Updated' : 'Final review'}
       />
@@ -1446,7 +1449,9 @@ function MobilePublisherConversation({
             ? 'Shorten the caption before final approval.'
             : isSubmitting
               ? 'Preparing your final approval…'
-              : 'Final approval opens one last confirmation. It does not publish by itself.'}
+              : timingMode === 'now'
+                ? 'Approve & publish is the final confirmation. Nothing posts before you tap it.'
+                : 'Approve & schedule is the final confirmation. Nothing schedules before you tap it.'}
       </p>
 
       {reviewMessages.map((message) => (
@@ -4022,7 +4027,7 @@ export default function CreatePost() {
               setScheduledFor(value)
               setTimingMode('custom')
             }}
-            onReview={openReview}
+            onReview={mobilePartnerRollout ? handleSubmit : openReview}
             onDiscard={() => navigate('/partner?mode=post')}
             reviewComposer={reviewComposer}
             reviewMessages={reviewMessages}
@@ -5156,28 +5161,30 @@ export default function CreatePost() {
 
       <MediaLightbox media={mediaLightbox} onClose={() => setMediaLightbox(null)} />
 
-      <ReviewModal
-        open={reviewOpen}
-        onClose={() => setReviewOpen(false)}
-        onConfirm={handleSubmit}
-        isSubmitting={isSubmitting}
-        profile={profile}
-        content={content}
-        imagePreview={mediaPreviewSource}
-        dropboxAttachments={dropboxAttachments}
-        selectedPlatforms={selectedPlatforms}
-        setSelectedPlatforms={setSelectedPlatforms}
-        previewPlatform={previewPlatform}
-        setPreviewPlatform={setPreviewPlatform}
-        timingMode={timingMode}
-        scheduledFor={scheduledFor}
-        platformCaptions={platformCaptions}
-        platformImageVariants={platformImageVariants}
-        mediaItems={creativeItems}
-        activeMediaIndex={activeCreativeIndex}
-        platforms={visiblePlatforms}
-        mobilePartnerRollout={mobilePartnerRollout}
-      />
+      {!mobilePartnerRollout ? (
+        <ReviewModal
+          open={reviewOpen}
+          onClose={() => setReviewOpen(false)}
+          onConfirm={handleSubmit}
+          isSubmitting={isSubmitting}
+          profile={profile}
+          content={content}
+          imagePreview={mediaPreviewSource}
+          dropboxAttachments={dropboxAttachments}
+          selectedPlatforms={selectedPlatforms}
+          setSelectedPlatforms={setSelectedPlatforms}
+          previewPlatform={previewPlatform}
+          setPreviewPlatform={setPreviewPlatform}
+          timingMode={timingMode}
+          scheduledFor={scheduledFor}
+          platformCaptions={platformCaptions}
+          platformImageVariants={platformImageVariants}
+          mediaItems={creativeItems}
+          activeMediaIndex={activeCreativeIndex}
+          platforms={visiblePlatforms}
+          mobilePartnerRollout={false}
+        />
+      ) : null}
     </>
   )
 }

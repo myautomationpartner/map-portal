@@ -97,6 +97,7 @@ export function GeneratedPostcard({
   onReset,
   onPreview,
   reviewLabel = 'Review & post',
+  reviewDisabled = false,
   resetLabel = 'Start over',
   statusLabel = 'Ready to review',
 }) {
@@ -200,7 +201,7 @@ export function GeneratedPostcard({
         <button
           type="button"
           className="mobile-partner-primary"
-          disabled={!draft.platforms.length || !draft.caption.trim()}
+          disabled={reviewDisabled || !draft.platforms.length || !draft.caption.trim()}
           onClick={() => onReview(draft)}
         >
           <CheckCircle size={19} weight="fill" />

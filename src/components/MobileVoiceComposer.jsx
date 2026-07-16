@@ -37,6 +37,7 @@ export default function MobileVoiceComposer({
   const photoInputRef = useRef(null)
   const textareaRef = useRef(null)
   const sendButtonRef = useRef(null)
+  const submitGuardRef = useRef({ value: '', timestamp: 0 })
   const lastInputValueRef = useRef(String(value || ''))
   const voiceBaseRef = useRef('')
   const [listening, setListening] = useState(false)
@@ -115,8 +116,19 @@ export default function MobileVoiceComposer({
     event?.preventDefault?.()
     const cleanValue = String(textareaRef.current?.value ?? value).trim()
     if (!showSend || !cleanValue || disabled) return
+    const timestamp = Date.now()
+    if (
+      submitGuardRef.current.value === cleanValue &&
+      timestamp - submitGuardRef.current.timestamp < 900
+    ) return
+    submitGuardRef.current = { value: cleanValue, timestamp }
     if (stableTyping) applyLocalValue('', { notify: true })
     onSubmit?.(cleanValue)
+  }
+
+  function handleTouchSubmit(event) {
+    event.preventDefault()
+    handleSubmit(event)
   }
 
   function handleAttachmentSelection(event) {
@@ -188,6 +200,7 @@ export default function MobileVoiceComposer({
           className="mobile-voice-composer-send"
           disabled={disabled}
           aria-label="Send to My Partner"
+          onTouchEnd={handleTouchSubmit}
           onClick={handleSubmit}
         >
           <PaperPlaneRight size={20} weight="fill" />
