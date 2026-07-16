@@ -103,6 +103,16 @@ test('mobile Scheduled separates queued posts from drafts that still need review
   assert.match(scheduledSource, /Nothing queued yet/)
   assert.match(scheduledSource, /Review draft/)
   assert.match(scheduledSource, /drafts\.slice\(0, 4\)/)
+  assert.match(scheduledSource, /Next to publish/)
+  assert.match(scheduledSource, /laterPostGroups/)
+  assert.match(scheduledSource, /formatScheduleDay/)
+  assert.match(scheduledSource, /mobile-scheduled-compact-card/)
+  assert.match(scheduledSource, /mobile-scheduled-drafts-toggle/)
+  assert.match(scheduledSource, /getDraftMediaRefs/)
+  assert.match(scheduledSource, /Delete post/)
+  assert.match(appCssSource, /\.mobile-scheduled-next-card/)
+  assert.match(appCssSource, /\.mobile-scheduled-compact-media/)
+  assert.match(appCssSource, /\.mobile-scheduled-overflow-trigger[\s\S]{0,180}width: 2\.75rem/)
 })
 
 test('voice and recent-photo controls are present throughout the mobile core flow', () => {
