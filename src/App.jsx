@@ -9,6 +9,7 @@ import {
   fetchInboxNotificationCounts,
   fetchProfile,
   fetchResearchProfile,
+  fetchSocialConnectionHealth,
   fetchSocialConnections,
   getSessionClaims,
   refreshSocialConnections,
@@ -975,6 +976,16 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
     queryKey: ['social_connections', clientId],
     queryFn: () => fetchSocialConnections(clientId),
     enabled: !!session && !demoCaptureRoute && !!clientId,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  })
+  const { data: socialConnectionHealth = { connected: [], missing: [] }, isLoading: socialConnectionHealthLoading } = useQuery({
+    queryKey: ['social-connection-health', clientId],
+    queryFn: fetchSocialConnectionHealth,
+    enabled: !!session && !demoCaptureRoute && !!clientId,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   })
   const { data: researchProfile = null, isLoading: researchProfileLoading } = useQuery({
     queryKey: ['research-profile', clientId],
@@ -1196,6 +1207,9 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
               onBillingAction: handleBillingAction,
               billingActionPending,
               inboxNotificationCount: inboxNotificationCounts?.total || 0,
+              socialConnections,
+              socialConnectionHealth,
+              socialConnectionsLoading: socialConnectionsLoading || socialConnectionHealthLoading,
               requireWriteAccess: requirePortalAccess,
               hasPortalPermission: (permission) => hasPortalPermission(profile, permission),
             }}

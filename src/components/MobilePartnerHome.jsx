@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  Check,
   CheckCircle,
   FacebookLogo,
   InstagramLogo,
+  LinkSimple,
   PencilSimple,
+  WarningCircle,
   XLogo,
 } from '@phosphor-icons/react'
 import MobilePartnerTopBar from './MobilePartnerTopBar'
@@ -63,17 +66,73 @@ function PartnerMessage({ children, compact = false }) {
   )
 }
 
+const POST_PLATFORMS = [
+  { id: 'facebook', label: 'Facebook', Icon: FacebookLogo },
+  { id: 'instagram', label: 'Instagram', Icon: InstagramLogo },
+  { id: 'twitter', label: 'X', Icon: XLogo },
+]
+
+function normalizePlatformId(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return normalized === 'x' ? 'twitter' : normalized
+}
+
+function SocialConnectionSummary({ connections, health, loading, connectingPlatform, onConnect }) {
+  const connected = new Set(
+    (connections || [])
+      .filter((connection) => connection?.zernio_account_id)
+      .map((connection) => normalizePlatformId(connection.platform)),
+  )
+  const missing = new Set(
+    (Array.isArray(health?.missing) ? health.missing : [])
+      .map((connection) => normalizePlatformId(connection.platform)),
+  )
+
+  return (
+    <div className="mobile-partner-social-status" aria-label="Connected social accounts" data-loading={loading ? 'true' : undefined}>
+      {POST_PLATFORMS.map(({ id, label, Icon }) => {
+        const isConnected = connected.has(id)
+        const needsReconnect = missing.has(id)
+        const isConnecting = connectingPlatform === id
+        return (
+          <button
+            type="button"
+            key={id}
+            data-state={isConnected ? 'connected' : needsReconnect ? 'attention' : 'available'}
+            disabled={loading || isConnected || isConnecting}
+            onClick={() => onConnect(id, label)}
+            aria-label={isConnected ? `${label} connected` : `${needsReconnect ? 'Reconnect' : 'Connect'} ${label}`}
+          >
+            <Icon size={17} weight="fill" />
+            <span>
+              {label}
+              <small>{loading ? 'Checking' : isConnected ? 'Connected' : needsReconnect ? 'Reconnect' : 'Connect'}</small>
+            </span>
+            {loading ? <i aria-hidden="true" /> : isConnected ? <Check size={15} weight="bold" /> : needsReconnect ? <WarningCircle size={16} weight="fill" /> : <LinkSimple size={15} />}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function MobilePartnerHome({
   tenant,
   queue,
   inboxUnreadCount = 0,
+  socialConnections = [],
+  socialConnectionHealth = { missing: [] },
+  socialConnectionsLoading = false,
   calendarPosts,
+  onConnectSocial,
   onComplete,
   savePending = false,
   readOnly = false,
 }) {
   const navigate = useNavigate()
   const [selectedPlatforms, setSelectedPlatforms] = useState(['facebook', 'instagram', 'twitter'])
+  const [connectingPlatform, setConnectingPlatform] = useState('')
+  const [connectionError, setConnectionError] = useState('')
   const activeItems = useMemo(() => queue.filter((item) => !item.completed && !item.snoozed), [queue])
   const contentItem = activeItems.find((item) => CONTENT_SOURCES.has(item.source)) || null
   const previewPost = useMemo(() => {
@@ -82,6 +141,21 @@ export default function MobilePartnerHome({
     return calendarPosts.find((post) => String(post.id) === postId) || null
   }, [calendarPosts, contentItem])
   const businessName = tenant?.displayName || 'your business'
+  const connectedLabels = POST_PLATFORMS
+    .filter(({ id }) => socialConnections.some((connection) => normalizePlatformId(connection?.platform) === id && connection?.zernio_account_id))
+    .map(({ label }) => label)
+
+  async function connectSocial(platform, label) {
+    if (!onConnectSocial || connectingPlatform) return
+    setConnectingPlatform(platform)
+    setConnectionError('')
+    try {
+      await onConnectSocial(platform, label)
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : `Could not open ${label} connection.`)
+      setConnectingPlatform('')
+    }
+  }
 
   function handlePhotos(files, options = {}) {
     navigate('/post?source=recent-photos', {
@@ -133,14 +207,36 @@ export default function MobilePartnerHome({
           <p>
             {contentItem
               ? 'I found a post ready for review.'
-              : 'What would you like to post?'}
+              : socialConnectionsLoading
+                ? 'Checking your publishing accounts.'
+                : connectedLabels.length
+                  ? `${connectedLabels.join(', ')} ${connectedLabels.length === 1 ? 'is' : 'are'} connected and ready.`
+                  : 'No publishing accounts are connected yet.'}
           </p>
           <strong>
             {contentItem
               ? 'Check the caption and platforms before it goes live.'
-              : 'Describe it, speak it, or add photos.'}
+              : 'What would you like to create today? Describe it, speak it, or add photos.'}
           </strong>
         </PartnerMessage>
+
+        {!contentItem ? (
+          <SocialConnectionSummary
+            connections={socialConnections}
+            health={socialConnectionHealth}
+            loading={socialConnectionsLoading}
+            connectingPlatform={connectingPlatform}
+            onConnect={connectSocial}
+          />
+        ) : null}
+
+        {connectionError ? (
+          <div className="mobile-partner-social-error" role="alert">
+            <WarningCircle size={17} weight="fill" />
+            <span>{connectionError}</span>
+            <button type="button" onClick={() => setConnectionError('')}>Dismiss</button>
+          </div>
+        ) : null}
 
         {contentItem ? (
           <article className="mobile-partner-post-attachment">

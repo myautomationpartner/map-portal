@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, Loader2, X } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react'
 import { buildTenantConfig } from '../lib/tenantConfig'
+import { portalPath } from '../lib/portalPath'
 
 function formatPlatformLabel(platform) {
   const value = String(platform || '').trim().toLowerCase()
@@ -15,8 +16,28 @@ export default function ConnectReturn() {
   const params = useMemo(() => new URLSearchParams(window.location.search), [])
   const tenant = useMemo(() => buildTenantConfig(), [])
   const platform = params.get('connected') || params.get('platform') || ''
+  const source = params.get('source') || ''
   const clientId = params.get('cid') || ''
+  const returnToParam = params.get('returnTo') || ''
+  const returnTo = returnToParam.startsWith('/') && !returnToParam.startsWith('//')
+    ? returnToParam
+    : portalPath('/')
+  const returnLabel = source === 'mobile-post' ? 'Return to Post' : 'Return to portal'
   const [closeState, setCloseState] = useState('closing')
+
+  function finishConnection() {
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.location.assign(returnTo)
+        window.close()
+        window.setTimeout(() => window.location.replace(returnTo), 250)
+        return
+      }
+    } catch {
+      // Cross-window access can be blocked after the provider redirect.
+    }
+    window.location.replace(returnTo)
+  }
 
   useEffect(() => {
     const payload = {
@@ -33,7 +54,11 @@ export default function ConnectReturn() {
 
     const closeTimer = window.setTimeout(() => {
       setCloseState('fallback')
-      window.close()
+      try {
+        window.close()
+      } catch {
+        // iOS ignores close for a tab it did not consider script-opened.
+      }
     }, 1200)
 
     const fallbackTimer = window.setTimeout(() => {
@@ -83,17 +108,17 @@ export default function ConnectReturn() {
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={() => window.close()}
+            onClick={finishConnection}
             className="portal-button-primary inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold"
           >
-            <X className="h-4 w-4" />
-            Close window
+            <ArrowLeft className="h-4 w-4" />
+            {returnLabel}
           </button>
         </div>
 
         <p className="mt-5 flex items-center gap-2 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
           {closeState === 'manual' ? (
-            'If this window stays open, close it and continue in the portal tab.'
+            `This browser kept the connection in the current tab. ${returnLabel} to continue.`
           ) : (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />

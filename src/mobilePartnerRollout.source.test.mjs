@@ -76,8 +76,15 @@ test('rollout navigation uses the three approved top-level conversation modes', 
 })
 
 test('mobile Post stays focused while customer alerts and long message lists remain in Inbox', () => {
-  assert.match(homeSource, /What would you like to post\?/)
-  assert.match(homeSource, /Describe it, speak it, or add photos\./)
+  assert.match(homeSource, /What would you like to create today\? Describe it, speak it, or add photos\./)
+  assert.match(homeSource, /mobile-partner-social-status/)
+  assert.match(homeSource, /socialConnections = \[\]/)
+  assert.match(homeSource, /socialConnectionHealth = \{ missing: \[\] \}/)
+  assert.match(homeSource, /connected and ready/)
+  assert.match(homeSource, /needsReconnect \? 'Reconnect' : 'Connect'/)
+  assert.match(homeSource, /onConnectSocial/)
+  assert.match(appCssSource, /\.mobile-partner-social-status button\[data-state="connected"\]/)
+  assert.match(appCssSource, /\.mobile-partner-social-status button\[data-state="attention"\]/)
   assert.doesNotMatch(homeSource, /New customer message/)
   assert.doesNotMatch(homeSource, /mobile-partner-inbox-nudge/)
   assert.match(appCssSource, /\.mobile-partner-mode-badge/)

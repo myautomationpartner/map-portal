@@ -7,6 +7,9 @@ const topBarSource = fs.readFileSync(new URL('../components/MobilePartnerTopBar.
 const createPostSource = fs.readFileSync(new URL('./CreatePost.jsx', import.meta.url), 'utf8')
 const workerSource = fs.readFileSync(new URL('../../worker.js', import.meta.url), 'utf8')
 const appSource = fs.readFileSync(new URL('../App.jsx', import.meta.url), 'utf8')
+const todaySource = fs.readFileSync(new URL('./Today.jsx', import.meta.url), 'utf8')
+const homeSource = fs.readFileSync(new URL('../components/MobilePartnerHome.jsx', import.meta.url), 'utf8')
+const connectReturnSource = fs.readFileSync(new URL('./ConnectReturn.jsx', import.meta.url), 'utf8')
 
 test('content opportunities persist in the mobile notification center after a push is ignored', () => {
   assert.match(topBarSource, /navigate\('\/notifications'\)/)
@@ -34,4 +37,11 @@ test('social connection loss stays visible and reconnects in the same mobile win
   assert.match(notificationsSource, /Connection needs attention/)
   assert.match(notificationsSource, /window\.location\.assign\(result\.authUrl\)/)
   assert.match(notificationsSource, /Reconnect \{connection\.label\}/)
+  assert.match(appSource, /socialConnectionHealth/)
+  assert.match(appSource, /socialConnections,\s*socialConnectionHealth,\s*socialConnectionsLoading:/)
+  assert.match(todaySource, /onConnectSocial=\{handleSocialConnect\}/)
+  assert.match(todaySource, /source', 'mobile-post'/)
+  assert.match(homeSource, /Connected social accounts/)
+  assert.match(connectReturnSource, /window\.location\.replace\(returnTo\)/)
+  assert.match(connectReturnSource, /source === 'mobile-post' \? 'Return to Post' : 'Return to portal'/)
 })

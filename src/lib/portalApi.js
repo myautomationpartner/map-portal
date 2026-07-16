@@ -172,6 +172,10 @@ export async function fetchSocialConnections(clientId) {
   return data || []
 }
 
+export async function fetchSocialConnectionHealth() {
+  return callPortalWorker('/api/social-connections/health')
+}
+
 export async function startSocialConnection({ clientId, platform, redirectUrl }) {
   return callPortalWorker('/api/n8n/zernio-connect-url', {
     method: 'POST',

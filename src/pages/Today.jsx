@@ -34,10 +34,12 @@ import {
   fetchSocialDrafts,
   fetchWorkspacePreferences,
   saveTodayQueueState,
+  startSocialConnection,
 } from '../lib/portalApi'
 import { businessNameCandidates } from '../lib/inboxClassification'
 import MobilePartnerHome from '../components/MobilePartnerHome'
 import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
+import { portalPath } from '../lib/portalPath'
 
 const sourceLinks = {
   Inbox: '/inbox',
@@ -398,6 +400,39 @@ export default function Today() {
     window.setTimeout(() => setToast(''), 2200)
   }
 
+  async function handleSocialConnect(platform, label) {
+    if (!clientId || !outlet.requireWriteAccess?.(`connect ${label}`)) return
+
+    const popup = window.open('', '_blank', 'width=600,height=720')
+    if (popup && !popup.closed) {
+      popup.document.write(`<title>Opening ${label}</title><body style="min-height:100vh;margin:0;display:grid;place-items:center;padding:24px;box-sizing:border-box;background:#071521;font-family:ui-sans-serif,system-ui,sans-serif;color:#f4f7f8;"><main style="max-width:360px;"><strong>Opening ${label} connection...</strong><p style="color:#b8c6cd;line-height:1.5;">Finish the secure connection, then My Partner will bring you back to Post.</p></main></body>`)
+    }
+
+    try {
+      const redirectUrl = new URL(portalPath('/connect-return'), window.location.origin)
+      redirectUrl.searchParams.set('connected', platform)
+      redirectUrl.searchParams.set('cid', clientId)
+      redirectUrl.searchParams.set('source', 'mobile-post')
+      redirectUrl.searchParams.set('returnTo', portalPath('/'))
+      const result = await startSocialConnection({
+        clientId,
+        platform,
+        redirectUrl: redirectUrl.toString(),
+      })
+      if (!result?.authUrl) throw new Error(`Could not open ${label} connection.`)
+      if (popup && !popup.closed) {
+        popup.opener = null
+        popup.location.href = result.authUrl
+        popup.focus()
+      } else {
+        window.location.assign(result.authUrl)
+      }
+    } catch (error) {
+      if (popup && !popup.closed) popup.close()
+      throw error
+    }
+  }
+
   return (
     <>
       {mobilePartnerRollout ? (
@@ -405,7 +440,11 @@ export default function Today() {
           tenant={outlet.tenant}
           queue={queue}
           inboxUnreadCount={outlet.inboxNotificationCount}
+          socialConnections={outlet.socialConnections}
+          socialConnectionHealth={outlet.socialConnectionHealth}
+          socialConnectionsLoading={outlet.socialConnectionsLoading}
           calendarPosts={calendarPosts}
+          onConnectSocial={handleSocialConnect}
           onComplete={handleComplete}
           savePending={saveStateMutation.isPending}
           readOnly={Boolean(outlet.billingAccess?.readOnly)}
