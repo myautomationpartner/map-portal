@@ -76,10 +76,10 @@ export default function Login() {
         }}
       />
 
-      <header className="relative border-b border-white/10">
-        <div className="mx-auto flex h-[92px] w-full max-w-[1380px] items-center justify-between px-5 sm:px-8 lg:px-10">
+      <header className="relative border-b border-white/10 bg-[#05070c]/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-[68px] w-full max-w-[1380px] items-center justify-between px-4 sm:h-[92px] sm:px-8 lg:px-10">
           <a href="https://myautomationpartner.com/" className="flex min-w-0 items-center gap-3 no-underline">
-            <div className="flex h-12 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/12 bg-white/[0.03] p-1.5">
+            <div className="flex h-[34px] w-[42px] shrink-0 items-center justify-center overflow-hidden rounded-[10px] border border-white/12 bg-white/[0.03] p-1 sm:h-12 sm:w-16 sm:rounded-2xl sm:p-1.5">
               <img
                 src={tenant.logoUrl}
                 alt={`${tenant.displayName} logo`}
@@ -88,10 +88,10 @@ export default function Login() {
               />
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-[#8b98a5]">
+              <p className="hidden text-[11px] font-semibold uppercase tracking-[0.32em] text-[#8b98a5] sm:block">
                 Secure portal access
               </p>
-              <p className="truncate text-base font-extrabold tracking-[-0.01em] text-white sm:text-lg">
+              <p className="truncate text-[15px] font-extrabold tracking-[-0.02em] text-white sm:text-lg">
                 {tenant.displayName}
               </p>
             </div>
@@ -105,8 +105,8 @@ export default function Login() {
         </div>
       </header>
 
-      <main className="relative mx-auto grid min-h-[calc(100svh-92px)] w-full max-w-[1380px] grid-cols-1 items-center gap-10 overflow-x-hidden px-5 py-10 sm:px-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(520px,0.78fr)] lg:px-10 lg:py-14">
-        <section className="w-full max-w-full min-w-0" style={{ maxWidth: 'calc(100vw - 40px)' }}>
+      <main className="relative mx-auto grid min-h-[calc(100svh-68px)] w-full max-w-[1380px] grid-cols-1 items-start gap-10 overflow-x-hidden px-4 py-9 sm:min-h-[calc(100svh-92px)] sm:items-center sm:px-8 sm:py-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(520px,0.78fr)] lg:px-10 lg:py-14">
+        <section className="hidden w-full max-w-full min-w-0 lg:block" style={{ maxWidth: 'calc(100vw - 40px)' }}>
           <h1 className="text-[clamp(3rem,12.5vw,7.7rem)] font-black leading-[0.92] tracking-[-0.055em] text-white">
             <span className="block">One front</span>
             <span className="block">door for</span>
@@ -120,33 +120,19 @@ export default function Login() {
           </p>
         </section>
 
-        <section className="w-full max-w-full justify-self-center sm:max-w-[580px] lg:justify-self-end" style={{ maxWidth: 'min(580px, calc(100vw - 40px))' }}>
-          <div className="rounded-[30px] border border-white/10 bg-[#1d2026]/80 p-7 shadow-[0_28px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-9">
-            <div className="mb-8 lg:hidden">
-              <div
-                className="mb-5 inline-flex h-16 w-20 items-center justify-center overflow-hidden rounded-2xl border bg-white/[0.03] p-2"
-                style={{ borderColor: 'rgba(255,255,255,0.12)' }}
-              >
-                <img
-                  src={tenant.logoUrl}
-                  alt={tenant.displayName}
-                  className="h-full w-full object-contain"
-                  onError={handleLogoError}
-                />
-              </div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#8b98a5]">
-                Secure portal access
-              </p>
-              <p className="mt-1 text-lg font-extrabold text-white">{tenant.displayName}</p>
-            </div>
-            <h2 className="text-[clamp(2.15rem,3.2vw,2.95rem)] font-black leading-none tracking-[-0.055em] text-white lg:whitespace-nowrap">
-              Sign in to your portal.
+        <section className="w-full max-w-full justify-self-center sm:max-w-[580px] lg:justify-self-end" style={{ maxWidth: 'min(580px, calc(100vw - 32px))' }}>
+          <div className="p-0 sm:rounded-[30px] sm:border sm:border-white/10 sm:bg-[#1d2026]/80 sm:p-9 sm:shadow-[0_28px_80px_rgba(0,0,0,0.35)] sm:backdrop-blur-xl">
+            <p className="mb-3 text-[11px] font-black uppercase tracking-[0.16em] text-[#c6ff72] sm:hidden">
+              Secure client portal
+            </p>
+            <h2 className="max-w-[11ch] text-[clamp(2.4rem,11vw,2.95rem)] font-black leading-[0.96] tracking-[-0.065em] text-white sm:max-w-none lg:whitespace-nowrap">
+              Open your workspace.
             </h2>
-            <p className="mt-5 text-base font-medium text-[#a8b3c2]">
-              Everything MAP is helping with lives here.
+            <p className="mt-3 text-[15px] font-medium leading-relaxed text-[#a8b3c2] sm:mt-5 sm:text-base">
+              Sign in and pick up right where you left off.
             </p>
 
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={handleLogin} className="mt-7 space-y-5 sm:mt-8">
             {setupMessage && (
               <div className="rounded-2xl border border-[#00ba7c]/30 bg-[#00ba7c]/12 px-4 py-3 text-sm font-medium text-[#dff9ec]">
                 {setupMessage}
