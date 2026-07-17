@@ -108,6 +108,8 @@ test('mobile Scheduled separates queued posts from drafts that still need review
   assert.match(scheduledSource, /Image not created yet/)
   assert.match(scheduledSource, /Add or create image/)
   assert.match(scheduledSource, /data-media-status=\{media\.status\}/)
+  assert.match(appCssSource, /\.mobile-scheduled-draft-media[\s\S]{0,260}width: 7\.35rem/)
+  assert.match(appCssSource, /filter: contrast\(1\.08\) saturate\(1\.04\)/)
   assert.match(scheduledSource, /drafts\.slice\(0, 4\)/)
   assert.match(scheduledSource, /Next to publish/)
   assert.match(scheduledSource, /laterPostGroups/)
