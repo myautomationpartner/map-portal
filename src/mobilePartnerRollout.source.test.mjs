@@ -408,3 +408,11 @@ test('new mobile posts ask Partner for a short social caption, not a brochure', 
   assert.match(mobileChatSource, /never LLC or other legal-entity suffixes/)
   assert.match(mobileChatSource, /1-3 sentences, usually under 280 characters/)
 })
+
+test('Ask Partner talks first on what-to-post using Radar, then drafts on pick', () => {
+  assert.match(mobileChatSource, /fetchOpportunityRadar/)
+  assert.match(mobileChatSource, /isTopicSeekingRequest/)
+  assert.match(mobileChatSource, /matchTopicOption/)
+  assert.match(mobileChatSource, /formatTopicOptionsMessage/)
+  assert.match(createSource, /clientId=\{clientId\}/)
+})

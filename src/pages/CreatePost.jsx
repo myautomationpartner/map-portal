@@ -4030,6 +4030,7 @@ export default function CreatePost() {
                   contextPath="/post"
                   placeholder="Describe it, speak it, or add photos"
                   note="Partner drafts it. You still review before anything posts."
+                  clientId={clientId}
                   onPhotos={(files, options = {}) => {
                     navigate('/post?source=partner-chat', {
                       state: {
@@ -4059,7 +4060,7 @@ export default function CreatePost() {
                     </span>
                     <div className="mobile-partner-inline-bubble">
                       <p>I can draft a post from a normal request. Facebook, Instagram, and X stay ready for review.</p>
-                      <strong>What would you like to create today? Describe it, speak it, or add photos.</strong>
+                      <strong>Ask what is going on, or describe a post. I can draft it after we pick an idea.</strong>
                     </div>
                   </div>
                 </MobilePartnerChat>
