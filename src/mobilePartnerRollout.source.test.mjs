@@ -393,6 +393,8 @@ test('path portal host mismatch does not sign out a matching /portal/slug sessio
 })
 
 test('empty mobile Post does not render Final review until a caption exists', () => {
-  assert.match(createSource, /mobilePartnerRollout && content\.trim\(\)/)
+  assert.match(createSource, /mobileReviewOpen && content\.trim\(\)/)
   assert.match(createSource, /Make a post/)
+  assert.match(createSource, /Review post/)
+  assert.match(createSource, /setMobileReviewOpen\(true\)/)
 })
