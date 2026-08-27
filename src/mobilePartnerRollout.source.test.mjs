@@ -402,3 +402,9 @@ test('empty mobile Post lets you type a post or ask Partner', () => {
   assert.match(createSource, /setMobileAskPartner\(true\)/)
   assert.match(createSource, /source=partner-chat/)
 })
+
+test('new mobile posts ask Partner for a short social caption, not a brochure', () => {
+  assert.match(mobileChatSource, /action: 'create'[\s\S]{0,220}max_chars: 280/)
+  assert.match(mobileChatSource, /never LLC or other legal-entity suffixes/)
+  assert.match(mobileChatSource, /1-3 sentences, usually under 280 characters/)
+})
