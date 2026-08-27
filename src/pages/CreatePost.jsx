@@ -1512,6 +1512,7 @@ export default function CreatePost() {
   const opportunityHandledRef = useRef('')
 
   const [content, setContent] = useState('')
+  const [mobileReviewOpen, setMobileReviewOpen] = useState(false)
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [localImageItems, setLocalImageItems] = useState([])
@@ -3996,7 +3997,7 @@ export default function CreatePost() {
           </section>
         )}
 
-        {mobilePartnerRollout && !content.trim() ? (
+        {mobilePartnerRollout && !mobileReviewOpen ? (
           <section className="mobile-publisher-empty" aria-label="Compose a new social post">
             <p className="mobile-publisher-empty-kicker">New post</p>
             <h1 className="mobile-publisher-empty-title">Make a post</h1>
@@ -4008,23 +4009,36 @@ export default function CreatePost() {
               placeholder="What should this post say?"
               rows={5}
             />
-            <label className="mobile-publisher-empty-photo">
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={(event) => {
-                  addLocalMediaFiles(Array.from(event.target.files || []), 'recent')
-                  event.target.value = ''
-                }}
-              />
-              Add photos
-            </label>
+            <div className="mobile-publisher-empty-actions">
+              <label className="mobile-publisher-empty-photo">
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => {
+                    addLocalMediaFiles(Array.from(event.target.files || []), 'recent')
+                    event.target.value = ''
+                  }}
+                />
+                Add photos
+              </label>
+              <button
+                type="button"
+                className="mobile-publisher-empty-review"
+                disabled={!content.trim()}
+                onClick={() => setMobileReviewOpen(true)}
+              >
+                Review post
+              </button>
+            </div>
+            {localImageItems.length ? (
+              <p className="mobile-publisher-empty-copy">{localImageItems.length} photo{localImageItems.length === 1 ? '' : 's'} attached.</p>
+            ) : null}
           </section>
         ) : null}
 
-        {mobilePartnerRollout && content.trim() ? (
+        {mobilePartnerRollout && mobileReviewOpen && content.trim() ? (
           <MobilePublisherConversation
             businessName={profile?.clients?.business_name || 'My Automation Partner'}
             content={content}
@@ -4052,7 +4066,7 @@ export default function CreatePost() {
               setTimingMode('custom')
             }}
             onReview={mobilePartnerRollout ? handleSubmit : openReview}
-            onDiscard={() => navigate('/partner?mode=post')}
+            onDiscard={() => setMobileReviewOpen(false)}
             reviewComposer={reviewComposer}
             reviewMessages={reviewMessages}
             reviewPending={reviewPending}
