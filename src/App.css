@@ -2151,7 +2151,7 @@
   }
 
   .attention-mobile-partner-rollout .attention-mobile-shell {
-    height: calc(100dvh - 7.6rem);
+    height: calc(100dvh - var(--mobile-partner-topbar-space));
     min-height: 0;
     background: var(--pulse-bg) !important;
   }
@@ -2237,7 +2237,7 @@
   }
 
   .attention-mobile-partner-rollout .attention-thread-pane.attention-mobile-open {
-    height: calc(100dvh - 7.6rem);
+    height: 100%;
   }
 
   .attention-mobile-partner-rollout .attention-message-incoming .attention-message-bubble,
@@ -21410,7 +21410,7 @@ html[data-portal-theme="map-dark"] .boost-post-error {
   }
 
   .attention-mobile-partner-rollout .attention-thread-pane.attention-mobile-open {
-    height: calc(100dvh - 5.75rem);
+    height: 100%;
     min-height: 0;
     overflow: hidden;
   }
@@ -21820,7 +21820,7 @@ html[data-portal-theme="map-dark"] .boost-post-error {
 
   .attention-mobile-partner-rollout .attention-mobile-shell,
   .attention-mobile-partner-rollout .attention-thread-pane.attention-mobile-open {
-    height: calc(100dvh - 7.6rem);
+    height: calc(100dvh - var(--mobile-partner-topbar-space));
     min-height: 0;
   }
 
@@ -22124,7 +22124,8 @@ html[data-portal-theme="map-dark"] .boost-post-error {
   .mobile-partner-home,
   .mobile-scheduled-partner,
   .attention-mobile-partner-rollout {
-    --mobile-partner-topbar-space: calc(env(safe-area-inset-top, 0px) + 7.6rem);
+    --mobile-partner-topbar-space: calc(max(0.7rem, env(safe-area-inset-top, 0px) + 0.55rem) + 2.8rem + 0.72rem);
+    --mobile-partner-bottom-space: calc(4.35rem + env(safe-area-inset-bottom, 0px));
   }
 
   .portal-shell-mobile-partner,
@@ -22151,9 +22152,21 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     padding-top: calc(var(--mobile-partner-topbar-space) + 1.05rem);
   }
 
+  .attention-page.attention-mobile-partner-rollout {
+    height: 100dvh;
+    min-height: 100dvh;
+    padding: 0 !important;
+    overflow: hidden;
+  }
+
   .attention-mobile-partner-rollout .attention-mobile-shell {
-    height: calc(100dvh - var(--mobile-partner-topbar-space)) !important;
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - var(--mobile-partner-topbar-space) - var(--mobile-partner-bottom-space)) !important;
+    max-height: calc(100dvh - var(--mobile-partner-topbar-space) - var(--mobile-partner-bottom-space));
     margin-top: var(--mobile-partner-topbar-space);
+    min-height: 0 !important;
+    overflow: hidden;
   }
 
   .attention-mobile-partner-rollout .attention-list-pane,
@@ -22163,15 +22176,35 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     overflow: hidden;
   }
 
-  .attention-mobile-partner-rollout .attention-thread-list,
-  .attention-mobile-partner-rollout .attention-thread-body {
-    min-height: 0;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
+  .attention-mobile-partner-rollout .attention-thread-pane.attention-mobile-open {
+    display: flex;
+    flex-direction: column;
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden;
   }
 
-  .attention-mobile-partner-rollout .attention-thread-pane.attention-mobile-open {
-    height: calc(100dvh - var(--mobile-partner-topbar-space)) !important;
+  .attention-mobile-partner-rollout .attention-thread-header {
+    position: relative;
+    top: auto;
+    flex: 0 0 auto;
+    z-index: 2;
+    padding-top: 0.75rem;
+  }
+
+  .attention-mobile-partner-rollout .attention-filters,
+  .attention-mobile-partner-rollout .attention-utility-strip,
+  .attention-mobile-partner-rollout .attention-composer {
+    flex: 0 0 auto;
+  }
+
+  .attention-mobile-partner-rollout .attention-thread-list,
+  .attention-mobile-partner-rollout .attention-thread-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .mobile-partner-home,
