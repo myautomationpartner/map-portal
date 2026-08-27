@@ -33,13 +33,13 @@ import {
   businessNameCandidates,
   commentDismissalKey,
   commentNeedsReply,
-  countCommentBundlesNeedingReply,
-  countPrivateMessagesNeedingReply,
   postDismissalKey,
   postKey,
   readNoReplyNeededCommentKeys,
   readNoReplyNeededPostKeys,
+  resolveInboxSyncState,
   selectPrivateMessageConversations,
+  summarizeInboxNotifications,
   writeNoReplyNeededCommentKeys,
   writeNoReplyNeededPostKeys,
 } from '../lib/inboxClassification'
@@ -48,7 +48,7 @@ const DEFAULT_CHATWOOT_APP_URL = 'https://chatwoot.myautomationpartner.com/app'
 const CHATWOOT_APP_URL = stripTrailingSlash(import.meta.env.VITE_CHATWOOT_APP_URL || DEFAULT_CHATWOOT_APP_URL)
 
 const STATUS_OPTIONS = [
-  { value: 'open', label: 'Open' },
+  { value: 'open', label: 'Needs you now' },
   { value: 'pending', label: 'Pending' },
   { value: 'resolved', label: 'Resolved' },
 ]
@@ -1290,7 +1290,7 @@ function CommentsInbox({
                                   ? { borderColor: 'rgba(47,143,87,0.25)', background: 'rgba(47,143,87,0.1)', color: '#2f8f57' }
                                   : { borderColor: 'rgba(201,168,76,0.3)', background: 'rgba(201,168,76,0.09)', color: '#b8871f' }}
                               >
-                                {comment.replyCount > 0 ? 'Answered' : 'Needs reply'}
+                                {comment.replyCount > 0 ? 'Answered' : commentNeedsReply(comment) ? 'Needs reply' : 'No reply needed'}
                               </span>
                             </div>
                             <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed" style={{ color: 'var(--portal-text)' }}>{comment.text || '[No text]'}</p>
@@ -1443,7 +1443,6 @@ export default function Inbox() {
     if (typeof window === 'undefined') return false
     const params = new URLSearchParams(window.location.search)
     return params.get('partner') === '1'
-      || (!params.has('section') && !params.has('conversation') && !params.has('inbox_id'))
   })
   const [setupOpen, setSetupOpen] = useState(false)
   const [phoneSetupOpen, setPhoneSetupOpen] = useState(() => {
@@ -1501,7 +1500,7 @@ export default function Inbox() {
     queryKey: ['chatwoot-conversations', filters],
     queryFn: fetchConversations,
     refetchInterval: 30_000,
-    enabled: activeSection === 'messages' && !demoCapture,
+    enabled: !demoCapture,
   })
 
   const commentPostsQuery = useQuery({
@@ -1650,10 +1649,15 @@ export default function Inbox() {
       }))
       .filter((comment) => !comment.noReplyNeeded)
   ), [dismissedCommentKeys, postCommentsQuery.data, selectedCommentPost])
-  const sectionCounts = useMemo(() => ({
-    messages: countPrivateMessagesNeedingReply(privateConversations),
-    comments: countCommentBundlesNeedingReply(activeCommentBundles),
-  }), [activeCommentBundles, privateConversations])
+  const inboxSyncState = useMemo(() => resolveInboxSyncState({
+    commentPosts,
+    commentBundles: activeCommentBundles,
+    conversations: privateConversations,
+  }), [activeCommentBundles, commentPosts, privateConversations])
+  const sectionCounts = useMemo(
+    () => summarizeInboxNotifications({ privateConversations, commentBundles: activeCommentBundles }),
+    [activeCommentBundles, privateConversations],
+  )
   useEffect(() => {
     if (demoCapture) return
 
@@ -1781,7 +1785,7 @@ export default function Inbox() {
             <div>
               <h1 className="text-xl font-semibold leading-tight tracking-normal" style={{ color: 'var(--portal-text)' }}>Inbox</h1>
               <p className="mt-0.5 text-xs leading-snug" style={{ color: 'var(--portal-text-muted)' }}>
-                Customer messages, public comments, and your My Partner task hub in one place.
+                {inboxSyncState.label}. Needs-you matches the badge.
               </p>
             </div>
             <StatusPill status={status} />

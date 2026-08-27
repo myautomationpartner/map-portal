@@ -23,7 +23,8 @@ import {
 import {
   User, Lock, Building2, CheckCircle2, Loader2, AlertCircle,
   Link2, ExternalLink, Wifi, WifiOff, MessageCircle, Copy, RefreshCw, Mail, Save, Unlink2,
-  UserPlus, ShieldCheck, Ban, CreditCard, ChevronDown, Bell, BellOff, ArrowLeft, House
+  UserPlus, ShieldCheck, Ban, CreditCard, ChevronDown, Bell, BellOff, ArrowLeft, House,
+  Megaphone, Sparkles
 } from 'lucide-react'
 
 const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
@@ -1895,6 +1896,38 @@ export default function Settings() {
           icon={Bell}
         >
           <PhoneNotificationsSection billingAccess={billingAccess} profile={profile} />
+        </SettingsCategory>
+
+        <SettingsCategory
+          title="More in MAP"
+          description="Campaign Partner, Opportunity Radar, and Boost Ads stay here — off the phone tab bar"
+          icon={Megaphone}
+        >
+          <Section title="More tools" description="Still in the app, just not on Today / Inbox / Post / Files" icon={Sparkles}>
+            <div className="grid gap-2">
+              {[
+                { to: '/campaigns', label: 'Campaign Partner', detail: 'Reusable campaign work, not the home tab.' },
+                { to: '/opportunities', label: 'Opportunity Radar', detail: 'Local opportunities when you want them.' },
+                { to: '/ads', label: 'Boost Ads', detail: 'Ad boosts stay off the phone tab path.' },
+                { to: '/calendar', label: 'Publisher', detail: 'Full content calendar and drafts.' },
+                { to: '/post/scheduled', label: 'Scheduled posts', detail: 'Queued publishing, from Post or here.' },
+              ].map((item) => (
+                <button
+                  key={item.to}
+                  type="button"
+                  onClick={() => navigate(item.to)}
+                  className="flex w-full items-center justify-between gap-3 rounded-2xl border px-3 py-3 text-left"
+                  style={{ borderColor: 'var(--portal-border)', background: 'rgba(255,255,255,0.03)' }}
+                >
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{item.label}</span>
+                    <span className="block text-xs" style={{ color: 'var(--portal-text-muted)' }}>{item.detail}</span>
+                  </span>
+                  <ExternalLink className="h-4 w-4 shrink-0" style={{ color: 'var(--portal-text-muted)' }} />
+                </button>
+              ))}
+            </div>
+          </Section>
         </SettingsCategory>
 
         <SettingsCategory

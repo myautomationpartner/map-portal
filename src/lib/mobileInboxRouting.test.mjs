@@ -25,7 +25,7 @@ test('mobile inbox routes Today customer-reply links into DMs', () => {
   )
 })
 
-test('mobile inbox defaults to the open work list when no deep link is present', () => {
+test('mobile inbox defaults to the needs-you work list when no deep link is present', () => {
   assert.deepEqual(
     mobileInboxRouteState(''),
     {

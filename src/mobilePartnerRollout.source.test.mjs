@@ -58,21 +58,22 @@ test('mobile home reuses Publisher and carries Facebook, Instagram, and X choice
   assert.match(homeSource, /Nothing posts without review\./)
 })
 
-test('rollout navigation uses the three approved top-level conversation modes', () => {
-  assert.match(topBarSource, /label: 'Inbox', to: '\/inbox'/)
-  assert.match(topBarSource, /label: 'Post', to: '\/'/)
-  assert.match(topBarSource, /label: 'Scheduled', to: '\/post\/scheduled'/)
-  assert.match(topBarSource, /aria-label="My Partner workspaces"/)
+test('phone shell primary tabs are Today, Inbox, Post, and Files', () => {
+  assert.match(navSource, /label: 'Today'/)
+  assert.match(navSource, /to: '\/inbox'/)
+  assert.match(navSource, /label: 'Inbox'/)
+  assert.match(navSource, /to: '\/post'/)
+  assert.match(navSource, /label: 'Post'/)
+  assert.match(navSource, /to: '\/documents'/)
+  assert.match(navSource, /label: 'Files'/)
+  assert.doesNotMatch(navSource, /label: 'Publisher'/)
+  assert.doesNotMatch(navSource, /label: 'Campaign Partner'/)
+  assert.doesNotMatch(navSource, /Opportunity Radar/)
+  assert.doesNotMatch(navSource, /if \(partnerRollout\) return null/)
   assert.match(topBarSource, /aria-label="Open Settings"/)
   assert.match(topBarSource, /navigate\('\/settings'\)/)
-  assert.match(topBarSource, /resetWorkspaceScroll/)
-  assert.match(topBarSource, /inboxUnreadCount = 0/)
-  assert.match(topBarSource, /mobile-partner-mode-badge/)
-  assert.match(topBarSource, /aria-describedby=\{id === 'inbox' && unreadCount/)
-  assert.match(topBarSource, /\$\{unreadCount\} unread messages/)
   assert.match(homeSource, /<MobilePartnerTopBar activeMode="post"/)
   assert.match(scheduledSource, /<MobilePartnerTopBar activeMode="scheduled"/)
-  assert.match(navSource, /if \(partnerRollout\) return null/)
 })
 
 test('mobile Post stays focused while customer alerts and long message lists remain in Inbox', () => {

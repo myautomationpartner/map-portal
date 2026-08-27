@@ -1018,7 +1018,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
   const mobilePartnerRollout = isMobilePartnerRolloutTenant(tenant)
   const suppressPartnerLauncher = (
     (location.pathname === '/' && isMobilePartnerRolloutTenant(tenant)) ||
-    ['/inbox', '/attention', '/notifications', '/post'].some((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
+    ['/inbox', '/attention', '/notifications', '/post', '/documents'].some((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
   )
 
   useEffect(() => {
@@ -1189,7 +1189,7 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
 
       {/* Main content area */}
       <div className="flex min-h-screen w-full flex-col md:ml-[188px] md:w-[calc(100%-188px)]">
-        <main className={`flex-1 overflow-auto md:pb-0 ${mobilePartnerRollout ? 'pb-0' : 'pb-24'}`}>
+        <main className="flex-1 overflow-auto pb-24 md:pb-0">
           {showBillingBanner ? (
             <PortalBillingBanner
               billingAccess={billingAccess}

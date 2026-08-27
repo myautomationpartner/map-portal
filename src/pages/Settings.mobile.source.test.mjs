@@ -12,3 +12,11 @@ test('mobile Settings always offers a back action and a direct return to My Part
   assert.match(appCss, /\.settings-mobile-return/)
   assert.match(appCss, /position: sticky/)
 })
+
+test('Settings keeps Campaign Partner, Opportunity Radar, and Boost Ads off the phone tab path', () => {
+  assert.match(settingsSource, /More in MAP/)
+  assert.match(settingsSource, /to: '\/campaigns'/)
+  assert.match(settingsSource, /Opportunity Radar/)
+  assert.match(settingsSource, /to: '\/ads'/)
+  assert.match(settingsSource, /Boost Ads/)
+})
