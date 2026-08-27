@@ -16,9 +16,9 @@ import {
 } from '@phosphor-icons/react'
 import { createVisionImageDataUrl, createVisionImageDataUrls, isBrandLogoRequest, isLogoOverlayOnlyRequest, resolveCreativeEditTargets, stampBrandLogo } from '../lib/imageAssist'
 import { getPlatformMediaNotice, MAX_POST_MEDIA, resolveAttachmentMediaAction, shouldTransformAttachment } from '../lib/mobilePartnerMedia'
-import { isExplicitNewPostRequest, resolveGeneratedPostImageMode, wantsGeneratedPostImage } from '../lib/mobilePartnerIntent'
+import { buildTopicDraftPrompt, formatTopicOptionsMessage, isExplicitNewPostRequest, isTopicSeekingRequest, matchTopicOption, pickFreshOpportunities, resolveGeneratedPostImageMode, wantsGeneratedPostImage } from '../lib/mobilePartnerIntent'
 import { isPromotionalDesignRequest, isPromotionalDesignRevision, readImageFileDataUrl, renderPromotionalGraphic } from '../lib/promoGraphic'
-import { generatePublisherAssist, generatePublisherImage, improvePublisherImage, sendPortalPartnerMessage } from '../lib/portalApi'
+import { fetchOpportunityRadar, generatePublisherAssist, generatePublisherImage, improvePublisherImage, sendPortalPartnerMessage } from '../lib/portalApi'
 import MobileVoiceComposer from './MobileVoiceComposer'
 
 const ACTION_DESTINATIONS = {
@@ -343,6 +343,7 @@ export default function MobilePartnerChat({
   onPhotos,
   platforms = [],
   businessName = '',
+  clientId = '',
   readOnly = false,
   conversationClassName = 'mobile-partner-conversation',
 }) {
@@ -353,6 +354,7 @@ export default function MobilePartnerChat({
   const [pendingLabel, setPendingLabel] = useState('Thinking…')
   const [attachments, setAttachments] = useState([])
   const [generatedPost, setGeneratedPost] = useState(null)
+  const [topicOptions, setTopicOptions] = useState([])
   const [discardDraftOpen, setDiscardDraftOpen] = useState(false)
   const [previewDraft, setPreviewDraft] = useState(null)
   const attachmentUrlsRef = useRef(new Set())
@@ -820,6 +822,54 @@ export default function MobilePartnerChat({
         return
       }
 
+      const pickedTopic = matchTopicOption(cleanText, topicOptions)
+      if (pickedTopic && onPhotos) {
+        if (readOnly) throw new Error('This portal is read-only right now, so it cannot create a new post draft.')
+        setTopicOptions([])
+        setPendingLabel('Writing your post…')
+        const payload = await generatePublisherAssist({
+          action: 'create',
+          caption: buildTopicDraftPrompt(pickedTopic),
+          platforms,
+          max_chars: 280,
+          context: 'Write a short social caption: 1-3 sentences, usually under 280 characters. Sound like the owner posting from their phone. Use the public studio name, never LLC or other legal-entity suffixes. No brochure filler. Stay a draft until they review.',
+        })
+        const caption = payload?.suggestions?.[0]?.caption
+        if (!caption) throw new Error('My Partner could not create a caption from that request.')
+        setGeneratedPost({
+          files: [],
+          caption,
+          prompt: pickedTopic.title,
+          imageCountAnalyzed: 0,
+          previewUrl: '',
+          previewUrls: [],
+          platforms: [...platforms],
+        })
+        setAttachments([])
+        setMessages((current) => [
+          ...current,
+          createChatMessage('assistant', `I drafted "${pickedTopic.title}". Nothing has been posted.`),
+        ])
+        return
+      }
+
+      if (onPhotos && isTopicSeekingRequest(cleanText)) {
+        setPendingLabel('Looking at what is going on…')
+        let options = []
+        try {
+          const radar = clientId ? await fetchOpportunityRadar(clientId) : []
+          options = pickFreshOpportunities(radar, 3)
+        } catch {
+          options = []
+        }
+        setTopicOptions(options)
+        setMessages((current) => [
+          ...current,
+          createChatMessage('assistant', formatTopicOptionsMessage(options)),
+        ])
+        return
+      }
+
       if (onPhotos) {
         const explicitPostRequest = isExplicitNewPostRequest(cleanText)
         let postIntent = null
@@ -848,6 +898,7 @@ export default function MobilePartnerChat({
         }
 
         if (explicitPostRequest || postIntent?.intent === 'create_post') {
+          setTopicOptions([])
           if (readOnly) throw new Error('This portal is read-only right now, so it cannot create a new post draft.')
           const wantsImage = explicitPostRequest
             ? wantsGeneratedPostImage(cleanText)
