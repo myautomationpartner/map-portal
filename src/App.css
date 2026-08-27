@@ -23120,3 +23120,37 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     color-scheme: light;
   }
 }
+
+
+@media (max-width: 767px) {
+  /* files-search-cream-phone */
+  html[data-portal-theme="map-dark"] .documents-search-input,
+  html[data-portal-theme="map-dark"] .documents-page input.documents-search-input,
+  .documents-search-input {
+    background: #ffffff !important;
+    color: #12262B !important;
+    border: 1px solid rgba(18, 38, 43, 0.14) !important;
+    box-shadow: none !important;
+  }
+
+  html[data-portal-theme="map-dark"] .documents-search-input::placeholder,
+  .documents-search-input::placeholder,
+  textarea.mobile-publisher-empty-caption::placeholder {
+    color: #7A726A !important;
+    opacity: 1 !important;
+  }
+
+  html[data-portal-theme="map-dark"] .documents-page .documents-file-card .documents-file-title,
+  html[data-portal-theme="map-dark"] .documents-page .documents-file-row .documents-file-title {
+    color: #12262B !important;
+  }
+
+  html[data-portal-theme="map-dark"] .documents-page .documents-file-card .documents-file-meta,
+  html[data-portal-theme="map-dark"] .documents-page .documents-file-row .documents-file-meta {
+    color: #5E554D !important;
+  }
+
+  .documents-photo-grid .documents-file-card input[type="checkbox"] {
+    accent-color: #12262B;
+  }
+}

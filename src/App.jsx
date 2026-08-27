@@ -177,12 +177,19 @@ function PortalTheme({ theme }) {
   useEffect(() => {
     const root = document.documentElement
 
-    if (theme === 'light') {
-      delete root.dataset.portalTheme
-      return
+    const apply = () => {
+      const phone = window.matchMedia('(max-width: 767px)').matches
+      if (phone || theme === 'light') {
+        delete root.dataset.portalTheme
+        return
+      }
+      root.dataset.portalTheme = 'map-dark'
     }
 
-    root.dataset.portalTheme = 'map-dark'
+    apply()
+    const media = window.matchMedia('(max-width: 767px)')
+    media.addEventListener('change', apply)
+    return () => media.removeEventListener('change', apply)
   }, [theme])
 
   return null
