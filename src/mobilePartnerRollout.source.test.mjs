@@ -392,6 +392,17 @@ test('path portal host mismatch does not sign out a matching /portal/slug sessio
   assert.match(appSource, /Navigate to="\/inbox"/)
 })
 
+test('partner-rollout Inbox list and thread sit below the MAP topbar', () => {
+  assert.match(appCssSource, /--mobile-partner-topbar-space: calc\(max\(0\.7rem, env\(safe-area-inset-top, 0px\) \+ 0\.55rem\) \+ 2\.8rem \+ 0\.72rem\)/)
+  assert.match(appCssSource, /\.attention-mobile-partner-rollout \.attention-mobile-shell \{[\s\S]{0,520}margin-top: var\(--mobile-partner-topbar-space\)/)
+  assert.match(appCssSource, /\.attention-mobile-partner-rollout \.attention-list-pane,[\s\S]{0,500}height: 100%/)
+  assert.doesNotMatch(appCssSource, /\.attention-mobile-partner-rollout \.attention-thread-pane\.attention-mobile-open \{\s*height: calc\(100dvh - 5\.75rem\)/)
+  assert.match(appCssSource, /\.attention-mobile-partner-rollout \.attention-thread-header \{[\s\S]{0,280}position: relative/)
+  assert.match(appCssSource, /\.attention-mobile-partner-rollout \.attention-thread-header \{[\s\S]{0,360}padding-top: 0\.75rem/)
+  assert.match(attentionSource, /closest\('\.attention-thread-body'\)/)
+  assert.doesNotMatch(attentionSource, /threadEndRef\.current\?\.scrollIntoView/)
+})
+
 test('empty mobile Post lets you type a post or ask Partner', () => {
   assert.match(createSource, /mobileReviewOpen && content\.trim\(\)/)
   assert.match(createSource, /What should this post say/)

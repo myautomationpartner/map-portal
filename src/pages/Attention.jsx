@@ -918,7 +918,10 @@ export default function Attention() {
   useEffect(() => {
     if (!selectedThreadKey || !mobileThreadOpen) return undefined
     const frame = window.requestAnimationFrame(() => {
-      threadEndRef.current?.scrollIntoView({ block: 'end' })
+      const end = threadEndRef.current
+      const body = end?.closest('.attention-thread-body')
+      if (!body) return
+      body.scrollTop = Math.max(0, body.scrollHeight - body.clientHeight)
     })
     return () => window.cancelAnimationFrame(frame)
   }, [selectedThreadKey, selectedComment?.id, selectedThreadItemCount, messagesQuery.isLoading, mobileThreadOpen])
