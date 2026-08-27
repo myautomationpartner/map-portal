@@ -23085,3 +23085,38 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     opacity: 0.45;
   }
 }
+
+
+/* Phone shell: cream header + caption, kill leftover map-dark native controls. */
+@media (max-width: 767px) {
+  html[data-portal-theme="map-dark"] {
+    color-scheme: light;
+  }
+
+  html[data-portal-theme="map-dark"] .mobile-partner-topbar,
+  .mobile-partner-topbar.phone-shell-cream-topbar,
+  .mobile-partner-topbar {
+    background: #F6F3EE !important;
+    color: #12262B !important;
+    border-bottom: 1px solid rgba(18, 38, 43, 0.10) !important;
+    box-shadow: none !important;
+  }
+
+  html[data-portal-theme="map-dark"] .mobile-partner-topbar-title,
+  .mobile-partner-topbar-title {
+    color: #12262B !important;
+  }
+
+  html[data-portal-theme="map-dark"] .mobile-partner-live,
+  .mobile-partner-live {
+    color: #2F7A7E !important;
+  }
+
+  html[data-portal-theme="map-dark"] .mobile-publisher-empty textarea.mobile-publisher-empty-caption,
+  textarea.mobile-publisher-empty-caption {
+    background: #F6F3EE !important;
+    color: #12262B !important;
+    caret-color: #12262B !important;
+    color-scheme: light;
+  }
+}
