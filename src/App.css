@@ -23210,3 +23210,40 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     margin: 0 -0.15rem;
   }
 }
+
+
+@media (max-width: 767px) {
+  /* phone-postcard-gold-cta */
+  .mobile-partner-generated-actions .mobile-partner-primary {
+    border-color: #C9A84C !important;
+    background: #C9A84C !important;
+    color: #12262B !important;
+  }
+
+  .mobile-partner-generated-platforms button {
+    border-color: rgba(18, 38, 43, 0.16) !important;
+    background: #ffffff !important;
+    color: #5E554D !important;
+  }
+
+  .mobile-partner-generated-platforms button[data-selected="true"] {
+    border-color: #12262B !important;
+    background: #12262B !important;
+    color: #F6F3EE !important;
+  }
+
+  .mobile-partner-generated-chat-hint {
+    background: #F6F3EE !important;
+  }
+
+  .mobile-publisher-empty-review:disabled {
+    background: rgba(18, 38, 43, 0.08) !important;
+    color: #7A726A !important;
+    opacity: 1 !important;
+  }
+
+  .mobile-publisher-empty-photo {
+    background: #12262B;
+    color: #ffffff;
+  }
+}

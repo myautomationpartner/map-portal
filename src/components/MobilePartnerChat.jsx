@@ -796,8 +796,8 @@ export default function MobilePartnerChat({
           action: 'create',
           caption: cleanText,
           platforms,
-          max_chars: 2200,
-          context: 'Create a new social post from the customer request and attached media. The result must remain a draft until the customer reviews and approves it.',
+          max_chars: 280,
+          context: 'Write a short social caption: 1-3 sentences, usually under 280 characters. Sound like the owner posting from their phone. Use the public studio name, never LLC or other legal-entity suffixes. No brochure filler. Stay a draft until they review.',
           image_data_urls: imageDataUrls,
         })
         const caption = payload?.suggestions?.[0]?.caption
@@ -861,8 +861,8 @@ export default function MobilePartnerChat({
             action: 'create',
             caption: cleanText,
             platforms,
-            max_chars: 2200,
-            context: 'Create a new social post from the customer request and stored business context. Do not invent prices, dates, times, discounts, locations, or claims. The result must remain a draft until the customer reviews and approves it.',
+            max_chars: 280,
+            context: 'Write a short social caption: 1-3 sentences, usually under 280 characters. Sound like the owner posting from their phone. Use the public studio name, never LLC or other legal-entity suffixes. No brochure filler. Do not invent prices, dates, times, discounts, locations, or claims. Stay a draft until they review.',
           })
           const caption = payload?.suggestions?.[0]?.caption
           if (!caption) throw new Error('My Partner could not create a caption from that request.')
