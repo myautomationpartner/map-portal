@@ -136,7 +136,7 @@ export function GeneratedPostcard({
   }
 
   return (
-    <article ref={cardRef} className="mobile-partner-generated-postcard" aria-label="Ready-to-review social post">
+    <article ref={cardRef} className={`mobile-partner-generated-postcard${currentMediaUrl ? ' has-media' : ' is-text'}`} aria-label="Ready-to-review social post">
       {currentMediaUrl ? (
         <button
           type="button"

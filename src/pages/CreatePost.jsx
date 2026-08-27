@@ -1342,9 +1342,12 @@ function MobilePublisherConversation({
   const [revisionHighlight, setRevisionHighlight] = useState(false)
   const [postPreviewOpen, setPostPreviewOpen] = useState(false)
   const [discardDraftOpen, setDiscardDraftOpen] = useState(false)
+  const mediaUrls = (Array.isArray(mediaItems) ? mediaItems.map((item) => item.previewUrl).filter(Boolean) : [])
+  const previewUrls = mediaUrls.length ? mediaUrls : (imagePreview ? [imagePreview] : [])
+  const hasMedia = previewUrls.length > 0
   const draft = {
-    previewUrl: imagePreview,
-    previewUrls: mediaItems.length ? mediaItems.map((item) => item.previewUrl).filter(Boolean) : (imagePreview ? [imagePreview] : []),
+    previewUrl: previewUrls[0] || imagePreview || '',
+    previewUrls,
     caption: content,
     platforms: activePlatforms,
     promoDesign,
@@ -1384,18 +1387,7 @@ function MobilePublisherConversation({
   }
 
   return (
-    <section className="mobile-publisher-conversation" aria-label="Final social post review">
-      <div className="mobile-partner-message assistant">
-        <span className="mobile-partner-message-avatar">
-          <img src="/assets/map-option-b-mark.png" alt="" />
-          <i aria-hidden="true" />
-        </span>
-        <div className="mobile-partner-message-bubble">
-          <strong>One last check, {businessName}.</strong>
-          <p>Confirm the photo, caption, platforms, and timing below. Nothing posts until you approve it.</p>
-        </div>
-      </div>
-
+    <section className="mobile-publisher-conversation" aria-label={`Final social post review for ${businessName}`}>
       <div className="mobile-publisher-updated-card" data-updated={revisionHighlight ? 'true' : undefined}>
       <GeneratedPostcard
         cardRef={reviewCardRef}
@@ -1421,11 +1413,7 @@ function MobilePublisherConversation({
       ) : null}
       </div>
 
-      <div className="mobile-publisher-timing">
-        <div>
-          <strong>When should this go out?</strong>
-          <span>{timingMode === 'now' ? 'Ready to publish now' : scheduledFor ? formatDetailedLocalDateTime(scheduledFor) : 'Choose a date and time'}</span>
-        </div>
+      <div className="mobile-publisher-timing" data-has-media={hasMedia ? 'true' : 'false'}>
         <div className="mobile-publisher-timing-actions">
           <button type="button" onClick={onChooseNow} data-active={timingMode === 'now'}>Post now</button>
           <button type="button" onClick={onChooseCustom} data-active={timingMode !== 'now'}>Schedule</button>
@@ -1439,7 +1427,6 @@ function MobilePublisherConversation({
             aria-label="Schedule date and time"
           />
         ) : null}
-        <button type="button" className="mobile-publisher-cancel-draft" onClick={() => setDiscardDraftOpen(true)}>Cancel draft</button>
       </div>
 
       <p className="mobile-publisher-safety-note">
@@ -1450,9 +1437,10 @@ function MobilePublisherConversation({
             : isSubmitting
               ? 'Preparing your final approval…'
               : timingMode === 'now'
-                ? 'Approve & publish is the final confirmation. Nothing posts before you tap it.'
-                : 'Approve & schedule is the final confirmation. Nothing schedules before you tap it.'}
+                ? 'Nothing posts until you approve it. Approve & publish is the final confirmation.'
+                : 'Nothing posts until you approve it. Approve & schedule is the final confirmation.'}
       </p>
+      <button type="button" className="mobile-publisher-cancel-draft" onClick={() => setDiscardDraftOpen(true)}>Cancel draft</button>
 
       {reviewMessages.map((message) => (
         <div key={message.id} className={`mobile-partner-inline-message ${message.role}`}>
@@ -3991,7 +3979,7 @@ export default function CreatePost() {
               </div>
             )}
 
-            {draftStatus && !draftError && (
+            {draftStatus && !draftError && !mobilePartnerRollout && (
               <div className="flex items-start gap-3 rounded-2xl px-5 py-4" style={{ background: 'rgba(201,168,76,0.12)', color: 'var(--portal-text)' }}>
                 <Wand2 className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--portal-primary)' }} />
                 <p className="text-sm">{draftStatus}</p>

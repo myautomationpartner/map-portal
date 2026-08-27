@@ -40,12 +40,12 @@ export default function BottomNav({
             end={to === '/'}
             onClick={() => handleNavClick(to, label)}
             className="portal-bottom-nav-link flex-1 flex flex-col items-center gap-1 py-3 transition-all duration-200"
-            style={({ isActive }) => ({ color: isActive ? 'var(--portal-primary)' : 'var(--portal-nav-text-muted)' })}
+            style={({ isActive }) => ({ color: isActive ? 'var(--portal-primary)' : 'var(--portal-ink, var(--portal-nav-text))' })}
           >
             {({ isActive }) => (
               <>
                 <div className="portal-bottom-nav-icon relative rounded-2xl p-2.5 transition-all duration-200"
-                  style={{ background: isActive ? 'linear-gradient(135deg, color-mix(in srgb, var(--portal-primary) 18%, transparent), color-mix(in srgb, var(--portal-cyan) 10%, transparent))' : 'transparent' }}>
+                  style={{ background: 'transparent' }}>
                   {label === 'Post' ? (
                     <Icon className="h-5 w-5" weight={isActive ? 'fill' : 'regular'} />
                   ) : (
@@ -66,7 +66,7 @@ export default function BottomNav({
                   ) : null}
                   {isActive && (
                     <div className="absolute -bottom-1 left-1/2 h-0.5 w-4 -translate-x-1/2 rounded-full"
-                      style={{ background: 'linear-gradient(90deg, var(--portal-primary), var(--portal-cyan))', boxShadow: '0 0 12px color-mix(in srgb, var(--portal-cyan) 40%, transparent)' }} />
+                      style={{ background: 'var(--portal-primary)' }} />
                   )}
                 </div>
                 <span className="portal-bottom-nav-label text-[8px] font-semibold uppercase tracking-[0.08em]">{label}</span>
