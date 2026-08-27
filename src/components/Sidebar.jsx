@@ -8,7 +8,7 @@ import ThemeToggle from './ThemeToggle'
 const navItems = [
   { to: '/',         icon: ListChecks,      label: 'Today'     },
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/documents', icon: FolderOpen,      label: 'Documents'  },
+  { to: '/documents', icon: FolderOpen,      label: 'Files'  },
   { to: '/calendar', icon: CalendarDays,     label: 'Publisher'  },
   { to: '/ads',      icon: BarChart3,        label: 'Ads'        },
   { to: '/campaigns', icon: Megaphone,       label: 'Campaign Partner' },

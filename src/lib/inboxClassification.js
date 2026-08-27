@@ -213,8 +213,119 @@ export function selectPrivateMessageConversations(conversations = [], inboxes = 
   return selected
 }
 
-export function commentNeedsReply(comment) {
-  return comment?.noReplyNeeded !== true && comment?.canReply !== false && Number(comment?.replyCount || 0) === 0
+export const STALE_SOCIAL_PRAISE_AFTER_MS = 14 * 24 * 60 * 60 * 1000
+export const INBOX_SYNC_STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000
+
+const SOCIAL_PRAISE_RE = /\b(congratulat(?:ions|ion)?|congrats|so proud(?: of (?:you|her|him|them))?|love this|love it|love these|so cute|so pretty|so beautiful|beautiful|gorgeous|amazing|awesome|wonderful|fantastic|well done|way to go|you (?:go|guys)? rock|looks? (?:great|amazing|beautiful|perfect)|stunning|adorable|precious|perfect)\b|[🎉🎊🥳❤️❤💕💖👏🙌✨]/iu
+const ACTION_QUESTION_RE = /\?|\b(?:who|what|when|where|why|how|which|can you|could you|would you|will you|do you|does|did you|is there|are there|any (?:info|details|spots|openings|room)|please (?:send|share|tell|help|call|dm|message)|need(?:s)? (?:info|help|details))\b/i
+
+export function commentCreatedAtMs(comment) {
+  const raw = comment?.createdTime || comment?.created_at || comment?.createdAt || comment?.timestamp || comment?.date
+  if (raw == null || raw === '') return 0
+  const numeric = Number(raw)
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric > 1000000000000 ? Math.round(numeric) : Math.round(numeric * 1000)
+  }
+  const parsed = Date.parse(String(raw))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+export function commentText(comment) {
+  return firstString(comment?.text, comment?.content, comment?.message, comment?.body)
+}
+
+export function isNonQuestionSocialPraise(text) {
+  const normalized = String(text || '').trim()
+  if (!normalized) return false
+  if (ACTION_QUESTION_RE.test(normalized)) return false
+  return SOCIAL_PRAISE_RE.test(normalized)
+}
+
+export function isStaleSocialPraiseComment(comment, now = Date.now()) {
+  if (!isNonQuestionSocialPraise(commentText(comment))) return false
+  const created = commentCreatedAtMs(comment)
+  if (!created) return true
+  return now - created >= STALE_SOCIAL_PRAISE_AFTER_MS
+}
+
+export function commentNeedsReply(comment, now = Date.now()) {
+  if (comment?.noReplyNeeded === true || comment?.canReply === false || Number(comment?.replyCount || 0) !== 0) {
+    return false
+  }
+  if (isStaleSocialPraiseComment(comment, now)) return false
+  return true
+}
+
+export function formatInboxSyncTimestamp(ms) {
+  const date = new Date(Number(ms) || 0)
+  if (!Number.isFinite(date.getTime()) || date.getTime() <= 0) return ''
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function isFacebookPlatform(value) {
+  return String(value || '').toLowerCase().includes('facebook')
+}
+
+export function resolveInboxSyncState({
+  commentPosts = [],
+  commentBundles = [],
+  conversations = [],
+  now = Date.now(),
+} = {}) {
+  const facebookTimes = []
+  const commentTimes = []
+
+  commentPosts.forEach((post) => {
+    const created = commentCreatedAtMs(post)
+    if (!created) return
+    commentTimes.push(created)
+    if (isFacebookPlatform(post?.platform)) facebookTimes.push(created)
+  })
+
+  commentBundles.forEach((bundle) => {
+    const postPlatform = bundle?.post?.platform
+    if (isFacebookPlatform(postPlatform)) {
+      const postCreated = commentCreatedAtMs(bundle.post)
+      if (postCreated) facebookTimes.push(postCreated)
+    }
+    ;(Array.isArray(bundle?.comments) ? bundle.comments : []).forEach((comment) => {
+      const created = commentCreatedAtMs(comment)
+      if (!created) return
+      commentTimes.push(created)
+      if (isFacebookPlatform(comment?.platform) || isFacebookPlatform(postPlatform)) {
+        facebookTimes.push(created)
+      }
+    })
+  })
+
+  const conversationTimes = conversations
+    .map((conversation) => toTimestamp(conversation?.last_activity_at || conversation?.updated_at) * 1000)
+    .filter((ms) => ms > 0)
+
+  const facebookCommentsLastSyncedAt = facebookTimes.length ? Math.max(...facebookTimes) : 0
+  const commentsLastSyncedAt = commentTimes.length ? Math.max(...commentTimes) : facebookCommentsLastSyncedAt
+  const messagesLastActivityAt = conversationTimes.length ? Math.max(...conversationTimes) : 0
+  const commentsStale = commentsLastSyncedAt > 0 && now - commentsLastSyncedAt >= INBOX_SYNC_STALE_AFTER_MS
+  const sourceMs = facebookCommentsLastSyncedAt || commentsLastSyncedAt
+  const dateLabel = formatInboxSyncTimestamp(sourceMs)
+  let label = 'Comment sync time unavailable'
+  if (facebookCommentsLastSyncedAt && dateLabel) {
+    label = commentsStale
+      ? `Facebook comments last synced ${dateLabel} — not a live feed`
+      : `Facebook comments last synced ${dateLabel}`
+  } else if (commentsLastSyncedAt && dateLabel) {
+    label = commentsStale
+      ? `Comments last synced ${dateLabel} — not a live feed`
+      : `Comments last synced ${dateLabel}`
+  }
+
+  return {
+    facebookCommentsLastSyncedAt,
+    commentsLastSyncedAt,
+    messagesLastActivityAt,
+    commentsStale,
+    label,
+  }
 }
 
 export function normalizeDismissalKeySet(keys) {
@@ -287,23 +398,29 @@ export function applyCommentBundleDismissals(commentBundles = [], dismissedComme
     .filter((bundle) => !postDismissals.has(postDismissalKey(bundle.post)))
 }
 
-export function countCommentsNeedingReply(comments = []) {
-  return comments.filter(commentNeedsReply).length
+export function countCommentsNeedingReply(comments = [], now = Date.now()) {
+  return comments.filter((comment) => commentNeedsReply(comment, now)).length
 }
 
-export function countCommentBundlesNeedingReply(commentBundles = []) {
+export function countCommentBundlesNeedingReply(commentBundles = [], now = Date.now()) {
   return commentBundles.reduce((total, bundle) => (
-    total + countCommentsNeedingReply(Array.isArray(bundle?.comments) ? bundle.comments : [])
+    total + countCommentsNeedingReply(Array.isArray(bundle?.comments) ? bundle.comments : [], now)
   ), 0)
 }
 
-export function countPrivateMessagesNeedingReply(privateConversations = []) {
-  return privateConversations.filter((conversation) => ['open', 'pending'].includes(String(conversation?.status || 'open').toLowerCase())).length
+export function countCommentPostsNeedingReply(commentBundles = [], now = Date.now()) {
+  return commentBundles.filter((bundle) => (
+    countCommentsNeedingReply(Array.isArray(bundle?.comments) ? bundle.comments : [], now) > 0
+  )).length
 }
 
-export function summarizeInboxNotifications({ privateConversations = [], commentBundles = [] } = {}) {
+export function countPrivateMessagesNeedingReply(privateConversations = []) {
+  return privateConversations.filter((conversation) => String(conversation?.status || 'open').toLowerCase() === 'open').length
+}
+
+export function summarizeInboxNotifications({ privateConversations = [], commentBundles = [], now = Date.now() } = {}) {
   const messages = countPrivateMessagesNeedingReply(privateConversations)
-  const comments = countCommentBundlesNeedingReply(commentBundles)
+  const comments = countCommentPostsNeedingReply(commentBundles, now)
   return {
     messages,
     comments,

@@ -19,10 +19,19 @@ test('desktop My Partner hub is scoped to Messages only', () => {
 test('desktop Messages click can leave the My Partner hub', () => {
   assert.match(inboxSource, /function handleSectionChange\(section\) \{/)
   assert.match(inboxSource, /setPartnerHubOpen\(false\)/)
-  assert.match(
+  assert.match(inboxSource, /return params\.get\('partner'\) === '1'/)
+  assert.doesNotMatch(
     inboxSource,
-    /return params\.get\('partner'\) === '1'\s*\|\| \(!params\.has\('section'\) && !params\.has\('conversation'\) && !params\.has\('inbox_id'\)\)/,
+    /!params\.has\('section'\) && !params\.has\('conversation'\) && !params\.has\('inbox_id'\)/,
   )
+})
+
+test('desktop Inbox defaults to needs-you messages instead of All or Partner hub', () => {
+  assert.match(inboxSource, /value: 'open', label: 'Needs you now'/)
+  assert.match(inboxSource, /useState\('open'\)/)
+  assert.match(inboxSource, /resolveInboxSyncState/)
+  assert.match(inboxSource, /summarizeInboxNotifications\(\{ privateConversations, commentBundles: activeCommentBundles \}\)/)
+  assert.match(inboxSource, /Needs-you matches the badge/)
 })
 
 test('mobile Inbox filter changes clear previously selected Partner threads', () => {

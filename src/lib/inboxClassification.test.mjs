@@ -3,10 +3,14 @@ import assert from 'node:assert/strict'
 import {
   applyCommentBundleDismissals,
   commentDismissalKey,
+  commentNeedsReply,
   countCommentsNeedingReply,
+  countCommentPostsNeedingReply,
   isPrivateMessageConversation,
   isPublicCommentConversation,
+  isStaleSocialPraiseComment,
   postDismissalKey,
+  resolveInboxSyncState,
   selectPrivateMessageConversations,
   summarizeInboxNotifications,
 } from './inboxClassification.js'
@@ -114,9 +118,9 @@ test('counts comment replies from reply state and combines notification totals',
 
   assert.equal(countCommentsNeedingReply(comments), 1)
   assert.deepEqual(notifications, {
-    messages: 2,
+    messages: 1,
     comments: 1,
-    total: 3,
+    total: 2,
   })
 })
 
@@ -146,4 +150,81 @@ test('applies comment and post dismissals before notification counts', () => {
     comments: 1,
     total: 1,
   })
+})
+
+test('old non-question social praise is not actionable, questions stay in Needs you', () => {
+  const now = Date.parse('2026-08-27T16:00:00.000Z')
+  const stalePraise = {
+    id: 'congrats-old',
+    text: 'Congratulations!',
+    replyCount: 0,
+    createdTime: '2026-06-01T15:00:00.000Z',
+  }
+  const recentPraise = {
+    id: 'congrats-new',
+    text: 'Congratulations!',
+    replyCount: 0,
+    createdTime: '2026-08-26T15:00:00.000Z',
+  }
+  const praiseWithQuestion = {
+    id: 'congrats-question',
+    text: 'Congratulations! What time is the recital?',
+    replyCount: 0,
+    createdTime: '2026-06-01T15:00:00.000Z',
+  }
+
+  assert.equal(isStaleSocialPraiseComment(stalePraise, now), true)
+  assert.equal(commentNeedsReply(stalePraise, now), false)
+  assert.equal(commentNeedsReply(recentPraise, now), true)
+  assert.equal(commentNeedsReply(praiseWithQuestion, now), true)
+})
+
+test('needs-you badge counts open DMs plus comment threads, not every leftover praise comment', () => {
+  const now = Date.parse('2026-08-27T16:00:00.000Z')
+  const bundles = [
+    {
+      post: { id: 'post-1', platform: 'facebook' },
+      comments: [
+        { id: 'c1', text: 'Congratulations!', replyCount: 0, createdTime: '2026-06-01T12:00:00.000Z' },
+        { id: 'c2', text: 'Can we still register?', replyCount: 0, createdTime: '2026-06-01T13:00:00.000Z' },
+      ],
+    },
+    {
+      post: { id: 'post-2', platform: 'facebook' },
+      comments: [
+        { id: 'c3', text: 'So cute!', replyCount: 0, createdTime: '2026-05-20T12:00:00.000Z' },
+        { id: 'c4', text: 'Love this', replyCount: 0, createdTime: '2026-05-21T12:00:00.000Z' },
+      ],
+    },
+  ]
+
+  assert.equal(countCommentsNeedingReply(bundles[0].comments, now), 1)
+  assert.equal(countCommentPostsNeedingReply(bundles, now), 1)
+  assert.deepEqual(summarizeInboxNotifications({
+    privateConversations: [
+      { id: 1, status: 'open' },
+      { id: 2, status: 'pending' },
+    ],
+    commentBundles: bundles,
+    now,
+  }), {
+    messages: 1,
+    comments: 1,
+    total: 2,
+  })
+})
+
+test('inbox sync label stays honest about stale Facebook comments', () => {
+  const now = Date.parse('2026-08-27T16:00:00.000Z')
+  const state = resolveInboxSyncState({
+    commentBundles: [{
+      post: { id: 'post-1', platform: 'facebook', createdTime: '2026-06-01T12:00:00.000Z' },
+      comments: [{ id: 'c1', text: 'Congratulations!', createdTime: '2026-06-01T15:22:00.000Z' }],
+    }],
+    now,
+  })
+
+  assert.match(state.label, /Facebook comments last synced Jun 1, 2026/)
+  assert.match(state.label, /not a live feed/)
+  assert.equal(state.commentsStale, true)
 })

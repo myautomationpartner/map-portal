@@ -26,9 +26,14 @@ import { splitMessageLinks } from '../lib/messageLinks'
 import { canHideInboxThread } from '../lib/inboxThreadActions'
 import { getOpenReviewDrafts, getPartnerHelpOptions, resolvePartnerHelpHref, selectNextReviewDraft } from '../lib/partnerHelpMenu'
 import {
+  applyCommentBundleDismissals,
   businessNameCandidates,
   commentNeedsReply,
+  readNoReplyNeededCommentKeys,
+  readNoReplyNeededPostKeys,
+  resolveInboxSyncState,
   selectPrivateMessageConversations,
+  summarizeInboxNotifications,
 } from '../lib/inboxClassification'
 import { mobileInboxRouteState } from '../lib/mobileInboxRouting'
 import { buildInboxDemoCaptureState, isInboxDemoCaptureEnabled } from '../lib/inboxDemoCapture'
@@ -38,7 +43,7 @@ import MobilePartnerTopBar from '../components/MobilePartnerTopBar'
 import { Sparkle } from '@phosphor-icons/react'
 
 const FILTERS = [
-  { value: 'open', label: 'Needs reply' },
+  { value: 'open', label: 'Needs you now' },
   { value: 'all', label: 'All' },
   { value: 'comments', label: 'Comments' },
   { value: 'dms', label: 'DMs' },
@@ -353,7 +358,7 @@ function buildConversationThread(conversation, inboxes) {
 }
 
 function filterThreads(threads, activeFilter) {
-  if (activeFilter === 'open') return threads.filter((thread) => thread.needsReply)
+  if (activeFilter === 'open') return threads.filter((thread) => thread.needsReply && thread.kind !== 'partner')
   if (activeFilter === 'comments') return threads.filter((thread) => thread.kind === 'comments')
   if (activeFilter === 'dms') return threads.filter((thread) => thread.kind === 'dm')
   if (activeFilter === 'partner') return threads.filter((thread) => thread.kind === 'partner')
@@ -696,7 +701,13 @@ export default function Attention() {
 
   const inboxes = useMemo(() => inboxesQuery.data || [], [inboxesQuery.data])
   const conversations = useMemo(() => conversationsQuery.data || [], [conversationsQuery.data])
-  const commentBundles = useMemo(() => commentBundlesQuery.data || [], [commentBundlesQuery.data])
+  const rawCommentBundles = useMemo(() => commentBundlesQuery.data || [], [commentBundlesQuery.data])
+  const dismissedCommentKeys = useMemo(() => readNoReplyNeededCommentKeys(), [])
+  const dismissedPostKeys = useMemo(() => readNoReplyNeededPostKeys(), [])
+  const commentBundles = useMemo(
+    () => applyCommentBundleDismissals(rawCommentBundles, dismissedCommentKeys, dismissedPostKeys),
+    [dismissedCommentKeys, dismissedPostKeys, rawCommentBundles],
+  )
   const inboxBusinessNames = useMemo(
     () => businessNameCandidates(outlet.profile),
     [outlet.profile],
@@ -715,8 +726,46 @@ export default function Attention() {
       .sort((left, right) => right.sortTime - left.sortTime)
   }, [commentBundles, conversations, inboxBusinessNames, inboxes])
 
+  const inboxSyncState = useMemo(() => resolveInboxSyncState({
+    commentPosts,
+    commentBundles,
+    conversations,
+  }), [commentBundles, commentPosts, conversations])
+  const needsYouCount = useMemo(
+    () => filterThreads(threads, 'open').length,
+    [threads],
+  )
   const filteredThreads = useMemo(() => filterThreads(threads, activeFilter), [threads, activeFilter])
   const selectedThread = filteredThreads.find((thread) => thread.id === selectedThreadId) || filteredThreads[0] || null
+
+  useEffect(() => {
+    if (demoCaptureState) return
+    const commentsReady = commentPostsQuery.isFetched || commentBundlesQuery.isFetched
+    const messagesReady = conversationsQuery.isFetched
+    if (!commentsReady && !messagesReady) return
+    const privateConversations = selectPrivateMessageConversations(conversations, inboxes, { businessNames: inboxBusinessNames })
+    const counts = summarizeInboxNotifications({ privateConversations, commentBundles })
+    queryClient.setQueryData(['inbox-notification-counts', inboxBusinessNames.join('|')], (previous) => {
+      const previousCounts = previous && typeof previous === 'object' ? previous : {}
+      const messages = messagesReady ? counts.messages : Number(previousCounts.messages || 0)
+      const comments = commentsReady ? counts.comments : Number(previousCounts.comments || 0)
+      return {
+        messages,
+        comments,
+        total: messages + comments,
+      }
+    })
+  }, [
+    commentBundles,
+    commentBundlesQuery.isFetched,
+    commentPostsQuery.isFetched,
+    conversations,
+    conversationsQuery.isFetched,
+    demoCaptureState,
+    inboxBusinessNames,
+    inboxes,
+    queryClient,
+  ])
 
   const messagesQuery = useQuery({
     queryKey: ['attention-messages', demoCaptureState ? 'demo' : 'live', selectedThread?.conversation?.id],
@@ -937,8 +986,9 @@ export default function Attention() {
         <section className={`attention-list-pane ${mobileThreadOpen ? 'attention-mobile-hidden' : ''}`}>
           <header className="attention-topbar">
             <div>
-              <p className="attention-kicker">Messages</p>
+              <p className="attention-kicker">Needs you now{needsYouCount ? ` · ${needsYouCount}` : ''}</p>
               <h1>Inbox</h1>
+              <p className="attention-sync-stamp mt-1 max-w-[16rem] text-[11px] font-medium leading-snug" style={{ color: 'var(--portal-text-muted)' }}>{inboxSyncState.label}</p>
             </div>
             <button
               type="button"
@@ -994,7 +1044,7 @@ export default function Attention() {
             ) : filteredThreads.length === 0 ? (
               <div className="attention-empty">
                 <Inbox className="h-5 w-5" />
-                <span>No new messages right now.</span>
+                <span>{activeFilter === 'open' ? 'Nothing needs you now.' : 'No messages in this filter.'}</span>
               </div>
             ) : (
               filteredThreads.map((thread) => (

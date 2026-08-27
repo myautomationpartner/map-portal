@@ -5,6 +5,7 @@ import { useOutletContext } from 'react-router-dom'
 import {
   Archive,
   AlertCircle,
+  Camera,
   CheckCircle2,
   Copy,
   Download,
@@ -66,9 +67,11 @@ import {
 } from '../lib/secureVault'
 
 const ALL_FILES_FOLDER = 'All Files'
+const PHOTOS_FOLDER = 'Photos'
+const DOCS_FOLDER = 'Waivers & docs'
 const SHARED_ROOMS_FOLDER = 'In secure rooms'
 const ARCHIVED_FOLDER = 'Archived'
-const DEFAULT_UPLOAD_FOLDER = 'General'
+const DEFAULT_UPLOAD_FOLDER = 'Photos'
 const DOCUMENTS_FILE_COLUMN_STORAGE_KEY = 'mapDocumentsFileColumnWidth'
 const DEFAULT_DOCUMENTS_FILE_COLUMN_WIDTH = 560
 const MIN_DOCUMENTS_FILE_COLUMN_WIDTH = 380
@@ -193,6 +196,12 @@ function compactFolderPath(folderId, foldersById, selectedFolder) {
     return path.slice(selectedPath.length + 3)
   }
   return path
+}
+
+function isPhotoDocument(document) {
+  const mime = String(document?.mime_type || '').toLowerCase()
+  const name = String(document?.file_name || '').toLowerCase()
+  return mime.startsWith('image/') || mime.startsWith('video/') || /\.(heic|heif|jpg|jpeg|png|webp|gif|bmp|tif|tiff|avif|mp4|mov|webm)$/i.test(name)
 }
 
 function DocumentFileIcon({ mimeType, className, style }) {
@@ -634,8 +643,8 @@ function UploadDialog({ isOpen, draft, folders, onChange, onClose, onSubmit, isS
       <div className="document-upload-dialog w-full max-w-lg rounded-[32px] border bg-white shadow-2xl" style={{ borderColor: 'var(--portal-border)' }}>
         <div className="flex items-center justify-between border-b px-6 py-5" style={{ borderColor: 'var(--portal-border)' }}>
           <div>
-            <h3 className="text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Upload document</h3>
-            <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>Files are stored in the secure document library.</p>
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--portal-text)' }}>Add photos</h3>
+            <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>Start with recital, class, and logo photos Partner can use. Waivers and share-link docs still work from Waivers & docs.</p>
           </div>
           <button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-full border" style={{ borderColor: 'var(--portal-border)', color: 'var(--portal-text-muted)' }}>
             <X className="h-4 w-4" />
@@ -671,12 +680,12 @@ function UploadDialog({ isOpen, draft, folders, onChange, onClose, onSubmit, isS
               {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--portal-primary)' }} /> : <Upload className="h-5 w-5" style={{ color: 'var(--portal-primary)' }} />}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Choose document</p>
+              <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>Choose photos or files</p>
               <p className="mt-1 text-xs" style={{ color: 'var(--portal-text-muted)' }}>
-                25 MB max file size. Counts against the 100 MB document quota.
+                Camera roll first. 25 MB max. Counts against the 100 MB workspace quota.
               </p>
             </div>
-            <input type="file" className="hidden" onChange={onSubmit} disabled={isSubmitting} />
+            <input type="file" accept="image/*,video/*,.heic,.heif,.pdf,.doc,.docx" className="hidden" onChange={onSubmit} disabled={isSubmitting} />
           </label>
 
           <div className="flex justify-end">
@@ -1087,8 +1096,8 @@ export default function Documents() {
     accessMode: 'view_and_download',
   })
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedFolder, setSelectedFolder] = useState(ALL_FILES_FOLDER)
-  const [libraryView, setLibraryView] = useState('list')
+  const [selectedFolder, setSelectedFolder] = useState(PHOTOS_FOLDER)
+  const [libraryView, setLibraryView] = useState('grid')
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false)
   const [fullScreenPreviewOpen, setFullScreenPreviewOpen] = useState(false)
   const [folderDraft, setFolderDraft] = useState('')
@@ -1108,7 +1117,7 @@ export default function Documents() {
 
   const resetMobileFilesView = useCallback(() => {
     setActiveView('files')
-    setSelectedFolder(ALL_FILES_FOLDER)
+    setSelectedFolder(PHOTOS_FOLDER)
     setSearchQuery('')
     setSelectedId(null)
     setSelectedDocumentIds([])
@@ -1210,9 +1219,11 @@ export default function Documents() {
   )
 
   const folders = useMemo(() => [
-    { id: SHARED_ROOMS_FOLDER, name: SHARED_ROOMS_FOLDER, path: SHARED_ROOMS_FOLDER, depth: 0, special: true },
+    { id: PHOTOS_FOLDER, name: PHOTOS_FOLDER, path: PHOTOS_FOLDER, depth: 0, special: true },
     { id: ALL_FILES_FOLDER, name: ALL_FILES_FOLDER, path: ALL_FILES_FOLDER, depth: 0, special: true },
+    { id: DOCS_FOLDER, name: DOCS_FOLDER, path: DOCS_FOLDER, depth: 0, special: true },
     ...visibleFolderRows,
+    { id: SHARED_ROOMS_FOLDER, name: SHARED_ROOMS_FOLDER, path: SHARED_ROOMS_FOLDER, depth: 0, special: true },
     { id: ARCHIVED_FOLDER, name: ARCHIVED_FOLDER, path: ARCHIVED_FOLDER, depth: 0, special: true },
   ], [visibleFolderRows])
 
@@ -1227,6 +1238,10 @@ export default function Documents() {
       ? archivedDocuments
       : selectedFolder === SHARED_ROOMS_FOLDER
         ? activeDocuments.filter((document) => roomDocumentIds.has(document.id))
+        : selectedFolder === PHOTOS_FOLDER
+          ? activeDocuments.filter(isPhotoDocument)
+        : selectedFolder === DOCS_FOLDER
+          ? activeDocuments.filter((document) => !isPhotoDocument(document))
         : activeDocuments.filter((document) => (
           selectedFolder === ALL_FILES_FOLDER
           || selectedFolderIds?.has(document.folder_id)
@@ -1254,7 +1269,9 @@ export default function Documents() {
 
   const folderCounts = useMemo(() => {
     const counts = {
+      [PHOTOS_FOLDER]: activeDocuments.filter(isPhotoDocument).length,
       [ALL_FILES_FOLDER]: activeDocuments.length,
+      [DOCS_FOLDER]: activeDocuments.filter((document) => !isPhotoDocument(document)).length,
       [SHARED_ROOMS_FOLDER]: activeDocuments.filter((document) => roomDocumentIds.has(document.id)).length,
       [ARCHIVED_FOLDER]: archivedDocuments.length,
     }
@@ -1376,7 +1393,7 @@ export default function Documents() {
     mutationFn: ({ folderId, changes }) => updateSecureVaultFolder(folderId, changes),
     onSuccess: async (updatedFolder) => {
       if (updatedFolder.is_archived && selectedFolder === updatedFolder.id) {
-        setSelectedFolder(ALL_FILES_FOLDER)
+        setSelectedFolder(PHOTOS_FOLDER)
       }
       setNotice({
         type: 'success',
@@ -1396,7 +1413,7 @@ export default function Documents() {
     mutationFn: ({ folderIds }) => archiveSecureVaultFolderTree(folderIds),
     onSuccess: async (result) => {
       if (result.folders.some((folder) => folder.id === selectedFolder)) {
-        setSelectedFolder(ALL_FILES_FOLDER)
+        setSelectedFolder(PHOTOS_FOLDER)
       }
       setNotice({
         type: 'success',
@@ -1431,7 +1448,7 @@ export default function Documents() {
   const deleteFolderTreeMutation = useMutation({
     mutationFn: ({ folderIds }) => permanentlyDeleteSecureVaultFolderTree(folderIds),
     onSuccess: async (result) => {
-      setSelectedFolder(ALL_FILES_FOLDER)
+      setSelectedFolder(PHOTOS_FOLDER)
       setSelectedId(null)
       setNotice({
         type: 'success',
@@ -1789,8 +1806,8 @@ export default function Documents() {
           <span className="documents-mobile-eyebrow">MAP Files</span>
           <h1 className="documents-page-title font-display text-xl font-semibold leading-none" style={{ color: 'var(--portal-text)' }}>Files</h1>
           <span className="documents-kicker portal-chip inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]">
-            <ShieldCheck className="h-3 w-3" />
-            Secure sharing
+            <Camera className="h-3 w-3" />
+            Photo vault
           </span>
         </div>
 
@@ -1813,8 +1830,8 @@ export default function Documents() {
       <section className="documents-action-bar portal-command-bar rounded-[30px]">
         <div className="portal-command-bar-group">
           <button type="button" onClick={openUploadDialog} aria-disabled={billingAccess?.readOnly ? 'true' : undefined} title={billingAccess?.readOnly ? 'Payment is required to upload documents.' : undefined} className={`documents-primary-action portal-button-primary inline-flex cursor-pointer items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold ${billingAccess?.readOnly ? 'opacity-70' : ''}`}>
-            <Upload className="h-4 w-4" />
-            Upload
+            <Camera className="h-4 w-4" />
+            Add photos
           </button>
           <button type="button" onClick={openSelectedRoomDialog} aria-disabled={selectedDocumentIds.length === 0 || billingAccess?.readOnly ? 'true' : undefined} title={billingAccess?.readOnly ? 'Payment is required to create secure access rooms.' : selectedDocumentIds.length === 0 ? 'Select at least one document first.' : undefined} className={`documents-secondary-action portal-button-secondary inline-flex cursor-pointer items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold ${selectedDocumentIds.length === 0 || billingAccess?.readOnly ? 'opacity-70' : ''}`}>
             <Link2 className="h-4 w-4" />
@@ -2079,7 +2096,7 @@ export default function Documents() {
                 <div>
                   <h2 className="text-base font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedFolderRecord?.path || selectedFolder}</h2>
                   <p className="mt-1 text-sm" style={{ color: 'var(--portal-text-muted)' }}>
-                    {selectedFolder === SHARED_ROOMS_FOLDER ? 'Files included in secure access rooms.' : selectedFolder === ARCHIVED_FOLDER ? 'Archived files are recoverable for 30 days, then automatically cleared.' : 'Tenant-scoped secure document library.'}
+                    {selectedFolder === PHOTOS_FOLDER ? 'Recital, class, logo, and other photos Partner can use.' : selectedFolder === DOCS_FOLDER ? 'Waivers and other documents. Share links stay here when you need them.' : selectedFolder === SHARED_ROOMS_FOLDER ? 'Files included in secure access rooms.' : selectedFolder === ARCHIVED_FOLDER ? 'Archived files are recoverable for 30 days, then automatically cleared.' : 'Photos first. Waivers and share-link docs stay available in Waivers & docs.'}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -2234,8 +2251,22 @@ export default function Documents() {
             ) : (
               <div className="px-4 py-10 text-center">
                 <div className="documents-empty-state mx-auto max-w-md rounded-[28px] border border-dashed px-6 py-10" style={{ borderColor: 'var(--portal-border-strong)', color: 'var(--portal-text-muted)' }}>
-                  <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>No documents match this view</p>
-                  <p className="mt-2 text-xs">Try another folder, clear your search, or upload the first file for this workspace.</p>
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: 'rgba(201,168,76,0.12)', color: 'var(--portal-primary)' }}>
+                    <Camera className="h-5 w-5" />
+                  </div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--portal-text)' }}>{selectedFolder === PHOTOS_FOLDER ? 'Add photos Partner can use' : 'No files match this view'}</p>
+                  <p className="mt-2 text-xs">{selectedFolder === PHOTOS_FOLDER ? 'Drop in recital or class photos and your logo. Waivers and share-link docs stay in Waivers & docs — they are not the front door.' : 'Try Photos, clear your search, or upload a file.'}</p>
+                  {selectedFolder === PHOTOS_FOLDER ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsUploadDialogOpen(true)}
+                      disabled={billingAccess?.readOnly}
+                      className="portal-button-primary mt-4 inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold disabled:opacity-60"
+                    >
+                      <Camera className="h-3.5 w-3.5" />
+                      Add photos
+                    </button>
+                  ) : null}
                 </div>
               </div>
             )}
