@@ -1,10 +1,9 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { FolderOpen, ListChecks, MessageSquare } from 'lucide-react'
+import { FolderOpen, MessageSquare } from 'lucide-react'
 import { PlusCircle } from '@phosphor-icons/react'
 import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
 
 const navItems = [
-  { to: '/', icon: ListChecks, label: 'Today' },
   { to: '/inbox', icon: MessageSquare, label: 'Inbox' },
   { to: '/post', icon: PlusCircle, label: 'Post' },
   { to: '/documents', icon: FolderOpen, label: 'Files' },
@@ -18,7 +17,6 @@ export default function BottomNav({
   const partnerRollout = isMobilePartnerRolloutTenant(tenant)
 
   function isCurrentNavItem(to) {
-    if (to === '/') return location.pathname === '/'
     return location.pathname === to || location.pathname.startsWith(`${to}/`)
   }
 
@@ -37,7 +35,7 @@ export default function BottomNav({
           <NavLink
             key={to}
             to={to}
-            end={to === '/'}
+            end={to === '/inbox'}
             onClick={() => handleNavClick(to, label)}
             className="portal-bottom-nav-link flex-1 flex flex-col items-center gap-1 py-3 transition-all duration-200"
             style={({ isActive }) => ({ color: isActive ? '#C9A84C' : '#5E554D' })}

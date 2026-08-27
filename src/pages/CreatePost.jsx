@@ -2766,11 +2766,19 @@ export default function CreatePost() {
     const request = String(text || '').trim()
     if (!request || reviewPending) return
     if (!requireWriteAccess('revise this post with My Partner')) return
-    if (!clientId || !content.trim()) {
+    if (!content.trim()) {
       setReviewMessages((current) => [...current, {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: 'The draft is still loading. Try that request again in a moment.',
+        content: 'Write a caption or add a photo first, then I can help revise it.',
+      }])
+      return
+    }
+    if (!clientId) {
+      setReviewMessages((current) => [...current, {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: 'Your workspace is still loading. Try that request again in a moment.',
       }])
       return
     }
@@ -3988,7 +3996,35 @@ export default function CreatePost() {
           </section>
         )}
 
-        {mobilePartnerRollout ? (
+        {mobilePartnerRollout && !content.trim() ? (
+          <section className="mobile-publisher-empty" aria-label="Compose a new social post">
+            <p className="mobile-publisher-empty-kicker">New post</p>
+            <h1 className="mobile-publisher-empty-title">Make a post</h1>
+            <p className="mobile-publisher-empty-copy">Write a caption or add a photo. Nothing posts until you approve it.</p>
+            <textarea
+              className="mobile-publisher-empty-caption"
+              value={content}
+              onChange={(event) => handleCaptionChange(event.target.value)}
+              placeholder="What should this post say?"
+              rows={5}
+            />
+            <label className="mobile-publisher-empty-photo">
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  addLocalMediaFiles(Array.from(event.target.files || []), 'recent')
+                  event.target.value = ''
+                }}
+              />
+              Add photos
+            </label>
+          </section>
+        ) : null}
+
+        {mobilePartnerRollout && content.trim() ? (
           <MobilePublisherConversation
             businessName={profile?.clients?.business_name || 'My Automation Partner'}
             content={content}

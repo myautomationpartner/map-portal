@@ -22888,3 +22888,137 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     display: contents;
   }
 }
+
+/* Phone Files + Post: cream camera-roll, no dark vault cards, no empty Approve. */
+@media (max-width: 767px) {
+  html[data-portal-theme="map-dark"] .documents-page,
+  .documents-page {
+    --portal-bg: #F6F3EE !important;
+    --portal-surface: #ffffff !important;
+    --portal-text: #12262B !important;
+    --portal-text-muted: #5E554D !important;
+    --portal-text-soft: #7A726A !important;
+    --portal-border: rgba(18, 38, 43, 0.12) !important;
+    --portal-nav: #F6F3EE !important;
+    background: #F6F3EE !important;
+    color: #12262B !important;
+  }
+
+  html[data-portal-theme="map-dark"] .documents-page h1,
+  html[data-portal-theme="map-dark"] .documents-page h2,
+  html[data-portal-theme="map-dark"] .documents-page h3,
+  html[data-portal-theme="map-dark"] .documents-page p,
+  html[data-portal-theme="map-dark"] .documents-page span,
+  html[data-portal-theme="map-dark"] .documents-page button,
+  html[data-portal-theme="map-dark"] .documents-page input,
+  html[data-portal-theme="map-dark"] .documents-page .documents-file-title,
+  html[data-portal-theme="map-dark"] .documents-folder-button span {
+    color: #12262B !important;
+  }
+
+  html[data-portal-theme="map-dark"] .documents-page .documents-file-meta,
+  html[data-portal-theme="map-dark"] .documents-folder-button span:last-child {
+    color: #5E554D !important;
+  }
+
+  .documents-page .portal-panel,
+  .documents-page .documents-folder-panel,
+  .documents-page .documents-files-panel,
+  .documents-page .documents-folder-button,
+  .documents-page .documents-file-card,
+  html[data-portal-theme="map-dark"] .documents-page .portal-panel,
+  html[data-portal-theme="map-dark"] .documents-page .documents-folder-panel,
+  html[data-portal-theme="map-dark"] .documents-page .documents-files-panel,
+  html[data-portal-theme="map-dark"] .documents-page .documents-folder-button,
+  html[data-portal-theme="map-dark"] .documents-page .documents-file-card {
+    background: #ffffff !important;
+    color: #12262B !important;
+    border-color: rgba(18, 38, 43, 0.12) !important;
+    box-shadow: 0 10px 28px rgba(18, 38, 43, 0.06) !important;
+  }
+
+  .documents-folder-create-form {
+    display: none !important;
+  }
+
+  .documents-photo-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+  }
+
+  .documents-photo-frame {
+    aspect-ratio: 1 / 1;
+    background: #ece7e0;
+  }
+
+  .documents-photo-thumb,
+  .documents-photo-thumb-fallback {
+    width: 100%;
+    height: 100%;
+    min-height: 140px;
+    object-fit: cover;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mobile-publisher-empty {
+    margin: 16px 16px 110px;
+    padding: 22px 18px 24px;
+    border-radius: 28px;
+    background: #ffffff;
+    color: #12262B;
+    box-shadow: 0 16px 40px rgba(18, 38, 43, 0.08);
+  }
+
+  .mobile-publisher-empty-kicker {
+    margin: 0 0 8px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #7A726A;
+  }
+
+  .mobile-publisher-empty-title {
+    margin: 0;
+    font-family: Sora, ui-serif, Georgia, serif;
+    font-size: 2rem;
+    line-height: 1.05;
+    color: #12262B;
+  }
+
+  .mobile-publisher-empty-copy {
+    margin: 10px 0 18px;
+    font-size: 14px;
+    line-height: 1.45;
+    color: #5E554D;
+  }
+
+  .mobile-publisher-empty-caption {
+    width: 100%;
+    min-height: 140px;
+    border: 1px solid rgba(18, 38, 43, 0.14);
+    border-radius: 18px;
+    padding: 14px;
+    background: #F6F3EE;
+    color: #12262B;
+    font-size: 16px;
+    line-height: 1.4;
+    resize: vertical;
+  }
+
+  .mobile-publisher-empty-photo {
+    display: inline-flex;
+    margin-top: 14px;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    padding: 0 18px;
+    border-radius: 999px;
+    background: #12262B;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 700;
+  }
+}

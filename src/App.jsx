@@ -835,7 +835,7 @@ function withAuthTimeout(promise, label) {
   const timeout = new Promise((_, reject) => {
     timer = window.setTimeout(() => {
       reject(new Error(`${label} timed out.`))
-    }, 5000)
+    }, 20000)
   })
 
   return Promise.race([promise, timeout]).finally(() => {
@@ -892,6 +892,21 @@ function AuthProvider({ children }) {
           setSession(session)
         }
       } catch (error) {
+        const timedOut = /timed out/i.test(String(error?.message || error || ''))
+        if (timedOut) {
+          console.warn('MAP portal auth bootstrap timed out; retrying session check.', error)
+          try {
+            const { data: { session: retrySession }, error: retryError } = await supabase.auth.getSession()
+            if (!retryError && active) {
+              setSession(retrySession ?? null)
+              return
+            }
+          } catch (retryError) {
+            console.warn('MAP portal auth bootstrap retry failed.', retryError)
+          }
+          if (active) setSession(undefined)
+          return
+        }
         console.warn('MAP portal auth bootstrap cleared a stale session.', error)
         await supabase.auth.signOut({ scope: 'local' }).catch(() => {})
         if (active) {
@@ -997,13 +1012,18 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
   const currentHost = typeof window === 'undefined' ? '' : normalizeHost(window.location.hostname)
   const expectedHost = useMemo(() => resolveExpectedHost(profile), [profile])
   const pathTenantMismatch = useMemo(() => resolvePathTenantMismatch(profile), [profile])
+  const matchingPathPortal = useMemo(() => {
+    const pathTenant = inferPathTenant()
+    return pathTenant.routeModel === 'prefixed-path' && Boolean(pathTenant.clientSlug) && !pathTenantMismatch
+  }, [pathTenantMismatch])
   const tenantHostMismatch = Boolean(
     session &&
     profile?.clients &&
     !isRelaxedHost(currentHost) &&
     expectedHost &&
     currentHost !== expectedHost &&
-    !pathTenantMismatch,
+    !pathTenantMismatch &&
+    !matchingPathPortal,
   )
   const tenantRouteMismatch = Boolean(session && profile?.clients && pathTenantMismatch)
   const showBillingBanner =
@@ -1264,6 +1284,12 @@ function ProtectedLayout({ session, portalTheme, onPortalThemeChange }) {
   )
 }
 
+function HomeRoute() {
+  const isPhone = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+  if (isPhone) return <Navigate to="/inbox" replace />
+  return <Today />
+}
+
 export default function App() {
   const pathTenant = inferPathTenant()
   const [portalTheme, setPortalTheme] = useState(resolveInitialPortalTheme)
@@ -1298,7 +1324,8 @@ export default function App() {
                   />
                 )}
               >
-                <Route path="/" element={<Today />} />
+                <Route path="/" element={<HomeRoute />} />
+                <Route path="/today" element={<Today />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/calendar" element={<ContentCalendar />} />
                 <Route path="/ads" element={<BoostAds />} />

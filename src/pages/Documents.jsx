@@ -211,6 +211,33 @@ function DocumentFileIcon({ mimeType, className, style }) {
   return <FileText className={className} style={style} />
 }
 
+
+function PhotoThumb({ documentId, fileName, mimeType }) {
+  const [url, setUrl] = useState('')
+  useEffect(() => {
+    if (!documentId || !String(mimeType || '').startsWith('image/')) return undefined
+    let alive = true
+    getSecureVaultDocumentUrl(documentId, 'view')
+      .then((payload) => {
+        if (alive) setUrl(payload?.signed_url || '')
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [documentId, mimeType])
+
+  if (url) {
+    return <img src={url} alt={fileName || ''} className="documents-photo-thumb" />
+  }
+
+  return (
+    <div className="documents-photo-thumb-fallback" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+      <DocumentFileIcon mimeType={mimeType} className="h-8 w-8" style={{ color: 'var(--portal-primary)' }} />
+    </div>
+  )
+}
+
 function actionLabel(action) {
   const labels = {
     room_open: 'Shared room opened',
@@ -2126,17 +2153,18 @@ export default function Documents() {
               </div>
             ) : filteredDocuments.length > 0 ? (
               libraryView === 'grid' ? (
-                <div className="documents-file-grid grid gap-2.5 p-4 sm:grid-cols-2 2xl:grid-cols-3">
+                <div className={`documents-file-grid grid gap-2.5 p-4 sm:grid-cols-2 2xl:grid-cols-3 ${selectedFolder === PHOTOS_FOLDER ? 'documents-photo-grid' : ''}`}>
                   {filteredDocuments.map((document) => {
                     const isSelected = selectedDocument?.id === document.id
                     const isChecked = selectedDocumentIds.includes(document.id)
+                    const isPhoto = String(document.mime_type || '').startsWith('image/')
 
                     return (
-                      <div key={document.id} data-selected={isSelected} className="documents-file-card relative rounded-[20px] p-3.5 text-left transition-all" style={isSelected ? { background: 'linear-gradient(145deg, rgba(201,168,76,0.14), rgba(232,213,160,0.08))', border: '1px solid rgba(201,168,76,0.24)', boxShadow: '0 14px 28px rgba(26,24,20,0.06)' } : { background: 'rgba(255,255,255,0.84)', border: '1px solid var(--portal-border)' }}>
-                        <label className="absolute left-3 top-3" onClick={(event) => event.stopPropagation()}>
+                      <div key={document.id} data-selected={isSelected} data-photo={isPhoto ? 'true' : undefined} className="documents-file-card relative rounded-[20px] p-3.5 text-left transition-all" style={isSelected ? { background: 'linear-gradient(145deg, rgba(201,168,76,0.14), rgba(232,213,160,0.08))', border: '1px solid rgba(201,168,76,0.24)', boxShadow: '0 14px 28px rgba(26,24,20,0.06)' } : { background: '#ffffff', border: '1px solid var(--portal-border)' }}>
+                        <label className="absolute left-3 top-3 z-10" onClick={(event) => event.stopPropagation()}>
                           <input type="checkbox" checked={isChecked} onChange={() => toggleSelectedDocument(document.id)} />
                         </label>
-                        <div className="absolute right-3 top-3">
+                        <div className="absolute right-3 top-3 z-10">
                           <DocumentActionMenu
                             document={document}
                             isOpen={openActionMenuId === document.id}
@@ -2158,9 +2186,15 @@ export default function Documents() {
                           />
                         </div>
                         <button type="button" onClick={() => openDocumentPreview(document.id)} className="block w-full text-left">
-                          <div className="documents-file-icon mb-3 ml-6 flex h-8 w-8 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
-                            <DocumentFileIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
-                          </div>
+                          {isPhoto ? (
+                            <div className="documents-photo-frame mb-3 overflow-hidden rounded-[16px]">
+                              <PhotoThumb documentId={document.id} fileName={document.file_name} mimeType={document.mime_type} />
+                            </div>
+                          ) : (
+                            <div className="documents-file-icon mb-3 ml-6 flex h-8 w-8 items-center justify-center rounded-[10px]" style={{ background: 'rgba(245, 240, 235, 0.96)' }}>
+                              <DocumentFileIcon mimeType={document.mime_type} className="h-4 w-4" style={{ color: 'var(--portal-primary)' }} />
+                            </div>
+                          )}
                           <div className="flex items-center gap-2 pr-7">
                             <p className="documents-file-title truncate text-[13px] font-semibold">{document.file_name}</p>
                             {roomDocumentIds.has(document.id) ? <Users className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--portal-success)' }} /> : null}
