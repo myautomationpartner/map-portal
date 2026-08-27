@@ -20,6 +20,7 @@ const appCssSource = await readFile(new URL('./App.css', import.meta.url), 'utf8
 const portalApiSource = await readFile(new URL('./lib/portalApi.js', import.meta.url), 'utf8')
 const voiceComposerSource = await readFile(new URL('./components/MobileVoiceComposer.jsx', import.meta.url), 'utf8')
 const mobileChatSource = await readFile(new URL('./components/MobilePartnerChat.jsx', import.meta.url), 'utf8')
+const appSource = await readFile(new URL('./App.jsx', import.meta.url), 'utf8')
 const appHtmlSource = await readFile(new URL('../index.html', import.meta.url), 'utf8')
 const imageAssistSource = await readFile(new URL('./lib/imageAssist.js', import.meta.url), 'utf8')
 const mobilePartnerMediaSource = await readFile(new URL('./lib/mobilePartnerMedia.js', import.meta.url), 'utf8')
@@ -58,8 +59,8 @@ test('mobile home reuses Publisher and carries Facebook, Instagram, and X choice
   assert.match(homeSource, /Nothing posts without review\./)
 })
 
-test('phone shell primary tabs are Today, Inbox, Post, and Files', () => {
-  assert.match(navSource, /label: 'Today'/)
+test('phone shell primary tabs are Inbox, Post, and Files', () => {
+  assert.doesNotMatch(navSource, /label: 'Today'/)
   assert.match(navSource, /to: '\/inbox'/)
   assert.match(navSource, /label: 'Inbox'/)
   assert.match(navSource, /to: '\/post'/)
@@ -373,7 +374,7 @@ test('phone portal uses warm cream/ink tokens and full Final review captions', (
   assert.match(appCssSource, /\.mobile-publisher-conversation \.mobile-partner-generated-actions \{[\s\S]{0,500}position: sticky/)
   assert.match(createSource, /Nothing posts until you approve it/)
   assert.doesNotMatch(createSource, /Confirm the photo, caption, platforms, and timing below/)
-  assert.match(navSource, /label: 'Today'/)
+  assert.doesNotMatch(navSource, /label: 'Today'/)
   assert.match(navSource, /label: 'Inbox'/)
   assert.match(navSource, /label: 'Post'/)
   assert.match(navSource, /label: 'Files'/)
@@ -382,4 +383,16 @@ test('phone portal uses warm cream/ink tokens and full Final review captions', (
   assert.doesNotMatch(navSource, /rounded-\[28px\]/)
   assert.match(appCssSource, /\.today-phone-title/)
   assert.match(appCssSource, /html\[data-portal-theme="map-dark"\] \.portal-shell[\s\S]{0,500}background: #F6F3EE !important/)
+})
+
+test('path portal host mismatch does not sign out a matching /portal/slug session', () => {
+  assert.match(appSource, /routeModel === 'prefixed-path'/)
+  assert.match(appSource, /!matchingPathPortal/)
+  assert.match(appSource, /function HomeRoute\(\)/)
+  assert.match(appSource, /Navigate to="\/inbox"/)
+})
+
+test('empty mobile Post does not render Final review until a caption exists', () => {
+  assert.match(createSource, /mobilePartnerRollout && content\.trim\(\)/)
+  assert.match(createSource, /Make a post/)
 })
