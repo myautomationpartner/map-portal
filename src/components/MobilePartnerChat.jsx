@@ -854,7 +854,7 @@ export default function MobilePartnerChat({
       }
 
       if (onPhotos && isTopicSeekingRequest(cleanText)) {
-        setPendingLabel('Looking at what is going on…')
+        setPendingLabel('Looking at this week…')
         let options = []
         try {
           const radar = clientId ? await fetchOpportunityRadar(clientId) : []
