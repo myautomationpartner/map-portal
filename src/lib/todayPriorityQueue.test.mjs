@@ -366,6 +366,41 @@ test('today priority queue includes unreplied public comments from comment bundl
   assert.equal(queue[0].targetHref, '/inbox?section=comments&post=account-1%3Apost-1')
 })
 
+test('today priority queue reuses inboxClassification so stale Facebook praise is not P0', () => {
+  const queue = buildTodayPriorityQueueFromPortalData({
+    now: '2026-08-27T21:00:00.000Z',
+    commentBundles: [
+      {
+        post: {
+          id: 'recital-post',
+          accountId: 'account-1',
+          platform: 'facebook',
+          content: 'Recital weekend is here.',
+        },
+        comments: [
+          {
+            id: 'karel-ann',
+            authorName: 'Karel Ann',
+            text: 'Congratulations!',
+            createdTime: '2026-05-12T18:00:00.000Z',
+            replyCount: 0,
+          },
+          {
+            id: 'fresh-question',
+            authorName: 'Jordan Lee',
+            text: 'What time should we arrive?',
+            createdTime: '2026-08-27T19:10:00.000Z',
+            replyCount: 0,
+          },
+        ],
+      },
+    ],
+  })
+
+  assert.deepEqual(queue.map((item) => item.id), ['comment:fresh-question'])
+  assert.equal(queue.some((item) => /karel|congratulat/i.test(`${item.id} ${item.title} ${item.description}`)), false)
+})
+
 test('today priority queue does not duplicate business-page comment mirrors as messages', () => {
   const queue = buildTodayPriorityQueueFromPortalData({
     now: '2026-05-29T13:00:00.000Z',

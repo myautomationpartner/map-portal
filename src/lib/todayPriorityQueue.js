@@ -386,8 +386,18 @@ function buildInboxItems(conversations = [], options = {}) {
     })
 }
 
-function buildCommentItems(commentBundles = []) {
+function resolveNowMs(now) {
+  if (now == null || now === '') return Date.now()
+  if (typeof now === 'number' && Number.isFinite(now)) {
+    return now > 1000000000000 ? now : now * 1000
+  }
+  const parsed = Date.parse(now)
+  return Number.isFinite(parsed) ? parsed : Date.now()
+}
+
+function buildCommentItems(commentBundles = [], options = {}) {
   const items = []
+  const now = resolveNowMs(options.now)
 
   for (const bundle of commentBundles) {
     const post = bundle?.post || {}
@@ -397,7 +407,7 @@ function buildCommentItems(commentBundles = []) {
     const openHref = `/inbox?section=comments&post=${encodeURIComponent(postKey)}`
 
     comments
-      .filter(commentNeedsReply)
+      .filter((comment) => commentNeedsReply(comment, now))
       .sort((a, b) => parseTime(commentTime(b, post)) - parseTime(commentTime(a, post)))
       .forEach((comment) => {
         const author = commentAuthor(comment, post.platform)
@@ -609,7 +619,7 @@ export function buildTodayPriorityQueueFromPortalData({
 } = {}) {
   const liveItems = [
     ...buildInboxItems(conversations, { businessNames, inboxes }),
-    ...buildCommentItems(commentBundles),
+    ...buildCommentItems(commentBundles, { now }),
     ...buildDraftItems(socialDrafts, { now }),
     ...buildScheduledPostItems(calendarPosts, { now }),
     ...buildPublishedPostItems(calendarPosts, socialDrafts, { now }),

@@ -22583,3 +22583,308 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     color: var(--pulse-text) !important;
   }
 }
+
+/* Editorial phone product. Last so it wins over map-dark SOC and Pulse capsules. */
+.today-phone {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  html,
+  html[data-portal-theme="map-dark"] {
+    color-scheme: light !important;
+    --pulse-bg: #F6F3EE;
+    --pulse-surface: #ffffff;
+    --pulse-ink: #12262B;
+    --pulse-ink-soft: #1A3338;
+    --pulse-text: #1A1814;
+    --pulse-muted: #5E554D;
+    --pulse-line: rgba(20, 19, 16, 0.11);
+    --pulse-lime: #C9A84C;
+    --portal-bg: #F6F3EE;
+    --portal-bg-secondary: #FBF9F4;
+    --portal-surface: #ffffff;
+    --portal-surface-strong: #ffffff;
+    --portal-text: #1A1814;
+    --portal-text-muted: #5E554D;
+    --portal-text-soft: #8a8278;
+    --portal-ink: #12262B;
+    --portal-primary: #C9A84C;
+    --portal-nav: #F6F3EE;
+    --portal-nav-text: #12262B;
+    --portal-nav-text-muted: #5E554D;
+    --portal-border: rgba(20, 19, 16, 0.11);
+    --portal-shadow: 0 14px 36px rgba(20, 19, 16, 0.06);
+  }
+
+  html body,
+  html[data-portal-theme="map-dark"] body {
+    background: #F6F3EE !important;
+    color: #1A1814 !important;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif !important;
+  }
+
+  html[data-portal-theme="map-dark"] .font-display,
+  html[data-portal-theme="map-dark"] h1,
+  html[data-portal-theme="map-dark"] h2,
+  html[data-portal-theme="map-dark"] h3,
+  .font-display {
+    font-family: 'Sora', 'Plus Jakarta Sans', system-ui, sans-serif !important;
+    color: #1A1814 !important;
+  }
+
+  html[data-portal-theme="map-dark"] .portal-shell,
+  html[data-portal-theme="map-dark"] .portal-shell-mobile-partner,
+  html[data-portal-theme="map-dark"] .portal-shell-mobile-partner > div,
+  html[data-portal-theme="map-dark"] .portal-shell-mobile-partner > div > main,
+  .portal-shell,
+  .portal-shell::before {
+    background: #F6F3EE !important;
+    color: #1A1814 !important;
+    overflow: visible !important;
+  }
+
+  .portal-shell::before {
+    display: none !important;
+  }
+
+  html[data-portal-theme="map-dark"] .today-page,
+  html[data-portal-theme="map-dark"] .inbox-page,
+  html[data-portal-theme="map-dark"] .documents-page,
+  html[data-portal-theme="map-dark"] .settings-page,
+  html[data-portal-theme="map-dark"] .create-post-page,
+  .today-page,
+  .inbox-page,
+  .documents-page,
+  .settings-page {
+    background: #F6F3EE !important;
+    color: #1A1814 !important;
+  }
+
+  html[data-portal-theme="map-dark"] .inbox-page h1,
+  html[data-portal-theme="map-dark"] .documents-page h1,
+  html[data-portal-theme="map-dark"] .mobile-inbox-shell h1,
+  html[data-portal-theme="map-dark"] .mobile-dashboard-page h1,
+  .inbox-page h1,
+  .documents-page-title,
+  .documents-page h1 {
+    color: #1A1814 !important;
+    font-family: 'Sora', 'Plus Jakarta Sans', system-ui, sans-serif !important;
+    font-size: 2.5rem !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.04em !important;
+    line-height: 1 !important;
+  }
+
+  .today-desktop {
+    display: none !important;
+  }
+
+  .today-page {
+    display: block;
+    min-height: 100dvh;
+    padding: 0 !important;
+    background: #F6F3EE !important;
+  }
+
+  .today-phone {
+    display: flex;
+    min-height: 100dvh;
+    flex-direction: column;
+    padding: calc(env(safe-area-inset-top, 0px) + 1.15rem) 1.2rem calc(env(safe-area-inset-bottom, 0px) + 6.4rem);
+    background: #F6F3EE;
+    color: #1A1814;
+  }
+
+  .today-phone-hero {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.15rem 0.1rem 1.35rem;
+  }
+
+  .today-phone-title {
+    margin: 0;
+    color: #1A1814 !important;
+    font-family: 'Sora', 'Plus Jakarta Sans', system-ui, sans-serif !important;
+    font-size: 2.5rem;
+    font-weight: 700;
+    letter-spacing: -0.045em;
+    line-height: 0.95;
+  }
+
+  .today-phone-date {
+    margin: 0.15rem 0 0;
+    color: #5E554D;
+    font-size: 0.98rem;
+    font-weight: 500;
+  }
+
+  .today-phone-count {
+    margin: 1.15rem 0 0;
+    color: #1A1814;
+    font-size: 1.38rem;
+    font-weight: 650;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+  }
+
+  .today-phone-list {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .today-phone-card,
+  .today-phone-empty {
+    display: grid;
+    gap: 0.42rem;
+    padding: 1.15rem 1.15rem 1.05rem;
+    border: 1px solid rgba(20, 19, 16, 0.08);
+    border-radius: 16px;
+    background: #ffffff;
+    box-shadow: 0 12px 28px rgba(20, 19, 16, 0.045);
+  }
+
+  .today-phone-card h2,
+  .today-phone-empty h2 {
+    margin: 0;
+    color: #1A1814 !important;
+    font-family: 'Sora', 'Plus Jakarta Sans', system-ui, sans-serif !important;
+    font-size: 1.12rem;
+    font-weight: 650;
+    letter-spacing: -0.03em;
+    line-height: 1.2;
+  }
+
+  .today-phone-card p,
+  .today-phone-empty p {
+    margin: 0;
+    overflow: hidden;
+    color: #5E554D;
+    font-size: 0.95rem;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .today-phone-empty p {
+    white-space: normal;
+  }
+
+  .today-phone-action {
+    appearance: none;
+    display: inline-flex;
+    width: 100%;
+    min-height: 3rem;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0.7rem;
+    border: 0;
+    border-radius: 16px;
+    background: #12262B;
+    color: #ffffff;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-size: 0.98rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  html[data-portal-theme="map-dark"] .inbox-page .portal-panel,
+  html[data-portal-theme="map-dark"] .inbox-page .inbox-conversation-list,
+  .inbox-page .portal-panel,
+  .inbox-page .inbox-conversation-list {
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .inbox-page {
+    padding: calc(env(safe-area-inset-top, 0px) + 0.85rem) 0.2rem calc(env(safe-area-inset-bottom, 0px) + 6.2rem) !important;
+  }
+
+  .inbox-page > .portal-panel > div:first-child {
+    padding: 0.35rem 1rem 0.85rem !important;
+    border-bottom: 0 !important;
+    background: transparent !important;
+  }
+
+  .settings-mobile-return {
+    background: #F6F3EE !important;
+    border-color: rgba(20, 19, 16, 0.08) !important;
+    color: #1A1814 !important;
+  }
+
+  .portal-bottom-nav,
+  .portal-bottom-nav.mobile-partner-bottom-nav,
+  html[data-portal-theme="map-dark"] .portal-bottom-nav,
+  html[data-portal-theme="map-dark"] .portal-bottom-nav.mobile-partner-bottom-nav {
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    overflow: hidden;
+    border: 0 !important;
+    border-top: 1px solid rgba(20, 19, 16, 0.08) !important;
+    border-radius: 0 !important;
+    background: #F6F3EE !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .portal-bottom-nav-inner,
+  .mobile-partner-bottom-nav .portal-bottom-nav-inner {
+    min-height: 4.35rem;
+    padding: 0.15rem 0.4rem calc(0.35rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .portal-bottom-nav-link,
+  html[data-portal-theme="map-dark"] .mobile-partner-bottom-nav .portal-bottom-nav-link {
+    color: #5E554D !important;
+  }
+
+  .portal-bottom-nav-link[aria-current="page"],
+  html[data-portal-theme="map-dark"] .mobile-partner-bottom-nav .portal-bottom-nav-link[aria-current="page"] {
+    color: #C9A84C !important;
+  }
+
+  .portal-bottom-nav-label,
+  .mobile-partner-bottom-nav .portal-bottom-nav-label,
+  html[data-portal-theme="map-dark"] .mobile-partner-bottom-nav .portal-bottom-nav-label {
+    color: #5E554D !important;
+    font-size: 0.72rem !important;
+    font-weight: 650 !important;
+    letter-spacing: -0.01em !important;
+    text-transform: none !important;
+  }
+
+  .portal-bottom-nav-link[aria-current="page"] .portal-bottom-nav-label,
+  .mobile-partner-bottom-nav .portal-bottom-nav-link[aria-current="page"] .portal-bottom-nav-label {
+    color: #1A1814 !important;
+  }
+
+  .portal-bottom-nav-icon,
+  .mobile-partner-bottom-nav .portal-bottom-nav-icon {
+    background: transparent !important;
+    color: inherit;
+  }
+
+  .portal-bottom-nav-link[aria-current="page"] .portal-bottom-nav-icon,
+  .mobile-partner-bottom-nav .portal-bottom-nav-link[aria-current="page"] .portal-bottom-nav-icon {
+    color: #C9A84C !important;
+    background: transparent !important;
+  }
+
+  .portal-bottom-nav-icon > div:last-child,
+  .mobile-partner-bottom-nav .portal-bottom-nav-icon > div:last-child {
+    background: #C9A84C !important;
+    box-shadow: none !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .today-phone {
+    display: none !important;
+  }
+
+  .today-desktop {
+    display: contents;
+  }
+}

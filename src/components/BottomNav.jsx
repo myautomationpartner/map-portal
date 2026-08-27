@@ -28,8 +28,8 @@ export default function BottomNav({
   }
 
   return (
-    <nav className={`portal-bottom-nav ${partnerRollout ? 'mobile-partner-bottom-nav' : ''} fixed bottom-3 left-3 right-3 z-50 rounded-[28px] border shadow-2xl md:hidden`}
-      style={{ background: 'var(--portal-nav)', borderColor: 'var(--portal-border)', backdropFilter: 'blur(20px)' }}>
+    <nav className={`portal-bottom-nav ${partnerRollout ? 'mobile-partner-bottom-nav' : ''} fixed inset-x-0 bottom-0 z-50 md:hidden`}
+      style={{ background: 'var(--portal-nav)', borderColor: 'var(--portal-border)' }}>
       <div className="portal-bottom-nav-inner flex items-center">
         {navItems.map(({ to, icon: Icon, label }) => {
           const notificationCount = label === 'Inbox' ? Number(inboxNotificationCount || 0) : 0
@@ -40,7 +40,7 @@ export default function BottomNav({
             end={to === '/'}
             onClick={() => handleNavClick(to, label)}
             className="portal-bottom-nav-link flex-1 flex flex-col items-center gap-1 py-3 transition-all duration-200"
-            style={({ isActive }) => ({ color: isActive ? 'var(--portal-primary)' : 'var(--portal-ink, var(--portal-nav-text))' })}
+            style={({ isActive }) => ({ color: isActive ? '#C9A84C' : '#5E554D' })}
           >
             {({ isActive }) => (
               <>
@@ -56,9 +56,8 @@ export default function BottomNav({
                       className="portal-notification-badge portal-bottom-notification-badge absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full px-1 py-0.5 text-[9px] font-black tabular-nums"
                       aria-label={`${notificationCount} inbox items need you now`}
                       style={{
-                        background: 'linear-gradient(135deg, var(--portal-primary), var(--portal-cyan))',
-                        color: '#001018',
-                        boxShadow: '0 0 12px color-mix(in srgb, var(--portal-cyan) 34%, transparent)',
+                        background: '#12262B',
+                        color: '#ffffff',
                       }}
                     >
                       {notificationCount > 9 ? '9+' : notificationCount}
@@ -66,10 +65,10 @@ export default function BottomNav({
                   ) : null}
                   {isActive && (
                     <div className="absolute -bottom-1 left-1/2 h-0.5 w-4 -translate-x-1/2 rounded-full"
-                      style={{ background: 'var(--portal-primary)' }} />
+                      style={{ background: '#C9A84C' }} />
                   )}
                 </div>
-                <span className="portal-bottom-nav-label text-[8px] font-semibold uppercase tracking-[0.08em]">{label}</span>
+                <span className="portal-bottom-nav-label text-[11px] font-semibold tracking-tight">{label}</span>
               </>
             )}
           </NavLink>
