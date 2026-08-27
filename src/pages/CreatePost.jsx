@@ -43,7 +43,7 @@ import { FaMicrosoft } from 'react-icons/fa'
 import { SiDropbox, SiGooglephotos, SiIcloud } from 'react-icons/si'
 import MobileVoiceComposer from '../components/MobileVoiceComposer'
 import MobilePartnerTopBar from '../components/MobilePartnerTopBar'
-import { DraftDiscardDialog, GeneratedPostcard, PostcardPreviewDialog } from '../components/MobilePartnerChat'
+import MobilePartnerChat, { DraftDiscardDialog, GeneratedPostcard, PostcardPreviewDialog } from '../components/MobilePartnerChat'
 import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
 import { createVisionImageDataUrl, isBrandLogoRequest, isLogoOverlayOnlyRequest, resolveCreativeEditTargets, stampBrandLogo } from '../lib/imageAssist'
 import { isPromotionalDesignRequest, isPromotionalDesignRevision, renderPromotionalGraphic } from '../lib/promoGraphic'
@@ -2388,7 +2388,7 @@ export default function CreatePost() {
           logoMimeType: String(location.state?.promoLogoMimeType || 'image/png'),
         }
       : null
-    if (recentPhotosHandledRef.current || (!recentPhotos.length && !preselectedPlatforms.length && !initialCaption)) return
+    if (!recentPhotos.length && !preselectedPlatforms.length && !initialCaption) return
 
     recentPhotosHandledRef.current = true
     if (initialCaption) {
@@ -2398,6 +2398,7 @@ export default function CreatePost() {
       setDraftStatus(imageCountAnalyzed
         ? `My Partner used your ${imageCountAnalyzed === 1 ? 'photo' : `${imageCountAnalyzed} photos`} and instructions to create this draft. Review it before publishing.`
         : 'My Partner used your instructions to create this draft. Review it before publishing.')
+      setMobileReviewOpen(true)
       if (partnerPrompt) setMediaSuggestion(`Customer request: ${partnerPrompt}`)
       if (partnerConversation.length) setReviewMessages(partnerConversation)
       if (handedOffPromoDesign) {
@@ -3998,43 +3999,44 @@ export default function CreatePost() {
         )}
 
         {mobilePartnerRollout && !mobileReviewOpen ? (
-          <section className="mobile-publisher-empty" aria-label="Compose a new social post">
-            <p className="mobile-publisher-empty-kicker">New post</p>
-            <h1 className="mobile-publisher-empty-title">Make a post</h1>
-            <p className="mobile-publisher-empty-copy">Write a caption or add a photo. Nothing posts until you approve it.</p>
-            <textarea
-              className="mobile-publisher-empty-caption"
-              value={content}
-              onChange={(event) => handleCaptionChange(event.target.value)}
-              placeholder="What should this post say?"
-              rows={5}
-            />
-            <div className="mobile-publisher-empty-actions">
-              <label className="mobile-publisher-empty-photo">
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(event) => {
-                    addLocalMediaFiles(Array.from(event.target.files || []), 'recent')
-                    event.target.value = ''
-                  }}
-                />
-                Add photos
-              </label>
-              <button
-                type="button"
-                className="mobile-publisher-empty-review"
-                disabled={!content.trim()}
-                onClick={() => setMobileReviewOpen(true)}
-              >
-                Review post
-              </button>
-            </div>
-            {localImageItems.length ? (
-              <p className="mobile-publisher-empty-copy">{localImageItems.length} photo{localImageItems.length === 1 ? '' : 's'} attached.</p>
-            ) : null}
+          <section className="mobile-publisher-partner-chat" aria-label="Ask Partner to create a post">
+            <MobilePartnerChat
+              contextPath="/post"
+              placeholder="Describe it, speak it, or add photos"
+              note="Voice and photos work here. Nothing posts without review."
+              onPhotos={(files, options = {}) => {
+                navigate('/post?source=partner-chat', {
+                  state: {
+                    recentPhotos: files || [],
+                    preselectedPlatforms: options.platforms || activePlatforms,
+                    initialCaption: options.caption || '',
+                    partnerPrompt: options.prompt || '',
+                    imageCountAnalyzed: Number(options.imageCountAnalyzed || 0),
+                    partnerConversation: Array.isArray(options.conversation) ? options.conversation : [],
+                    promoDesign: options.promoDesign || null,
+                    promoSourceFile: options.promoSourceFile || null,
+                    promoSourceImageBase64: options.promoSourceImageBase64 || '',
+                    promoSourceImageMimeType: options.promoSourceImageMimeType || '',
+                    promoLogoBase64: options.promoLogoBase64 || '',
+                    promoLogoMimeType: options.promoLogoMimeType || '',
+                  },
+                })
+              }}
+              platforms={activePlatforms}
+              businessName={profile?.clients?.business_name || outlet.tenant?.displayName || 'your business'}
+              readOnly={Boolean(outlet.billingAccess?.readOnly)}
+            >
+              <div className="mobile-partner-inline-message assistant">
+                <span className="mobile-partner-message-avatar">
+                  <img src="/assets/map-option-b-mark.png" alt="" />
+                  <i aria-hidden="true" />
+                </span>
+                <div className="mobile-partner-inline-bubble">
+                  <p>I can draft a post from a normal request. Facebook, Instagram, and X stay ready for review.</p>
+                  <strong>What would you like to create today? Describe it, speak it, or add photos.</strong>
+                </div>
+              </div>
+            </MobilePartnerChat>
           </section>
         ) : null}
 

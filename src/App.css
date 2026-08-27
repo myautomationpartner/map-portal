@@ -23154,3 +23154,25 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     accent-color: #12262B;
   }
 }
+
+
+@media (max-width: 767px) {
+  .mobile-publisher-partner-chat {
+    min-height: calc(100dvh - 8.8rem);
+    display: flex;
+    flex-direction: column;
+    padding: 0 0 5.5rem;
+  }
+
+  .mobile-publisher-partner-chat .mobile-partner-conversation {
+    flex: 1;
+    padding: 0.75rem 0.9rem 1rem;
+  }
+
+  .mobile-publisher-partner-chat .mobile-partner-composer-dock {
+    position: sticky;
+    bottom: calc(4.6rem + env(safe-area-inset-bottom, 0px));
+    background: #F6F3EE;
+    padding-bottom: 0.6rem;
+  }
+}

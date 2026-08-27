@@ -392,9 +392,10 @@ test('path portal host mismatch does not sign out a matching /portal/slug sessio
   assert.match(appSource, /Navigate to="\/inbox"/)
 })
 
-test('empty mobile Post does not render Final review until a caption exists', () => {
+test('empty mobile Post uses Partner chat to draft before Final review', () => {
   assert.match(createSource, /mobileReviewOpen && content\.trim\(\)/)
-  assert.match(createSource, /Make a post/)
-  assert.match(createSource, /Review post/)
+  assert.match(createSource, /<MobilePartnerChat/)
+  assert.match(createSource, /What would you like to create today/)
   assert.match(createSource, /setMobileReviewOpen\(true\)/)
+  assert.match(createSource, /source=partner-chat/)
 })
