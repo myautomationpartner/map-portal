@@ -112,3 +112,42 @@ html[data-portal-theme="map-dark"] body {
 .font-display {
   font-family: 'Sora', 'Plus Jakarta Sans', system-ui, sans-serif;
 }
+
+
+@media (max-width: 767px) {
+  html[data-portal-theme="map-dark"] {
+    color-scheme: light;
+    --portal-bg: #F6F3EE;
+    --portal-bg-secondary: #FBF9F4;
+    --portal-surface: #ffffff;
+    --portal-surface-strong: #ffffff;
+    --portal-surface-muted: #f1ece2;
+    --portal-border: rgba(20, 19, 16, 0.11);
+    --portal-border-strong: rgba(201, 168, 76, 0.42);
+    --portal-text: #1A1814;
+    --portal-text-muted: #5E554D;
+    --portal-text-soft: #8a8278;
+    --portal-primary: #c9a84c;
+    --portal-primary-strong: #b28f35;
+    --portal-secondary: #12262B;
+    --portal-ink: #12262B;
+    --portal-accent: #2F7A7E;
+    --portal-cyan: #e8d5a0;
+    --portal-nav: #F6F3EE;
+    --portal-nav-strong: #FBF9F4;
+    --portal-nav-text: #12262B;
+    --portal-nav-text-strong: #12262B;
+    --portal-nav-text-muted: #5E554D;
+    --portal-nav-icon-bg: rgba(18, 38, 43, 0.06);
+    --portal-nav-icon-active-bg: rgba(201, 168, 76, 0.16);
+    --portal-theme-toggle-bg: rgba(255, 255, 255, 0.74);
+    --portal-shadow: 0 18px 46px rgba(20, 19, 16, 0.08);
+    --portal-shadow-soft: 0 10px 24px rgba(20, 19, 16, 0.055);
+  }
+
+  html[data-portal-theme="map-dark"] body {
+    background: #F6F3EE;
+    color: #1A1814;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+}

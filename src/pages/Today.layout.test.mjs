@@ -98,3 +98,25 @@ test('today detail panel does not fall back to hidden completed rows', async () 
   assert.ok(today.includes('filteredQueue[0] || null'))
   assert.equal(today.includes('filteredQueue[0] || queue[0]'), false)
 })
+
+test('phone Today is an editorial cream work list, not the SOC dashboard', async () => {
+  const [today, css] = await Promise.all([
+    readFile(todaySource, 'utf8'),
+    readFile(cssSource, 'utf8'),
+  ])
+
+  assert.ok(today.includes('className="today-phone"'))
+  assert.ok(today.includes('today-phone-card'))
+  assert.ok(today.includes('today-phone-action'))
+  assert.ok(today.includes('needsYouSentence'))
+  assert.ok(today.includes("filterTodayPriorityQueue(queue, 'needs')"))
+  assert.ok(today.includes('className="today-desktop"'))
+  assert.ok(css.includes('.today-phone-title'))
+  assert.ok(css.includes('font-size: 2.5rem'))
+  assert.ok(css.includes('background: #12262B'))
+  assert.ok(css.includes('background: #F6F3EE !important'))
+  assert.match(css, /\.today-desktop \{[\s\S]{0,80}display: none !important/)
+  assert.match(css, /html\[data-portal-theme="map-dark"\] \.today-page[\s\S]{0,500}background: #F6F3EE !important/)
+  assert.match(css, /\.portal-bottom-nav[\s\S]{0,500}background: #F6F3EE !important/)
+  assert.match(css, /border-radius: 0 !important/)
+})

@@ -74,6 +74,13 @@ const sourceIconMap = {
   Automation: CheckCircle2,
 }
 
+
+function needsYouSentence(count) {
+  if (count <= 0) return 'Nothing needs you'
+  if (count === 1) return '1 thing needs you'
+  return `${count} things need you`
+}
+
 function formatTodayLabel() {
   return new Intl.DateTimeFormat('en-US', {
     weekday: 'long',
@@ -350,7 +357,12 @@ export default function Today() {
     () => filterTodayPriorityQueue(queue, activeFilter),
     [activeFilter, queue],
   )
+  const phoneQueue = useMemo(
+    () => filterTodayPriorityQueue(queue, 'needs').slice(0, 6),
+    [queue],
+  )
   const summary = useMemo(() => summarizeTodayPriorityQueue(queue), [queue])
+  const needsYouCount = phoneQueue.length
   const selectedItem = filteredQueue.find((item) => item.id === selectedId) || filteredQueue[0] || null
   const selectedSnoozed = Boolean(selectedItem?.snoozed)
   const saveStateMutation = useMutation({
@@ -398,6 +410,36 @@ export default function Today() {
   return (
     <>
       <div className="today-page portal-page">
+      <section className="today-phone" aria-label="Today">
+        <header className="today-phone-hero">
+          <h1 className="font-display today-phone-title">Today</h1>
+          <p className="today-phone-date">{todayLabel}</p>
+          <p className="today-phone-count">{needsYouSentence(needsYouCount)}</p>
+        </header>
+        <div className="today-phone-list">
+          {phoneQueue.map((item) => (
+            <article className="today-phone-card" key={item.id}>
+              <h2 className="font-display">{item.title}</h2>
+              <p>{item.description}</p>
+              <button
+                type="button"
+                className="today-phone-action"
+                onClick={() => handleDoIt(item)}
+              >
+                {item.actionLabel || 'Open'}
+              </button>
+            </article>
+          ))}
+          {!phoneQueue.length ? (
+            <div className="today-phone-empty">
+              <h2 className="font-display">You&apos;re clear</h2>
+              <p>New customer replies and same-day publishing work will land here.</p>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      <div className="today-desktop">
       <section className="today-context-strip portal-surface">
         <div className="today-context-title">
           <h1 className="font-display">Today</h1>
@@ -490,6 +532,7 @@ export default function Today() {
           onComplete={handleComplete}
           onSnooze={handleSnooze}
         />
+      </div>
       </div>
 
         {toast ? <div className="today-toast">{toast}</div> : null}
