@@ -214,17 +214,26 @@ test('needs-you badge counts open DMs plus comment threads, not every leftover p
   })
 })
 
-test('inbox sync label stays honest about stale Facebook comments', () => {
+test('inbox sync label treats an old newest Facebook comment as live when fetch succeeded', () => {
   const now = Date.parse('2026-08-27T16:00:00.000Z')
   const state = resolveInboxSyncState({
     commentBundles: [{
       post: { id: 'post-1', platform: 'facebook', createdTime: '2026-06-01T12:00:00.000Z' },
       comments: [{ id: 'c1', text: 'Congratulations!', createdTime: '2026-06-01T15:22:00.000Z' }],
     }],
+    commentsFetchOk: true,
     now,
   })
 
-  assert.match(state.label, /Facebook comments last synced Jun 1, 2026/)
-  assert.match(state.label, /not a live feed/)
+  assert.match(state.label, /Newest Facebook comment Jun 1, 2026/)
+  assert.doesNotMatch(state.label, /not a live feed/)
   assert.equal(state.commentsStale, true)
+})
+
+test('inbox sync label warns when Facebook comments cannot be refreshed', () => {
+  const state = resolveInboxSyncState({
+    commentsFetchOk: false,
+    now: Date.parse('2026-08-28T16:00:00.000Z'),
+  })
+  assert.match(state.label, /Facebook comments could not be refreshed/)
 })
