@@ -33,6 +33,7 @@ import {
   businessNameCandidates,
   commentDismissalKey,
   commentNeedsReply,
+  countCommentBundlesNeedingReply,
   postDismissalKey,
   postKey,
   readNoReplyNeededCommentKeys,
@@ -1653,7 +1654,8 @@ export default function Inbox() {
     commentPosts,
     commentBundles: activeCommentBundles,
     conversations: privateConversations,
-  }), [activeCommentBundles, commentPosts, privateConversations])
+    commentsFetchOk: commentPostsQuery.isError ? false : (commentPostsQuery.isSuccess ? true : null),
+  }), [activeCommentBundles, commentPosts, commentPostsQuery.isError, commentPostsQuery.isSuccess, privateConversations])
   const sectionCounts = useMemo(
     () => summarizeInboxNotifications({ privateConversations, commentBundles: activeCommentBundles }),
     [activeCommentBundles, privateConversations],
