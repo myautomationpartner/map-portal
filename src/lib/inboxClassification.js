@@ -270,6 +270,7 @@ export function resolveInboxSyncState({
   commentPosts = [],
   commentBundles = [],
   conversations = [],
+  commentsFetchOk = null,
   now = Date.now(),
 } = {}) {
   const facebookTimes = []
@@ -309,14 +310,17 @@ export function resolveInboxSyncState({
   const sourceMs = facebookCommentsLastSyncedAt || commentsLastSyncedAt
   const dateLabel = formatInboxSyncTimestamp(sourceMs)
   let label = 'Comment sync time unavailable'
-  if (facebookCommentsLastSyncedAt && dateLabel) {
-    label = commentsStale
-      ? `Facebook comments last synced ${dateLabel} — not a live feed`
-      : `Facebook comments last synced ${dateLabel}`
+  if (commentsFetchOk === false) {
+    label = facebookCommentsLastSyncedAt || commentsLastSyncedAt
+      ? `Facebook comments could not be refreshed`
+      : 'Facebook comments could not be refreshed'
+  } else if (facebookCommentsLastSyncedAt && dateLabel) {
+    // Zernio comments are a live pull. An old newest comment is not a stalled ingest.
+    label = `Newest Facebook comment ${dateLabel}`
   } else if (commentsLastSyncedAt && dateLabel) {
-    label = commentsStale
-      ? `Comments last synced ${dateLabel} — not a live feed`
-      : `Comments last synced ${dateLabel}`
+    label = `Newest comment ${dateLabel}`
+  } else if (commentsFetchOk === true) {
+    label = 'Facebook comments are live'
   }
 
   return {
