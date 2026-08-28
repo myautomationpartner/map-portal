@@ -26,6 +26,8 @@ import {
   UserPlus, ShieldCheck, Ban, CreditCard, ChevronDown, Bell, BellOff, ArrowLeft, House,
   Megaphone, Sparkles
 } from 'lucide-react'
+import { isMobilePartnerRolloutTenant } from '../lib/mobilePartnerRollout'
+import MobilePartnerTopBar from '../components/MobilePartnerTopBar'
 
 const SETTINGS_CONNECT_ENDPOINT = '/api/n8n/zernio-connect-url'
 const SETTINGS_DISCONNECT_ENDPOINT = '/api/social-connections/disconnect'
@@ -426,6 +428,29 @@ function formatConnectionDate(value) {
   })
 }
 
+function formatConnectedOnLabel(value) {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+  const options = { month: 'long', day: 'numeric' }
+  if (parsed.getFullYear() !== new Date().getFullYear()) options.year = 'numeric'
+  return parsed.toLocaleDateString('en-US', options)
+}
+
+function shouldUseSameWindowConnect() {
+  if (typeof window === 'undefined') return true
+  try {
+    if (window.matchMedia('(max-width: 767px)').matches) return true
+    if (window.matchMedia('(display-mode: standalone)').matches) return true
+  } catch {
+    // jsdom and some WebViews do not implement matchMedia.
+  }
+  const ua = String(window.navigator?.userAgent || '')
+  if (/iPhone|iPad|iPod/i.test(ua)) return true
+  if (typeof document !== 'undefined' && document.querySelector('.portal-shell-mobile-partner')) return true
+  return false
+}
+
 function formatPlatformLabel(platform) {
   if (!platform) return 'Account'
   if (platform === 'twitter' || platform === 'x') return 'X / Twitter'
@@ -771,11 +796,13 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
 
   function buildConnectReturnUrl(platform) {
     if (typeof window === 'undefined') return ''
+    const settingsReturn = new URL(buildTenantAwarePortalPath('/settings', clientSlug), window.location.origin)
+    settingsReturn.searchParams.set('connected', platform)
     const url = new URL(buildTenantAwarePortalPath('/connect-return', clientSlug), window.location.origin)
     url.searchParams.set('connected', platform)
     url.searchParams.set('cid', clientId)
     url.searchParams.set('source', 'settings')
-    url.searchParams.set('returnTo', buildTenantAwarePortalPath('/settings', clientSlug))
+    url.searchParams.set('returnTo', `${settingsReturn.pathname}${settingsReturn.search}`)
     return url.toString()
   }
 
@@ -889,7 +916,8 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
     if (!requireWriteAccess('change social connections')) return
 
     const normalizedPlatform = normalizeConnectionPlatform(platform)
-    const connectPopup = typeof window !== 'undefined'
+    const useSameWindow = shouldUseSameWindowConnect()
+    const connectPopup = !useSameWindow && typeof window !== 'undefined'
       ? window.open('', '_blank', 'width=600,height=700')
       : null
 
@@ -921,18 +949,22 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
       })
       const data = await res.json().catch(() => ({}))
       if (res.ok && data.authUrl) {
-        if (connectPopup && !connectPopup.closed) {
+        if (!useSameWindow && connectPopup && !connectPopup.closed) {
           connectPopup.opener = null
           connectPopup.location.href = data.authUrl
           connectPopup.focus()
+          setSyncStatus({
+            type: 'info',
+            message: `Finish connecting ${formatPlatformLabel(normalizedPlatform)} in the new tab. This page will update when Zernio sends the account event to MAP.`,
+          })
+          startAutoSync(normalizedPlatform)
         } else {
+          if (connectPopup && !connectPopup.closed) {
+            connectPopup.close()
+          }
           window.location.assign(data.authUrl)
+          return
         }
-        setSyncStatus({
-          type: 'info',
-          message: `Finish connecting ${formatPlatformLabel(normalizedPlatform)} in the new tab. This page will update when Zernio sends the account event to MAP.`,
-        })
-        startAutoSync(normalizedPlatform)
       } else {
         if (connectPopup && !connectPopup.closed) {
           connectPopup.close()
@@ -1023,8 +1055,8 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
   return (
     <Section
       id="social-accounts"
-      title="Social Media Accounts"
-      description="Connect your social accounts to enable publishing and metrics"
+      title="Social accounts"
+      description="See what is connected and reconnect without hunting through Settings"
       icon={Link2}
     >
       {connectionsLoading ? (
@@ -1033,16 +1065,17 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
           <span className="text-sm">Loading connections…</span>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="settings-social-list space-y-3">
           {PLATFORMS.map(({ id, label, Icon, accent, soft, connectionEnabled }) => {
             const conn = connectedMap[id]
             const isConnecting = connectingPlatform === id
             const isDisconnecting = disconnectingPlatform === id
+            const connectedOn = conn ? formatConnectedOnLabel(conn.connected_at) : ''
 
             return (
               <div
                 key={id}
-                className="flex items-center gap-4 p-4 rounded-xl transition-all"
+                className="settings-social-row flex items-center gap-4 p-4 rounded-xl transition-all"
                 style={conn
                   ? { background: soft, border: `1px solid ${accent}30` }
                   : { background: 'rgba(9,14,24,0.72)', border: '1px solid var(--portal-border)' }
@@ -1064,7 +1097,7 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
                         </p>
                       </div>
                       <p className="text-[11px]" style={{ color: 'var(--portal-text-soft)' }}>
-                        Last synced: {formatConnectionDate(conn.connected_at)}
+                        {connectedOn ? `Connected ${connectedOn}` : 'Connected'}
                       </p>
                     </div>
                   ) : (
@@ -1076,20 +1109,30 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
                 </div>
 
                 {/* Connection actions */}
-                <div className="shrink-0 flex items-center gap-2">
+                <div className="settings-social-actions shrink-0 flex items-center gap-2">
                   {conn ? (
                     <>
                       <div
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+                        className="settings-social-status flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
                         style={{ background: 'rgba(133,247,169,0.10)', border: '1px solid rgba(133,247,169,0.24)', color: 'var(--portal-success)' }}>
                         <CheckCircle2 className="w-3 h-3" />
                         Connected
                       </div>
                       <button
                         type="button"
+                        onClick={() => connectionEnabled && handleConnect(id)}
+                        disabled={!connectionEnabled || !!connectingPlatform || !!disconnectingPlatform || billingAccess?.readOnly}
+                        className="settings-social-action settings-social-reconnect flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{ background: 'rgba(201,168,76,0.14)', border: '1px solid rgba(201,168,76,0.38)', color: '#8A6A1E' }}
+                      >
+                        {isConnecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                        {isConnecting ? 'Connecting…' : connectionEnabled ? 'Reconnect' : 'Coming soon'}
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleDisconnect(id, label)}
                         disabled={!!disconnectingPlatform || !!connectingPlatform || billingAccess?.readOnly}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="settings-social-action settings-social-disconnect flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         style={{ background: 'rgba(255,122,184,0.10)', border: '1px solid rgba(255,122,184,0.24)', color: 'var(--map-brand-magenta)' }}
                       >
                         {isDisconnecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Unlink2 className="w-3 h-3" />}
@@ -1098,10 +1141,11 @@ function SocialConnectionsSection({ clientId, clientSlug, returnedPlatform, requ
                     </>
                   ) : (
                     <button
+                      type="button"
                       onClick={() => connectionEnabled && handleConnect(id)}
                       disabled={!connectionEnabled || !!connectingPlatform || billingAccess?.readOnly}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.28)', color: 'var(--map-brand-cyan)' }}>
+                      className="settings-social-action settings-social-connect flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ background: 'rgba(201,168,76,0.14)', border: '1px solid rgba(201,168,76,0.38)', color: '#8A6A1E' }}>
                       {isConnecting ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
                       ) : (
@@ -1713,9 +1757,25 @@ function PhoneNotificationsSection({ billingAccess, profile }) {
 
 export default function Settings() {
   const navigate = useNavigate()
-  const { session, requireWriteAccess, billingAccess, onBillingAction, billingActionPending } = useOutletContext()
+  const { session, requireWriteAccess, billingAccess, onBillingAction, billingActionPending, inboxNotificationCount } = useOutletContext()
   const [searchParams, setSearchParams] = useSearchParams()
   const returnedPlatform = searchParams.get('connected') || null
+  const [phoneLayout, setPhoneLayout] = useState(() => {
+    if (typeof window === 'undefined') return false
+    try { return window.matchMedia('(max-width: 767px)').matches } catch { return false }
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined
+    const mq = window.matchMedia('(max-width: 767px)')
+    const onChange = () => setPhoneLayout(Boolean(mq.matches))
+    if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onChange)
+    else if (typeof mq.addListener === 'function') mq.addListener(onChange)
+    return () => {
+      if (typeof mq.removeEventListener === 'function') mq.removeEventListener('change', onChange)
+      else if (typeof mq.removeListener === 'function') mq.removeListener(onChange)
+    }
+  }, [])
 
   useEffect(() => {
     if (returnedPlatform) {
@@ -1773,6 +1833,7 @@ export default function Settings() {
 
   const client = profile?.clients
   const tenant = buildTenantConfig({ client })
+  const mobilePartnerRollout = isMobilePartnerRolloutTenant(tenant)
   const setupTarget = typeof window !== 'undefined' ? window.location.hash.replace('#', '') : ''
   const focusSocialAccounts = setupTarget === 'social-accounts'
 
@@ -1785,7 +1846,10 @@ export default function Settings() {
   }, [focusSocialAccounts, isLoading])
 
   return (
-    <div className="portal-page settings-page w-full max-w-none space-y-6 md:p-5 xl:p-6">
+    <div className={`portal-page settings-page w-full max-w-none space-y-6 md:p-5 xl:p-6${mobilePartnerRollout ? ' settings-mobile-partner' : ''}`}>
+      {mobilePartnerRollout ? (
+        <MobilePartnerTopBar inboxUnreadCount={inboxNotificationCount} />
+      ) : null}
       <div className="settings-mobile-return" role="navigation" aria-label="Settings navigation">
         <button type="button" onClick={() => navigate(-1)} aria-label="Go back">
           <ArrowLeft size={19} /> Back
@@ -1794,7 +1858,7 @@ export default function Settings() {
           <House size={19} /> My Partner
         </button>
       </div>
-      <section className="portal-surface rounded-[36px] p-5 md:p-7">
+      <section className="portal-surface settings-page-hero rounded-[36px] p-5 md:p-7">
         <div className="portal-page-header">
           <div>
             <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -1808,11 +1872,23 @@ export default function Settings() {
       </section>
 
       <div className="space-y-4">
+        {profile?.client_id ? (
+          <div className="settings-social-priority">
+            <SocialConnectionsSection
+              clientId={profile.client_id}
+              clientSlug={client?.slug}
+              returnedPlatform={returnedPlatform}
+              requireWriteAccess={requireWriteAccess}
+              billingAccess={billingAccess}
+            />
+          </div>
+        ) : null}
+
         <SettingsCategory
           title="Subscription & billing"
           description="Status, payment, cancellation, and subscription management"
           icon={CreditCard}
-          defaultOpen
+          defaultOpen={!phoneLayout}
         >
           <SubscriptionSection
             tenant={tenant}
@@ -1826,7 +1902,7 @@ export default function Settings() {
           title="Account & team"
           description="Your login, portal users, and access levels"
           icon={ShieldCheck}
-          defaultOpen
+          defaultOpen={!phoneLayout}
         >
           <Section title="Account" description="Your login information" icon={User}>
             {isLoading ? (
@@ -1868,16 +1944,6 @@ export default function Settings() {
                 </a>
               </p>
             </Section>
-          )}
-
-          {profile?.client_id && (
-            <SocialConnectionsSection
-              clientId={profile.client_id}
-              clientSlug={client?.slug}
-              returnedPlatform={returnedPlatform}
-              requireWriteAccess={requireWriteAccess}
-              billingAccess={billingAccess}
-            />
           )}
 
           {client && (

@@ -40,6 +40,12 @@ export default function ConnectReturn() {
   }
 
   useEffect(() => {
+    const hasOpener = Boolean(window.opener && !window.opener.closed)
+    if (!hasOpener) {
+      window.location.replace(returnTo)
+      return undefined
+    }
+
     const payload = {
       type: 'map:social-connected',
       platform,
@@ -69,7 +75,7 @@ export default function ConnectReturn() {
       window.clearTimeout(closeTimer)
       window.clearTimeout(fallbackTimer)
     }
-  }, [clientId, platform])
+  }, [clientId, platform, returnTo])
 
   return (
     <div className="portal-shell flex min-h-screen items-center justify-center p-5">

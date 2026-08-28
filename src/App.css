@@ -23280,3 +23280,98 @@ html[data-portal-theme="map-dark"] .boost-post-error {
     color: #ffffff;
   }
 }
+
+@media (max-width: 767px) {
+  .portal-shell-mobile-partner .settings-page,
+  .settings-page.settings-mobile-partner {
+    --mobile-partner-topbar-space: calc(max(0.7rem, env(safe-area-inset-top, 0px) + 0.55rem) + 2.8rem + 0.72rem);
+    --mobile-partner-bottom-space: calc(4.35rem + env(safe-area-inset-bottom, 0px));
+    padding-top: var(--mobile-partner-topbar-space);
+    padding-bottom: calc(var(--mobile-partner-bottom-space) + 1.1rem) !important;
+    overflow: visible;
+  }
+
+  .portal-shell-mobile-partner .settings-page > .mobile-partner-topbar,
+  .settings-page.settings-mobile-partner > .mobile-partner-topbar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 45;
+  }
+
+  .portal-shell-mobile-partner .settings-mobile-return,
+  .settings-page.settings-mobile-partner .settings-mobile-return {
+    top: 0;
+    margin-top: 0;
+    padding-top: 0.65rem;
+    background: #F6F3EE !important;
+    border-color: rgba(20, 19, 16, 0.08) !important;
+    color: #1A1814 !important;
+  }
+
+  .settings-page.settings-mobile-partner .settings-page-hero,
+  .portal-shell-mobile-partner .settings-page-hero {
+    display: none;
+  }
+
+  .settings-social-priority .settings-section-panel {
+    background: #ffffff !important;
+    border: 1px solid rgba(20, 19, 16, 0.11) !important;
+    border-radius: 28px !important;
+    box-shadow: none !important;
+    overflow: hidden;
+  }
+
+  .settings-social-priority .settings-section-panel > div:first-child {
+    background: #ffffff !important;
+    border-color: rgba(20, 19, 16, 0.08) !important;
+  }
+
+  .settings-social-priority .settings-section-panel h2 {
+    color: #1A1814 !important;
+  }
+
+  .settings-social-row {
+    flex-wrap: wrap;
+    align-items: flex-start !important;
+    background: #FBF9F4 !important;
+    border: 1px solid rgba(20, 19, 16, 0.11) !important;
+    border-radius: 22px !important;
+    padding: 1rem !important;
+  }
+
+  .settings-social-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.55rem !important;
+    margin-top: 0.75rem;
+  }
+
+  .settings-social-action,
+  .settings-social-connect,
+  .settings-social-reconnect,
+  .settings-social-disconnect {
+    flex: 1 1 8.4rem;
+    min-height: 2.85rem;
+    justify-content: center;
+    font-size: 0.9rem !important;
+    font-weight: 750;
+    border-radius: 999px !important;
+    padding: 0.7rem 1rem !important;
+  }
+
+  .settings-social-connect,
+  .settings-social-reconnect {
+    background: #C9A84C !important;
+    border-color: #C9A84C !important;
+    color: #12262B !important;
+  }
+
+  .settings-social-status {
+    min-height: 2.4rem;
+    background: rgba(18, 128, 92, 0.12) !important;
+    border-color: rgba(18, 128, 92, 0.28) !important;
+    color: #12805c !important;
+  }
+}
